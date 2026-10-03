@@ -326,6 +326,16 @@ export default function Welcome({ stats = {}, techniquesByLevel = [] }) {
                                 )}
                             </div>
 
+                            {!user && (
+                                <Link
+                                    href="/login"
+                                    className="sm:hidden text-white/80 hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-white/20 transition-colors flex items-center gap-1.5"
+                                >
+                                    <i className="fa-solid fa-right-to-bracket text-[10px]"></i>
+                                    <span>Login</span>
+                                </Link>
+                            )}
+
                             {/* Mobile Menu Button */}
                             <Button variant="unstyled" size="none"
                                 onClick={() => setMobileMenu(!mobileMenu)}

@@ -79,21 +79,42 @@ export default function EventShow({
 
                     <div className="flex items-center gap-2 sm:gap-3">
                         {canAccessDashboard || isAuthenticated ? (
-                            <Link
-                                href={dashboardHref}
-                                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#d4a843]/15 text-[#9e7616] dark:text-[#f5c542] border border-[#d4a843]/30 hover:bg-[#d4a843]/25 transition-all"
-                            >
-                                <i className="fa-solid fa-gauge-high"></i>
-                                <span className="hidden sm:inline">Masuk Dashboard</span>
-                            </Link>
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href={dashboardHref}
+                                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#c0392b] text-white shadow-md shadow-[#c0392b]/25 hover:bg-[#d94436] transition-all"
+                                >
+                                    <i className="fa-solid fa-gauge-high"></i>
+                                    <span>Dashboard</span>
+                                </Link>
+                                <Link
+                                    href="/logout"
+                                    method="post"
+                                    as="button"
+                                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-[#78716c] dark:text-[#a8a29e] hover:text-[#c0392b] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                    title="Keluar"
+                                >
+                                    <i className="fa-solid fa-right-from-bracket"></i>
+                                    <span className="hidden sm:inline">Keluar</span>
+                                </Link>
+                            </div>
                         ) : (
-                            <Link
-                                href={`/event/${event.slug}/register`}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-[#c0392b] to-[#962d22] text-white shadow-md shadow-[#c0392b]/25 hover:from-[#d94436] hover:to-[#a93327] hover:shadow-lg hover:shadow-[#c0392b]/35 transition-all active:scale-[0.98]"
-                            >
-                                <i className="fa-solid fa-clipboard-user"></i>
-                                <span>Daftar Kontingen</span>
-                            </Link>
+                            <div className="flex items-center gap-2 sm:gap-2.5">
+                                <Link
+                                    href="/login"
+                                    className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-[#44403c] dark:text-[#d6d3d1] hover:text-[#c0392b] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 border border-black/10 dark:border-white/10 transition-all shadow-sm"
+                                >
+                                    <i className="fa-solid fa-right-to-bracket text-xs text-[#c0392b]"></i>
+                                    <span>Login</span>
+                                </Link>
+                                <Link
+                                    href={`/event/${event.slug}/register`}
+                                    className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-[#c0392b] to-[#962d22] text-white shadow-md shadow-[#c0392b]/25 hover:from-[#d94436] hover:to-[#a93327] hover:shadow-lg hover:shadow-[#c0392b]/35 transition-all active:scale-[0.98]"
+                                >
+                                    <i className="fa-solid fa-clipboard-user"></i>
+                                    <span>Daftar Kontingen</span>
+                                </Link>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -193,13 +214,22 @@ export default function EventShow({
                                     <span>Masuk ke Dashboard</span>
                                 </Link>
                             ) : (
-                                <Link
-                                    href={`/event/${event.slug}/register`}
-                                    className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-[#c0392b] text-white shadow-lg shadow-[#c0392b]/30 hover:bg-[#d94436] hover:shadow-xl hover:shadow-[#c0392b]/40 transition-all active:scale-[0.98]"
-                                >
-                                    <i className="fa-solid fa-user-plus"></i>
-                                    <span>Daftarkan Kontingen Anda</span>
-                                </Link>
+                                <>
+                                    <Link
+                                        href={`/event/${event.slug}/register`}
+                                        className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-[#c0392b] text-white shadow-lg shadow-[#c0392b]/30 hover:bg-[#d94436] hover:shadow-xl hover:shadow-[#c0392b]/40 transition-all active:scale-[0.98]"
+                                    >
+                                        <i className="fa-solid fa-user-plus"></i>
+                                        <span>Daftarkan Kontingen Anda</span>
+                                    </Link>
+                                    <Link
+                                        href="/login"
+                                        className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-white dark:bg-white/[0.06] text-[#1c1917] dark:text-white border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 hover:border-[#c0392b]/40 transition-all shadow-sm"
+                                    >
+                                        <i className="fa-solid fa-right-to-bracket text-[#c0392b]"></i>
+                                        <span>Login Sistem</span>
+                                    </Link>
+                                </>
                             )}
 
                             {event.rules_doc ? (
@@ -590,10 +620,18 @@ export default function EventShow({
                                 ? 'Buka menu administrasi untuk melanjutkan pengelolaan event dan data pendaftaran.'
                                 : 'Lengkapi data kontingen dan peserta sebelum batas pendaftaran berakhir.'}
                         </p>
-                        <Link href={canAccessDashboard || isAuthenticated ? dashboardHref : `/event/${event.slug}/register`} className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#c0392b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-black/20 transition-colors hover:bg-[#d94436] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                            <i className={`fa-solid ${canAccessDashboard || isAuthenticated ? 'fa-gauge-high' : 'fa-user-plus'}`} aria-hidden="true"></i>
-                            <span>{canAccessDashboard || isAuthenticated ? 'Masuk Dashboard' : 'Mulai Pendaftaran'}</span>
-                        </Link>
+                        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                            <Link href={canAccessDashboard || isAuthenticated ? dashboardHref : `/event/${event.slug}/register`} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#c0392b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-black/20 transition-colors hover:bg-[#d94436] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                                <i className={`fa-solid ${canAccessDashboard || isAuthenticated ? 'fa-gauge-high' : 'fa-user-plus'}`} aria-hidden="true"></i>
+                                <span>{canAccessDashboard || isAuthenticated ? 'Masuk Dashboard' : 'Mulai Pendaftaran'}</span>
+                            </Link>
+                            {!isAuthenticated && (
+                                <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                                    <i className="fa-solid fa-right-to-bracket text-[#f0c060]" aria-hidden="true"></i>
+                                    <span>Sudah Punya Akun? Login</span>
+                                </Link>
+                            )}
+                        </div>
                     </section>
                 </div>
             </main>
