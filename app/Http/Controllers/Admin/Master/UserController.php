@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -136,7 +137,14 @@ class UserController extends Controller
             return redirect()->back()->with('error', 'Anda tidak dapat menghapus akun Anda sendiri.');
         }
 
-        $user->delete();
+        DB::transaction(function () use ($user) {
+            if ($user->contingent) {
+                $user->contingent->registrations()->delete();
+                $user->contingent->delete();
+            }
+
+            $user->forceDelete();
+        });
 
         return redirect()->back()->with('success', 'Pengguna berhasil dihapus.');
     }
