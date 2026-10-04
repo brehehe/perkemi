@@ -1,7 +1,39 @@
-import Button from "@/Components/UI/Elements/Button";
+import Button from '@/Components/UI/Elements/Button';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
-import { useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
+
+const eventStatuses = {
+    open_registration: { label: 'Pendaftaran dibuka', tone: 'open' },
+    ongoing: { label: 'Kejuaraan berlangsung', tone: 'ongoing' },
+    completed: { label: 'Kejuaraan selesai', tone: 'closed' },
+};
+
+function Icon({ name, className = '' }) {
+    return <i className={`fa-solid ${name} ${className}`} aria-hidden="true" />;
+}
+
+function SectionHeading({ title, description, children }) {
+    return (
+        <div className="event-section-heading flex flex-wrap items-end justify-between gap-5">
+            <div>
+                <h2>{title}</h2>
+                <p>{description}</p>
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function formatScheduleDate(date) {
+    if (!date) {
+        return 'Tanggal menyusul';
+    }
+
+    return new Intl.DateTimeFormat('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    }).format(new Date(`${date}T00:00:00`));
+}
 
 export default function EventShow({
     auth = {},
@@ -14,644 +46,309 @@ export default function EventShow({
     canAccessDashboard = false,
     isHomepage = false,
 }) {
+    const [matchFilter, setMatchFilter] = useState('all');
     const [copiedAccount, setCopiedAccount] = useState(null);
+    const [copyMessage, setCopyMessage] = useState('');
+    const copyTimer = useRef(null);
+    const status = eventStatuses[event.status] || { label: 'Dalam persiapan', tone: 'preparation' };
+    const isAuthenticated = Boolean(auth?.user);
+    const hasDashboard = canAccessDashboard || isAuthenticated;
+    const dashboardHref = canAccessDashboard ? `/event/${event.slug}/admin` : '/admin/dashboard';
+    const registrationHref = `/event/${event.slug}/register`;
+    const actionHref = hasDashboard ? dashboardHref : registrationHref;
+    const filteredMatches = matchCategories.filter((category) => matchFilter === 'all' || category.type === matchFilter);
+    const scheduleDays = rundowns.reduce((days, session) => {
+        const date = session.date_only || '';
+        const day = days.find((item) => item.date === date);
+        if (day) {
+            day.sessions.push(session);
+        } else {
+            days.push({ date, sessions: [session] });
+        }
+        return days;
+    }, []);
 
-    const handleCopy = (text, id) => {
-        navigator.clipboard.writeText(text);
-        setCopiedAccount(id);
-        setTimeout(() => setCopiedAccount(null), 2500);
-    };
+    useEffect(() => () => clearTimeout(copyTimer.current), []);
 
-    const statusBadge = () => {
-        switch (event.status) {
-            case 'open_registration':
-                return {
-                    label: 'Pendaftaran Dibuka',
-                    bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-                    dot: 'bg-emerald-500',
-                };
-            case 'ongoing':
-                return {
-                    label: 'Kejuaraan Berlangsung',
-                    bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-                    dot: 'bg-blue-500',
-                };
-            case 'completed':
-                return {
-                    label: 'Kejuaraan Selesai',
-                    bg: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-                    dot: 'bg-slate-400',
-                };
-            default:
-                return {
-                    label: 'Tahap Persiapan / Draft',
-                    bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-                    dot: 'bg-amber-500',
-                };
+    const handleCopy = async (accountNumber, id) => {
+        clearTimeout(copyTimer.current);
+        setCopiedAccount(null);
+        try {
+            await navigator.clipboard.writeText(accountNumber);
+            setCopiedAccount(id);
+            setCopyMessage('Nomor rekening berhasil disalin.');
+            copyTimer.current = setTimeout(() => {
+                setCopiedAccount(null);
+                setCopyMessage('');
+            }, 2500);
+        } catch {
+            setCopyMessage('Nomor rekening belum tersalin. Silakan pilih dan salin nomor secara manual.');
         }
     };
 
-    const badge = statusBadge();
-    const isAuthenticated = Boolean(auth?.user);
-    const eventDashboardHref = `/event/${event.slug}/admin`;
-    const dashboardHref = canAccessDashboard ? eventDashboardHref : '/admin/dashboard';
-
     return (
-        <div className="min-h-screen bg-[#faf8f5] dark:bg-[#0c0b0a] text-[#1c1917] dark:text-[#f5f5f4] selection:bg-[#c0392b] selection:text-white transition-colors duration-300">
-            <Head title={`${event.name} - Smart PERKEMI`} />
+        <div className="event-page min-h-screen antialiased">
+            <Head title={`${event.name} - Smart PERKEMI`}>
+                {event.description && <meta name="description" content={event.description} />}
+            </Head>
+            <a href="#event-content" className="event-skip-link">Langsung ke informasi kejuaraan</a>
 
-            {/* ══ TOPBAR ══ */}
-            <header className="sticky top-0 z-40 border-b border-black/5 dark:border-white/10 bg-[#faf8f5]/80 dark:bg-[#0c0b0a]/80 backdrop-blur-md">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-3 group">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#c0392b] to-[#8b1e13] flex items-center justify-center text-white shadow-md shadow-[#c0392b]/20 group-hover:scale-105 transition-transform">
-                            <i className="fa-solid fa-yin-yang text-lg animate-spin-slow"></i>
-                        </div>
-                        <div>
-                            <span className="font-extrabold text-base tracking-tight text-[#1c1917] dark:text-white block">
-                                SMART <span className="text-[#c0392b]">PERKEMI</span>
-                            </span>
-                            <span className="text-[10px] uppercase tracking-wider text-[#78716c] dark:text-[#a8a29e] block font-semibold">
-                                {isHomepage ? 'Landing Utama Event' : 'Portal Event Kejuaraan'}
-                            </span>
-                        </div>
+            <header id="event-top" className="event-header">
+                <div className="event-container flex min-h-20 items-center justify-between gap-4 py-3">
+                    <Link href="/" className="event-brand flex shrink-0 items-center gap-3" aria-label="SMART PERKEMI, beranda">
+                        <img src="/android-chrome-192x192.png" width="44" height="44" alt="" className="h-11 w-11 object-contain" />
+                        <span>
+                            <span className="event-brand-name block">SMART PERKEMI</span>
+                            <span className="event-brand-caption block">Portal kejuaraan Shorinji Kempo</span>
+                        </span>
                     </Link>
-
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        {canAccessDashboard || isAuthenticated ? (
-                            <div className="flex items-center gap-2">
-                                <Link
-                                    href={dashboardHref}
-                                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#c0392b] text-white shadow-md shadow-[#c0392b]/25 hover:bg-[#d94436] transition-all"
-                                >
-                                    <i className="fa-solid fa-gauge-high"></i>
-                                    <span>Dashboard</span>
-                                </Link>
-                                <Link
-                                    href="/logout"
-                                    method="post"
-                                    as="button"
-                                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-[#78716c] dark:text-[#a8a29e] hover:text-[#c0392b] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                                    title="Keluar"
-                                >
-                                    <i className="fa-solid fa-right-from-bracket"></i>
-                                    <span className="hidden sm:inline">Keluar</span>
-                                </Link>
-                            </div>
+                    <nav aria-label="Navigasi utama" className="hidden items-center gap-7 xl:flex">
+                        <a className="event-text-link" href="#categories">Pertandingan</a>
+                        <a className="event-text-link" href="#schedule">Jadwal</a>
+                        <a className="event-text-link" href="#contact">Hubungi panitia</a>
+                    </nav>
+                    <div className="flex items-center gap-2 sm:gap-4">
+                        {hasDashboard ? (
+                            <>
+                                <Link href="/logout" method="post" as="button" className="event-text-link hidden sm:inline-flex">Keluar</Link>
+                                <Link href={dashboardHref} className="event-button event-button-primary">Dashboard</Link>
+                            </>
                         ) : (
-                            <div className="flex items-center gap-2 sm:gap-2.5">
-                                <Link
-                                    href="/login"
-                                    className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-[#44403c] dark:text-[#d6d3d1] hover:text-[#c0392b] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 border border-black/10 dark:border-white/10 transition-all shadow-sm"
-                                >
-                                    <i className="fa-solid fa-right-to-bracket text-xs text-[#c0392b]"></i>
-                                    <span>Login</span>
+                            <>
+                                <Link href="/login" className="event-text-link hidden sm:inline-flex">Masuk</Link>
+                                <Link href={registrationHref} className="event-button event-button-primary">
+                                    <span className="sm:hidden">Daftar</span><span className="hidden sm:inline">Daftar kontingen</span>
                                 </Link>
-                                <Link
-                                    href={`/event/${event.slug}/register`}
-                                    className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-[#c0392b] to-[#962d22] text-white shadow-md shadow-[#c0392b]/25 hover:from-[#d94436] hover:to-[#a93327] hover:shadow-lg hover:shadow-[#c0392b]/35 transition-all active:scale-[0.98]"
-                                >
-                                    <i className="fa-solid fa-clipboard-user"></i>
-                                    <span>Daftar Kontingen</span>
-                                </Link>
-                            </div>
+                            </>
                         )}
                     </div>
                 </div>
             </header>
 
-            {/* ══ HERO BANNER ══ */}
-            <section className="relative overflow-hidden pt-10 pb-16 lg:py-20 border-b border-black/5 dark:border-white/5 bg-gradient-to-b from-[#f2eee9] to-[#faf8f5] dark:from-[#141210] dark:to-[#0c0b0a]">
-                <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#c0392b]/10 dark:bg-[#c0392b]/15 rounded-full blur-3xl pointer-events-none -z-0"></div>
-                <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-[#d4a843]/10 dark:bg-[#d4a843]/10 rounded-full blur-3xl pointer-events-none -z-0"></div>
-
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-                    <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-                        <div>
-                        {/* Edition & Status Badges */}
-                        <div className="flex flex-wrap items-center gap-2.5 mb-4">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badge.bg}`}>
-                                <span className={`w-2 h-2 rounded-full ${badge.dot} animate-pulse`}></span>
-                                {badge.label}
-                            </span>
-                            {event.edition && (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#d4a843]/15 text-[#9e7616] dark:text-[#f5c542] border border-[#d4a843]/30">
-                                    <i className="fa-solid fa-award text-[10px]"></i>
-                                    {event.edition}
-                                </span>
-                            )}
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-medium bg-black/5 dark:bg-white/5 text-[#78716c] dark:text-[#a8a29e] border border-black/5 dark:border-white/10">
-                                <i className="fa-solid fa-link text-[10px]"></i>
-                                event/{event.slug}
-                            </span>
+            <main id="event-content">
+                <section className="event-hero" aria-labelledby="event-title">
+                    <div className="event-container">
+                        <div className="event-breadcrumb flex flex-wrap items-center gap-2 pt-7 text-xs sm:pt-9">
+                            {isHomepage ? <span>Portal kejuaraan</span> : <Link href="/" className="event-text-link">Beranda</Link>}
+                            <Icon name="fa-chevron-right" className="text-[8px]" />
+                            <span>Informasi event</span>
                         </div>
-
-                        {/* Event Title */}
-                        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#1c1917] dark:text-white tracking-tight leading-tight mb-4">
-                            {event.name}
-                        </h1>
-
-                        {/* Description */}
-                        {event.description && (
-                            <p className="text-base sm:text-lg text-[#57534e] dark:text-[#d6d3d1] leading-relaxed mb-6">
-                                {event.description}
-                            </p>
-                        )}
-
-                        {/* Key Specs */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
-                            <div className="flex items-center gap-3 p-3 rounded-xl bg-white/70 dark:bg-white/[0.04] border border-black/5 dark:border-white/5 backdrop-blur-sm">
-                                <div className="w-10 h-10 rounded-lg bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center shrink-0">
-                                    <i className="fa-solid fa-calendar-days text-base"></i>
+                        <div className="grid items-center gap-10 py-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)] lg:gap-16 lg:pb-14 lg:pt-10">
+                            <div className="min-w-0">
+                                <div className={`event-status event-status-${status.tone}`}>
+                                    <span aria-hidden="true" />{status.label}
                                 </div>
-                                <div className="min-w-0">
-                                    <span className="text-[11px] font-semibold text-[#78716c] dark:text-[#a8a29e] uppercase block">
-                                        Waktu Pelaksanaan
-                                    </span>
-                                    <span className="text-sm font-bold text-[#1c1917] dark:text-white truncate block">
-                                        {event.dates_formatted}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-3 p-3 rounded-xl bg-white/70 dark:bg-white/[0.04] border border-black/5 dark:border-white/5 backdrop-blur-sm">
-                                <div className="w-10 h-10 rounded-lg bg-[#d4a843]/10 text-[#d4a843] flex items-center justify-center shrink-0">
-                                    <i className="fa-solid fa-location-dot text-base"></i>
-                                </div>
-                                <div className="min-w-0">
-                                    <span className="text-[11px] font-semibold text-[#78716c] dark:text-[#a8a29e] uppercase block">
-                                        Tempat & Kota
-                                    </span>
-                                    <span className="text-sm font-bold text-[#1c1917] dark:text-white truncate block">
-                                        {event.venue}, {event.city}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-3 p-3 rounded-xl bg-white/70 dark:bg-white/[0.04] border border-black/5 dark:border-white/5 backdrop-blur-sm sm:col-span-2">
-                                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-                                    <i className="fa-solid fa-list-ol text-base"></i>
-                                </div>
-                                <div className="min-w-0">
-                                    <span className="text-[11px] font-semibold text-[#78716c] dark:text-[#a8a29e] uppercase block">
-                                        Batas Nomor per Atlet
-                                    </span>
-                                    <span className="text-sm font-bold text-[#1c1917] dark:text-white block">
-                                        Maksimal {event.max_match_categories_per_athlete || 1} nomor pertandingan berbeda
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* CTA Buttons */}
-                        <div className="flex flex-wrap items-center gap-3">
-                            {canAccessDashboard || isAuthenticated ? (
-                                <Link
-                                    href={dashboardHref}
-                                    className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-[#c0392b] text-white shadow-lg shadow-[#c0392b]/30 hover:bg-[#d94436] hover:shadow-xl hover:shadow-[#c0392b]/40 transition-all active:scale-[0.98]"
-                                >
-                                    <i className="fa-solid fa-gauge-high"></i>
-                                    <span>Masuk ke Dashboard</span>
-                                </Link>
-                            ) : (
-                                <>
-                                    <Link
-                                        href={`/event/${event.slug}/register`}
-                                        className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold bg-[#c0392b] text-white shadow-lg shadow-[#c0392b]/30 hover:bg-[#d94436] hover:shadow-xl hover:shadow-[#c0392b]/40 transition-all active:scale-[0.98]"
-                                    >
-                                        <i className="fa-solid fa-user-plus"></i>
-                                        <span>Daftarkan Kontingen Anda</span>
+                                <h1 id="event-title" className="event-title">{event.name}</h1>
+                                {event.description && <p className="event-intro">{event.description}</p>}
+                                <dl className="event-hero-details grid gap-5 sm:grid-cols-2">
+                                    <div className="flex items-start gap-3">
+                                        <Icon name="fa-calendar-days" className="event-detail-icon" />
+                                        <div><dt>Pelaksanaan</dt><dd>{event.dates_formatted}</dd></div>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <Icon name="fa-location-dot" className="event-detail-icon" />
+                                        <div><dt>Lokasi kejuaraan</dt><dd>{event.venue}{event.city && <span className="event-muted mt-1 block font-normal">{event.city}{event.province ? `, ${event.province}` : ''}</span>}</dd></div>
+                                    </div>
+                                </dl>
+                                <div className="mt-8 flex flex-wrap items-center gap-3">
+                                    <Link href={actionHref} className="event-button event-button-primary event-button-large">
+                                        {hasDashboard ? 'Buka dashboard' : 'Daftarkan kontingen'}
+                                        <Icon name={hasDashboard ? 'fa-gauge-high' : 'fa-arrow-right'} className="text-xs" />
                                     </Link>
-                                    <Link
-                                        href="/login"
-                                        className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-white dark:bg-white/[0.06] text-[#1c1917] dark:text-white border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 hover:border-[#c0392b]/40 transition-all shadow-sm"
-                                    >
-                                        <i className="fa-solid fa-right-to-bracket text-[#c0392b]"></i>
-                                        <span>Login Sistem</span>
-                                    </Link>
-                                </>
-                            )}
-
-                            {event.rules_doc ? (
-                                <a
-                                    href={event.rules_doc}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-white dark:bg-white/[0.06] text-[#1c1917] dark:text-white border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 transition-all"
-                                >
-                                    <i className="fa-solid fa-file-pdf text-[#c0392b]"></i>
-                                    <span>Unduh Proposal & Juknis</span>
-                                </a>
-                            ) : null}
-
-                        </div>
-                        </div>
-
-                        <div className="relative mx-auto w-full max-w-lg lg:max-w-none">
-                            <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-[#c0392b]/20 to-[#d4a843]/20 blur-xl" aria-hidden="true"></div>
-                            <div className="relative aspect-[4/5] overflow-hidden rounded-[1.75rem] border border-white/70 bg-[#17120f] shadow-2xl shadow-[#3b2018]/20 dark:border-white/10">
+                                    {event.rules_doc ? (
+                                        <a href={event.rules_doc} target="_blank" rel="noreferrer" className="event-button event-button-secondary event-button-large">
+                                            <Icon name="fa-file-arrow-down" />Proposal & juknis
+                                        </a>
+                                    ) : <a href="#categories" className="event-button event-button-secondary event-button-large">Lihat nomor pertandingan</a>}
+                                </div>
+                                {!isAuthenticated && <p className="event-login-note">Sudah memiliki akun? <Link href="/login">Masuk ke portal kontingen</Link></p>}
+                            </div>
+                            <figure className="event-poster mx-auto w-full max-w-sm lg:ml-auto lg:mr-0">
                                 {event.cover_image_url ? (
-                                    <img src={event.cover_image_url} alt={`Gambar utama ${event.name}`} className="h-full w-full object-cover" />
+                                    <a href={event.cover_image_url} target="_blank" rel="noreferrer" aria-label={`Lihat poster lengkap ${event.name}`} className="event-poster-link block">
+                                        <img src={event.cover_image_url} alt={`Poster ${event.name}`} width="800" height="1000" fetchPriority="high" className="event-poster-image" />
+                                    </a>
                                 ) : (
-                                    <div className="flex h-full flex-col justify-between bg-[radial-gradient(circle_at_70%_20%,#5a291f_0%,#211510_42%,#100e0c_100%)] p-7 text-white">
-                                        <div className="flex items-center justify-between border-b border-white/10 pb-4 text-[10px] font-bold uppercase tracking-[0.22em] text-[#f0c060]">
-                                            <span>Smart Perkemi</span>
-                                            <span>2026</span>
-                                        </div>
-                                        <div className="text-center">
-                                            <span className="font-cinzel text-8xl font-black text-[#d4a843]/25" aria-hidden="true">拳</span>
-                                            <p className="mt-4 text-xs font-bold uppercase tracking-[0.3em] text-[#f0c060]">No Image</p>
-                                            <p className="mx-auto mt-2 max-w-[220px] text-xs leading-relaxed text-white/55">Gambar resmi event belum diunggah oleh panitia.</p>
-                                        </div>
-                                        <div className="border-t border-white/10 pt-4 text-xs leading-relaxed text-white/60">
-                                            {event.venue}<br />{event.city}, {event.province}
-                                        </div>
+                                    <div className="event-poster-placeholder flex aspect-[4/5] flex-col items-center justify-center gap-6 p-8 text-center">
+                                        <img src="/android-chrome-192x192.png" width="100" height="100" alt="" />
+                                        <p className="text-xl font-semibold">{event.name}</p>
+                                        <p className="event-muted text-sm">Poster kejuaraan akan diumumkan panitia.</p>
                                     </div>
                                 )}
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-6 pt-20">
-                                    {event.cover_image_url && <p className="text-sm font-bold leading-snug text-white">{event.name}</p>}
-                                </div>
-                            </div>
+                                <figcaption className="flex items-center justify-between gap-4 px-1 pt-4 text-xs">
+                                    <span>{event.edition || 'Shorinji Kempo'}</span>
+                                    {event.cover_image_url && <Icon name="fa-up-right-from-square" className="shrink-0" />}
+                                </figcaption>
+                            </figure>
                         </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            {/* ══ METRICS BAR ══ */}
-            <section className="bg-white dark:bg-[#11100e] border-b border-black/5 dark:border-white/5 py-6">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-                        <div className="p-4 rounded-xl bg-[#faf8f5] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 text-center">
-                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e] uppercase font-semibold block mb-1">
-                                Biaya Kontingen
-                            </span>
-                            <span className="text-xl sm:text-2xl font-black text-[#c0392b]">
-                                {event.is_paid ? event.fee_per_contingent_formatted : 'Gratis'}
-                            </span>
-                        </div>
+                <section className="event-summary" aria-label="Ringkasan pendaftaran">
+                    <dl className="event-container grid grid-cols-2 lg:grid-cols-4">
+                        <div><dt>Batas pendaftaran</dt><dd>{event.registration_end_formatted || 'Hingga kuota terpenuhi'}</dd></div>
+                        <div><dt>Biaya kontingen</dt><dd>{event.is_paid ? event.fee_per_contingent_formatted : 'Gratis'}</dd></div>
+                        <div><dt>Biaya per atlet</dt><dd>{event.is_paid ? event.fee_per_athlete_formatted : 'Gratis'}</dd></div>
+                        <div><dt>Nomor per atlet</dt><dd>{event.max_match_categories_per_athlete > 0 ? `Maksimal ${event.max_match_categories_per_athlete} nomor` : 'Tidak dibatasi'}</dd></div>
+                    </dl>
+                </section>
 
-                        <div className="p-4 rounded-xl bg-[#faf8f5] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 text-center">
-                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e] uppercase font-semibold block mb-1">
-                                Biaya per Atlet
-                            </span>
-                            <span className="text-xl sm:text-2xl font-black text-[#1c1917] dark:text-white">
-                                {event.is_paid ? event.fee_per_athlete_formatted : 'Gratis'}
-                            </span>
-                        </div>
-
-                        <div className="p-4 rounded-xl bg-[#faf8f5] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 text-center">
-                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e] uppercase font-semibold block mb-1">
-                                Kelompok Umur
-                            </span>
-                            <span className="text-xl sm:text-2xl font-black text-[#1c1917] dark:text-white">
-                                {ageCategories.length} Kategori
-                            </span>
-                        </div>
-
-                        <div className="p-4 rounded-xl bg-[#faf8f5] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 text-center">
-                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e] uppercase font-semibold block mb-1">
-                                Batas Pendaftaran
-                            </span>
-                            <span className="text-sm sm:text-base font-bold text-[#d4a843] truncate block mt-1">
-                                {event.registration_end_formatted || 'Ditutup Saat Kuota Penuh'}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* ══ EVENT INFORMATION ══ */}
-            <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
-                <div className="mb-12">
-                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#c0392b]">Informasi Lengkap Event</p>
-                    <h2 className="mt-2 text-2xl font-black tracking-tight text-[#1c1917] dark:text-white sm:text-3xl">
-                        Semua informasi tersusun dalam satu halaman
-                    </h2>
-                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#57534e] dark:text-[#d6d3d1] sm:text-base">
-                        Gulir ke bawah untuk melihat kategori pertandingan, gelanggang, rundown, dan informasi biaya secara berurutan.
-                    </p>
-
-                    <nav aria-label="Navigasi informasi event" className="mt-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
-                        {[
-                            { href: '#categories', icon: 'fa-list-check', label: `Kategori (${matchCategories.length})` },
-                            { href: '#courts', icon: 'fa-square-full', label: `Gelanggang (${courts.length})` },
-                            { href: '#schedule', icon: 'fa-clock', label: `Rundown (${rundowns.length})` },
-                            { href: '#payment', icon: event.is_paid ? 'fa-credit-card' : 'fa-gift', label: event.is_paid ? 'Pembayaran' : 'Biaya Gratis' },
-                        ].map((item) => (
-                            <a
-                                key={item.href}
-                                href={item.href}
-                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2.5 text-center text-xs font-bold text-[#57534e] shadow-sm transition-colors hover:border-[#c0392b]/30 hover:bg-[#c0392b]/5 hover:text-[#c0392b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] dark:border-white/10 dark:bg-[#141210] dark:text-[#d6d3d1] dark:hover:border-[#c0392b]/50 dark:hover:bg-[#c0392b]/10 sm:text-sm"
-                            >
-                                <i className={`fa-solid ${item.icon}`} aria-hidden="true"></i>
-                                <span>{item.label}</span>
-                            </a>
-                        ))}
+                <div className="event-section-nav">
+                    <nav className="event-container flex gap-7 overflow-x-auto sm:gap-10" aria-label="Navigasi informasi event">
+                        <a href="#categories">Kategori pertandingan <span>{matchCategories.length}</span></a>
+                        <a href="#schedule">Jadwal acara</a>
+                        <a href="#courts">Lokasi & gelanggang</a>
+                        <a href="#payment">Biaya & kontak</a>
                     </nav>
                 </div>
 
-                <div className="space-y-12 lg:space-y-16">
-                    <section id="categories" className="scroll-mt-24 rounded-3xl border border-black/5 bg-white/60 p-5 shadow-sm dark:border-white/5 dark:bg-[#11100e]/70 sm:p-8 lg:p-10">
-                        <div className="mb-8 flex items-start gap-4">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#c0392b] text-sm font-black text-white shadow-md shadow-[#c0392b]/20">01</span>
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#c0392b]">Kategori Pertandingan</p>
-                                <h2 className="mt-1 text-2xl font-black text-[#1c1917] dark:text-white">Kelompok Umur & Nomor Tanding</h2>
-                                <p className="mt-2 text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">Rincian kategori yang dapat dipilih peserta pada event ini.</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                            {ageCategories.length > 0 ? (
-                                ageCategories.map((ac) => (
-                                    <div key={ac.id} className="flex h-full flex-col rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/5 dark:bg-[#141210] sm:p-6">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-[#c0392b]">{ac.age_range}</span>
-                                        <h3 className="mt-1 text-lg font-black text-[#1c1917] dark:text-white">{ac.name}</h3>
-                                        <p className="mt-3 grow text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">
-                                            {ac.description || 'Kenshi dalam rentang usia yang telah ditentukan panitia.'}
-                                        </p>
-                                        <div className="mt-5 flex items-center justify-between gap-4 border-t border-black/5 pt-4 dark:border-white/5">
-                                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e]">Tarif Kategori</span>
-                                            <span className="text-sm font-bold text-[#1c1917] dark:text-white">{ac.fee_formatted}</span>
-                                        </div>
+                <div className="event-container">
+                    {event.participant_requirements?.length > 0 && <section className="event-section"><SectionHeading title="Persyaratan peserta" description="Ketentuan usia dan sekolah yang berlaku untuk event ini." /><ul className="event-muted mt-5 list-disc space-y-2 pl-5 text-sm leading-7">{event.participant_requirements.map((line) => <li key={line}>{line}</li>)}</ul></section>}
+                    <section id="categories" className="event-section">
+                        <SectionHeading title="Kategori pertandingan" description="Temukan nomor tanding yang sesuai dengan usia dan tingkatan atlet." />
+                        <div className={`grid gap-4 ${ageCategories.length > 1 ? 'md:grid-cols-2' : ''}`}>
+                            {ageCategories.length > 0 ? ageCategories.map((category) => (
+                                <div key={category.id} className="event-eligibility grid gap-4 sm:grid-cols-[minmax(140px,0.65fr)_minmax(0,2fr)] sm:gap-8">
+                                    <div><h3>{category.name}</h3><p className="event-accent mt-1 text-sm font-medium">{category.age_range}</p></div>
+                                    <div>
+                                        <p className="event-muted text-sm leading-7">{category.description || 'Peserta mengikuti ketentuan usia yang ditetapkan panitia.'}</p>
+                                        <p className="event-muted mt-3 text-xs">Tarif kategori <span className="event-strong ml-2 font-semibold">{category.fee_formatted}</span></p>
                                     </div>
-                                ))
-                            ) : (
-                                <div className="col-span-full rounded-2xl border border-dashed border-black/10 py-10 text-center text-sm text-[#78716c] dark:border-white/10 dark:text-[#a8a29e]">
-                                    Belum ada kelompok umur yang dikonfigurasi untuk event ini.
                                 </div>
-                            )}
+                            )) : <p className="event-empty">Ketentuan kelompok umur akan diumumkan panitia.</p>}
                         </div>
 
-                        <div className="mt-10">
-                            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#d4a843]">Daftar Resmi</p>
-                                    <h3 className="mt-1 text-xl font-black text-[#1c1917] dark:text-white">Nomor Pertandingan</h3>
-                                </div>
-                                <span className="rounded-full bg-[#d4a843]/15 px-3 py-1 text-xs font-bold text-[#8a6818] dark:text-[#f5c542]">{matchCategories.length} nomor tersedia</span>
+                        <div className="mb-5 mt-9 flex flex-wrap items-center justify-between gap-4">
+                            <p className="event-muted text-sm" role="status"><strong className="event-strong font-semibold">{filteredMatches.length} nomor pertandingan</strong>{matchFilter !== 'all' ? ` ${matchFilter === 'embu' ? 'Embu' : 'Randori'}` : ' tersedia'}</p>
+                            <div className="event-filters inline-flex gap-1" role="group" aria-label="Filter jenis pertandingan">
+                                {[['all', 'Semua'], ['embu', 'Embu'], ['randori', 'Randori']].map(([value, label]) => (
+                                    <Button key={value} variant="unstyled" size="none" className="event-filter" aria-pressed={matchFilter === value} onClick={() => setMatchFilter(value)}>{label}</Button>
+                                ))}
                             </div>
-
-                            <div className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm dark:border-white/5 dark:bg-[#141210]">
-                                <TableContainer ariaLabel="Daftar nomor pertandingan">
-                                    <table className="responsive-data-table w-full whitespace-nowrap text-left text-sm">
-                                        <thead className="border-b border-black/5 bg-[#faf8f5] text-[11px] font-bold uppercase tracking-wider text-[#78716c] dark:border-white/5 dark:bg-white/[0.03] dark:text-[#a8a29e]">
-                                            <tr>
-                                                <th className="px-5 py-3.5">Nomor Pertandingan</th>
-                                                <th className="px-5 py-3.5">Tipe Tanding</th>
-                                                <th className="px-5 py-3.5">Gender</th>
-                                                <th className="px-5 py-3.5">Tingkatan Kyu/Dan</th>
-                                                <th className="px-5 py-3.5">Rentang Berat</th>
-                                                <th className="px-5 py-3.5 text-right">Kapasitas</th>
+                        </div>
+                        <div className="event-table-wrap">
+                            <TableContainer ariaLabel="Daftar nomor pertandingan, geser untuk melihat semua kolom">
+                                <table className="event-table responsive-data-table w-full text-left text-sm">
+                                    <thead><tr>
+                                        <th scope="col">Nomor pertandingan</th><th scope="col">Jenis</th><th scope="col">Peserta</th><th scope="col">Tingkatan</th><th scope="col">Berat badan</th><th scope="col" className="text-right">Kapasitas</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {filteredMatches.length > 0 ? filteredMatches.map((category) => (
+                                            <tr key={category.id}>
+                                                <th scope="row" className="whitespace-normal font-medium">{category.name}</th>
+                                                <td><span className={`event-match-type ${category.type === 'randori' ? 'event-match-randori' : ''}`}>{category.type === 'randori' ? 'Randori' : category.type === 'embu' ? 'Embu' : category.type}</span></td>
+                                                <td>{category.gender === 'male' ? 'Putra' : category.gender === 'female' ? 'Putri' : 'Campuran'}</td>
+                                                <td>{category.min_kyu && category.max_kyu ? category.min_kyu === category.max_kyu ? category.min_kyu : `${category.min_kyu} – ${category.max_kyu}` : '—'}</td>
+                                                <td>{category.weight_range || '—'}</td>
+                                                <td className="text-right">{category.capacity ? `${category.capacity} peserta` : 'Tidak dibatasi'}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-black/5 text-[#1c1917] dark:divide-white/5 dark:text-[#e7e5e4]">
-                                            {matchCategories.length > 0 ? (
-                                                matchCategories.map((mc) => (
-                                                    <tr key={mc.id} className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
-                                                        <td className="px-5 py-4 text-sm font-bold">{mc.name}</td>
-                                                        <td className="px-5 py-4">
-                                                            <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold ${mc.type === 'randori' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'}`}>
-                                                                {mc.type.toUpperCase()}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-5 py-4 capitalize">{mc.gender === 'male' ? 'Putra' : mc.gender === 'female' ? 'Putri' : 'Campuran'}</td>
-                                                        <td className="px-5 py-4 font-mono text-xs">{mc.min_kyu && mc.max_kyu ? `${mc.min_kyu} s/d ${mc.max_kyu}` : '-'}</td>
-                                                        <td className="px-5 py-4 font-mono text-xs">{mc.weight_range}</td>
-                                                        <td className="px-5 py-4 text-right font-semibold">{mc.capacity ? `${mc.capacity} Peserta` : 'Tak Terbatas'}</td>
-                                                    </tr>
-                                                ))
-                                            ) : (
-                                                <tr>
-                                                    <td colSpan={6} className="px-5 py-10 text-center text-[#78716c] dark:text-[#a8a29e]">Belum ada nomor pertandingan yang didaftarkan.</td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </TableContainer>
+                                        )) : <tr><td colSpan={6} className="event-empty">{matchCategories.length ? 'Belum ada nomor untuk jenis pertandingan ini.' : 'Nomor pertandingan akan diumumkan panitia.'}</td></tr>}
+                                    </tbody>
+                                </table>
+                            </TableContainer>
+                        </div>
+                        <p className="event-muted mt-3 text-xs sm:hidden">Geser tabel ke samping untuk melihat seluruh informasi.</p>
+                    </section>
+
+                    <section id="schedule" className="event-section">
+                        <SectionHeading title="Jadwal acara" description="Rangkaian kegiatan dari persiapan hingga penutupan kejuaraan." />
+                        {scheduleDays.length > 0 ? (
+                            <div className="event-schedule">
+                                {scheduleDays.map((day) => (
+                                    <div key={day.date} className="event-schedule-day grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-12">
+                                        <h3>{formatScheduleDate(day.date)}</h3>
+                                        <ol>
+                                            {day.sessions.map((session) => (
+                                                <li key={session.id} className="event-session grid grid-cols-[90px_minmax(0,1fr)] gap-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-7">
+                                                    <div className="event-session-time">
+                                                        <p>{session.time_only || 'Menyusul'}{session.end_time_only && <span className="block sm:inline"> – {session.end_time_only}</span>}</p>
+                                                        {session.time_only && <span className="event-muted text-xs font-normal">WIB</span>}
+                                                    </div>
+                                                    <div><h4>{session.name}</h4>{session.description && <p className="event-muted mt-2 text-sm leading-6">{session.description}</p>}</div>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : <p className="event-empty">Jadwal acara akan diumumkan panitia.</p>}
+                    </section>
+
+                    <section id="courts" className="event-section">
+                        <SectionHeading title="Lokasi & gelanggang" description="Informasi tempat pelaksanaan pertandingan." />
+                        <div className="grid gap-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14">
+                            <div className="event-venue">
+                                <Icon name="fa-location-dot" className="event-accent mb-5 text-xl" />
+                                <h3>{event.venue || 'Lokasi akan diumumkan'}</h3>
+                                <p className="event-muted mt-3 text-sm leading-6">{[event.city, event.province].filter(Boolean).join(', ')}</p>
+                                {event.dates_formatted && <p className="event-muted mt-6 border-t pt-5 text-sm" style={{ borderColor: 'var(--event-border)' }}>{event.dates_formatted}</p>}
+                            </div>
+                            <div className="event-courts">
+                                {courts.length > 0 ? courts.map((court) => (
+                                    <div key={court.id} className="event-court">
+                                        <h3>{court.name}</h3>
+                                        {court.location && <p className="event-accent mt-2 text-sm">{court.location}</p>}
+                                        {court.description && <p className="event-muted mt-3 text-sm leading-7">{court.description}</p>}
+                                    </div>
+                                )) : <p className="event-empty">Pembagian gelanggang akan diumumkan panitia.</p>}
                             </div>
                         </div>
                     </section>
 
-                    <section id="courts" className="scroll-mt-24 rounded-3xl border border-black/5 bg-white/60 p-5 shadow-sm dark:border-white/5 dark:bg-[#11100e]/70 sm:p-8 lg:p-10">
-                        <div className="mb-8 flex items-start gap-4">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#d4a843] text-sm font-black text-[#1c1917] shadow-md shadow-[#d4a843]/20">02</span>
+                    <section id="payment" className="event-section">
+                        <SectionHeading title="Biaya & informasi pendaftaran" description="Ketentuan administrasi dan narahubung panitia kejuaraan." />
+                        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-14">
                             <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9e7616] dark:text-[#f5c542]">Lokasi Pertandingan</p>
-                                <h2 className="mt-1 text-2xl font-black text-[#1c1917] dark:text-white">Gelanggang / Tatami</h2>
-                                <p className="mt-2 text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">Area yang digunakan untuk pelaksanaan pertandingan.</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                            {courts.length > 0 ? (
-                                courts.map((court) => (
-                                    <div key={court.id} className="rounded-2xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/5 dark:bg-[#141210]">
-                                        <div className="flex items-start gap-4">
-                                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#d4a843]/15 text-xl text-[#d4a843]">
-                                                <i className="fa-solid fa-shapes" aria-hidden="true"></i>
-                                            </div>
-                                            <div>
-                                                <h3 className="text-xl font-black text-[#1c1917] dark:text-white">{court.name}</h3>
-                                                <div className="mt-2 flex items-start gap-2 text-xs font-semibold leading-relaxed text-[#c0392b]">
-                                                    <i className="fa-solid fa-map-pin mt-0.5" aria-hidden="true"></i>
-                                                    <span>{court.location || 'Area Gelanggang Utama'}</span>
-                                                </div>
-                                                <p className="mt-3 text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">{court.description || 'Gelanggang pertandingan resmi sesuai standar PERKEMI.'}</p>
-                                            </div>
-                                        </div>
+                                <div className="event-payment-note flex items-start gap-4">
+                                    <Icon name={event.is_paid ? 'fa-circle-info' : 'fa-circle-check'} className="event-accent mt-1 text-lg" />
+                                    <div>
+                                        <h3>{event.is_paid ? 'Pembayaran melalui rekening resmi' : 'Pendaftaran tanpa biaya'}</h3>
+                                        <p className="event-muted mt-2 text-sm leading-7">{event.is_paid ? 'Transfer biaya kontingen dan atlet ke rekening resmi panitia. Simpan bukti transfer untuk diunggah saat verifikasi pendaftaran.' : 'Tidak ada biaya pendaftaran kontingen maupun atlet. Anda dapat melanjutkan pendaftaran tanpa mengunggah bukti pembayaran.'}</p>
                                     </div>
-                                ))
-                            ) : (
-                                <div className="col-span-full rounded-2xl border border-dashed border-black/10 py-10 text-center text-sm text-[#78716c] dark:border-white/10 dark:text-[#a8a29e]">Belum ada gelanggang / tatami yang dikonfigurasi untuk event ini.</div>
-                            )}
-                        </div>
-                    </section>
-
-                    <section id="schedule" className="scroll-mt-24 rounded-3xl border border-black/5 bg-white/60 p-5 shadow-sm dark:border-white/5 dark:bg-[#11100e]/70 sm:p-8 lg:p-10">
-                        <div className="mb-8 flex items-start gap-4">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#c0392b] text-sm font-black text-white shadow-md shadow-[#c0392b]/20">03</span>
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#c0392b]">Susunan Acara</p>
-                                <h2 className="mt-1 text-2xl font-black text-[#1c1917] dark:text-white">Jadwal & Rundown</h2>
-                                <p className="mt-2 text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">Urutan kegiatan ditampilkan lengkap dari awal sampai penutupan.</p>
-                            </div>
-                        </div>
-
-                        <div className="mx-auto max-w-4xl space-y-3">
-                            {rundowns.length > 0 ? (
-                                rundowns.map((r, idx) => (
-                                    <div key={r.id} className="flex items-start gap-4 rounded-2xl border border-black/5 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-[#141210] sm:p-5">
-                                        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-black/5 text-center dark:bg-white/5">
-                                            <span className="font-mono text-xs font-bold text-[#c0392b]">#{idx + 1}</span>
-                                            <span className="text-[10px] font-semibold uppercase text-[#78716c] dark:text-[#a8a29e]">Sesi</span>
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between">
-                                                <h3 className="text-base font-bold text-[#1c1917] dark:text-white">{r.name}</h3>
-                                                <span className="shrink-0 rounded-md bg-[#d4a843]/15 px-2.5 py-1 font-mono text-xs font-semibold text-[#9e7616] dark:text-[#f5c542]">
-                                                    {r.date_formatted}{r.end_time_only ? ` – ${r.end_time_only} WIB` : ' – selesai'}
-                                                </span>
-                                            </div>
-                                            <p className="mt-2 text-xs leading-relaxed text-[#78716c] dark:text-[#a8a29e]">{r.description || 'Sesi rangkaian acara resmi kejuaraan.'}</p>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="rounded-2xl border border-dashed border-black/10 py-10 text-center text-sm text-[#78716c] dark:border-white/10 dark:text-[#a8a29e]">Rundown dan susunan acara resmi akan segera diumumkan panitia.</div>
-                            )}
-                        </div>
-                    </section>
-
-                    <section id="payment" className="scroll-mt-24 rounded-3xl border border-black/5 bg-white/60 p-5 shadow-sm dark:border-white/5 dark:bg-[#11100e]/70 sm:p-8 lg:p-10">
-                        <div className="mb-8 flex items-start gap-4">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#d4a843] text-sm font-black text-[#1c1917] shadow-md shadow-[#d4a843]/20">04</span>
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9e7616] dark:text-[#f5c542]">Administrasi Event</p>
-                                <h2 className="mt-1 text-2xl font-black text-[#1c1917] dark:text-white">{event.is_paid ? 'Metode Pembayaran' : 'Informasi Biaya'}</h2>
-                                <p className="mt-2 text-sm leading-relaxed text-[#78716c] dark:text-[#a8a29e]">Ketentuan biaya dan narahubung resmi panitia.</p>
-                            </div>
-                        </div>
-
-                    <div className="mx-auto max-w-4xl space-y-6">
-                        {!event.is_paid ? <div className="p-6 rounded-2xl border border-emerald-200 bg-emerald-50 flex items-start gap-4 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
-                            <i className="fa-solid fa-gift text-xl text-emerald-700 mt-0.5" aria-hidden="true"></i>
-                            <div className="text-sm"><h4 className="font-bold mb-1">Registrasi Event Gratis</h4><p className="leading-relaxed text-emerald-700 dark:text-emerald-300">Tidak ada biaya kontingen maupun biaya per atlet. Peserta tidak perlu memilih metode pembayaran atau mengunggah bukti transfer.</p></div>
-                        </div> : <>
-                        <div className="p-6 rounded-2xl bg-gradient-to-r from-[#c0392b]/10 to-[#d4a843]/10 border border-[#c0392b]/20 flex items-start gap-4">
-                            <i className="fa-solid fa-circle-info text-xl text-[#c0392b] mt-0.5"></i>
-                            <div className="text-sm">
-                                <h4 className="font-bold text-[#1c1917] dark:text-white mb-1">
-                                    Petunjuk Pembayaran Pendaftaran
-                                </h4>
-                                <p className="text-[#57534e] dark:text-[#d6d3d1] leading-relaxed">
-                                    Biaya pendaftaran kontingen dan atlet hanya ditransfer melalui rekening resmi panitia di bawah ini. Harap simpan bukti transfer untuk diunggah saat verifikasi pendaftaran di portal kontingen.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {paymentMethods.length > 0 ? (
-                                paymentMethods.map((pm) => (
-                                    <div
-                                        key={pm.id}
-                                        className="p-6 rounded-2xl bg-white dark:bg-[#141210] border border-black/5 dark:border-white/5 shadow-sm"
-                                    >
-                                        <div className="flex items-center justify-between mb-4">
-                                            <span className="text-xs uppercase font-extrabold tracking-wider px-2.5 py-1 rounded-md bg-black/5 dark:bg-white/5 text-[#78716c] dark:text-[#a8a29e]">
-                                                {pm.provider || pm.name}
-                                            </span>
-                                            <span className="text-xs font-semibold text-[#d4a843] capitalize">
-                                                {pm.type}
-                                            </span>
-                                        </div>
-
-                                        <div className="mb-4">
-                                            <span className="text-xs text-[#78716c] dark:text-[#a8a29e] block mb-1">
-                                                Nomor Rekening / Akun
-                                            </span>
-                                            <div className="flex items-center justify-between p-3 rounded-xl bg-[#faf8f5] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 font-mono text-base font-bold text-[#1c1917] dark:text-white">
-                                                <span>{pm.account_number}</span>
-                                                <Button variant="unstyled" size="none"
-                                                    type="button"
-                                                    onClick={() => handleCopy(pm.account_number, pm.id)}
-                                                    className="px-2.5 py-1 rounded-md text-xs font-sans font-bold bg-[#c0392b]/15 text-[#c0392b] hover:bg-[#c0392b]/25 transition-all cursor-pointer"
-                                                >
-                                                    {copiedAccount === pm.id ? 'Tersalin!' : 'Salin'}
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        <div className="text-xs text-[#78716c] dark:text-[#a8a29e] mb-2">
-                                            Atas Nama: <strong className="text-[#1c1917] dark:text-white">{pm.account_name}</strong>
-                                        </div>
-
-                                        {pm.instructions && (
-                                            <p className="text-xs text-[#57534e] dark:text-[#a8a29e] border-t border-black/5 dark:border-white/5 pt-3 mt-3 leading-relaxed">
-                                                {pm.instructions}
-                                            </p>
-                                        )}
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="col-span-full py-12 text-center text-sm text-[#78716c] dark:text-[#a8a29e]">
-                                    Informasi rekening panitia akan ditampilkan di sini.
                                 </div>
-                            )}
-                        </div>
-                        </>}
-
-                        {/* Contact Person Card */}
-                        {(event.contact_person || event.contact_phone) && (
-                            <div className="p-6 rounded-2xl bg-white dark:bg-[#141210] border border-black/5 dark:border-white/5 flex flex-wrap items-center justify-between gap-4">
-                                <div>
-                                    <span className="text-xs text-[#78716c] dark:text-[#a8a29e] uppercase font-semibold block mb-0.5">
-                                        Narahubung / Contact Person Panitia
-                                    </span>
-                                    <span className="text-base font-bold text-[#1c1917] dark:text-white">
-                                        {event.contact_person || 'Sekretariat Panitia Kejuaraan'}
-                                    </span>
-                                </div>
-                                {event.contact_phone && (
-                                    <a
-                                        href={`https://wa.me/${event.contact_phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all"
-                                    >
-                                        <i className="fa-brands fa-whatsapp text-sm"></i>
-                                        <span>Hubungi WhatsApp ({event.contact_phone})</span>
+                                {event.is_paid && <div className="mt-6 grid gap-4">
+                                    {paymentMethods.length > 0 ? paymentMethods.map((method) => (
+                                        <div key={method.id} className="event-bank">
+                                            <div className="flex items-center justify-between gap-3"><h3>{method.provider || method.name}</h3><span className="event-muted text-xs capitalize">{method.type}</span></div>
+                                            <p className="event-muted mb-2 mt-5 text-xs">Nomor rekening / akun</p>
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="min-w-0 break-all text-lg font-semibold tabular-nums select-all">{method.account_number}</span>
+                                                <Button variant="unstyled" size="none" className="event-button event-button-secondary" onClick={() => handleCopy(method.account_number, method.id)} aria-label={`Salin nomor rekening ${method.provider || method.name}`}>{copiedAccount === method.id ? 'Tersalin' : 'Salin'}</Button>
+                                            </div>
+                                            <p className="event-muted mt-3 text-sm">Atas nama <strong className="event-strong font-medium">{method.account_name}</strong></p>
+                                            {method.instructions && <p className="event-muted mt-4 text-sm leading-6">{method.instructions}</p>}
+                                        </div>
+                                    )) : <p className="event-empty">Informasi rekening akan diumumkan panitia.</p>}
+                                    <p className="event-muted text-sm" role="status">{copyMessage}</p>
+                                </div>}
+                            </div>
+                            <aside id="contact" className="event-contact">
+                                <p className="event-muted mb-3 text-sm">Narahubung panitia</p>
+                                <h3>{event.contact_person || 'Sekretariat panitia kejuaraan'}</h3>
+                                {event.contact_phone ? (
+                                    <a href={`https://wa.me/${event.contact_phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" className="event-button event-button-secondary mt-6">
+                                        <i className="fa-brands fa-whatsapp text-lg" aria-hidden="true" />{event.contact_phone}
                                     </a>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                                ) : <p className="event-muted mt-3 text-sm">Kontak panitia akan diumumkan.</p>}
+                            </aside>
+                        </div>
                     </section>
 
-                    <section className="rounded-3xl bg-[linear-gradient(135deg,#2b1712_0%,#130f0d_58%,#24180f_100%)] px-5 py-8 text-center text-white shadow-xl shadow-[#3b2018]/15 sm:px-8 sm:py-10">
-                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f0c060]">
-                            {canAccessDashboard || isAuthenticated ? 'Akun Anda Sudah Aktif' : 'Siap Mengikuti Event?'}
-                        </p>
-                        <h2 className="mt-2 text-2xl font-black sm:text-3xl">
-                            {canAccessDashboard || isAuthenticated ? 'Lanjutkan ke dashboard Anda' : 'Daftarkan kontingen Anda sekarang'}
-                        </h2>
-                        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-white/65">
-                            {canAccessDashboard || isAuthenticated
-                                ? 'Buka menu administrasi untuk melanjutkan pengelolaan event dan data pendaftaran.'
-                                : 'Lengkapi data kontingen dan peserta sebelum batas pendaftaran berakhir.'}
-                        </p>
-                        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                            <Link href={canAccessDashboard || isAuthenticated ? dashboardHref : `/event/${event.slug}/register`} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#c0392b] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-black/20 transition-colors hover:bg-[#d94436] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                                <i className={`fa-solid ${canAccessDashboard || isAuthenticated ? 'fa-gauge-high' : 'fa-user-plus'}`} aria-hidden="true"></i>
-                                <span>{canAccessDashboard || isAuthenticated ? 'Masuk Dashboard' : 'Mulai Pendaftaran'}</span>
-                            </Link>
-                            {!isAuthenticated && (
-                                <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                                    <i className="fa-solid fa-right-to-bracket text-[#f0c060]" aria-hidden="true"></i>
-                                    <span>Sudah Punya Akun? Login</span>
-                                </Link>
-                            )}
+                    <section className="event-registration flex flex-col items-start justify-between gap-7 lg:flex-row lg:items-center">
+                        <div>
+                            <h2>{hasDashboard ? 'Kelola keikutsertaan Anda.' : 'Persiapkan kontingen Anda.'}</h2>
+                            <p>{hasDashboard ? 'Lanjutkan pengelolaan data dan pendaftaran melalui dashboard.' : 'Lengkapi data kontingen dan atlet untuk mengikuti kejuaraan.'}</p>
+                            {!hasDashboard && event.registration_end_formatted && <p className="event-registration-deadline">Pendaftaran hingga {event.registration_end_formatted}</p>}
                         </div>
+                        <Link href={actionHref} className="event-button event-button-light shrink-0">{hasDashboard ? 'Buka dashboard' : 'Daftar kontingen'}<Icon name="fa-arrow-right" className="text-xs" /></Link>
                     </section>
                 </div>
             </main>
 
-            {/* ══ FOOTER ══ */}
-            <footer className="mt-20 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#11100e] py-10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#78716c] dark:text-[#a8a29e]">
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#c0392b]"></span>
-                        <span>{event.name} &copy; {new Date().getFullYear()} Persaudaraan Shorinji Kempo Indonesia</span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <Link href="/" className="hover:text-[#c0392b] transition-colors">
-                            Portal Utama
-                        </Link>
-                        <span>&middot;</span>
-                        <Link href={isAuthenticated ? dashboardHref : '/login'} className="hover:text-[#c0392b] transition-colors">
-                            {isAuthenticated ? 'Masuk Dashboard' : 'Login Sistem'}
-                        </Link>
-                    </div>
+            <footer className="event-footer">
+                <div className="event-container flex flex-col justify-between gap-6 py-9 sm:flex-row sm:items-center">
+                    <div><p className="event-brand-name">SMART PERKEMI</p><p className="event-muted mt-2 text-xs leading-6">&copy; {new Date().getFullYear()} Persaudaraan Shorinji Kempo Indonesia</p></div>
+                    <div className="flex items-center gap-6 text-sm"><Link href="/" className="event-text-link">Beranda</Link><a href="#event-top" className="event-text-link">Kembali ke atas <Icon name="fa-arrow-up" className="ml-2 text-xs" /></a></div>
                 </div>
             </footer>
         </div>

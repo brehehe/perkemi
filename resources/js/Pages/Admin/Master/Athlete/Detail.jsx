@@ -1,3 +1,4 @@
+import SchoolFields, { schoolData } from '@/Components/UI/Forms/SchoolFields';
 import AdminLayout from '@/Layouts/AdminLayout';
 import Button from '@/Components/UI/Elements/Button';
 import Input from '@/Components/UI/Forms/Input';
@@ -7,6 +8,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function AthleteDetail({ athlete, contingents = [], kyus = [], rankHistory = [], eventHistory = [], historyScopedToEvent = false }) {
     const form = useForm({
+        ...schoolData(athlete),
         contingent_id: athlete.contingent_id,
         name: athlete.name || '',
         nik: athlete.nik || '',
@@ -88,6 +90,7 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
                                 <Input label="Berat Badan (kg)" type="number" step="0.1" value={form.data.weight} onChange={(e) => form.setData('weight', e.target.value)} error={form.errors.weight} />
                                 <Input label="Tinggi Badan (cm)" type="number" step="0.1" value={form.data.height} onChange={(e) => form.setData('height', e.target.value)} error={form.errors.height} />
                             </div>
+                            <SchoolFields form={form} />
                             <div className="flex justify-end border-t border-[#eee8df] pt-5">
                                 <Button type="submit" loading={form.processing}>Simpan Data Kenshi</Button>
                             </div>

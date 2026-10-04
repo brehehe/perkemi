@@ -11,6 +11,8 @@ use App\Models\Rundown;
 
 class PublicEventPageService
 {
+    public function __construct(private ParticipantEligibilityService $eligibility) {}
+
     public function load(Event $event): Event
     {
         return $event->load([
@@ -58,6 +60,7 @@ class PublicEventPageService
                 'fee_per_contingent' => (float) $event->fee_per_contingent,
                 'fee_per_contingent_formatted' => 'Rp '.number_format((float) $event->fee_per_contingent, 0, ',', '.'),
                 'max_match_categories_per_athlete' => (int) $event->max_match_categories_per_athlete,
+                'participant_requirements' => $this->eligibility->summary($event),
                 'status' => $event->status instanceof \BackedEnum ? $event->status->value : (string) $event->status,
                 'is_active' => (bool) $event->is_active,
                 'organizer' => $event->organizer,
@@ -73,12 +76,12 @@ class PublicEventPageService
                 'name' => $category->name,
                 'min_age' => $category->min_age,
                 'max_age' => $category->max_age,
-                'age_range' => ($category->min_age && $category->max_age)
+                'age_range' => $this->eligibility->enabled($event) ? 'Usia dan kelas mengikuti persyaratan event' : (($category->min_age && $category->max_age)
                     ? "{$category->min_age} - {$category->max_age} Tahun"
-                    : 'Usia mengikuti ketentuan event',
+                    : 'Usia mengikuti ketentuan event'),
                 'fee' => (float) $category->fee,
                 'fee_formatted' => $event->is_paid ? 'Rp '.number_format((float) $category->fee, 0, ',', '.') : 'Gratis',
-                'description' => $category->description,
+                'description' => $this->eligibility->enabled($event) ? null : $category->description,
             ]),
             'courts' => $event->courts->map(fn (EventCourt $court) => [
                 'id' => $court->id,

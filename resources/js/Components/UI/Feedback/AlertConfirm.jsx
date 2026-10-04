@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function AlertConfirm({
     isOpen = false,
@@ -10,16 +11,23 @@ export default function AlertConfirm({
     onConfirm,
     onCancel,
     isLoading = false,
+    error = '',
 }) {
+    const dialogRef = useRef(null);
+    const titleId = useId();
+    const messageId = useId();
+
     useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape' && isOpen && onCancel && !isLoading) {
-                onCancel();
-            }
+        if (!isOpen) return;
+        const dialog = dialogRef.current;
+        const previousOverflow = document.body.style.overflow;
+        dialog.showModal();
+        document.body.style.overflow = 'hidden';
+        return () => {
+            dialog.close();
+            if (previousOverflow !== 'hidden') document.body.style.overflow = previousOverflow;
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onCancel, isLoading]);
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -49,36 +57,49 @@ export default function AlertConfirm({
 
     const cfg = variants[variant] || variants.danger;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+    return createPortal(
+        <dialog ref={dialogRef} role="alertdialog" tabIndex={-1} aria-labelledby={titleId} aria-describedby={messageId} aria-busy={isLoading}
+            onCancel={(event) => { event.preventDefault(); if (!isLoading) onCancel?.(); }}
+            onKeyDown={(event) => {
+                if (event.key === 'Escape') event.stopPropagation();
+                if (event.key !== 'Tab') return;
+                const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')];
+                const first = buttons[0];
+                const last = buttons[buttons.length - 1];
+                if (!first) event.preventDefault();
+                else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            }}
+            className="m-auto max-h-[90dvh] w-full max-w-[480px] overflow-y-auto bg-transparent p-4 text-inherit backdrop:bg-black/60 backdrop:backdrop-blur-xs">
             <div
                 className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 overflow-hidden animate-in zoom-in-95 duration-200"
-                role="dialog"
-                aria-modal="true"
             >
                 <div className="flex items-start gap-4">
                     <div className={`p-3 rounded-2xl shrink-0 ${cfg.iconBg}`}>
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg aria-hidden="true" className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             {cfg.icon}
                         </svg>
                     </div>
 
                     <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                        <h3 id={titleId} className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
                             {title}
                         </h3>
-                        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        <p id={messageId} className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                             {message}
                         </p>
                     </div>
                 </div>
 
+                {error && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-relaxed text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">{error}</p>}
+
                 <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                     <button
                         type="button"
+                        autoFocus
                         disabled={isLoading}
                         onClick={onCancel}
-                        className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
+                        className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-slate-400 disabled:opacity-50"
                     >
                         {cancelText}
                     </button>
@@ -98,6 +119,6 @@ export default function AlertConfirm({
                     </button>
                 </div>
             </div>
-        </div>
+        </dialog>, document.body
     );
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EventStatus;
+use App\Enums\RegistrationStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,6 +25,16 @@ class Event extends Model
     public const AccessRoleStaff = 'staff';
 
     public const AccessRoleViewer = 'viewer';
+
+    protected static function booted(): void
+    {
+        static::updated(function (Event $event): void {
+            if ($event->wasChanged('participant_rules') && ($event->participant_rules['enabled'] ?? false)) {
+                $event->registrations()->where('status', RegistrationStatus::Verified)
+                    ->update(['status' => RegistrationStatus::Pending]);
+            }
+        });
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -59,6 +70,7 @@ class Event extends Model
         'contact_phone',
         'rules_doc',
         'cover_image_path',
+        'participant_rules',
     ];
 
     /**
@@ -69,6 +81,7 @@ class Event extends Model
     protected function casts(): array
     {
         return [
+            'participant_rules' => 'array',
             'status' => EventStatus::class,
             'start_date' => 'date',
             'end_date' => 'date',
@@ -121,11 +134,10 @@ class Event extends Model
     }
 
     /**
-     * Set this event as the currently active event and deactivate others.
+     * Make this event available in operational menus.
      */
     public function makeActive(): self
     {
-        static::query()->where('id', '!=', $this->id)->update(['is_active' => false]);
         $this->update(['is_active' => true]);
 
         return $this;

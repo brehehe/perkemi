@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin\Master;
 
 use App\Models\Contingent;
 use App\Models\Event;
+use App\Services\ParticipantEligibilityService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -30,9 +31,10 @@ class StoreAthleteRequest extends FormRequest
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
-    public function rules(): array
+    public function rules(ParticipantEligibilityService $eligibility): array
     {
         return [
+            ...$eligibility->schoolInputRules(),
             'contingent_id' => ['required', 'uuid', 'exists:contingents,id'],
             'name' => ['required', 'string', 'max:255'],
             'nik' => ['nullable', 'digits:16'],

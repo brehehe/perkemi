@@ -40,7 +40,7 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                     </div>
                     {eventOptions.length > 1 && <div className="w-full sm:w-72">
                         <Combobox label="Event" value={activeEvent.id} onChange={selectEvent} placeholder=""
-                            options={eventOptions.map((event) => ({ value: event.id, label: event.name }))} />
+                            options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))} />
                     </div>}
                 </div>
                 {eventOptions.length <= 1 && <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#faf4e9] px-3 py-1.5 text-xs font-semibold text-[#74521f]">
@@ -79,7 +79,7 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                                     <h2 className="mt-1 font-cinzel text-xl font-bold text-[#17120f]">{registration.contingent.name}</h2>
                                     <p className="mt-1 text-sm text-[#706860]">{registration.registration_number} · {registration.contingent.city}</p>
                                 </div>
-                                <Link href={`/admin/pendaftaran/registrasi/${registration.id}/detail?step=3&section=matches`}
+                                <Link href={`/admin/pendaftaran/registrasi/${registration.id}/detail?step=3&section=matches&event_id=${activeEvent.id}`}
                                     className="rounded-xl border border-[#d9c7af] px-4 py-2.5 text-sm font-semibold text-[#815a20] hover:bg-[#faf4e9]">
                                     Kelola atlet dan nomor <span aria-hidden="true">↗</span>
                                 </Link>
@@ -123,7 +123,7 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                             techniques={techniques} ageCategories={ageCategories} canManage showAdd={false} />)
                             : <div className="rounded-2xl border border-dashed border-[#d6c8b6] bg-white px-6 py-12 text-center">
                                 <p className="font-semibold text-[#17120f]">{usedCategories.length ? 'Tidak ada nomor pada filter ini.' : 'Belum ada nomor pertandingan untuk kontingen ini.'}</p>
-                                {!usedCategories.length && <Link href={`/admin/pendaftaran/registrasi/${registration.id}/detail?step=3&section=matches`}
+                                {!usedCategories.length && <Link href={`/admin/pendaftaran/registrasi/${registration.id}/detail?step=3&section=matches&event_id=${activeEvent.id}`}
                                     className="mt-3 inline-block text-sm font-semibold text-[#a93226] hover:underline">Pilih atlet dan nomor pertandingan →</Link>}
                             </div>}
                     </> : <div className="rounded-2xl border border-dashed border-[#d6c8b6] bg-white px-6 py-16 text-center text-sm text-[#706860]">

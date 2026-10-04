@@ -552,12 +552,10 @@ export default function Dashboard({
                         </Button>
                         <Button
                             variant="primary"
-                            onClick={() => {
-                                alert(`Membuka berkas ${selectedRegistration?.registration_number}`);
-                            }}
+                            onClick={() => router.visit(`/admin/pendaftaran/registrasi/${selectedRegistration.id}/detail`)}
                         >
-                            <i className="fa-solid fa-print mr-1.5"></i>
-                            Cetak Bukti Registrasi
+                            <i className="fa-solid fa-arrow-up-right-from-square mr-1.5" aria-hidden="true"></i>
+                            Buka Detail Registrasi
                         </Button>
                     </div>
                 }

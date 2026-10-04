@@ -44,6 +44,7 @@ Route::post('/admin/tenant/exit', [TenantAccessController::class, 'exit'])->name
 Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.')->group(function () {
     Route::redirect('/', '/kontingen/registrasi')->name('index');
     Route::get('registrasi', [ContingentPortalController::class, 'registration'])->name('registrasi');
+    Route::get('registrasi/event/{event}/mulai', [ContingentPortalController::class, 'startRegistration'])->name('registrasi.start');
     Route::get('registrasi/{registration}', [ContingentPortalController::class, 'openRegistration'])->name('registrasi.detail');
     Route::get('jadwal', [ContingentPortalController::class, 'schedule'])->name('jadwal');
     Route::get('hasil', [ContingentPortalController::class, 'results'])->name('hasil');
@@ -73,6 +74,7 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::put('event/{event}/dates', [EventDetailController::class, 'updateDates'])->name('event.update.dates');
     Route::put('event/{event}/fees', [EventDetailController::class, 'updateFees'])->name('event.update.fees');
     Route::put('event/{event}/tournament-settings', [EventDetailController::class, 'updateTournamentSettings'])->name('event.update.tournament-settings');
+    Route::put('event/{event}/participant-rules', [EventDetailController::class, 'updateParticipantRules'])->name('event.update.participant-rules');
 
     // Event Age Categories (Kelompok Umur & Tarif)
     Route::post('event/{event}/age-category', [EventDetailController::class, 'storeAgeCategory'])->name('event.age-category.store');
@@ -181,6 +183,8 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
     Route::delete('registrasi/{registration}/officials/{official}', [RegistrationWizardController::class, 'deleteOfficial'])->name('registrasi.wizard.officials.delete');
     Route::post('registrasi/{registration}/athletes', [RegistrationWizardController::class, 'saveAthlete'])->name('registrasi.wizard.athletes.store');
     Route::get('registrasi/{registration}/athletes/{athlete}/photo', [RegistrationWizardController::class, 'athletePhoto'])->name('registrasi.wizard.athletes.photo');
+    Route::get('registrasi/{registration}/athletes/{athlete}/school-document', [RegistrationWizardController::class, 'schoolDocument'])->name('registrasi.wizard.athletes.school-document');
+    Route::post('registrasi/{registration}/athletes/{athlete}/verify-school', [RegistrationWizardController::class, 'verifySchool'])->name('registrasi.wizard.athletes.verify-school');
     Route::post('registrasi/{registration}/athletes/copy', [RegistrationWizardController::class, 'copyAthlete'])->name('registrasi.wizard.athletes.copy');
     Route::post('registrasi/{registration}/athletes/{athlete}', [RegistrationWizardController::class, 'saveAthlete'])->name('registrasi.wizard.athletes.update');
     Route::patch('registrasi/{registration}/entries/{entry}/team', [RegistrationWizardController::class, 'updateTeam'])->name('registrasi.wizard.team');

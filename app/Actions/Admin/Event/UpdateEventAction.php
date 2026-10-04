@@ -12,7 +12,7 @@ class UpdateEventAction
     ) {}
 
     /**
-     * Execute event update with active status management.
+     * Execute an event update.
      *
      * @param  array<string, mixed>  $data
      */
@@ -25,13 +25,7 @@ class UpdateEventAction
             $data['fee_per_contingent'] = 0;
         }
 
-        $isActive = ! empty($data['is_active']);
-
-        return DB::transaction(function () use ($event, $data, $isActive, $wasPaid): Event {
-            if ($isActive && ! $event->is_active) {
-                Event::where('id', '!=', $event->id)->update(['is_active' => false]);
-            }
-
+        return DB::transaction(function () use ($event, $data, $wasPaid): Event {
             $event->update($data);
 
             if (! $event->is_paid) {

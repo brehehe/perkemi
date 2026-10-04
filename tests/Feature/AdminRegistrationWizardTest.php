@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RegistrationStatus;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
@@ -260,4 +261,140 @@ test('logged in contingent sees its own data and can continue the wizard', funct
         'phone' => '081234567890', 'email' => 'owner@example.com', 'address' => 'Jalan Kempo',
     ])->assertRedirect()->assertSessionHasNoErrors();
     expect($owned->fresh()->email)->toBe('owner@example.com');
+});
+
+test('verified registration is locked for its contingent but remains editable by event organizers', function () {
+    config()->set('app.tenant_base_domain', 'localhost');
+    $owner = User::factory()->create();
+    $organizer = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Locked Cup',
+        'slug' => 'locked-cup',
+        'tenant_subdomain' => 'locked-cup',
+        'venue' => 'GOR A',
+        'city' => 'Surabaya',
+        'start_date' => '2026-12-01',
+        'end_date' => '2026-12-03',
+        'fee_per_contingent' => 250000,
+        'fee_per_athlete' => 100000,
+    ]);
+    $event->users()->attach($organizer, ['access_role' => Event::AccessRoleResponsible]);
+    $ageCategory = EventAgeCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Remaja',
+        'min_age' => 14,
+        'max_age' => 17,
+        'is_active' => true,
+    ]);
+    $matchCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'age_category_id' => $ageCategory->id,
+        'name' => 'Randori Putra',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 32,
+        'max_athletes_per_team' => 1,
+        'is_active' => true,
+    ]);
+    $paymentMethod = PaymentMethod::create([
+        'name' => 'Transfer BCA',
+        'code' => 'locked-bca',
+        'type' => 'bank_transfer',
+        'is_active' => true,
+    ]);
+    $event->paymentMethods()->attach($paymentMethod);
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $owner->id,
+        'name' => 'Dojo Terkunci',
+        'city' => 'Surabaya',
+        'manager_name' => 'Sensei Pemilik',
+        'phone' => '081234567890',
+        'email' => 'locked@example.com',
+        'address' => 'Jalan Kempo 1',
+    ]);
+    $registration = Registration::create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingent->id,
+        'registration_number' => 'REG-LOCKED-001',
+        'status' => RegistrationStatus::Verified,
+        'verification_code' => 123,
+        'total_amount' => 250000,
+        'final_amount' => 250123,
+        'payment_method_id' => $paymentMethod->id,
+        'payment_status' => 'verified',
+        'payment_amount' => 250123,
+        'payment_reference' => 'REF-AWAL',
+    ]);
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'event_age_category_id' => $ageCategory->id,
+        'name' => 'Atlet Terkunci',
+        'gender' => 'male',
+        'birth_date' => '2010-01-01',
+        'kyu_dan' => 'Kyu 2',
+        'weight' => 50,
+    ]);
+    $base = "http://locked-cup.localhost/admin/pendaftaran/registrasi/{$registration->id}";
+    $contingentPayload = [
+        'city' => 'Malang',
+        'name' => 'Dojo Diubah',
+        'manager_name' => 'Sensei Baru',
+        'phone' => '081234567899',
+        'email' => 'changed@example.com',
+        'address' => 'Jalan Baru',
+    ];
+
+    $this->actingAs($owner)->get("{$base}/detail?step=1")
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Registration/WizardDetail')
+            ->where('registrationLocked', true)
+            ->where('canManage', false));
+
+    $this->actingAs($owner)->patch("{$base}/contingent", $contingentPayload)
+        ->assertSessionHasErrors('registration');
+    $this->actingAs($owner)->post("{$base}/officials", [
+        'name' => 'Pelatih Baru',
+        'role' => 'Pelatih',
+        'phone' => '081234567891',
+    ])->assertSessionHasErrors('registration');
+    $this->actingAs($owner)->post("{$base}/athletes", [
+        'name' => 'Atlet Baru',
+        'gender' => 'male',
+        'birth_date' => '2010-01-01',
+        'event_age_category_id' => $ageCategory->id,
+        'kyu_dan' => 'Kyu 2',
+        'category_ids' => [],
+    ])->assertSessionHasErrors('registration');
+    $this->actingAs($owner)->post("{$base}/recalculate")
+        ->assertSessionHasErrors('registration');
+    $this->actingAs($owner)->post("{$base}/payment", [
+        'payment_method_id' => $paymentMethod->id,
+        'payment_amount' => 999999,
+        'payment_reference' => 'REF-DIUBAH',
+    ])->assertSessionHasErrors('registration');
+    $this->actingAs($owner)->post("{$base}/athletes/{$athlete->id}/match-category", [
+        'event_match_category_id' => $matchCategory->id,
+    ])->assertSessionHasErrors('registration');
+
+    expect($contingent->fresh()->name)->toBe('Dojo Terkunci');
+    expect($registration->fresh()->payment_reference)->toBe('REF-AWAL');
+    expect(Official::query()->where('contingent_id', $contingent->id)->count())->toBe(0);
+    expect(Athlete::query()->where('contingent_id', $contingent->id)->count())->toBe(1);
+    expect(AthleteMatchCategoryEntry::query()->where('athlete_id', $athlete->id)->count())->toBe(0);
+
+    $this->actingAs($organizer)->get("{$base}/detail?step=1")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('registrationLocked', false)
+            ->where('canManage', true));
+    $this->actingAs($organizer)->patch("{$base}/contingent", $contingentPayload)
+        ->assertSessionHasNoErrors();
+    expect($contingent->fresh()->name)->toBe('Dojo Diubah');
+
+    $registration->update(['status' => RegistrationStatus::Rejected]);
+    $this->actingAs($owner)->patch("{$base}/contingent", [
+        ...$contingentPayload,
+        'name' => 'Dojo Revisi',
+    ])->assertSessionHasNoErrors();
+    expect($contingent->fresh()->name)->toBe('Dojo Revisi');
 });

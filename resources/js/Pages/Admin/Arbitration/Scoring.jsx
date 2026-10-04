@@ -3,9 +3,11 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Input } from '@/Components/UI';
 import { Head } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
+import Notification from '@/Components/UI/Feedback/Notification';
 
 export default function ArbitrationScoring({ activeEvent }) {
     const [mode, setMode] = useState('randori'); // 'randori' or 'embu'
+    const [notification, setNotification] = useState(null);
 
     // Randori Scoring State
     const [akaScore, setAkaScore] = useState(0);
@@ -26,7 +28,7 @@ export default function ArbitrationScoring({ activeEvent }) {
             }, 1000);
         } else if (secondsLeft === 0 && timerRunning) {
             setTimerRunning(false);
-            alert('Waktu Pertandingan Habis (Yame / Sore-made)!');
+            setNotification({ title: 'Waktu pertandingan habis', message: 'Yame / Sore-made. Timer telah dihentikan.', variant: 'warning' });
         }
         return () => clearInterval(interval);
     }, [timerRunning, secondsLeft]);
@@ -56,6 +58,7 @@ export default function ArbitrationScoring({ activeEvent }) {
     return (
         <AdminLayout title="Penilaian Scoring Digital">
             <Head title="Scoring Digital | Smart Perkemi" />
+            {notification && <div className="fixed right-4 top-20 z-50 max-w-[calc(100vw-2rem)]"><Notification {...notification} duration={0} onClose={() => setNotification(null)} /></div>}
 
             <div className="space-y-6">
                 {/* Header Banner */}
@@ -286,10 +289,10 @@ export default function ArbitrationScoring({ activeEvent }) {
                             <span>Sistem kalkulasi: Nilai tertinggi ({maxScore}) dan terendah ({minScore}) otomatis dibuang untuk objektivitas penilaian.</span>
                             <Button variant="unstyled" size="none"
                                 type="button"
-                                onClick={() => alert('Nilai resmi berhasil disimpan ke rekapitulasi!')}
+                                onClick={() => setNotification({ title: 'Ringkasan nilai Embu', message: `Nilai akhir: ${finalEmbuScore}. Nilai tertinggi (${maxScore}) dan terendah (${minScore}) dikeluarkan. Ringkasan ini belum disimpan ke hasil pertandingan.`, variant: 'info' })}
                                 className="px-4 py-2 text-xs font-semibold bg-[#0f0d0b] hover:bg-[#25201b] text-white rounded-lg transition-colors cursor-pointer"
                             >
-                                <i className="fa-solid fa-floppy-disk mr-1.5 text-[#d4a843]"></i> Simpan Skor
+                                <i className="fa-solid fa-calculator mr-1.5 text-[#d4a843]" aria-hidden="true"></i> Ringkasan Nilai
                             </Button>
                         </div>
                     </div>

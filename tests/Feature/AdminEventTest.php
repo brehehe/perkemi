@@ -38,8 +38,19 @@ test('admin master event index page can be rendered with complete props', functi
     );
 });
 
-test('admin can create a new event via post', function () {
+test('admin can create a concurrent active event with the same dates', function () {
     $user = User::factory()->create();
+
+    $existingEvent = Event::create([
+        'name' => 'Event Aktif Bersamaan',
+        'slug' => 'event-aktif-bersamaan',
+        'venue' => 'GOR Pembanding',
+        'city' => 'Kabupaten Malang',
+        'start_date' => '2026-11-10',
+        'end_date' => '2026-11-12',
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
 
     $payload = [
         'name' => 'Kejurda Shorinji Kempo Malang 2026',
@@ -71,6 +82,7 @@ test('admin can create a new event via post', function () {
         'city' => 'Kabupaten Malang',
         'is_active' => true,
     ]);
+    expect($existingEvent->fresh()->is_active)->toBeTrue();
 });
 
 test('admin can create a free event and submitted fees are normalized to zero', function () {
@@ -138,7 +150,7 @@ test('admin can update an existing event', function () {
     ]);
 });
 
-test('admin can activate an event and previous active is deactivated', function () {
+test('admin can activate an event without deactivating another event on the same dates', function () {
     $user = User::factory()->create();
 
     $event1 = Event::create([
@@ -158,8 +170,8 @@ test('admin can activate an event and previous active is deactivated', function 
         'slug' => 'event-2',
         'venue' => 'GOR 2',
         'city' => 'Kota 2',
-        'start_date' => '2026-07-01',
-        'end_date' => '2026-07-03',
+        'start_date' => '2026-05-01',
+        'end_date' => '2026-05-03',
         'fee_per_athlete' => 150000,
         'status' => 'open_registration',
         'is_active' => false,
@@ -169,7 +181,7 @@ test('admin can activate an event and previous active is deactivated', function 
 
     $response->assertRedirect(route('admin.master.event.index'));
 
-    expect($event1->fresh()->is_active)->toBeFalse();
+    expect($event1->fresh()->is_active)->toBeTrue();
     expect($event2->fresh()->is_active)->toBeTrue();
 });
 

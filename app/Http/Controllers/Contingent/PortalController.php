@@ -35,6 +35,44 @@ class PortalController extends Controller
             ->whereBelongsTo($event)
             ->whereHas('athlete', fn ($query) => $query->whereBelongsTo($contingent))
             ->count();
+        $registrationEvents = Contingent::query()
+            ->where('user_id', $request->user()->id)
+            ->with([
+                'event:id,name,slug,start_date,end_date,status,is_active,is_paid',
+                'registrations' => fn ($query) => $query->latest(),
+            ])
+            ->orderByDesc(Event::select('is_active')->whereColumn('events.id', 'contingents.event_id'))
+            ->orderByDesc('created_at')
+            ->get()
+            ->filter(fn (Contingent $ownedContingent): bool => $ownedContingent->event instanceof Event)
+            ->map(function (Contingent $ownedContingent) use ($event): array {
+                $ownedEvent = $ownedContingent->event;
+                $existingRegistration = $ownedContingent->registrations->first();
+
+                return [
+                    'id' => $ownedEvent->id,
+                    'name' => $ownedEvent->name,
+                    'slug' => $ownedEvent->slug,
+                    'start_date' => $ownedEvent->start_date?->format('Y-m-d'),
+                    'end_date' => $ownedEvent->end_date?->format('Y-m-d'),
+                    'status' => $ownedEvent->status->value,
+                    'status_label' => $ownedEvent->status->label(),
+                    'is_active' => (bool) $ownedEvent->is_active,
+                    'is_paid' => (bool) $ownedEvent->is_paid,
+                    'contingent_name' => $ownedContingent->name,
+                    'is_current' => $ownedEvent->is($event),
+                    'registration' => $existingRegistration ? [
+                        ...$existingRegistration->only(['id', 'registration_number', 'status', 'updated_at']),
+                        'status_label' => $existingRegistration->status->label(),
+                    ] : null,
+                    'action_label' => $existingRegistration ? 'Lihat Registrasi' : 'Mulai Registrasi',
+                    'action_url' => $existingRegistration
+                        ? route('kontingen.registrasi.detail', $existingRegistration)
+                        : route('kontingen.registrasi.start', $ownedEvent),
+                ];
+            })
+            ->unique('id')
+            ->values();
 
         return $this->render('registration', $contingent, $event, $eventOptions, [
             'registration' => $registration ? [
@@ -60,7 +98,7 @@ class PortalController extends Controller
                 'match_entries' => $entryCount,
                 'is_paid' => (bool) $event->is_paid,
             ],
-            'create_url' => route('admin.pendaftaran.registrasi.create', ['event_id' => $event->id]),
+            'registration_events' => $registrationEvents,
         ]);
     }
 
@@ -224,6 +262,28 @@ class PortalController extends Controller
         ]);
     }
 
+    public function startRegistration(Request $request, Event $event): RedirectResponse
+    {
+        $contingent = Contingent::query()
+            ->whereBelongsTo($event)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+        $registration = Registration::query()
+            ->whereBelongsTo($event)
+            ->whereBelongsTo($contingent)
+            ->latest()
+            ->first();
+
+        if ($registration instanceof Registration) {
+            return $this->openRegistration($request, $registration);
+        }
+
+        $request->session()->put('tenant_event_id', $event->id);
+        $request->session()->put('tenant_event_slug', $event->slug);
+
+        return redirect()->route('admin.pendaftaran.registrasi.create', ['event_id' => $event->id]);
+    }
+
     /**
      * @return array{Contingent, Event, Collection<int, array<string, mixed>>}
      */
@@ -237,8 +297,19 @@ class PortalController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        $requestedEventId = $request->query('event_id');
+        abort_unless($requestedEventId === null || is_string($requestedEventId), 404, 'Event kontingen tidak ditemukan.');
+
         $tenantEventId = $request->session()->get('tenant_event_id');
-        $contingent = $contingents->firstWhere('event_id', $tenantEventId)
+        $requestedContingent = $requestedEventId
+            ? $contingents->firstWhere('event_id', $requestedEventId)
+            : null;
+        if ($requestedEventId) {
+            abort_unless($requestedContingent instanceof Contingent, 404, 'Event kontingen tidak ditemukan.');
+        }
+
+        $contingent = $requestedContingent
+            ?? $contingents->firstWhere('event_id', $tenantEventId)
             ?? $contingents->first(fn (Contingent $item): bool => (bool) $item->event?->is_active)
             ?? $contingents->first();
 
@@ -254,7 +325,12 @@ class PortalController extends Controller
                 'id' => $item->event->id,
                 'name' => $item->event->name,
                 'slug' => $item->event->slug,
+                'start_date' => $item->event->start_date?->format('Y-m-d'),
+                'end_date' => $item->event->end_date?->format('Y-m-d'),
+                'status' => $item->event->status->value,
+                'status_label' => $item->event->status->label(),
                 'is_active' => (bool) $item->event->is_active,
+                'contingent_name' => $item->name,
             ])
             ->unique('id')
             ->values();
@@ -280,10 +356,14 @@ class PortalController extends Controller
                     'id', 'name', 'city', 'manager_name', 'phone', 'email', 'address',
                     'athletes_count', 'officials_count',
                 ]),
-                'event' => $event->only([
-                    'id', 'name', 'slug', 'start_date', 'end_date', 'status', 'is_paid',
-                    'fee_per_athlete', 'fee_per_contingent',
-                ]),
+                'event' => [
+                    ...$event->only([
+                        'id', 'name', 'slug', 'start_date', 'end_date', 'is_paid',
+                        'fee_per_athlete', 'fee_per_contingent',
+                    ]),
+                    'status' => $event->status->value,
+                    'status_label' => $event->status->label(),
+                ],
                 'event_options' => $eventOptions,
             ],
             ...$props,

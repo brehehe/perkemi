@@ -1,3 +1,6 @@
+import SchoolFields, { schoolDefaults, schoolData } from '@/Components/UI/Forms/SchoolFields';
+import SchoolVerification from './SchoolVerification';
+import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import AdminLayout from '@/Layouts/AdminLayout';
 import Button from '@/Components/UI/Elements/Button';
 import Checkbox from '@/Components/UI/Forms/Checkbox';
@@ -26,28 +29,33 @@ function Field({ label, name, form, required = false, type = 'text', className =
         containerClassName={className || 'w-full'} {...props} />;
 }
 
-function ContingentStep({ registration, next }) {
+function ContingentStep({ registration, next, readOnly = false }) {
     const contingent = registration.contingent;
     const form = useForm({ city: contingent.city || '', name: contingent.name || '', manager_name: contingent.manager_name || '',
         phone: contingent.phone || '', email: contingent.email || '', address: contingent.address || '' });
     const submit = (event) => { event.preventDefault(); form.patch(`/admin/pendaftaran/registrasi/${registration.id}/contingent`, { preserveScroll: true, onSuccess: next }); };
     return <form onSubmit={submit} className="space-y-5">
         <p className="rounded-xl bg-[#fcf6ed] p-4 text-sm text-[#654d33]">Event: <strong>{registration.event.name}</strong>. Profil kontingen ini dipakai untuk registrasi event tersebut.</p>
-        <div className="grid gap-5 md:grid-cols-2">
-            <Field label="Kabupaten / Kota" name="city" form={form} required />
-            <Field label="Nama Kontingen" name="name" form={form} required />
-            <Field label="Manager Kontingen" name="manager_name" form={form} required />
-            <Field label="Nomor HP / WA Manager" name="phone" form={form} required />
-            <Field label="Email" name="email" form={form} type="email" required />
+        <fieldset disabled={readOnly} className="grid gap-5 disabled:opacity-75 md:grid-cols-2">
+            <Field label="Kabupaten / Kota" name="city" form={form} required disabled={readOnly} />
+            <Field label="Nama Kontingen" name="name" form={form} required disabled={readOnly} />
+            <Field label="Manager Kontingen" name="manager_name" form={form} required disabled={readOnly} />
+            <Field label="Nomor HP / WA Manager" name="phone" form={form} required disabled={readOnly} />
+            <Field label="Email" name="email" form={form} type="email" required disabled={readOnly} />
             <Textarea id="address" label="Alamat" required rows={3} value={form.data.address}
                 onChange={(event) => form.setData('address', event.target.value)} error={form.errors.address}
-                containerClassName="md:col-span-2" />
-        </div>
-        <div className="flex justify-end"><Button type="submit" loading={form.processing}>Simpan & Lanjut ke Official →</Button></div>
+                containerClassName="md:col-span-2" disabled={readOnly} />
+        </fieldset>
+        <div className="flex justify-end">{readOnly
+            ? <Button type="button" onClick={next}>Lihat Official →</Button>
+            : <Button type="submit" loading={form.processing}>Simpan & Lanjut ke Official →</Button>}</div>
     </form>;
 }
 
-function OfficialStep({ registration, officials, availableOfficials, next }) {
+function OfficialStep({ registration, officials, availableOfficials, next, readOnly = false }) {
+    const [deletingOfficial, setDeletingOfficial] = useState(null);
+    const [deleteError, setDeleteError] = useState('');
+    const [deleting, setDeleting] = useState(false);
     const [editingId, setEditingId] = useState('');
     const [copyId, setCopyId] = useState('');
     const [copyError, setCopyError] = useState('');
@@ -55,10 +63,21 @@ function OfficialStep({ registration, officials, availableOfficials, next }) {
     const base = `/admin/pendaftaran/registrasi/${registration.id}/officials`;
     const edit = (official) => { setEditingId(official.id); form.setData({ name: official.name, role: official.role, phone: official.phone || '', gender: official.gender || 'L' }); };
     const reset = () => { setEditingId(''); form.setData({ name: '', role: '', phone: '', gender: 'L' }); form.clearErrors(); };
+    const deleteOfficial = () => {
+        if (!deletingOfficial || deleting) return;
+        setDeleting(true);
+        setDeleteError('');
+        router.delete(`${base}/${deletingOfficial.id}`, {
+            preserveScroll: true,
+            onSuccess: () => { if (editingId === deletingOfficial.id) reset(); setDeletingOfficial(null); },
+            onError: (errors) => setDeleteError(Object.values(errors).flat().join(' ')),
+            onFinish: () => setDeleting(false),
+        });
+    };
     const submit = (event) => { event.preventDefault(); form.post(editingId ? `${base}/${editingId}` : base, { preserveScroll: true, onSuccess: reset }); };
     return <div className="space-y-6">
-        <p className="text-sm text-slate-600">Pilih official yang sudah tercatat di bawah ini untuk mengubahnya, atau tambahkan official baru. Anda dapat mendaftarkan lebih dari satu pendamping.</p>
-        {availableOfficials.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:flex-row md:items-end">
+        <p className="text-sm text-slate-600">{readOnly ? 'Official pendamping ditampilkan sebagai arsip registrasi yang telah diverifikasi.' : 'Pilih official yang sudah tercatat di bawah ini untuk mengubahnya, atau tambahkan official baru. Anda dapat mendaftarkan lebih dari satu pendamping.'}</p>
+        {!readOnly && availableOfficials.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:flex-row md:items-end">
             <div className="flex-1"><Combobox label="Ambil Official dari Master" value={copyId} onChange={setCopyId}
                 options={availableOfficials.map((item) => ({ value: item.id, label: `${item.name} · ${item.role} · ${item.contingent?.name || 'Kontingen lain'}` }))} error={copyError} /></div>
             <Button type="button" disabled={!copyId} onClick={() => { setCopyError(''); router.post(`${base}/copy`, { official_id: copyId },
@@ -66,25 +85,29 @@ function OfficialStep({ registration, officials, availableOfficials, next }) {
         </div>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{officials.map((official) => <div key={official.id} className="rounded-xl border border-[#e8e1d7] p-4">
             <p className="font-semibold text-[#17120f]">{official.name}</p><p className="mt-1 text-sm text-slate-600">{official.role} · {official.phone || 'Kontak belum diisi'}</p>
-            <div className="mt-3 flex gap-3 text-xs font-semibold"><Button variant="unstyled" size="none" type="button" onClick={() => edit(official)} className="text-[#a93226] hover:underline">Edit</Button>
-                <Button variant="unstyled" size="none" type="button" onClick={() => { if (window.confirm(`Hapus ${official.name}?`)) router.delete(`${base}/${official.id}`, { preserveScroll: true }); }} className="text-rose-700 hover:underline">Hapus</Button></div>
+            {!readOnly && <div className="mt-3 flex gap-3 text-xs font-semibold"><Button variant="unstyled" size="none" type="button" onClick={() => edit(official)} className="text-[#a93226] hover:underline">Edit</Button>
+                <Button variant="unstyled" size="none" type="button" onClick={() => { setDeleteError(''); setDeletingOfficial(official); }} className="text-rose-700 hover:underline">Hapus</Button></div>
+            }
         </div>)}</div>
-        <form onSubmit={submit} className="rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:p-5">
+        {!readOnly && <form onSubmit={submit} className="rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:p-5">
             <h3 className="mb-4 font-semibold text-[#17120f]">{editingId ? 'Ubah Official' : 'Tambah Official'}</h3>
             <div className="grid gap-4 md:grid-cols-3"><Field label="Nama Official" name="name" form={form} required />
                 <Field label="Jabatan" name="role" form={form} required placeholder="Pelatih, Pendamping, Medis..." />
                 <Field label="Kontak HP" name="phone" form={form} required /></div>
             <div className="mt-4 flex gap-2"><Button type="submit" loading={form.processing}>{editingId ? 'Simpan Perubahan' : '+ Tambah Official'}</Button>
                 {editingId && <Button variant="unstyled" size="none" type="button" onClick={reset} className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600">Batal</Button>}</div>
-        </form>
-        <div className="flex justify-end"><Button type="button" onClick={next}>Lanjut ke Atlet →</Button></div>
+        </form>}
+        <div className="flex justify-end"><Button type="button" onClick={next}>{readOnly ? 'Lihat Atlet' : 'Lanjut ke Atlet'} →</Button></div>
+        {!readOnly && <AlertConfirm isOpen={Boolean(deletingOfficial)} title="Hapus official?" message={`${deletingOfficial?.name || 'Official'} akan dihapus dari kontingen ini.`}
+            confirmText="Hapus official" isLoading={deleting} error={deleteError} onConfirm={deleteOfficial} onCancel={() => { if (!deleting) setDeletingOfficial(null); }} />
+        }
     </div>;
 }
 
-const emptyAthlete = { name: '', nik: '', kenshi_number: '', gender: 'male', birth_place: '', birth_date: '', blood_type: '',
+const emptyAthlete = { ...schoolDefaults, school_document: null, name: '', nik: '', kenshi_number: '', gender: 'male', birth_place: '', birth_date: '', blood_type: '',
     dojo_name: '', event_age_category_id: '', joined_age_category_id: '', kyu_dan: '', bpjs_number: '', bpjs_status: '', weight: '', photo: null, category_ids: [], promoted_category_ids: [] };
 
-function AthleteStep({ registration, athletes, categories, techniques, teamTechniques, kyus, ageCategories, next, canManage, focusedCategoryId }) {
+function AthleteStep({ registration, athletes, categories, techniques, teamTechniques, kyus, ageCategories, next, canManage, focusedCategoryId, readOnly = false }) {
     const [editingId, setEditingId] = useState('');
     const [showForm, setShowForm] = useState(false);
     const [joinOtherAgeGroup, setJoinOtherAgeGroup] = useState(false);
@@ -115,7 +138,7 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
         const joinedGroupId = savedTargetGroupIds.length === 1 ? savedTargetGroupIds[0] : '';
         setEditingId(athlete.id);
         setJoinOtherAgeGroup(promotedEntries.length > 0);
-        form.setData({ ...emptyAthlete, name: athlete.name || '', nik: athlete.nik || '', kenshi_number: athlete.kenshi_number || '', gender: athlete.gender || 'male',
+        form.setData({ ...emptyAthlete, ...schoolData(athlete), name: athlete.name || '', nik: athlete.nik || '', kenshi_number: athlete.kenshi_number || '', gender: athlete.gender || 'male',
             birth_place: athlete.birth_place || '', birth_date: dateOnly(athlete.birth_date), blood_type: athlete.blood_type || '', dojo_name: athlete.dojo_name || '',
             event_age_category_id: athlete.event_age_category_id || '',
             joined_age_category_id: joinedGroupId,
@@ -161,7 +184,7 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
     const save = (event) => {
         event.preventDefault();
         form.post(`/admin/pendaftaran/registrasi/${registration.id}/athletes${editingId ? `/${editingId}` : ''}`,
-            { preserveScroll: true, forceFormData: true, onSuccess: () => { setShowForm(false); setEditingId(''); setJoinOtherAgeGroup(false); form.setData(emptyAthlete); } });
+            { preserveScroll: true, forceFormData: true, onError: () => requestAnimationFrame(() => formRef.current?.querySelector('[role=alert]')?.focus()), onSuccess: () => { setShowForm(false); setEditingId(''); setJoinOtherAgeGroup(false); form.setData(emptyAthlete); } });
     };
     const activeCategories = categories.filter((category) => athletes.some((athlete) => (athlete.match_category_entries || []).some((entry) => entry.event_match_category_id === category.id)));
     const orderedCategories = [...activeCategories].sort((first, second) => Number(second.id === focusedCategoryId) - Number(first.id === focusedCategoryId));
@@ -170,27 +193,28 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
             <div className="rounded-2xl border border-[#eadfd5] bg-[#fcfaf7] p-4 md:p-5">
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#a93226]">Bagian 1</p>
                 <h3 className="mt-1 font-cinzel text-lg font-bold text-[#17120f]">Informasi Data Atlet</h3>
-                <p className="mt-1 text-sm text-slate-600">Kelola profil atlet dan pilih nomor pertandingan yang diikuti pada formulir yang sama.</p>
+                <p className="mt-1 text-sm text-slate-600">{readOnly ? 'Profil atlet dan nomor pertandingan ditampilkan sebagai arsip registrasi yang telah diverifikasi.' : 'Kelola profil atlet dan pilih nomor pertandingan yang diikuti pada formulir yang sama.'}</p>
             </div>
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-[#17120f]">Atlet Kontingen ({athletes.length})</h3>
-            <p className="text-sm text-slate-600">Simpan profil dan pilih maksimal {maxCategories} nomor pertandingan per atlet.</p></div>
-            <Button type="button" onClick={fresh}>+ Tambah Atlet Baru</Button></div>
-        {athletes.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:flex-row md:items-end">
+            <p className="text-sm text-slate-600">{readOnly ? 'Data atlet terkunci setelah registrasi diverifikasi.' : `Simpan profil dan pilih maksimal ${maxCategories} nomor pertandingan per atlet.`}</p></div>
+            {!readOnly && <Button type="button" onClick={fresh}>+ Tambah Atlet Baru</Button>}</div>
+        {!readOnly && athletes.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-4 md:flex-row md:items-end">
             <div className="flex-1"><Combobox label={`Pilih Atlet ${registration.contingent.name}`} value={selectedAthleteId} onChange={setSelectedAthleteId}
                 options={athletes.map((item) => ({ value: item.id, label: `${item.name} · ${item.kyu_dan || 'Tingkatan belum diisi'}` }))} /></div>
             <Button type="button" disabled={!selectedAthleteId} onClick={() => { const selected = athletes.find((item) => item.id === selectedAthleteId); if (selected) edit(selected); }}>Buka Data Atlet</Button>
         </div>}
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{athletes.map((athlete) => <Button variant="unstyled" size="none" key={athlete.id} type="button" onClick={() => edit(athlete)}
-            className={`flex items-start gap-3 rounded-xl border p-4 text-left hover:border-[#bd6b5d] ${editingId === athlete.id && showForm ? 'border-[#b63729] bg-[#fff8f5]' : 'border-[#e8e1d7] bg-white'}`}>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{athletes.map((athlete) => <Button variant="unstyled" size="none" key={athlete.id} type="button" disabled={readOnly} onClick={() => edit(athlete)}
+            className={`flex items-start gap-3 rounded-xl border p-4 text-left disabled:cursor-default disabled:opacity-100 ${readOnly ? 'border-[#e8e1d7] bg-[#fcfaf7]' : `hover:border-[#bd6b5d] ${editingId === athlete.id && showForm ? 'border-[#b63729] bg-[#fff8f5]' : 'border-[#e8e1d7] bg-white'}`}`}>
             {athlete.profile_photo_path ? <img src={`/admin/pendaftaran/registrasi/${registration.id}/athletes/${athlete.id}/photo`} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                 : <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f5e5dc] text-sm font-bold text-[#9f2e22]">{athlete.name.slice(0, 2).toUpperCase()}</span>}
             <span><span className="block font-semibold text-[#17120f]">{athlete.name}</span>
-                <span className="mt-1 block text-xs text-slate-600">{ageCategories.find((group) => group.id === athlete.event_age_category_id)?.name || 'Kelompok usia belum dipilih'} · {athlete.kyu_dan || 'Tingkatan belum diisi'} · {(athlete.match_category_entries || []).length}/{maxCategories} nomor · Edit profil / nomor</span></span>
+                <span className="mt-1 block text-xs text-slate-600">{ageCategories.find((group) => group.id === athlete.event_age_category_id)?.name || 'Kelompok usia belum dipilih'} · {athlete.kyu_dan || 'Tingkatan belum diisi'} · {(athlete.match_category_entries || []).length}/{maxCategories} nomor · {readOnly ? 'Data terkunci' : 'Edit profil / nomor'}</span></span>
         </Button>)}</div>
-        {showForm && <form ref={formRef} onSubmit={save} className="space-y-5 rounded-2xl border border-[#d9c6b9] bg-[#fffdfb] p-4 md:p-6">
+        {showForm && !readOnly && <form ref={formRef} onSubmit={save} className="space-y-5 rounded-2xl border border-[#d9c6b9] bg-[#fffdfb] p-4 md:p-6">
             <div className="flex justify-between gap-3"><div><h3 className="font-cinzel text-lg font-bold text-[#17120f]">{editingId ? 'Edit Data Atlet' : 'Tambah Atlet'}</h3>
-                <p className="text-sm text-slate-600">Kelompok usia atlet dipilih sendiri. Untuk Embu, atlet yang lebih muda dapat memakai pilihan Gabung Kelompok Usia Lain jika perlu melengkapi tim.</p></div>
+                <p className="text-sm text-slate-600">{event.participant_rules?.enabled ? 'Tanggal lahir, kelas, tahun masuk, dan nomor pertandingan diperiksa sesuai persyaratan event.' : 'Kelompok usia atlet dipilih sendiri. Untuk Embu, pilihan Gabung Kelompok Usia Lain dapat digunakan jika tersedia.'}</p></div>
                 <Button variant="unstyled" size="none" type="button" onClick={() => setShowForm(false)} aria-label="Tutup formulir atlet" className="self-start rounded-lg px-2 text-xl text-slate-600">×</Button></div>
+            {form.hasErrors && <div role="alert" tabIndex={-1} className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800">{Object.values(form.errors).join(' ')}</div>}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <Field label="Nama Lengkap" name="name" form={form} required />
                 <Field label="NIK" name="nik" form={form} inputMode="numeric" maxLength={16} />
@@ -203,7 +227,7 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
                 <div><Combobox label="Kelompok Usia" required value={form.data.event_age_category_id} onChange={selectAgeGroup}
                     options={ageCategories.map((group) => ({ value: group.id, label: `${group.name}${group.min_age !== null ? ` · ${group.min_age}–${group.max_age ?? '∞'} tahun` : ''}` }))}
                     placeholder="Pilih kelompok usia..." error={form.errors.event_age_category_id} />
-                    <p className="mt-1 text-xs text-slate-500">{age === null ? 'Pilih kelompok usia secara manual.' : `Usia saat event: ${age} tahun (informasi saja). Kelompok usia mengikuti pilihan Anda.`}</p>
+                    <p className="mt-1 text-xs text-slate-500">{age === null ? 'Pilih kelompok usia secara manual.' : `Usia saat event: ${age} tahun.${event.participant_rules?.enabled ? ' Batas usia dan kelas mengikuti persyaratan event.' : ' Kelompok usia mengikuti pilihan Anda.'}`}</p>
                     {mayJoinOtherAgeGroup && <><Checkbox id="join-other-age-group" checked={joinOtherAgeGroup} disabled={!originalGroup || !otherAgeCategories.length}
                         onChange={(event) => toggleOtherAgeGroup(event.target.checked)} className="mt-3 rounded-xl border border-[#e8e1d7] bg-[#fcfaf7] p-3"
                         label="Gabung Kelompok Usia Lain" description={!originalGroup ? 'Pilih Kelompok Usia terlebih dahulu.' : otherAgeCategories.length
@@ -223,6 +247,16 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
                 <Input id="athlete-photo" label="Foto Profil (Opsional)" type="file" accept="image/*"
                     onChange={(event) => form.setData('photo', event.target.files?.[0] || null)} error={form.errors.photo} />
             </div>
+            <SchoolFields form={form} rules={event.participant_rules} />
+            {event.participant_rules?.enabled && <div className="space-y-2">
+                <Input id="school_document" label={`Surat keterangan sekolah aktif / rapor (${event.participant_rules.require_school_document ? 'wajib sebelum verifikasi' : 'opsional'}; PDF, JPG, PNG; maksimal 5 MB)`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => form.setData('school_document', e.target.files?.[0] || null)} error={form.errors.school_document} />
+                <p className="text-xs leading-6 text-slate-600 dark:text-slate-300">
+                    {event.participant_rules.require_school_document
+                        ? 'Unggah dokumen yang memuat identitas siswa, kelas, dan tahun masuk sebelum verifikasi.'
+                        : 'Boleh dikosongkan. Admin atau penanggung jawab event tetap dapat memverifikasi data sekolah tanpa dokumen.'}
+                    {' '}Jika tidak mengganti dokumen, berkas sebelumnya tetap digunakan.
+                </p>
+            </div>}
             <fieldset className="space-y-3 border-t border-[#e8e1d7] pt-5"><legend className="font-semibold text-[#17120f]">Nomor Pertandingan <span className="text-sm font-normal text-slate-600">({form.data.category_ids.length}/{maxCategories})</span></legend>
                 {form.errors.category_ids && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{form.errors.category_ids}</p>}
                 {form.errors.promoted_category_ids && <p role="alert" className="text-sm text-rose-700">{form.errors.promoted_category_ids}</p>}
@@ -248,12 +282,12 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
             <div className="rounded-2xl border border-[#eadfd5] bg-[#fcfaf7] p-4 md:p-5"><div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#a93226]">Bagian 2</p>
                 <h3 className="mt-1 font-cinzel text-lg font-bold text-[#17120f]">Nomor dan Kelompok Pertandingan</h3>
-                <p className="mt-1 max-w-3xl text-sm text-slate-600">Atur atlet di setiap nomor, pindahkan anggota Embu antar tim, dan edit urutan teknik masing-masing tim.</p>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600">{readOnly ? 'Susunan nomor pertandingan, tim Embu, dan teknik ditampilkan dalam mode baca saja.' : 'Atur atlet di setiap nomor, pindahkan anggota Embu antar tim, dan edit urutan teknik masing-masing tim.'}</p>
             </div></div>
             {orderedCategories.length ? orderedCategories.map((category) => <div key={category.id} className={category.id === focusedCategoryId ? 'rounded-2xl ring-2 ring-[#c97b4c] ring-offset-2' : ''}>
                 <CategoryPanel registration={registration} category={category} athletes={athletes} teamTechniques={teamTechniques}
-                    techniques={techniques} ageCategories={ageCategories} canManage={canManage}
-                    onEditAthlete={edit} />
+                    techniques={techniques} ageCategories={ageCategories} canManage={canManage && !readOnly}
+                    onEditAthlete={readOnly ? undefined : edit} />
             </div>) : <div className="rounded-xl border border-dashed border-[#d6c8b6] bg-[#fcfaf7] p-6 text-sm text-slate-600">
                 Belum ada nomor pertandingan yang dipilih. Pilih nomor pada formulir data atlet di atas.
             </div>}
@@ -262,7 +296,7 @@ function AthleteStep({ registration, athletes, categories, techniques, teamTechn
     </div>;
 }
 
-function PaymentStep({ registration, athletes, paymentMethods, next }) {
+function PaymentStep({ registration, athletes, paymentMethods, next, readOnly = false }) {
     const event = registration.event;
     const isPaid = event.is_paid !== false;
     const registeredCount = athletes.filter((athlete) => athlete.match_category_entries?.length).length;
@@ -273,11 +307,11 @@ function PaymentStep({ registration, athletes, paymentMethods, next }) {
     const form = useForm({ payment_method_id: registration.payment_method_id || '', payment_amount: total, payment_reference: registration.payment_reference || '', payment_proof: null, payment_note: '' });
     const recalculateStarted = useRef(false);
     useEffect(() => {
-        if (isPaid && !registration.verification_code && !recalculateStarted.current) {
+        if (!readOnly && isPaid && !registration.verification_code && !recalculateStarted.current) {
             recalculateStarted.current = true;
             router.post(`/admin/pendaftaran/registrasi/${registration.id}/recalculate`, {}, { preserveScroll: true });
         }
-    }, [isPaid, registration.id, registration.verification_code]);
+    }, [isPaid, readOnly, registration.id, registration.verification_code]);
     useEffect(() => { form.setData('payment_amount', total); }, [total]);
     const submit = (event) => { event.preventDefault(); form.post(`/admin/pendaftaran/registrasi/${registration.id}/payment`, { preserveScroll: true, forceFormData: true, onSuccess: next }); };
 
@@ -302,10 +336,17 @@ function PaymentStep({ registration, athletes, paymentMethods, next }) {
                 <div className="flex justify-between"><dt>{registeredCount} atlet × {money(event.fee_per_athlete)}</dt><dd>{money(athleteFee)}</dd></div>
                 <div className="flex justify-between"><dt>Kode unik verifikasi</dt><dd>{money(code)}</dd></div>
                 <div className="flex justify-between border-t border-[#ded5c8] pt-3 text-lg font-bold text-[#17120f]"><dt>Total</dt><dd>{money(total)}</dd></div></dl>
-            <Button variant="unstyled" size="none" type="button" onClick={() => router.post(`/admin/pendaftaran/registrasi/${registration.id}/recalculate`, {}, { preserveScroll: true })}
-                className="mt-4 text-xs font-semibold text-[#a93226] hover:underline">Perbarui perhitungan biaya</Button>
+            {!readOnly && <Button variant="unstyled" size="none" type="button" onClick={() => router.post(`/admin/pendaftaran/registrasi/${registration.id}/recalculate`, {}, { preserveScroll: true })}
+                className="mt-4 text-xs font-semibold text-[#a93226] hover:underline">Perbarui perhitungan biaya</Button>}
         </div>
-        <form onSubmit={submit} className="space-y-4 rounded-xl border border-[#e8e1d7] p-5"><h3 className="font-semibold text-[#17120f]">Pembayaran</h3>
+        {readOnly ? <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+            <div className="flex items-start gap-3"><span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700"><i className="fa-solid fa-lock" /></span>
+                <div><h3 className="font-semibold">Pembayaran terkunci</h3><p className="mt-1 text-sm leading-6 text-emerald-800">Data pembayaran mengikuti registrasi yang telah diverifikasi.</p></div></div>
+            <dl className="space-y-2 rounded-xl bg-white p-4 text-sm"><div className="flex justify-between gap-3"><dt>Metode</dt><dd className="text-right font-semibold">{paymentMethods.find((method) => method.id === registration.payment_method_id)?.name || 'Belum dipilih'}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Nominal dibayar</dt><dd className="font-semibold">{money(registration.payment_amount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Referensi</dt><dd className="text-right font-semibold">{registration.payment_reference || 'Tidak dicantumkan'}</dd></div></dl>
+            <Button type="button" onClick={next}>Lihat Review →</Button>
+        </div> : <form onSubmit={submit} className="space-y-4 rounded-xl border border-[#e8e1d7] p-5"><h3 className="font-semibold text-[#17120f]">Pembayaran</h3>
             <Combobox label="Metode Pembayaran" required value={form.data.payment_method_id} onChange={(value) => form.setData('payment_method_id', value)}
                 options={paymentMethods.map((method) => ({ value: method.id, label: `${method.name}${method.account_number ? ` · ${method.account_number}` : ''}` }))}
                 error={form.errors.payment_method_id} />
@@ -316,7 +357,7 @@ function PaymentStep({ registration, athletes, paymentMethods, next }) {
                 onChange={(event) => form.setData('payment_proof', event.target.files?.[0] || null)} error={form.errors.payment_proof} />
             <div className="flex flex-wrap gap-2"><Button type="submit" disabled={!registration.verification_code || !form.data.payment_method_id || !paymentMethods.length} loading={form.processing}>Simpan Pembayaran & Review →</Button>
                 <Button variant="unstyled" size="none" type="button" onClick={next} className="rounded-xl px-4 py-2 text-sm font-semibold text-[#8a631c] hover:underline">Lewati dulu</Button></div>
-        </form></div></div>;
+        </form>}</div></div>;
 }
 
 function ReviewCategoryCard({ category, members, teamTechniques, ageCategories, onEdit }) {
@@ -330,9 +371,9 @@ function ReviewCategoryCard({ category, members, teamTechniques, ageCategories, 
                 <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-[#8a631c]">{isEmbu ? 'Embu' : 'Randori'} · {members.length} atlet</p>
                     <h4 className="mt-1 text-base font-bold leading-snug text-[#17120f]">{category.name}</h4></div>
             </div>
-            <Button variant="unstyled" size="none" type="button" onClick={() => onEdit(category.id)} className="rounded-xl border border-[#d9c6b9] bg-white px-3.5 py-2 text-xs font-bold text-[#9f2e22] hover:border-[#b63729] hover:bg-[#fff7f3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            {onEdit && <Button variant="unstyled" size="none" type="button" onClick={() => onEdit(category.id)} className="rounded-xl border border-[#d9c6b9] bg-white px-3.5 py-2 text-xs font-bold text-[#9f2e22] hover:border-[#b63729] hover:bg-[#fff7f3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
                 {isEmbu ? 'Edit Tim & Teknik' : 'Edit Nomor'} →
-            </Button>
+            </Button>}
         </div>
         {isEmbu ? <div className="grid gap-4 p-4 xl:grid-cols-2 md:p-5">{teams.map((team) => {
             const teamMembers = members.filter(({ entry }) => Number(entry.team_number || 1) === team);
@@ -357,7 +398,7 @@ function ReviewCategoryCard({ category, members, teamTechniques, ageCategories, 
     </article>;
 }
 
-function ReviewStep({ registration, athletes, officials, categories, ageCategories, paymentMethods, teamTechniques, go }) {
+function ReviewStep({ registration, athletes, officials, categories, ageCategories, paymentMethods, teamTechniques, go, readOnly = false }) {
     const grouped = categories.map((category) => ({ category, members: athletes.flatMap((athlete) => (athlete.match_category_entries || [])
         .filter((entry) => entry.event_match_category_id === category.id).map((entry) => ({ athlete, entry }))) })).filter((row) => row.members.length);
     const registeredAthletes = athletes.filter((item) => item.match_category_entries?.length).length;
@@ -369,45 +410,45 @@ function ReviewStep({ registration, athletes, officials, categories, ageCategori
     return <div className="space-y-6 text-sm text-[#3c332c]">
         <div className="rounded-2xl border border-[#e8d9c6] bg-[#fcf8f2] p-5 md:p-6"><p className="text-xs font-bold uppercase tracking-widest text-[#9f2e22]">Pemeriksaan Akhir</p>
             <h3 className="mt-1 font-cinzel text-xl font-bold text-[#17120f]">Periksa data sebelum menyelesaikan registrasi</h3>
-            <p className="mt-1 text-slate-600">Perubahan atlet, tim, dan teknik dapat dilakukan dari bagian yang sesuai di bawah ini.</p>
+            <p className="mt-1 text-slate-600">{readOnly ? 'Registrasi telah diverifikasi. Seluruh data berikut ditampilkan dalam mode baca saja.' : 'Perubahan atlet, tim, dan teknik dapat dilakukan dari bagian yang sesuai di bawah ini.'}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-600">Atlet terdaftar</p><p className="mt-1 text-xl font-bold text-[#17120f]">{registeredAthletes}</p></div>
                 <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-600">Nomor pertandingan</p><p className="mt-1 text-xl font-bold text-[#17120f]">{grouped.length}</p></div>
                 <div className="rounded-xl bg-white p-3"><p className="text-xs text-slate-600">Total pembayaran</p><p className="mt-1 text-lg font-bold text-[#17120f]">{isPaid ? money(registration.final_amount) : 'Gratis'}</p></div></div>
         </div>
         <div className="grid gap-4 lg:grid-cols-2"><section className="rounded-2xl border border-[#e8e1d7] p-5"><div className="flex justify-between gap-3"><h3 className="font-bold text-[#17120f]">Data Kontingen</h3>
-            <Button variant="unstyled" size="none" type="button" onClick={() => go(1)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button></div>
+            {!readOnly && <Button variant="unstyled" size="none" type="button" onClick={() => go(1)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button>}</div>
             <p className="mt-3 text-base font-bold text-[#17120f]">{registration.contingent.name}</p><p className="mt-1 text-slate-600">{registration.contingent.city} · {registration.contingent.manager_name}</p>
             <p className="mt-1 text-slate-600">{registration.contingent.phone} · {registration.contingent.email || 'Email belum diisi'}</p>
             <p className="mt-3 border-t border-[#eee8df] pt-3 text-slate-600">{registration.contingent.address || 'Alamat belum diisi'}</p></section>
             <section className="rounded-2xl border border-[#e8e1d7] p-5"><div className="flex justify-between gap-3"><h3 className="font-bold text-[#17120f]">Event & {isPaid ? 'Pembayaran' : 'Biaya'}</h3>
-                <Button variant="unstyled" size="none" type="button" onClick={() => go(4)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button></div>
+                {!readOnly && <Button variant="unstyled" size="none" type="button" onClick={() => go(4)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button>}</div>
                 <p className="mt-3 font-semibold text-[#17120f]">{registration.event.name}</p>
                 <dl className="mt-3 space-y-2 text-slate-600"><div className="flex justify-between gap-3"><dt>Biaya tercatat</dt><dd className="font-bold text-[#17120f]">{isPaid ? money(registration.final_amount) : 'Gratis'}</dd></div>
                     {isPaid && <div className="flex justify-between gap-3"><dt>Metode</dt><dd className="text-right">{method?.name || 'Belum dipilih'}</dd></div>}
                     <div className="flex justify-between gap-3"><dt>Status</dt><dd className="font-semibold">{paymentStatus}</dd></div></dl>
                 {isPaid && registration.payment_status === 'rejected' && <p className="mt-3 text-amber-800">{registration.payment_note}</p>}</section></div>
         <section className="rounded-2xl border border-[#e8e1d7] p-5"><div className="flex justify-between gap-3"><h3 className="font-bold text-[#17120f]">Official Pendamping ({officials.length})</h3>
-            <Button variant="unstyled" size="none" type="button" onClick={() => go(2)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button></div>
+            {!readOnly && <Button variant="unstyled" size="none" type="button" onClick={() => go(2)} className="text-xs font-bold text-[#a93226] hover:underline">Edit</Button>}</div>
             <div className="mt-3 flex flex-wrap gap-2">{officials.length ? officials.map((item) => <span key={item.id} className="rounded-lg border border-[#e8e1d7] bg-[#fcfaf7] px-3 py-2 text-xs font-medium text-[#4f4438]">{item.name} · {item.role}</span>)
                 : <p className="text-slate-600">Belum ada official pendamping.</p>}</div></section>
         <section className="space-y-4"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="font-cinzel text-lg font-bold text-[#17120f]">Nomor dan Kelompok Pertandingan</h3>
             <p className="mt-1 text-sm text-slate-600">{registeredAthletes} atlet pada {grouped.length} nomor. Setiap tim Embu memiliki komposisi teknik tersendiri.</p></div>
-            <Button variant="unstyled" size="none" type="button" onClick={() => go(3, 'matches')} className="rounded-xl border border-[#d9c6b9] px-4 py-2.5 text-sm font-bold text-[#9f2e22] hover:border-[#b63729] hover:bg-[#fff7f3]">Edit Nomor, Tim & Teknik →</Button></div>
+            {!readOnly && <Button variant="unstyled" size="none" type="button" onClick={() => go(3, 'matches')} className="rounded-xl border border-[#d9c6b9] px-4 py-2.5 text-sm font-bold text-[#9f2e22] hover:border-[#b63729] hover:bg-[#fff7f3]">Edit Nomor, Tim & Teknik →</Button>}</div>
             {grouped.length ? grouped.map(({ category, members }) => <ReviewCategoryCard key={category.id} category={category} members={members}
-                teamTechniques={teamTechniques} ageCategories={ageCategories} onEdit={(categoryId) => go(3, 'matches', categoryId)} />)
+                teamTechniques={teamTechniques} ageCategories={ageCategories} onEdit={readOnly ? null : (categoryId) => go(3, 'matches', categoryId)} />)
                 : <div className="rounded-xl border border-dashed border-[#d6c8b6] bg-[#fcfaf7] p-6 text-slate-600">Belum ada atlet yang dipilih untuk nomor pertandingan.</div>}
         </section>
         {!isComplete && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
             <p className="font-semibold">Lengkapi registrasi sebelum selesai.</p>
-            {!grouped.length && <Button variant="unstyled" size="none" type="button" onClick={() => go(3, 'athletes')} className="mt-2 block font-semibold underline">Pilih nomor pertandingan untuk minimal satu atlet →</Button>}
-            {isPaid && (!method || !registration.verification_code) && <Button variant="unstyled" size="none" type="button" onClick={() => go(4)} className="mt-2 block font-semibold underline">Lengkapi biaya dan pilih metode pembayaran →</Button>}
+            {!readOnly && !grouped.length && <Button variant="unstyled" size="none" type="button" onClick={() => go(3, 'athletes')} className="mt-2 block font-semibold underline">Pilih nomor pertandingan untuk minimal satu atlet →</Button>}
+            {!readOnly && isPaid && (!method || !registration.verification_code) && <Button variant="unstyled" size="none" type="button" onClick={() => go(4)} className="mt-2 block font-semibold underline">Lengkapi biaya dan pilih metode pembayaran →</Button>}
         </div>}
         <div className="flex justify-end border-t border-[#eee8df] pt-5"><Link href={`/admin/pendaftaran/registrasi?event_id=${registration.event.id}`} aria-disabled={!isComplete} onClick={(event) => { if (!isComplete) event.preventDefault(); }}
             className={`rounded-xl px-5 py-3 font-semibold text-white ${isComplete ? 'bg-[#b63729] hover:bg-[#982c22]' : 'cursor-not-allowed bg-slate-400'}`}>Selesai & Kembali ke Registrasi</Link></div>
     </div>;
 }
 
-export default function WizardDetail({ registration, athletes = [], categories = [], techniques = [], teamTechniques = [], officials = [], availableOfficials = [], kyus = [], ageCategories = [], paymentMethods = [], canManage = false }) {
+export default function WizardDetail({ registration, athletes = [], categories = [], techniques = [], teamTechniques = [], officials = [], availableOfficials = [], kyus = [], ageCategories = [], paymentMethods = [], canManage = false, canVerifySchool = false, participantRequirements = [], registrationLocked = false }) {
     const initialParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
     const initial = Number(initialParams.get('step') || 1);
     const [step, setStep] = useState(initial >= 1 && initial <= 5 ? initial : 1);
@@ -444,19 +485,25 @@ export default function WizardDetail({ registration, athletes = [], categories =
         <div className="w-full max-w-full space-y-6"><div><Link href={`/admin/pendaftaran/registrasi?event_id=${registration.event.id}`} className="text-sm font-semibold text-[#8a631c] hover:underline">← Kembali ke registrasi</Link>
             <h1 className="mt-3 font-cinzel text-2xl font-bold text-[#17120f]">Registrasi {registration.contingent.name}</h1>
             <p className="mt-1 text-sm text-slate-600">{registration.registration_number} · Langkah {step} dari 5 · {registration.event.name}</p></div>
+            {registrationLocked && <div role="status" className="flex items-start gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 shadow-sm md:p-5">
+                <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700"><i className="fa-solid fa-lock" /></span>
+                <div><h2 className="font-semibold">Registrasi telah diverifikasi</h2><p className="mt-1 text-sm leading-6 text-emerald-800">Data telah dikunci dan tidak dapat diubah oleh kontingen. Hubungi admin atau penyelenggara event jika diperlukan koreksi.</p></div>
+            </div>}
             <ol className="flex gap-2 overflow-x-auto pb-2 sm:grid sm:grid-cols-5 sm:overflow-visible sm:pb-0" aria-label="Langkah registrasi">{steps.map((label, index) => <li key={label} className="min-w-40 sm:min-w-0"><Button variant="unstyled" size="none" type="button" onClick={() => go(index + 1)}
                 aria-current={step === index + 1 ? 'step' : undefined} className={`h-full w-full rounded-xl border px-3 py-3 text-left text-sm font-semibold ${step === index + 1 ? 'border-[#b63729] bg-[#fff4f0] text-[#9f2e22]' : 'border-[#e8e1d7] bg-white text-slate-600 hover:border-[#b63729]'}`}>
                 {index + 1}. {label}</Button></li>)}</ol>
             <section className="rounded-2xl border border-[#e8e1d7] bg-white p-5 shadow-sm md:p-8"><div className="mb-6 border-b border-[#eee8df] pb-5">
                 <p className="text-xs font-bold uppercase tracking-widest text-[#a93226]">Langkah {step} dari 5</p>
                 <h2 className="mt-1 font-cinzel text-xl font-bold text-[#17120f]">{steps[step - 1]}</h2></div>
-                {step === 1 && <ContingentStep registration={registration} next={() => go(2)} />}
-                {step === 2 && <OfficialStep registration={registration} officials={officials} availableOfficials={availableOfficials} next={() => go(3)} />}
+                {step === 1 && <ContingentStep registration={registration} next={() => go(2)} readOnly={registrationLocked} />}
+                {step === 2 && <OfficialStep registration={registration} officials={officials} availableOfficials={availableOfficials} next={() => go(3)} readOnly={registrationLocked} />}
+                {step === 3 && participantRequirements.length > 0 && <div className="mb-6 rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-950"><h3 className="font-semibold">Persyaratan peserta event ini</h3><ul className="mt-2 list-disc pl-5">{participantRequirements.map((line) => <li key={line}>{line}</li>)}</ul></div>}
                 {step === 3 && <AthleteStep registration={registration} athletes={athletes} categories={categories} techniques={techniques} teamTechniques={teamTechniques}
                     kyus={kyus} ageCategories={ageCategories} next={() => go(4)} canManage={canManage}
-                    focusedCategoryId={focusedCategoryId} />}
-                {step === 4 && <PaymentStep registration={registration} athletes={athletes} paymentMethods={paymentMethods} next={() => go(5)} />}
-                {step === 5 && <ReviewStep registration={registration} athletes={athletes} officials={officials} categories={categories} ageCategories={ageCategories} paymentMethods={paymentMethods} teamTechniques={teamTechniques} go={go} />}
+                    focusedCategoryId={focusedCategoryId} readOnly={registrationLocked} />}
+                {(step === 3 || step === 5) && <div className="mt-6"><SchoolVerification registration={registration} athletes={athletes} canVerify={canVerifySchool} /></div>}
+                {step === 4 && <PaymentStep registration={registration} athletes={athletes} paymentMethods={paymentMethods} next={() => go(5)} readOnly={registrationLocked} />}
+                {step === 5 && <ReviewStep registration={registration} athletes={athletes} officials={officials} categories={categories} ageCategories={ageCategories} paymentMethods={paymentMethods} teamTechniques={teamTechniques} go={go} readOnly={registrationLocked} />}
             </section>
             {step > 1 && <Button variant="unstyled" size="none" type="button" onClick={() => go(step - 1)} className="text-sm font-semibold text-[#8a631c] hover:underline">← Kembali ke langkah sebelumnya</Button>}
         </div>

@@ -1,13 +1,22 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
+import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 
 const navigation = [
-    { label: 'Registrasi', href: '/kontingen/registrasi', icon: 'fa-file-signature' },
-    { label: 'Jadwal', href: '/kontingen/jadwal', icon: 'fa-calendar-days' },
-    { label: 'Hasil', href: '/kontingen/hasil', icon: 'fa-medal' },
-    { label: 'Atlet', href: '/kontingen/atlet', icon: 'fa-user-group' },
-    { label: 'Official', href: '/kontingen/official', icon: 'fa-id-badge' },
-    { label: 'Riwayat Pendaftaran', href: '/kontingen/riwayat-pendaftaran', icon: 'fa-clock-rotate-left' },
+    { id: 'pendaftaran', label: 'Pendaftaran', items: [
+        { label: 'Registrasi Kontingen', href: '/kontingen/registrasi', icon: 'fa-file-signature' },
+        { label: 'Riwayat Pendaftaran', href: '/kontingen/riwayat-pendaftaran', icon: 'fa-clock-rotate-left' },
+    ] },
+    { id: 'pertandingan', label: 'Pertandingan', items: [
+        { label: 'Jadwal Pertandingan', href: '/kontingen/jadwal', icon: 'fa-calendar-days' },
+    ] },
+    { id: 'laporan', label: 'Laporan & Hasil', items: [
+        { label: 'Hasil Pertandingan', href: '/kontingen/hasil', icon: 'fa-medal' },
+    ] },
+    { id: 'master', label: 'Data Kontingen', items: [
+        { label: 'Atlet / Kenshi', href: '/kontingen/atlet', icon: 'fa-user-group' },
+        { label: 'Official Pendamping', href: '/kontingen/official', icon: 'fa-id-badge' },
+    ] },
 ];
 
 export default function ContingentLayout({ children, title = 'Portal Kontingen', portal = {} }) {
@@ -15,11 +24,19 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
     const user = props.auth?.user;
     const flash = props.flash || {};
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const isActive = (href) => url.split('?')[0] === href
+        || (href === '/kontingen/registrasi' && (url.startsWith('/admin/pendaftaran/registrasi') || url.startsWith('/kontingen/registrasi/')));
+    const eventQuery = portal.event?.id ? `?event_id=${encodeURIComponent(portal.event.id)}` : '';
+    const contextualHref = (href) => href.startsWith('/kontingen/') ? `${href}${eventQuery}` : href;
+    const [openSections, setOpenSections] = useState(() => Object.fromEntries(navigation.map((section) =>
+        [section.id, section.id === 'pendaftaran' || section.items.some((item) => isActive(item.href))])));
     const [profileOpen, setProfileOpen] = useState(false);
     const profileRef = useRef(null);
 
     useEffect(() => {
         setSidebarOpen(false);
+        const section = navigation.find((group) => group.items.some((item) => isActive(item.href)));
+        if (section) setOpenSections((previous) => ({ ...previous, [section.id]: true }));
     }, [url]);
 
     useEffect(() => {
@@ -34,82 +51,59 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
         return () => document.removeEventListener('mousedown', closeProfile);
     }, []);
 
-    const isActive = (href) => url.split('?')[0] === href;
     const initials = user?.name
         ? user.name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase()
         : 'KT';
 
-    const switchEvent = (eventId) => {
-        const selected = portal.event_options?.find((event) => event.id === eventId);
-        if (selected?.slug) {
-            router.visit(`/event/${selected.slug}/admin`);
-        }
-    };
-
     return (
-        <div className="min-h-screen bg-[#f6f3ee] text-[#1b1714]">
+        <div className="min-h-screen bg-[#f7f4ef] font-dm text-[#0f0d0b] antialiased">
             <Head title={`${title} | Portal Kontingen`} />
 
-            {sidebarOpen && (
-                <button
-                    type="button"
-                    aria-label="Tutup navigasi"
-                    className="fixed inset-0 z-40 bg-black/45 lg:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                />
-            )}
-
-            <aside className={`fixed inset-y-0 left-0 z-50 flex w-[276px] flex-col border-r border-white/10 bg-[#100e0c] text-white transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="flex h-[76px] items-center gap-3 border-b border-white/10 px-5">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c93629] text-lg font-black text-[#f0c557] shadow-lg shadow-red-950/40">
-                        拳
+            <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle="Portal Kontingen · 2026">
+                <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
+                    <div className="flex items-center gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#f0c060]">
+                            <i className="fa-solid fa-trophy text-xs" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="truncate text-[11px] font-semibold text-white">{portal.event?.name || 'Event belum dipilih'}</p>
+                            <p className="mt-0.5 truncate text-[9.5px] uppercase tracking-wide text-[#d4a843]">{portal.contingent?.name || 'Kontingen'}</p>
+                        </div>
                     </div>
-                    <div className="min-w-0">
-                        <p className="truncate font-cinzel text-sm font-bold tracking-[0.14em]">SMART PERKEMI</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#a9a198]">Portal Kontingen</p>
-                    </div>
-                    <button type="button" className="ml-auto text-white/60 lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Tutup menu">
-                        <i className="fa-solid fa-xmark" />
-                    </button>
                 </div>
-
-                <div className="border-b border-white/10 px-5 py-4">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#857d75]">Kontingen aktif</p>
-                    <p className="mt-1.5 truncate text-sm font-semibold text-[#f0c557]">{portal.contingent?.name || 'Kontingen'}</p>
-                    <p className="mt-0.5 truncate text-xs text-[#aaa29a]">{portal.event?.name || 'Event belum dipilih'}</p>
-                </div>
-
-                <nav aria-label="Navigasi portal kontingen" className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
-                    <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#716a63]">Menu kontingen</p>
-                    {navigation.map((item) => (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            aria-current={isActive(item.href) ? 'page' : undefined}
-                            className={`flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${isActive(item.href)
-                                ? 'bg-[#392019] text-[#f3c659] shadow-[inset_3px_0_0_#e24535]'
-                                : 'text-[#b8b1aa] hover:bg-white/6 hover:text-white'}`}
-                        >
-                            <span className="flex w-6 justify-center text-[#d4a843]"><i className={`fa-solid ${item.icon}`} /></span>
-                            <span>{item.label}</span>
+                <nav aria-label="Navigasi portal kontingen" className="relative flex-1 overflow-y-auto py-3">
+                    {navigation.map((section) => <div key={section.id} className="mt-1 border-t border-white/5 pt-1">
+                        <button type="button" aria-expanded={openSections[section.id]} aria-controls={`contingent-nav-${section.id}`}
+                            onClick={() => setOpenSections((previous) => ({ ...previous, [section.id]: !previous[section.id] }))}
+                            className="flex w-full items-center justify-between px-6 py-2 text-[10px] font-bold uppercase tracking-wider text-[#b5afa6]/70 transition-colors hover:bg-white/5 hover:text-white">
+                            <span>{section.label}</span>
+                            <i aria-hidden="true" className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections[section.id] ? 'rotate-90 text-[#d4a843]' : ''}`} />
+                        </button>
+                        <div id={`contingent-nav-${section.id}`} hidden={!openSections[section.id]} className="space-y-0.5 pl-2">
+                            {section.items.map((item) => <Link key={item.href} href={contextualHref(item.href)} aria-current={isActive(item.href) ? 'page' : undefined}
+                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isActive(item.href)
+                                    ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
+                                    : 'text-white/65 hover:bg-white/5 hover:text-white'}`}>
+                                <i aria-hidden="true" className={`fa-solid ${item.icon} w-4 shrink-0 text-[11px] ${isActive(item.href) ? 'text-[#f0c060]' : 'text-[#d4a843]'}`} />
+                                <span>{item.label}</span>
+                            </Link>)}
+                        </div>
+                    </div>)}
+                    <div className="mt-2 border-t border-white/10 pt-2">
+                        <Link href={portal.event?.slug ? `/event/${portal.event.slug}` : '/'} className="flex items-center gap-3 px-6 py-2 text-[12.5px] text-white/60 transition-colors hover:bg-white/5 hover:text-white">
+                            <i className="fa-solid fa-globe w-4 text-[12px] text-[#d4a843]" aria-hidden="true" />
+                            <span>{portal.event?.slug ? 'Lihat Landing Event' : 'Lihat Website Utama'}</span>
                         </Link>
-                    ))}
+                        <button type="button" onClick={() => router.post('/logout')} className="flex w-full items-center gap-3 px-6 py-2 text-left text-[12.5px] text-[#e74c3c]/80 transition-colors hover:bg-white/5 hover:text-[#e74c3c]">
+                            <i className="fa-solid fa-right-from-bracket w-4 text-[12px]" aria-hidden="true" />
+                            <span>Keluar Sistem</span>
+                        </button>
+                    </div>
                 </nav>
+            </PanelSidebar>
 
-                <div className="space-y-1 border-t border-white/10 p-3">
-                    <Link href={`/event/${portal.event?.slug || ''}`} className="flex min-h-10 items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-[#aaa29a] hover:bg-white/6 hover:text-white">
-                        <span className="flex w-6 justify-center text-[#d4a843]"><i className="fa-solid fa-globe" /></span>
-                        Lihat Landing Event
-                    </Link>
-                    <button type="button" onClick={() => router.post('/logout')} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3.5 py-2 text-left text-sm text-[#e36a5f] hover:bg-red-500/10">
-                        <span className="flex w-6 justify-center"><i className="fa-solid fa-right-from-bracket" /></span>
-                        Keluar Sistem
-                    </button>
-                </div>
-            </aside>
-
-            <div className="min-h-screen lg:pl-[276px]">
-                <header className="sticky top-0 z-30 flex h-[76px] items-center border-b border-[#e8e2d9] bg-[#fbf9f6]/95 px-4 backdrop-blur md:px-7">
+            <div className="min-h-screen lg:pl-[260px]">
+                <header className="sticky top-0 z-40 flex h-16 items-center border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-4 backdrop-blur-md md:px-7">
                     <button type="button" className="mr-3 flex h-10 w-10 items-center justify-center rounded-xl border border-[#e4ddd3] bg-white text-[#514a43] lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Buka navigasi">
                         <i className="fa-solid fa-bars" />
                     </button>
@@ -120,19 +114,6 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
                     </div>
 
                     <div className="ml-auto flex items-center gap-2.5">
-                        {portal.event_options?.length > 1 && (
-                            <label className="hidden items-center gap-2 lg:flex">
-                                <span className="sr-only">Pilih event</span>
-                                <select
-                                    value={portal.event?.id || ''}
-                                    onChange={(event) => switchEvent(event.target.value)}
-                                    className="h-10 max-w-64 rounded-xl border border-[#ded7ce] bg-white px-3 text-xs font-medium text-[#413b35] outline-none focus:border-[#c93629] focus:ring-2 focus:ring-[#c93629]/15"
-                                >
-                                    {portal.event_options.map((event) => <option key={event.id} value={event.id}>{event.name}</option>)}
-                                </select>
-                            </label>
-                        )}
-
                         <div ref={profileRef} className="relative">
                             <button type="button" onClick={() => setProfileOpen((value) => !value)} className="flex h-11 items-center gap-2 rounded-xl px-1.5 hover:bg-[#f1ede7]" aria-expanded={profileOpen} aria-haspopup="menu">
                                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b92f24] text-xs font-bold text-white">{initials}</span>

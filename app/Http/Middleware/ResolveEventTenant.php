@@ -143,6 +143,7 @@ class ResolveEventTenant
                 ->whereHas('users', fn ($q) => $q->whereKey($user->id))
                 ->orderByDesc('is_active')
                 ->orderByDesc('start_date')
+                ->orderByDesc('id')
                 ->first();
 
             if ($assignedEvent) {

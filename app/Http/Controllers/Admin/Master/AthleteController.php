@@ -13,6 +13,7 @@ use App\Models\Event;
 use App\Models\Kyu;
 use App\Models\Registration;
 use App\Models\TournamentResult;
+use App\Services\ParticipantEligibilityService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,8 @@ use Inertia\Response;
 
 class AthleteController extends Controller
 {
+    public function __construct(private ParticipantEligibilityService $eligibility) {}
+
     /**
      * Display a listing of athletes.
      */
@@ -87,6 +90,10 @@ class AthleteController extends Controller
                 'nik' => $athlete->nik,
                 'kenshi_number' => $athlete->kenshi_number,
                 'gender' => in_array($athlete->gender, ['male', 'putra']) ? 'male' : 'female',
+                'school_name' => $athlete->school_name,
+                'school_level' => $athlete->school_level,
+                'school_entry_year' => $athlete->school_entry_year,
+                'school_grade' => $athlete->school_grade,
                 'birth_place' => $athlete->birth_place,
                 'blood_type' => $athlete->blood_type,
                 'home_address' => $athlete->home_address,
@@ -223,6 +230,10 @@ class AthleteController extends Controller
                 'nik' => $athlete->nik,
                 'kenshi_number' => $athlete->kenshi_number,
                 'gender' => in_array($athlete->gender, ['male', 'putra'], true) ? 'male' : 'female',
+                'school_name' => $athlete->school_name,
+                'school_level' => $athlete->school_level,
+                'school_entry_year' => $athlete->school_entry_year,
+                'school_grade' => $athlete->school_grade,
                 'birth_place' => $athlete->birth_place,
                 'birth_date' => $athlete->birth_date?->format('Y-m-d'),
                 'blood_type' => $athlete->blood_type,
@@ -256,6 +267,12 @@ class AthleteController extends Controller
         $this->ensureContingentBelongsToTenant($request, $validated['contingent_id']);
         $this->ensureIdentityAvailable($validated);
 
+        $candidate = new Athlete($validated);
+        $event = Contingent::findOrFail($validated['contingent_id'])->event;
+        if ($event instanceof Event) {
+            $this->eligibility->validateProfile($event, $candidate);
+        }
+
         DB::transaction(function () use ($request, $validated): void {
             $athlete = Athlete::create($validated);
             $athlete->rankHistories()->create([
@@ -282,6 +299,15 @@ class AthleteController extends Controller
             throw ValidationException::withMessages([
                 'contingent_id' => 'Perpindahan kontingen hanya dapat dilakukan dalam event yang sama.',
             ]);
+        }
+
+        $candidate = clone $athlete;
+        $candidate->fill($validated);
+        if ($targetContingent->event instanceof Event) {
+            $this->eligibility->validateProfile($targetContingent->event, $candidate);
+            foreach ($athlete->matchCategoryEntries()->with('matchCategory')->get() as $entry) {
+                $this->eligibility->validateCategory($targetContingent->event, $candidate, $entry->matchCategory);
+            }
         }
 
         DB::transaction(function () use ($request, $athlete, $validated): void {

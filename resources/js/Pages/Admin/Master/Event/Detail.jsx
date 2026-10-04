@@ -1,3 +1,4 @@
+import ParticipantRulesForm from './ParticipantRulesForm';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState, useRef, useEffect } from 'react';
@@ -696,7 +697,7 @@ export default function EventDetail({
     const eventSwitchOptions = allEvents.map((e) => ({
         value: e.id,
         label: `${e.name} ${e.edition ? `(${e.edition})` : ''}`,
-        sublabel: `${e.is_active ? '★ Event Utama Aktif · ' : ''}${e.dates}`,
+        sublabel: [e.status_label, e.dates, e.city, e.is_active ? 'Operasional' : 'Nonaktif operasional'].filter(Boolean).join(' · '),
     }));
 
     const statusOptions = [
@@ -822,7 +823,7 @@ export default function EventDetail({
                                 {event.is_active ? (
                                     <span className="px-2.5 py-0.5 text-xs font-semibold rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        Kejuaraan Utama Aktif
+                                        Aktif untuk Operasional
                                     </span>
                                 ) : (
                                     <span className="px-2.5 py-0.5 text-xs font-semibold rounded-md bg-white/10 text-white/70 border border-white/10">
@@ -925,6 +926,7 @@ export default function EventDetail({
                                 count: counts.age_categories,
                                 badgeColor: 'bg-amber-100 text-amber-800',
                             },
+                            { id: 'participant_rules', label: 'Persyaratan Peserta', icon: 'fa-user-shield' },
                             {
                                 id: 'courts',
                                 label: 'Lapangan (Court)',
@@ -1038,6 +1040,7 @@ export default function EventDetail({
                 </div>
 
                 {/* ════ TAB 1: KELOMPOK UMUR & HARGA (DASHBOARD STYLE) ════ */}
+                {activeTab === 'participant_rules' && <ParticipantRulesForm key={event.id} event={event} />}
                 {activeTab === 'age_categories' && (
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
                         {/* Table Header / Toolbar */}
@@ -2159,8 +2162,8 @@ export default function EventDetail({
 
                                 <Checkbox id="is_active_toggle" checked={generalForm.data.is_active}
                                     onChange={(event) => generalForm.setData('is_active', event.target.checked)}
-                                    label="Tetapkan sebagai Kejuaraan Utama yang Sedang Aktif"
-                                    description="Jika diaktifkan, event ini akan menjadi referensi utama pada seluruh formulir pendaftaran atlet dan kontingen."
+                                    label="Aktifkan Event untuk Operasional"
+                                    description="Event aktif tersedia di menu registrasi dan pertandingan. Event aktif lain tetap berjalan secara terpisah."
                                     className="rounded-xl border border-[#ede9e1] bg-[#fbf9f5] p-4" />
 
                                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ede9e1] pt-5">

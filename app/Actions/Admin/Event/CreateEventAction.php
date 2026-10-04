@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 class CreateEventAction
 {
     /**
-     * Execute event creation with unique slug generation and active status management.
+     * Execute event creation with unique slug generation.
      *
      * @param  array<string, mixed>  $data
      */
@@ -28,12 +28,6 @@ class CreateEventAction
             $counter++;
         }
         $data['slug'] = $slug;
-
-        $isActive = ! empty($data['is_active']);
-
-        if ($isActive) {
-            Event::query()->update(['is_active' => false]);
-        }
 
         return Event::create($data);
     }

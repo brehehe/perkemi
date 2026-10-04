@@ -5,6 +5,7 @@ import Input from '@/Components/UI/Forms/Input';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Textarea from '@/Components/UI/Forms/Textarea';
 import Modal from '@/Components/UI/Overlays/Modal';
+import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -13,6 +14,8 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
     const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [selectedRegistration, setSelectedRegistration] = useState(null);
     const [isVerifying, setIsVerifying] = useState(false);
+    const [confirmation, setConfirmation] = useState(null);
+    const [confirmationError, setConfirmationError] = useState('');
     const [paymentRegistration, setPaymentRegistration] = useState(null);
     const paymentForm = useForm({
         payment_method_id: '',
@@ -32,25 +35,25 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
         router.get('/admin/pendaftaran/registrasi', { search, status, event_id: activeEvent?.id }, { preserveState: true });
     };
 
-    const handleVerify = (id) => {
-        if (confirm('Setujui berkas registrasi kontingen ini? Pembayaran diverifikasi terpisah.')) {
-            setIsVerifying(true);
-            router.post(`/admin/pendaftaran/registrasi/${id}/verify`, {}, {
-                onFinish: () => {
-                    setIsVerifying(false);
-                    setSelectedRegistration(null);
-                },
-            });
-        }
+    const askConfirmation = (action) => {
+        setConfirmationError('');
+        setConfirmation(action);
     };
 
-    const handleReject = (id) => {
-        if (confirm('Tolak atau kembalikan berkas registrasi ini?')) {
-            router.post(`/admin/pendaftaran/registrasi/${id}/reject`, {}, {
-                onFinish: () => setSelectedRegistration(null),
-            });
-        }
+    const submitConfirmation = () => {
+        if (!confirmation || isVerifying) return;
+        setIsVerifying(true);
+        setConfirmationError('');
+        router.post(confirmation.url, {}, {
+            preserveScroll: true,
+            onError: (errors) => setConfirmationError(Object.values(errors).flat().join(' ')),
+            onSuccess: () => { setConfirmation(null); setSelectedRegistration(null); },
+            onFinish: () => setIsVerifying(false),
+        });
     };
+
+    const handleVerify = (id) => askConfirmation({ title: 'Setujui berkas registrasi?', message: 'Berkas kontingen akan disetujui setelah persyaratan peserta terpenuhi. Pembayaran diverifikasi terpisah.', confirmText: 'Setujui berkas', variant: 'primary', url: `/admin/pendaftaran/registrasi/${id}/verify` });
+    const handleReject = (id) => askConfirmation({ title: 'Kembalikan berkas registrasi?', message: 'Berkas kontingen akan ditandai ditolak agar dapat diperbaiki.', confirmText: 'Tolak / revisi berkas', variant: 'danger', url: `/admin/pendaftaran/registrasi/${id}/reject` });
 
     const openPaymentForm = (registration) => {
         if (registration.event?.is_paid === false) return;
@@ -81,21 +84,8 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
         });
     };
 
-    const verifyPayment = (registration) => {
-        if (confirm('Verifikasi pembayaran kontingen ini?')) {
-            router.post(`/admin/pendaftaran/registrasi/${registration.id}/payment/verify`, {}, {
-                onSuccess: () => setSelectedRegistration(null),
-            });
-        }
-    };
-
-    const rejectPayment = (registration) => {
-        if (confirm('Tolak pembayaran ini untuk diperbaiki oleh kontingen?')) {
-            router.post(`/admin/pendaftaran/registrasi/${registration.id}/payment/reject`, {}, {
-                onSuccess: () => setSelectedRegistration(null),
-            });
-        }
-    };
+    const verifyPayment = (registration) => askConfirmation({ title: 'Verifikasi pembayaran?', message: `Pastikan nominal dan bukti pembayaran ${registration.contingent?.name || 'kontingen ini'} telah sesuai.`, confirmText: 'Verifikasi pembayaran', variant: 'primary', url: `/admin/pendaftaran/registrasi/${registration.id}/payment/verify` });
+    const rejectPayment = (registration) => askConfirmation({ title: 'Tolak pembayaran?', message: 'Pembayaran akan dikembalikan untuk diperbaiki oleh kontingen.', confirmText: 'Tolak pembayaran', variant: 'danger', url: `/admin/pendaftaran/registrasi/${registration.id}/payment/reject` });
 
     const getStatusBadge = (status) => {
         const val = typeof status === 'object' ? status.value : status;
@@ -184,7 +174,7 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                             <div className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-3 whitespace-nowrap">
                                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                 <div>
-                                    <p className="text-[10px] uppercase text-[#b5afa6] tracking-wider">Event Aktif</p>
+                                    <p className="text-[10px] uppercase text-[#b5afa6] tracking-wider">Event Dipilih</p>
                                     <p className="font-medium text-white text-xs">{activeEvent.name}</p>
                                 </div>
                             </div>
@@ -245,7 +235,11 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                     {eventOptions.length > 1 && <Combobox label="Event" size="sm" clearable={false}
                         value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pendaftaran/registrasi',
                             { event_id: value, search, status: statusFilter }, { preserveState: false })}
-                        options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.is_paid ? 'Berbayar' : 'Gratis' }))}
+                        options={eventOptions.map((event) => ({
+                            value: event.id,
+                            label: event.name,
+                            sublabel: `${event.option_description} · ${event.is_paid ? 'Berbayar' : 'Gratis'}`,
+                        }))}
                         containerClassName="w-full md:w-64" />}
                     {/* Status Tabs */}
                     <div className="flex items-center gap-1.5 p-1 bg-[#f7f4ef] rounded-lg border border-[#ede9e1] w-full md:w-auto">
@@ -342,7 +336,7 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                                             <td className="py-3.5 px-4 whitespace-nowrap text-right">
                                                 <div className="inline-flex items-center gap-1.5">
                                                     <Link
-                                                        href={`/admin/pendaftaran/registrasi/${reg.id}/detail`}
+                                                        href={`/admin/pendaftaran/registrasi/${reg.id}/detail?event_id=${activeEvent?.id || reg.event_id}`}
                                                         className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-[#f6ecd7] hover:bg-[#ead6a6] text-[#654512] transition-colors"
                                                     >
                                                         Atlet & Nomor
@@ -493,6 +487,8 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                     </form>
                 </Modal>
             </div>
+            <AlertConfirm isOpen={Boolean(confirmation)} {...confirmation} error={confirmationError} isLoading={isVerifying}
+                onConfirm={submitConfirmation} onCancel={() => { if (!isVerifying) setConfirmation(null); }} />
         </AdminLayout>
     );
 }

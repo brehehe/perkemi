@@ -8,6 +8,7 @@ use App\Enums\EventStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Event\UpdateEventCoverRequest;
 use App\Http\Requests\Admin\Event\UpdateEventFeesRequest;
+use App\Http\Requests\Admin\Event\UpdateParticipantRulesRequest;
 use App\Http\Requests\Admin\Master\UpdateEventTournamentSettingsRequest;
 use App\Models\Clerk;
 use App\Models\Event;
@@ -32,6 +33,13 @@ use Inertia\Response;
 
 class EventDetailController extends Controller
 {
+    public function updateParticipantRules(UpdateParticipantRulesRequest $request, Event $event): RedirectResponse
+    {
+        $event->update(['participant_rules' => $request->rulesData()]);
+
+        return back()->with('success', 'Persyaratan peserta tersimpan. Perubahan aturan memerlukan pemeriksaan ulang data sekolah dan registrasi.');
+    }
+
     /**
      * Display the detail & settings page for a specific or active event.
      */
@@ -43,10 +51,12 @@ class EventDetailController extends Controller
             $event = $tenantEvent;
         }
 
-        // If event is not specified in route, resolve the active event or first event
+        // If event is not specified in route, resolve the requested, active, or latest event.
         if (! $event || ! $event->exists) {
-            $event = Event::where('is_active', true)->first()
-                ?? Event::orderByDesc('start_date')->first()
+            $requestedEventId = $request->string('event_id')->toString();
+            $event = ($requestedEventId !== '' ? Event::query()->find($requestedEventId) : null)
+                ?? Event::where('is_active', true)->orderByDesc('start_date')->orderByDesc('id')->first()
+                ?? Event::orderByDesc('start_date')->orderByDesc('id')->first()
                 ?? Event::first();
 
             if (! $event) {
@@ -71,9 +81,10 @@ class EventDetailController extends Controller
 
         // List of all events for the quick switcher
         $allEventsQuery = Event::query()
-            ->select('id', 'name', 'edition', 'is_active', 'status', 'start_date', 'end_date')
+            ->select('id', 'name', 'edition', 'city', 'is_active', 'status', 'start_date', 'end_date')
             ->orderByDesc('is_active')
-            ->orderByDesc('start_date');
+            ->orderByDesc('start_date')
+            ->orderByDesc('id');
 
         if ($tenantEvent instanceof Event) {
             $allEventsQuery->whereKey($tenantEvent);
@@ -85,8 +96,10 @@ class EventDetailController extends Controller
                 'id' => $e->id,
                 'name' => $e->name,
                 'edition' => $e->edition,
+                'city' => $e->city,
                 'is_active' => (bool) $e->is_active,
                 'status' => $e->status instanceof \BackedEnum ? $e->status->value : (string) $e->status,
+                'status_label' => $e->status instanceof EventStatus ? $e->status->label() : (string) $e->status,
                 'dates' => $e->start_date?->format('d/m/Y').' - '.$e->end_date?->format('d/m/Y'),
             ]);
 
@@ -248,6 +261,7 @@ class EventDetailController extends Controller
                 'payment_method_ids' => $selectedPaymentMethodIds,
                 'max_match_categories_per_athlete' => (int) $event->max_match_categories_per_athlete,
                 'allow_cross_age_group_embu' => (bool) $event->allow_cross_age_group_embu,
+                'participant_rules' => $event->participant_rules,
                 'match_duration_minutes' => (int) $event->match_duration_minutes,
                 'minimum_rest_minutes' => (int) $event->minimum_rest_minutes,
                 'minimum_entries_per_category' => (int) $event->minimum_entries_per_category,

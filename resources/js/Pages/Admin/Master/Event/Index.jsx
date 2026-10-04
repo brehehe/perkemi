@@ -262,7 +262,7 @@ export default function EventIndex({
                         Manajemen Event & Kejuaraan
                     </h1>
                     <p className="text-xs md:text-sm text-[#706860] mt-0.5">
-                        Kelola seluruh agenda kejuaraan Shorinji Kempo, pendaftaran kontingen, dan aktivasi event utama sistem.
+                        Kelola agenda kejuaraan, status operasional, serta pendaftaran setiap event secara terpisah.
                     </p>
                 </div>
 
@@ -318,29 +318,24 @@ export default function EventIndex({
                     </div>
                 </div>
 
-                {/* 2. Event Utama Aktif */}
+                {/* 2. Event Operasional */}
                 <div className="p-4 sm:p-5 rounded-2xl border border-[#d4a843]/40 bg-gradient-to-br from-white via-white to-amber-50/30 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
                         <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#b8860b]">
-                            Event Utama Aktif
+                            Event Operasional
                         </span>
                         <div className="w-8 h-8 rounded-xl bg-[#d4a843]/15 text-[#b8860b] flex items-center justify-center shrink-0 shadow-xs">
                             <i className="fa-solid fa-star text-xs"></i>
                         </div>
                     </div>
                     <div className="mt-2.5">
-                        <div className="text-base sm:text-lg font-bold text-[#0f0d0b] tracking-tight truncate leading-tight" title={activeEvent ? `${activeEvent.city} — ${activeEvent.name}` : 'Belum Ditentukan'}>
-                            {activeEvent ? activeEvent.city : 'Belum Dipilih'}
+                        <div className="text-2xl sm:text-3xl font-bold text-[#0f0d0b] tracking-tight leading-tight">
+                            {stats.active_events || 0}
                         </div>
                         <div className="mt-1.5 text-xs">
-                            {activeEvent ? (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[10.5px] border border-emerald-200/80 truncate max-w-full">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                                    <span className="truncate">{activeEvent.name}</span>
-                                </span>
-                            ) : (
-                                <span className="text-[#8c827a] text-[10.5px]">Pilih satu event aktif</span>
-                            )}
+                            <span className="text-[#8c827a] text-[10.5px]">
+                                {stats.active_events === 1 ? '1 event tersedia di menu kerja' : `${stats.active_events || 0} event dapat berjalan bersamaan`}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -413,7 +408,7 @@ export default function EventIndex({
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-[#d4a843] text-[#0f0d0b] shadow-xs">
                                     <i className="fa-solid fa-crown text-[10px]"></i>
-                                    Event Utama Aktif
+                                    Event Aktif Terbaru
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-white/10 text-white border border-white/10">
                                     <i className="fa-regular fa-calendar text-[#d4a843]"></i>
@@ -448,16 +443,21 @@ export default function EventIndex({
                                     <strong className="text-white">{activeEvent.registrations_count}</strong> Berkas Registrasi
                                 </span>
                             </div>
+                            {stats.active_events > 1 && (
+                                <p className="text-xs leading-relaxed text-white/65">
+                                    Ada {stats.active_events} event aktif. Data registrasi, nomor pertandingan, verifikasi, drawing, dan merge tetap dipisahkan berdasarkan event yang dipilih.
+                                </p>
+                            )}
                         </div>
 
                         {/* Action Button */}
                         <div className="flex items-center shrink-0">
                             <Link
-                                href="/admin/dashboard"
+                                href={`/admin/master/event/${activeEvent.id}/detail`}
                                 className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs md:text-sm font-semibold border border-white/20 transition-all hover:border-white/40 shadow-sm cursor-pointer"
                             >
-                                <i className="fa-solid fa-gauge-high text-[#d4a843]"></i>
-                                <span>Buka Dashboard Event</span>
+                                <i className="fa-solid fa-sliders text-[#d4a843]"></i>
+                                <span>Kelola Event Ini</span>
                                 <i className="fa-solid fa-arrow-right text-xs text-white/70"></i>
                             </Link>
                         </div>
@@ -615,7 +615,7 @@ export default function EventIndex({
                                                 {event.is_active && (
                                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-[#d4a843]/20 text-[#b8860b] shrink-0 whitespace-nowrap">
                                                         <i className="fa-solid fa-star text-[8px]"></i>
-                                                        Utama
+                                                        Operasional
                                                     </span>
                                                 )}
                                             </div>
@@ -718,7 +718,7 @@ export default function EventIndex({
                                                         type="button"
                                                         onClick={() => handleActivate(event.id)}
                                                         className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 border border-amber-500/20 transition-all flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
-                                                        title="Jadikan event ini aktif di dashboard"
+                                                        title="Aktifkan event ini untuk menu operasional"
                                                     >
                                                         <i className="fa-solid fa-star text-[10px] text-[#d4a843]"></i>
                                                         <span>Aktifkan</span>
@@ -885,10 +885,10 @@ export default function EventIndex({
                                         type="button"
                                         onClick={() => handleActivate(event.id)}
                                         className="text-xs font-semibold text-[#b8860b] hover:text-[#d4a843] flex items-center gap-1.5 cursor-pointer py-1.5 px-2.5 rounded-lg hover:bg-[#d4a843]/10 transition-colors"
-                                        title="Jadikan event ini aktif"
+                                        title="Aktifkan event ini untuk menu operasional"
                                     >
                                         <i className="fa-solid fa-star text-[10px]"></i>
-                                        <span>Jadikan Aktif</span>
+                                        <span>Aktifkan Event</span>
                                     </Button>
                                 ) : (
                                     <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 px-2 py-1">
@@ -1306,8 +1306,8 @@ export default function EventIndex({
                             <div className="pt-3 border-t border-[#ede9e1]">
                                 <div className="p-3.5 rounded-xl bg-amber-500/10 border border-[#d4a843]/30">
                                     <Checkbox
-                                        label="Jadikan Sebagai Event Utama Aktif"
-                                        description="Jika dicentang, event ini akan otomatis menjadi fokus di dashboard admin dan portal utama."
+                                        label="Aktifkan Event untuk Operasional"
+                                        description="Event aktif tersedia di menu registrasi dan pertandingan. Event aktif lain tetap berjalan."
                                         checked={data.is_active}
                                         onChange={(event) => setData('is_active', event.target.checked)}
                                     />

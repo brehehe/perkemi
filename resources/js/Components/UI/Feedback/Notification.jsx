@@ -81,6 +81,7 @@ export default function Notification({
             {onClose && (
                 <button
                     type="button"
+                    aria-label="Tutup notifikasi"
                     onClick={onClose}
                     className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 -m-1 rounded-md"
                 >

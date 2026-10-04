@@ -30,7 +30,9 @@ class WelcomeController extends Controller
     {
         $setting = SiteSetting::current();
         $event = match ($setting->home_landing_mode) {
-            SiteSetting::HomeFeaturedEvent => Event::query()->find($setting->featured_event_id),
+            SiteSetting::HomeFeaturedEvent => Event::query()
+                ->where('status', '!=', EventStatus::Draft)
+                ->find($setting->featured_event_id),
             SiteSetting::HomeUpcomingEvent => Event::query()
                 ->where('status', '!=', EventStatus::Draft)
                 ->whereDate('end_date', '>=', now()->toDateString())
@@ -57,6 +59,12 @@ class WelcomeController extends Controller
             );
         }
 
-        return Inertia::render('Welcome', $this->welcomeService->getLandingData());
+        $search = $request->query('search');
+        $status = $request->query('status');
+
+        return Inertia::render('Welcome', $this->welcomeService->getLandingData(
+            search: is_string($search) ? mb_substr(trim($search), 0, 120) : '',
+            status: in_array($status, ['upcoming', 'ongoing', 'completed'], true) ? $status : 'all',
+        ));
     }
 }

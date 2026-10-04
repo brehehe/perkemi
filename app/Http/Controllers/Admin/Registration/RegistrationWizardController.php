@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Registration;
 
 use App\Enums\PaymentStatus;
+use App\Enums\RegistrationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
@@ -12,6 +13,7 @@ use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\Official;
 use App\Models\Registration;
+use App\Services\ParticipantEligibilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +23,11 @@ use Illuminate\Validation\ValidationException;
 
 class RegistrationWizardController extends Controller
 {
+    public function __construct(private ParticipantEligibilityService $eligibility) {}
+
     public function updateContingent(Request $request, Registration $registration): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         $data = $request->validate([
             'city' => ['required', 'string', 'max:100'],
             'name' => ['required', 'string', 'max:255'],
@@ -39,7 +43,7 @@ class RegistrationWizardController extends Controller
 
     public function saveOfficial(Request $request, Registration $registration, ?Official $official = null): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         if ($official !== null) {
             abort_unless($official->contingent_id === $registration->contingent_id, 404);
         }
@@ -57,7 +61,7 @@ class RegistrationWizardController extends Controller
 
     public function deleteOfficial(Request $request, Registration $registration, Official $official): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         abort_unless($official->contingent_id === $registration->contingent_id, 404);
         $official->delete();
 
@@ -66,7 +70,7 @@ class RegistrationWizardController extends Controller
 
     public function copyOfficial(Request $request, Registration $registration): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         $data = $request->validate(['official_id' => ['required', 'uuid', 'exists:officials,id']]);
         $source = Official::query()->with('contingent')->findOrFail($data['official_id']);
         $this->authorizeSource($request, $registration, $source->contingent);
@@ -82,7 +86,7 @@ class RegistrationWizardController extends Controller
 
     public function copyAthlete(Request $request, Registration $registration): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         $data = $request->validate(['athlete_id' => ['required', 'uuid', 'exists:athletes,id']]);
         $source = Athlete::query()->with('contingent')->findOrFail($data['athlete_id']);
         $this->authorizeSource($request, $registration, $source->contingent);
@@ -93,9 +97,10 @@ class RegistrationWizardController extends Controller
             throw ValidationException::withMessages(['athlete_id' => 'Atlet pada event yang sama harus tetap menggunakan kontingen asalnya.']);
         }
         $this->ensureIdentityAvailable($registration, $source->nik, $source->kenshi_number);
-        $copy = $source->replicate();
+        $copy = $source->replicate(['school_document_path', 'school_verified_at', 'school_verified_by', 'school_verification_hash']);
         $copy->contingent_id = $registration->contingent_id;
         $copy->event_age_category_id = null;
+        $this->eligibility->validateProfile($registration->event, $copy);
         $copy->save();
         if ($copy->kyu_dan) {
             $copy->rankHistories()->create(['changed_by' => $request->user()?->id, 'new_rank' => $copy->kyu_dan]);
@@ -115,11 +120,13 @@ class RegistrationWizardController extends Controller
 
     public function saveAthlete(Request $request, Registration $registration, ?Athlete $athlete = null): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         if ($athlete !== null) {
             abort_unless($athlete->contingent_id === $registration->contingent_id, 404);
         }
         $data = $request->validate([
+            ...$this->eligibility->schoolInputRules(),
+            'school_document' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
             'name' => ['required', 'string', 'max:255'],
             'nik' => ['nullable', 'digits:16'],
             'kenshi_number' => ['nullable', 'string', 'max:50'],
@@ -150,7 +157,10 @@ class RegistrationWizardController extends Controller
         if (array_diff($promotedIds, $categoryIds)) {
             throw ValidationException::withMessages(['promoted_category_ids' => 'Pilih nomor pertandingan sebelum memakai penyesuaian kelompok usia.']);
         }
-        unset($data['category_ids'], $data['promoted_category_ids'], $data['joined_age_category_id'], $data['photo']);
+        unset($data['category_ids'], $data['promoted_category_ids'], $data['joined_age_category_id'], $data['photo'], $data['school_document']);
+        $candidate = $athlete ? clone $athlete : new Athlete;
+        $candidate->fill($data);
+        $this->eligibility->validateProfile($registration->event, $candidate);
         $this->ensureIdentityAvailable($registration, $data['nik'] ?? null, $data['kenshi_number'] ?? null, $athlete);
         $photo = $request->file('photo');
 
@@ -244,15 +254,56 @@ class RegistrationWizardController extends Controller
             if ($photo !== null) {
                 $athlete->update(['profile_photo_path' => $photo->store('athlete-photos')]);
             }
+            if ($request->hasFile('school_document')) {
+                $path = $request->file('school_document')->store('school-documents', 'local');
+                $athlete->forceFill(['school_document_path' => $path])->save();
+            }
             $this->syncFees($registration);
         });
 
         return back()->with('success', 'Data dan nomor pertandingan atlet tersimpan.');
     }
 
-    public function updateTeam(Request $request, Registration $registration, AthleteMatchCategoryEntry $entry): RedirectResponse
+    public function schoolDocument(Request $request, Registration $registration, Athlete $athlete): mixed
     {
         $this->authorizeRegistration($request, $registration);
+        abort_unless($athlete->contingent_id === $registration->contingent_id, 404);
+        abort_unless($athlete->school_document_path && Storage::disk('local')->exists($athlete->school_document_path), 404);
+
+        return Storage::disk('local')->response($athlete->school_document_path, null, ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+    }
+
+    public function verifySchool(Request $request, Registration $registration, Athlete $athlete): RedirectResponse
+    {
+        $this->authorizeRegistration($request, $registration);
+        abort_unless($athlete->contingent_id === $registration->contingent_id, 404);
+        $user = $request->user();
+        abort_unless($user->hasAnyRole(['Super Admin', 'Admin']) || in_array($registration->event->accessRoleFor($user), [
+            Event::AccessRoleResponsible, Event::AccessRoleAdmin, Event::AccessRoleStaff,
+        ], true), 403);
+        $request->validate(['confirmed' => ['accepted']]);
+
+        DB::transaction(function () use ($registration, $athlete, $user): void {
+            $athlete = Athlete::query()->whereKey($athlete)->lockForUpdate()->firstOrFail();
+            $event = $registration->event;
+            $this->eligibility->validateProfile($event, $athlete);
+            $this->eligibility->validateSchoolDocument($event, $athlete);
+            foreach ($athlete->matchCategoryEntries()->where('event_id', $event->id)->with('matchCategory')->get() as $entry) {
+                $this->eligibility->validateCategory($event, $athlete, $entry->matchCategory);
+            }
+            $athlete->forceFill([
+                'school_verified_at' => now(),
+                'school_verified_by' => $user->id,
+                'school_verification_hash' => $this->eligibility->verificationHash($event, $athlete),
+            ])->save();
+        });
+
+        return back()->with('success', 'Data sekolah dan kelas atlet telah diverifikasi.');
+    }
+
+    public function updateTeam(Request $request, Registration $registration, AthleteMatchCategoryEntry $entry): RedirectResponse
+    {
+        $this->authorizeRegistrationMutation($request, $registration);
         abort_unless($entry->event_id === $registration->event_id && $entry->athlete?->contingent_id === $registration->contingent_id, 404);
         $category = $entry->matchCategory;
         abort_unless($category?->type === 'embu', 404);
@@ -304,7 +355,7 @@ class RegistrationWizardController extends Controller
 
     public function recalculate(Request $request, Registration $registration): RedirectResponse
     {
-        $this->authorizeRegistration($request, $registration);
+        $this->authorizeRegistrationMutation($request, $registration);
         DB::transaction(fn () => $this->syncFees($registration));
 
         return back()->with('success', 'Ringkasan biaya diperbarui.');
@@ -315,12 +366,30 @@ class RegistrationWizardController extends Controller
         $tenantEvent = $request->attributes->get('tenantEvent');
         abort_unless($request->user() && (! $tenantEvent || $tenantEvent->id === $registration->event_id), 404);
         $user = $request->user();
-        abort_unless($user->hasAnyRole(['Super Admin', 'Admin']) || $registration->contingent?->user_id === $user->id
+        abort_unless($this->canManageEvent($request, $registration) || $registration->contingent?->user_id === $user->id, 403);
+    }
+
+    private function authorizeRegistrationMutation(Request $request, Registration $registration): void
+    {
+        $this->authorizeRegistration($request, $registration);
+
+        if ($registration->status === RegistrationStatus::Verified && ! $this->canManageEvent($request, $registration)) {
+            throw ValidationException::withMessages([
+                'registration' => 'Registrasi sudah diverifikasi dan dikunci. Hubungi admin atau penyelenggara event jika data perlu diperbaiki.',
+            ]);
+        }
+    }
+
+    private function canManageEvent(Request $request, Registration $registration): bool
+    {
+        $user = $request->user();
+
+        return (bool) ($user && ($user->hasAnyRole(['Super Admin', 'Admin'])
             || in_array($registration->event?->accessRoleFor($user), [
                 Event::AccessRoleResponsible,
                 Event::AccessRoleAdmin,
                 Event::AccessRoleStaff,
-            ], true), 403);
+            ], true)));
     }
 
     private function authorizeSource(Request $request, Registration $registration, ?Contingent $source): void
@@ -349,6 +418,7 @@ class RegistrationWizardController extends Controller
 
     private function validateEligibility(Athlete $athlete, EventMatchCategory $category, Registration $registration, bool $promoted): void
     {
+        $this->eligibility->validateCategory($registration->event, $athlete, $category);
         if (($category->min_weight !== null && ($athlete->weight === null || $athlete->weight < $category->min_weight))
             || ($category->max_weight !== null && ($athlete->weight === null || $athlete->weight > $category->max_weight))) {
             throw ValidationException::withMessages(['category_ids' => "Berat badan tidak sesuai untuk {$category->name}."]);

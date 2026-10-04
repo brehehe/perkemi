@@ -1,5 +1,5 @@
 import ContingentLayout from '@/Layouts/ContingentLayout';
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 
 const sectionMeta = {
     registration: ['Registrasi', 'Kelola berkas pendaftaran kontingen untuk event aktif.', 'fa-file-signature'],
@@ -11,6 +11,11 @@ const sectionMeta = {
 };
 
 const statusClass = {
+    draft: 'border-stone-200 bg-stone-50 text-stone-700',
+    open_registration: 'border-blue-200 bg-blue-50 text-blue-700',
+    ongoing: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    completed: 'border-violet-200 bg-violet-50 text-violet-700',
+    closed: 'border-slate-200 bg-slate-50 text-slate-700',
     pending: 'border-amber-200 bg-amber-50 text-amber-700',
     verified: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     rejected: 'border-red-200 bg-red-50 text-red-700',
@@ -22,6 +27,14 @@ const formatDate = (value, withTime = false) => value ? new Intl.DateTimeFormat(
     day: '2-digit', month: 'short', year: 'numeric', ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
 }).format(new Date(value)) : '-';
 const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
+const sectionPath = {
+    registration: '/kontingen/registrasi',
+    schedule: '/kontingen/jadwal',
+    results: '/kontingen/hasil',
+    athletes: '/kontingen/atlet',
+    officials: '/kontingen/official',
+    history: '/kontingen/riwayat-pendaftaran',
+};
 
 function Badge({ value, label }) {
     const status = valueOf(value) || 'pending';
@@ -53,7 +66,35 @@ function StatCard({ label, value, icon, tone = 'red' }) {
     );
 }
 
-function RegistrationSection({ registration, summary = {}, createUrl }) {
+function EventFilter({ portal, section }) {
+    const event = portal?.event;
+    const eventOptions = portal?.event_options || [];
+    if (!event) return null;
+
+    const switchEvent = (eventId) => router.get(sectionPath[section] || '/kontingen/registrasi', { event_id: eventId }, {
+        preserveScroll: false,
+        preserveState: false,
+        replace: true,
+    });
+
+    return <section aria-label="Filter event" className="rounded-2xl border border-[#e4ddd4] bg-white p-4 shadow-sm shadow-stone-200/50">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#968d84]">Filter Event</p>
+                <p className="mt-1 truncate text-sm font-black text-[#1c1815]">{event.name}</p>
+                <p className="mt-1 text-xs text-[#7f776f]">{formatDate(event.start_date)} – {formatDate(event.end_date)} · {event.status_label}</p>
+            </div>
+            {eventOptions.length > 1 && <label className="block min-w-0 md:w-[390px]">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.1em] text-[#756d65]">Pilih event yang diikuti</span>
+                <select value={event.id} onChange={(changeEvent) => switchEvent(changeEvent.target.value)}
+                    className="h-11 w-full rounded-xl border border-[#ded7ce] bg-[#fcfaf7] px-3 text-xs font-semibold text-[#413b35] outline-none transition focus:border-[#c93629] focus:ring-2 focus:ring-[#c93629]/15">
+                    {eventOptions.map((option) => <option key={option.id} value={option.id}>{option.name} · {option.status_label}</option>)}
+                </select>
+            </label>}
+        </div>
+    </section>;
+}
+
+function RegistrationSection({ registration, summary = {}, registrationEvents = [], activeEventId }) {
     return (
         <div className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -62,6 +103,31 @@ function RegistrationSection({ registration, summary = {}, createUrl }) {
                 <StatCard label="Nomor Tanding" value={summary.match_entries || 0} icon="fa-people-group" tone="green" />
                 <StatCard label="Biaya Event" value={summary.is_paid ? 'Berbayar' : 'Gratis'} icon="fa-wallet" />
             </div>
+
+            <section className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm shadow-stone-200/50">
+                <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a47c25]">Event Kontingen</p>
+                    <h2 className="mt-1 text-base font-black text-[#1c1815]">Pilih event untuk melanjutkan registrasi</h2>
+                    <p className="mt-1 text-xs leading-5 text-[#817970]">Hanya event yang terhubung dengan akun kontingen ini yang ditampilkan.</p></div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">{registrationEvents.map((event) => <article key={event.id}
+                    className={`rounded-xl border p-4 ${event.id === activeEventId ? 'border-[#d7a743] bg-[#fffaf0]' : 'border-[#e8e1d8] bg-[#fcfaf7]'}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2">
+                        <Badge value={event.status} label={event.status_label} />
+                        {event.registration
+                            ? <Badge value={event.registration.status} label={`Registrasi: ${event.registration.status_label}`} />
+                            : <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">Belum Registrasi</span>}
+                        <span className="rounded-full border border-[#e4ddd4] bg-white px-2.5 py-1 text-[10px] font-bold text-[#746c64]">{event.is_paid ? 'Berbayar' : 'Gratis'}</span>
+                    </div><h3 className="mt-3 text-sm font-black text-[#1c1815]">{event.name}</h3>
+                        <p className="mt-1 text-xs text-[#817970]">{formatDate(event.start_date)} – {formatDate(event.end_date)}</p>
+                        <p className="mt-1 text-[11px] text-[#918980]">{event.contingent_name}</p></div>
+                        {event.registration && <p className="text-right text-[10px] font-bold uppercase tracking-wide text-[#8b6512]">{event.registration.registration_number}</p>}</div>
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#ebe4dc] pt-3">
+                        <p className="text-[11px] text-[#817970]">{event.registration ? `Diperbarui ${formatDate(event.registration.updated_at, true)}` : 'Belum ada berkas registrasi'}</p>
+                        <Link href={event.action_url} className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold ${event.registration ? 'border border-[#d9b04e] bg-white text-[#8b6512] hover:bg-[#fff5dc]' : 'bg-[#c93629] text-white hover:bg-[#ae2c23]'}`}>
+                            <i className={`fa-solid ${event.registration ? 'fa-arrow-right' : 'fa-plus'}`} /> {event.action_label}
+                        </Link>
+                    </div>
+                </article>)}</div>
+            </section>
 
             {registration ? (
                 <section className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm shadow-stone-200/50">
@@ -87,9 +153,8 @@ function RegistrationSection({ registration, summary = {}, createUrl }) {
                     </div>
                 </section>
             ) : (
-                <EmptyState icon="fa-file-circle-plus" title="Belum ada berkas registrasi" description="Mulai registrasi untuk menambahkan official, atlet, dan nomor pertandingan pada event ini." />
+                <EmptyState icon="fa-file-circle-plus" title="Belum ada berkas registrasi pada event terpilih" description="Gunakan tombol Mulai Registrasi pada daftar event di atas untuk menambahkan official, atlet, dan nomor pertandingan." />
             )}
-            {!registration && <Link href={createUrl} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#c93629] px-4 py-2 text-xs font-bold text-white"><i className="fa-solid fa-plus" /> Buat Registrasi</Link>}
         </div>
     );
 }
@@ -149,7 +214,7 @@ function HistorySection({ registrations = [] }) {
 export default function ContingentPortal(props) {
     const meta = sectionMeta[props.section] || sectionMeta.registration;
     const content = {
-        registration: <RegistrationSection registration={props.registration} summary={props.summary} createUrl={props.create_url} />,
+        registration: <RegistrationSection registration={props.registration} summary={props.summary} registrationEvents={props.registration_events} activeEventId={props.portal?.event?.id} />,
         schedule: <ScheduleSection rundowns={props.rundowns} matches={props.matches} />,
         results: <ResultsSection results={props.results} medalSummary={props.medal_summary} />,
         athletes: <AthletesSection athletes={props.athletes} manageUrl={props.manage_url} />,
@@ -167,6 +232,7 @@ export default function ContingentPortal(props) {
                         <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#d7a93e]">{props.portal?.contingent?.name}</p><h1 className="mt-1 font-cinzel text-xl font-bold md:text-2xl">{meta[0]}</h1><p className="mt-1 max-w-2xl text-xs leading-5 text-[#bdb4ac]">{meta[1]}</p></div>
                     </div>
                 </section>
+                {['schedule', 'results', 'athletes', 'officials'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
                 {content}
             </div>
         </ContingentLayout>

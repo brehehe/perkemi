@@ -1,3 +1,4 @@
+import SchoolFields, { schoolDefaults, schoolData } from '@/Components/UI/Forms/SchoolFields';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
@@ -35,6 +36,7 @@ export default function AthleteIndex({
         reset,
         clearErrors,
     } = useForm({
+        ...schoolDefaults,
         contingent_id: selectedContingent !== 'all' ? selectedContingent : contingentsList[0]?.id || '',
         name: '',
         nik: '',
@@ -99,7 +101,7 @@ export default function AthleteIndex({
         clearErrors();
         setEditingAthlete(athlete);
         setData({
-            contingent_id: athlete.contingent_id || '',
+            ...schoolData(athlete),            contingent_id: athlete.contingent_id || '',
             name: athlete.name || '',
             nik: athlete.nik || '',
             kenshi_number: athlete.kenshi_number || '',
@@ -630,6 +632,7 @@ export default function AthleteIndex({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Input label="Tempat Lahir" required value={data.birth_place} onChange={(e) => setData('birth_place', e.target.value)} error={errors.birth_place} />
                         <Input label="Tanggal Lahir" type="date" required value={data.birth_date} onChange={(e) => setData('birth_date', e.target.value)} error={errors.birth_date} />
+                        <div className="md:col-span-2"><SchoolFields form={{ data, setData, errors }} /></div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

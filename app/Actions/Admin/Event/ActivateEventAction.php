@@ -7,7 +7,7 @@ use App\Models\Event;
 class ActivateEventAction
 {
     /**
-     * Activate the specified event and deactivate all other events.
+     * Make the specified event available in operational menus.
      */
     public function execute(Event $event): Event
     {

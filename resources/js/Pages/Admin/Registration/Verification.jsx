@@ -2,6 +2,7 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import AdminLayout from '@/Layouts/AdminLayout';
 import Button from '@/Components/UI/Elements/Button';
 import Modal from '@/Components/UI/Overlays/Modal';
+import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import { Head, router, useForm } from '@inertiajs/react';
@@ -12,6 +13,9 @@ export default function RegistrationVerification({ athletes, contingents, stats,
     const [contingentFilter, setContingentFilter] = useState(filters.contingent_id || '');
     const [verifiedIds, setVerifiedIds] = useState({});
     const [entryAthlete, setEntryAthlete] = useState(null);
+    const [removingEntry, setRemovingEntry] = useState(null);
+    const [removing, setRemoving] = useState(false);
+    const [removeError, setRemoveError] = useState('');
     const entryForm = useForm({ event_match_category_id: '', event_id: activeEvent?.id || '' });
     useEffect(() => { entryForm.setData('event_id', activeEvent?.id || ''); }, [activeEvent?.id]);
 
@@ -63,10 +67,18 @@ export default function RegistrationVerification({ athletes, contingents, stats,
     };
 
     const removeMatchCategory = (athlete, entry) => {
-        if (!confirm(`Hapus ${entry.name} dari nomor pertandingan ${athlete.name}?`)) return;
-
-        router.delete(`/admin/pendaftaran/verifikasi/${athlete.id}/match-category/${entry.id}?event_id=${activeEvent?.id || ''}`, {
+        setRemoveError('');
+        setRemovingEntry({ athlete, entry });
+    };
+    const confirmRemoveMatchCategory = () => {
+        if (!removingEntry || removing) return;
+        setRemoving(true);
+        setRemoveError('');
+        router.delete(`/admin/pendaftaran/verifikasi/${removingEntry.athlete.id}/match-category/${removingEntry.entry.id}?event_id=${activeEvent?.id || ''}`, {
             preserveScroll: true,
+            onSuccess: () => setRemovingEntry(null),
+            onError: (errors) => setRemoveError(Object.values(errors).flat().join(' ')),
+            onFinish: () => setRemoving(false),
         });
     };
 
@@ -147,7 +159,7 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                     {eventOptions.length > 1 && <Combobox label="Event" size="sm" clearable={false}
                         value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pendaftaran/verifikasi',
                             { event_id: value, search, contingent_id: '' }, { preserveState: false })}
-                        options={eventOptions.map((event) => ({ value: event.id, label: event.name }))}
+                        options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))}
                         containerClassName="w-full md:w-64" />}
                     <Combobox label="Filter Kontingen" size="sm" value={contingentFilter}
                         onChange={handleContingentChange} placeholder="Semua Kontingen / Dojo"
@@ -310,6 +322,10 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                     )}
                 </Modal>
             </div>
+            <AlertConfirm isOpen={Boolean(removingEntry)} title="Hapus nomor pertandingan?"
+                message={`Hapus ${removingEntry?.entry.name || 'nomor ini'} dari daftar pertandingan ${removingEntry?.athlete.name || 'atlet'}?`}
+                confirmText="Hapus nomor" isLoading={removing} error={removeError}
+                onConfirm={confirmRemoveMatchCategory} onCancel={() => { if (!removing) setRemovingEntry(null); }} />
         </AdminLayout>
     );
 }

@@ -3,6 +3,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import Button from '@/Components/UI/Elements/Button';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
+import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -347,6 +348,8 @@ function ScheduleEditorModal({ match, courts, sessions, draft, errors, processin
 
 export default function TournamentDrawing({ activeEvent, events = [], categories = [], selectedCategory, drawing, matches = [], scheduleCourts = [], scheduleSessions = [], eventSchedule = [], workflow, settings, canManageDrawing }) {
     const [processing, setProcessing] = useState('');
+    const [resetConfirmation, setResetConfirmation] = useState(null);
+    const [resetError, setResetError] = useState('');
     const [scheduleEditMode, setScheduleEditMode] = useState(false);
     const [editingMatch, setEditingMatch] = useState(null);
     const [scheduleDraft, setScheduleDraft] = useState({ event_court_id: '', rundown_id: '', start_time: '' });
@@ -360,7 +363,7 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
 
     const visit = (data = {}) => router.get('/admin/pertandingan/drawing', { event_id: activeEvent?.id, ...data }, { preserveScroll: true, preserveState: true });
     const post = (url, data = {}, key) => router.post(url, { event_id: activeEvent.id, ...data }, { preserveScroll: true, onStart: () => setProcessing(key), onFinish: () => setProcessing('') });
-    const reset = () => router.delete('/admin/pertandingan/drawing/reset', { data: { event_id: activeEvent.id }, preserveScroll: true, onStart: () => setProcessing('reset'), onFinish: () => setProcessing('') });
+    const reset = () => { setResetError(''); setResetConfirmation('draft'); };
     const openScheduleEditor = (match) => {
         setEditingMatch(match);
         setScheduleDraft({
@@ -389,11 +392,25 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
         onFinish: () => setProcessing(''),
     });
     const resetCompetition = () => {
-        if (!window.confirm('Reset seluruh status pertandingan? Bagan dan jadwal tetap disimpan, tetapi status partai serta nilai sementara akan dikembalikan ke awal.')) {
-            return;
+        setResetError('');
+        setResetConfirmation('competition');
+    };
+    const confirmReset = () => {
+        if (!resetConfirmation || processing) return;
+        const competition = resetConfirmation === 'competition';
+        setProcessing(competition ? 'reset-competition' : 'reset');
+        setResetError('');
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setResetConfirmation(null),
+            onError: (errors) => setResetError(Object.values(errors).flat().join(' ')),
+            onFinish: () => setProcessing(''),
+        };
+        if (competition) {
+            router.post('/admin/pertandingan/drawing/reset-competition', { event_id: activeEvent.id }, options);
+        } else {
+            router.delete('/admin/pertandingan/drawing/reset', { ...options, data: { event_id: activeEvent.id } });
         }
-
-        post('/admin/pertandingan/drawing/reset-competition', {}, 'reset-competition');
     };
 
     const stages = [
@@ -415,14 +432,14 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                             <h1 className="mt-1.5 text-2xl font-bold leading-tight tracking-tight md:text-3xl">Generate Bagan & Jadwal Pertandingan</h1>
                             <p className="mt-2.5 max-w-3xl text-sm leading-relaxed text-white/70">Peserta terverifikasi dipisahkan antar-kontingen, dibentuk menjadi pool atau bracket, lalu dijadwalkan ke sesi dan lapangan event.</p>
                         </div>
-                        <Combobox label="Event aktif" labelClassName="text-white/60" containerClassName="w-full xl:w-96"
+                        <Combobox label="Event dipilih" labelClassName="text-white/60" containerClassName="w-full xl:w-96"
                             value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pertandingan/drawing', { event_id: value })}
-                            clearable={false} options={events.map((item) => ({ value: item.id, label: item.name }))} />
+                            clearable={false} options={events.map((item) => ({ value: item.id, label: item.name, sublabel: item.option_description }))} />
                     </div>
                     <div className="relative mt-5 flex gap-3 overflow-x-auto">{stages.map((stage, index) => <WorkflowStep key={stage.title} number={index + 1} {...stage} />)}</div>
                 </section>
 
-                {!activeEvent ? <EmptyState icon="fa-calendar-xmark" title="Event belum dipilih" description="Pilih event aktif agar precheck dan drawing dapat dijalankan." /> : <>
+                {!activeEvent ? <EmptyState icon="fa-calendar-xmark" title="Event belum dipilih" description="Pilih event agar precheck dan drawing dapat dijalankan." /> : <>
                     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         {[
                             ['Kategori siap', workflow.ready_categories, 'fa-circle-check', 'text-emerald-600'],
@@ -486,6 +503,10 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                 onClose={() => setEditingMatch(null)}
                 onSave={saveSchedule}
             />
+            <AlertConfirm isOpen={Boolean(resetConfirmation)} title={resetConfirmation === 'competition' ? 'Reset seluruh status pertandingan?' : 'Reset draft drawing?'}
+                message={resetConfirmation === 'competition' ? 'Bagan dan jadwal tetap disimpan. Status partai dan nilai sementara akan dikembalikan ke awal.' : 'Draft bagan dan jadwal yang telah dibuat akan dihapus. Drawing perlu dibuat ulang.'}
+                confirmText={resetConfirmation === 'competition' ? 'Reset pertandingan' : 'Reset draft'} error={resetError} isLoading={Boolean(processing)}
+                onConfirm={confirmReset} onCancel={() => { if (!processing) setResetConfirmation(null); }} />
         </AdminLayout>
     );
 }

@@ -141,7 +141,7 @@ class TournamentController extends Controller
         };
 
         return Inertia::render('Admin/Tournament/Drawing', [
-            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date']),
+            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
             'events' => $this->accessibleEvents($request),
             'categories' => $categories,
             'selectedCategory' => $selectedCategory?->id,
@@ -497,7 +497,7 @@ class TournamentController extends Controller
         })->values();
 
         return Inertia::render('Admin/Tournament/Merge', [
-            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city']),
+            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
             'events' => $this->accessibleEvents($request),
             'categories' => $categories,
             'canManageMerge' => $this->canManageTournament($request, $activeEvent),
@@ -682,6 +682,7 @@ class TournamentController extends Controller
         return $this->accessibleEventsQuery($request)
             ->orderByDesc('is_active')
             ->orderByDesc('start_date')
+            ->orderByDesc('id')
             ->first();
     }
 
@@ -729,13 +730,34 @@ class TournamentController extends Controller
         return $query;
     }
 
-    /** @return Collection<int, array{id: string, name: string}> */
+    /**
+     * @return Collection<int, array{id: string, name: string, city: ?string, date_label: string, status: string, status_label: string, is_active: bool, option_description: string}>
+     */
     private function accessibleEvents(Request $request): Collection
     {
         return $this->accessibleEventsQuery($request)
             ->orderByDesc('is_active')
             ->orderByDesc('start_date')
-            ->get(['id', 'name'])
-            ->map(fn (Event $event) => ['id' => $event->id, 'name' => $event->name]);
+            ->orderByDesc('id')
+            ->get(['id', 'name', 'city', 'start_date', 'end_date', 'status', 'is_active'])
+            ->map(function (Event $event): array {
+                $dateLabel = $event->start_date?->translatedFormat('d M Y').' – '.$event->end_date?->translatedFormat('d M Y');
+
+                return [
+                    'id' => $event->id,
+                    'name' => $event->name,
+                    'city' => $event->city,
+                    'date_label' => $dateLabel,
+                    'status' => $event->status->value,
+                    'status_label' => $event->status->label(),
+                    'is_active' => (bool) $event->is_active,
+                    'option_description' => implode(' · ', array_filter([
+                        $event->status->label(),
+                        $dateLabel,
+                        $event->city,
+                        $event->is_active ? 'Operasional' : 'Nonaktif operasional',
+                    ])),
+                ];
+            });
     }
 }

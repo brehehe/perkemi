@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { Avatar, CommandPalette } from '@/Components/UI';
 import ContingentLayout from '@/Layouts/ContingentLayout';
+import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 
 export default function AdminLayout({ children, title = 'Admin Dashboard', auth = {} }) {
     const { url, props } = usePage();
@@ -56,6 +57,15 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isFullAdmin = user.roles?.some((role) => ['Super Admin', 'Admin'].includes(role));
     const isRestrictedTenant = Boolean(tenant) && !isFullAdmin;
     const isResponsibleTenant = tenant?.access_role === 'responsible';
+    const requestedEventId = new URLSearchParams(url.split('?')[1] || '').get('event_id');
+    const currentEventId = tenant?.id
+        || props.activeEvent?.id
+        || props.registration?.event?.id
+        || props.event?.id
+        || requestedEventId;
+    const withEventContext = (path) => currentEventId
+        ? `${path}?event_id=${encodeURIComponent(currentEventId)}`
+        : path;
 
     const initials = user.name ? user.name.substring(0, 2).toUpperCase() : 'AD';
     const tenantCommandIds = new Set([
@@ -152,7 +162,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Daftar & status pendaftaran seluruh kontingen',
             category: 'Pendaftaran',
             icon: <i className="fa-solid fa-file-signature text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/pendaftaran/registrasi'),
+            onSelect: () => router.visit(withEventContext('/admin/pendaftaran/registrasi')),
         },
         {
             id: 'nomor-pertandingan',
@@ -160,7 +170,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Kelola tim Embu dan teknik setiap kontingen',
             category: 'Pendaftaran',
             icon: <i className="fa-solid fa-people-group text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/pendaftaran/nomor-pertandingan'),
+            onSelect: () => router.visit(withEventContext('/admin/pendaftaran/nomor-pertandingan')),
         },
         {
             id: 'verifikasi',
@@ -168,7 +178,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Periksa keabsahan KTA, akta, dan foto atlet',
             category: 'Pendaftaran',
             icon: <i className="fa-solid fa-user-check text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/pendaftaran/verifikasi'),
+            onSelect: () => router.visit(withEventContext('/admin/pendaftaran/verifikasi')),
         },
         {
             id: 'drawing',
@@ -176,7 +186,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Pengundian nomor bagan tanding Embu & Randori',
             category: 'Pertandingan',
             icon: <i className="fa-solid fa-dice text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/pertandingan/drawing'),
+            onSelect: () => router.visit(withEventContext('/admin/pertandingan/drawing')),
         },
         {
             id: 'merge',
@@ -184,7 +194,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Penggabungan kelas tanding kurang kuota',
             category: 'Pertandingan',
             icon: <i className="fa-solid fa-object-group text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/pertandingan/merge'),
+            onSelect: () => router.visit(withEventContext('/admin/pertandingan/merge')),
         },
         {
             id: 'wasit',
@@ -280,55 +290,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             <Head title={`${title} | Smart Perkemi`} />
 
             <div className="min-h-screen bg-[#f7f4ef] text-[#0f0d0b] font-dm flex flex-col antialiased">
-                {/* Mobile Backdrop Overlay */}
-                {sidebarOpen && (
-                    <div
-                        className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 lg:hidden transition-opacity"
-                        onClick={() => setSidebarOpen(false)}
-                    />
-                )}
-
-                {/* ════ SIDEBAR ════ */}
-                <aside
-                    className={`fixed top-0 bottom-0 left-0 w-[260px] bg-[#0f0d0b] text-[#f7f4ef] z-50 flex flex-col transition-transform duration-300 ease-in-out overflow-hidden shadow-2xl ${
-                        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                    }`}
-                >
-                    {/* Glowing radial background accent */}
-                    <div className="absolute -top-16 -right-16 w-56 h-56 bg-[radial-gradient(circle,rgba(192,57,43,0.35)_0%,transparent_70%)] pointer-events-none" />
-
-                    {/* Brand Header */}
-                    <div className="p-6 pb-5 border-b border-white/10 relative flex items-center justify-between">
-                        <div className="flex items-center gap-3.5">
-                            <div
-                                className="w-11 h-11 rounded-xl flex items-center justify-center font-cinzel text-[#d4a843] font-bold text-xl flex-shrink-0 shadow-lg"
-                                style={{
-                                    background: 'linear-gradient(135deg, #c0392b, #96281b)',
-                                    boxShadow: '0 4px 20px rgba(192, 57, 43, 0.5)',
-                                }}
-                            >
-                                拳
-                            </div>
-                            <div>
-                                <h1 className="font-cinzel text-xs font-bold text-white tracking-widest uppercase leading-snug">
-                                    Smart Perkemi
-                                </h1>
-                                <p className="text-[#b5afa6] text-[9.5px] tracking-[0.14em] uppercase mt-0.5">
-                                    Admin Panel · 2026
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Mobile Close Button */}
-                        <button
-                            type="button"
-                            onClick={() => setSidebarOpen(false)}
-                            className="lg:hidden text-white/50 hover:text-white text-lg p-1.5 cursor-pointer"
-                        >
-                            <i className="fa-solid fa-xmark"></i>
-                        </button>
-                    </div>
-
+                <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
                     {tenant && (
                         <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
                             <Link
@@ -399,7 +361,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             {openSections.pendaftaran && (
                                 <div className="space-y-0.5 pl-2">
                                     <Link
-                                        href="/admin/pendaftaran/registrasi"
+                                        href={withEventContext('/admin/pendaftaran/registrasi')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isRegistration
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -410,7 +372,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Registrasi Kontingen</span>
                                     </Link>
                                     <Link
-                                        href="/admin/pendaftaran/nomor-pertandingan"
+                                        href={withEventContext('/admin/pendaftaran/nomor-pertandingan')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${
                                             isMatchGroups
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -421,7 +383,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Nomor dan Kelompok Pertandingan</span>
                                     </Link>
                                     <Link
-                                        href="/admin/pendaftaran/verifikasi"
+                                        href={withEventContext('/admin/pendaftaran/verifikasi')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isVerification
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -448,7 +410,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             {openSections.pertandingan && (
                                 <div className="space-y-0.5 pl-2">
                                     <Link
-                                        href="/admin/pertandingan/drawing"
+                                        href={withEventContext('/admin/pertandingan/drawing')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isDrawing
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -459,7 +421,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Drawing & Bagan TM</span>
                                     </Link>
                                     <Link
-                                        href="/admin/pertandingan/merge"
+                                        href={withEventContext('/admin/pertandingan/merge')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isMerge
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -743,7 +705,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             </button>
                         </div>
                     </nav>
-                </aside>
+                </PanelSidebar>
 
                 {/* ════ MAIN CONTENT CONTAINER ════ */}
                 <div className="min-w-0 flex-1 flex flex-col overflow-x-hidden lg:ml-[260px]">

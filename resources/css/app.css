@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import './public-event.css';
+@import './home.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -6,6 +6,8 @@ use App\Models\Event;
 use App\Models\Official;
 use App\Models\Registration;
 use App\Models\Role;
+use App\Models\Rundown;
+use App\Models\TournamentResult;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -138,4 +140,97 @@ test('opening an owned registration switches event context before entering its w
             'step' => 3,
         ]))
         ->assertSessionHas('tenant_event_id', $historyEvent->id);
+});
+
+test('contingent can view schedules and results for each owned event', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $firstEvent = portalEvent('Event Pertama', 'event-pertama', true);
+    $secondEvent = portalEvent('Event Kedua', 'event-kedua');
+    $firstContingent = portalContingent($owner, $firstEvent, 'Kontingen Pertama');
+    $secondContingent = portalContingent($owner, $secondEvent, 'Kontingen Kedua');
+    $firstRegistration = Registration::create([
+        'event_id' => $firstEvent->id,
+        'contingent_id' => $firstContingent->id,
+        'registration_number' => 'REG-EVENT-PERTAMA',
+    ]);
+    $firstAthlete = Athlete::create(['contingent_id' => $firstContingent->id, 'name' => 'Atlet Pertama', 'gender' => 'L']);
+    $secondAthlete = Athlete::create(['contingent_id' => $secondContingent->id, 'name' => 'Atlet Kedua', 'gender' => 'P']);
+    Rundown::create([
+        'event_id' => $firstEvent->id,
+        'date' => '2026-11-06 08:00:00',
+        'name' => 'Rundown Pertama',
+        'type' => 'match',
+    ]);
+    Rundown::create([
+        'event_id' => $secondEvent->id,
+        'date' => '2026-11-07 08:00:00',
+        'name' => 'Rundown Kedua',
+        'type' => 'match',
+    ]);
+    TournamentResult::create([
+        'event_id' => $firstEvent->id,
+        'contingent_id' => $firstContingent->id,
+        'athlete_id' => $firstAthlete->id,
+        'contingent_name' => $firstContingent->name,
+        'rank' => 1,
+        'match_category' => 'Randori Putra',
+    ]);
+    TournamentResult::create([
+        'event_id' => $secondEvent->id,
+        'contingent_id' => $secondContingent->id,
+        'athlete_id' => $secondAthlete->id,
+        'contingent_name' => $secondContingent->name,
+        'rank' => 2,
+        'match_category' => 'Randori Putri',
+    ]);
+
+    $this->actingAs($owner)->withSession(['tenant_event_id' => $firstEvent->id])
+        ->get('/kontingen/jadwal?event_id='.$secondEvent->id)
+        ->assertSessionHas('tenant_event_id', $secondEvent->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'schedule')
+            ->where('portal.event.id', $secondEvent->id)
+            ->where('portal.event.status_label', 'Pendaftaran Buka')
+            ->has('portal.event_options', 2)
+            ->has('rundowns', 1)
+            ->where('rundowns.0.name', 'Rundown Kedua'));
+
+    $this->actingAs($owner)->get('/kontingen/hasil?event_id='.$firstEvent->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'results')
+            ->where('portal.event.id', $firstEvent->id)
+            ->has('results', 1)
+            ->where('results.0.athlete.name', 'Atlet Pertama')
+            ->where('medal_summary.gold', 1)
+            ->where('medal_summary.silver', 0));
+
+    $this->actingAs($owner)->get('/kontingen/registrasi?event_id='.$secondEvent->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'registration')
+            ->where('portal.event.id', $secondEvent->id)
+            ->where('registration', null)
+            ->has('registration_events', 2)
+            ->where('registration_events.0.id', $firstEvent->id)
+            ->where('registration_events.0.registration.id', $firstRegistration->id)
+            ->where('registration_events.0.action_label', 'Lihat Registrasi')
+            ->where('registration_events.1.id', $secondEvent->id)
+            ->where('registration_events.1.registration', null)
+            ->where('registration_events.1.action_label', 'Mulai Registrasi'));
+
+    $this->actingAs($owner)->get(route('kontingen.registrasi.start', $secondEvent))
+        ->assertRedirect(route('admin.pendaftaran.registrasi.create', ['event_id' => $secondEvent->id]))
+        ->assertSessionHas('tenant_event_id', $secondEvent->id);
+    $this->actingAs($owner)->get(route('kontingen.registrasi.start', $firstEvent))
+        ->assertRedirect(route('admin.pendaftaran.registrasi.detail', [
+            'registration' => $firstRegistration,
+            'step' => 1,
+        ]));
+
+    $unownedEvent = portalEvent('Event Bukan Milik', 'event-bukan-milik');
+    $this->actingAs($owner)->get('/kontingen/hasil?event_id='.$unownedEvent->id)->assertNotFound();
+    $this->actingAs($owner)->get(route('kontingen.registrasi.start', $unownedEvent))->assertNotFound();
 });

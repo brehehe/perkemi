@@ -56,6 +56,7 @@ class EventController extends Controller
 
         $events = $query->orderByDesc('is_active')
             ->orderByDesc('start_date')
+            ->orderByDesc('id')
             ->paginate(9)
             ->through(function (Event $event) {
                 return [
@@ -94,7 +95,9 @@ class EventController extends Controller
             ->withQueryString();
 
         $activeEventQuery = Event::withCount(['contingents', 'registrations', 'rundowns'])
-            ->where('is_active', true);
+            ->where('is_active', true)
+            ->orderByDesc('start_date')
+            ->orderByDesc('id');
 
         if ($tenantEvent instanceof Event) {
             $activeEventQuery->whereKey($tenantEvent);
@@ -120,7 +123,8 @@ class EventController extends Controller
         $homepageSetting = SiteSetting::current();
         $homepageEventOptionsQuery = Event::query()
             ->select('id', 'name', 'edition', 'start_date', 'status')
-            ->orderByDesc('start_date');
+            ->orderByDesc('start_date')
+            ->orderByDesc('id');
 
         if ($tenantEvent instanceof Event) {
             $homepageEventOptionsQuery->whereKey($tenantEvent);
@@ -202,14 +206,14 @@ class EventController extends Controller
     }
 
     /**
-     * Set the specified event as the active tournament event.
+     * Make the specified event available in operational menus.
      */
     public function activate(Event $event, ActivateEventAction $action): RedirectResponse
     {
         $action->execute($event);
 
         return redirect()->route('admin.master.event.index')
-            ->with('success', "Event '{$event->name}' sekarang aktif sebagai kejuaraan utama.");
+            ->with('success', "Event '{$event->name}' sekarang aktif dan dapat dikelola bersama event aktif lainnya.");
     }
 
     public function updateHomepageSettings(UpdateHomepageSettingsRequest $request): RedirectResponse

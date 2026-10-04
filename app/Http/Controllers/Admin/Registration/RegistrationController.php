@@ -17,6 +17,7 @@ use App\Models\Kyu;
 use App\Models\Official;
 use App\Models\Registration;
 use App\Models\Technique;
+use App\Services\ParticipantEligibilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -30,6 +31,8 @@ use Inertia\Response;
 
 class RegistrationController extends Controller
 {
+    public function __construct(private ParticipantEligibilityService $eligibility) {}
+
     /**
      * Display a listing of contingent registrations.
      */
@@ -109,7 +112,7 @@ class RegistrationController extends Controller
             'registrations' => $registrations,
             'stats' => $stats,
             'activeEvent' => $activeEvent,
-            'eventOptions' => $events->map->only(['id', 'name', 'is_paid'])->values(),
+            'eventOptions' => $this->eventOptions($events),
             'canCreate' => $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
                 || $this->canManageMatchEntries($request, $activeEvent)
                 || ($activeEvent instanceof Event && $activeEvent->contingents()->where('user_id', $request->user()?->id)->exists()),
@@ -137,6 +140,7 @@ class RegistrationController extends Controller
             ->when(! $isAdmin && ! ($tenantEvent instanceof Event), fn ($query) => $query->whereIn('id', $ownedEventIds))
             ->orderByDesc('is_active')
             ->orderByDesc('start_date')
+            ->orderByDesc('id')
             ->get(['id', 'name', 'start_date', 'is_paid', 'fee_per_athlete', 'fee_per_contingent']);
         $contingents = Contingent::query()
             ->when($tenantEvent instanceof Event, fn ($query) => $query->whereBelongsTo($tenantEvent))
@@ -150,7 +154,7 @@ class RegistrationController extends Controller
             'events' => $events,
             'contingents' => $contingents,
             'selectedEventId' => $tenantEvent?->id ?? $events->firstWhere('id', $request->input('event_id'))?->id
-                ?? $events->firstWhere('id', Event::query()->where('is_active', true)->value('id'))?->id ?? $events->first()?->id,
+                ?? $events->firstWhere('is_active', true)?->id ?? $events->first()?->id,
             'isAdmin' => $isAdmin,
         ]);
     }
@@ -216,7 +220,7 @@ class RegistrationController extends Controller
                     $contingent->save();
 
                     foreach ($source->athletes as $athlete) {
-                        $copy = $athlete->replicate();
+                        $copy = $athlete->replicate(['school_document_path', 'school_verified_at', 'school_verified_by', 'school_verification_hash']);
                         $copy->contingent_id = $contingent->id;
                         $copy->event_age_category_id = null;
                         $copy->save();
@@ -262,7 +266,7 @@ class RegistrationController extends Controller
         abort_unless($event instanceof Event && ($this->canManageMatchEntries($request, $event)
             || $registration->contingent?->user_id === $request->user()?->id), 403);
         $registration->load(['contingent:id,event_id,user_id,name,city,manager_name,phone,email,address',
-            'event:id,name,start_date,is_paid,fee_per_athlete,fee_per_contingent,max_match_categories_per_athlete,allow_cross_age_group_embu',
+            'event:id,name,start_date,is_paid,fee_per_athlete,fee_per_contingent,max_match_categories_per_athlete,allow_cross_age_group_embu,participant_rules',
             'paymentMethod:id,name,type,provider,account_name,account_number']);
 
         $athletes = Athlete::query()
@@ -271,7 +275,12 @@ class RegistrationController extends Controller
                 ->whereBelongsTo($event)
                 ->with('matchCategory:id,name,type')])
             ->orderBy('name')
-            ->get(['id', 'contingent_id', 'event_age_category_id', 'name', 'nik', 'kenshi_number', 'gender', 'birth_place', 'birth_date', 'blood_type', 'dojo_name', 'kyu_dan', 'bpjs_number', 'bpjs_status', 'profile_photo_path', 'weight']);
+            ->get(['id', 'contingent_id', 'event_age_category_id', 'name', 'nik', 'kenshi_number', 'gender', 'birth_place', 'birth_date', 'blood_type', 'dojo_name', 'kyu_dan', 'bpjs_number', 'bpjs_status', 'profile_photo_path', 'weight', 'school_name', 'school_level', 'school_entry_year', 'school_grade', 'school_document_path', 'school_verified_at', 'school_verified_by', 'school_verification_hash']);
+        $athletes->each(function (Athlete $athlete) use ($event): void {
+            $athlete->setAttribute('school_verification_valid', $this->eligibility->schoolVerified($event, $athlete));
+            $athlete->setAttribute('eligibility_errors', array_values($this->eligibility->profileErrors($event, $athlete)));
+            $athlete->setAttribute('expected_school_grade', $this->eligibility->expectedGrade($event, $athlete));
+        });
         $categories = $event->matchCategories()
             ->where('is_active', true)
             ->whereNull('merged_into_id')
@@ -298,6 +307,8 @@ class RegistrationController extends Controller
             ->get();
         $admin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']);
         $eventStaff = $this->canManageMatchEntries($request, $event);
+        $registrationOwner = $registration->contingent->user_id === $request->user()?->id;
+        $registrationLocked = $registration->status === RegistrationStatus::Verified && ! $eventStaff;
         $sourceScope = fn ($query) => $query->where(function ($contingentQuery) use ($request, $event, $eventStaff) {
             $contingentQuery->where('user_id', $request->user()->id);
             if ($eventStaff) {
@@ -307,6 +318,8 @@ class RegistrationController extends Controller
 
         return Inertia::render('Admin/Registration/WizardDetail', [
             'registration' => $registration,
+            'participantRequirements' => $this->eligibility->summary($event),
+            'canVerifySchool' => $eventStaff,
             'athletes' => $athletes,
             'categories' => $categories,
             'teamTechniques' => $teamTechniques,
@@ -318,7 +331,8 @@ class RegistrationController extends Controller
             'kyus' => Kyu::query()->where('is_active', true)->orderBy('order')->pluck('name'),
             'ageCategories' => $event->ageCategories()->where('is_active', true)->orderBy('order')->get(['id', 'name', 'min_age', 'max_age']),
             'paymentMethods' => $event->paymentMethods()->where('payment_methods.is_active', true)->get(['payment_methods.id', 'name', 'type', 'provider', 'account_name', 'account_number']),
-            'canManage' => $this->canManageMatchEntries($request, $event) || $registration->contingent->user_id === $request->user()?->id,
+            'canManage' => $eventStaff || ($registrationOwner && ! $registrationLocked),
+            'registrationLocked' => $registrationLocked,
         ]);
     }
 
@@ -396,7 +410,7 @@ class RegistrationController extends Controller
 
         return Inertia::render('Admin/Registration/MatchGroups', [
             'activeEvent' => $event->only(['id', 'name']),
-            'eventOptions' => $events->map->only(['id', 'name'])->values(),
+            'eventOptions' => $this->eventOptions($events),
             'registrations' => $registrations,
             'registration' => $registration,
             'athletes' => $athletes,
@@ -517,7 +531,7 @@ class RegistrationController extends Controller
                 'event_id' => $activeEvent?->id,
             ],
             'activeEvent' => $activeEvent?->only(['id', 'name']),
-            'eventOptions' => $events->map->only(['id', 'name'])->values(),
+            'eventOptions' => $this->eventOptions($events),
             'matchCategories' => $matchCategories,
             'maxMatchCategoriesPerAthlete' => $activeEvent?->max_match_categories_per_athlete,
             'canManageMatchEntries' => $this->canManageMatchEntries($request, $activeEvent),
@@ -532,9 +546,13 @@ class RegistrationController extends Controller
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($this->canManageMatchEntries($request, $registration->event), 403);
 
-        $registration->update([
-            'status' => RegistrationStatus::Verified,
-        ]);
+        DB::transaction(function () use ($registration): void {
+            $event = Event::query()->whereKey($registration->event_id)->lockForUpdate()->firstOrFail();
+            $registration = Registration::query()->whereKey($registration)->lockForUpdate()->firstOrFail();
+            $registration->setRelation('event', $event);
+            $this->eligibility->validateRegistration($registration);
+            $registration->update(['status' => RegistrationStatus::Verified]);
+        }, 3);
 
         return redirect()->back()->with('success', "Registrasi {$registration->registration_number} berhasil disetujui & diverifikasi.");
     }
@@ -558,6 +576,7 @@ class RegistrationController extends Controller
     {
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
 
         if (! $registration->event?->is_paid) {
             throw ValidationException::withMessages([
@@ -653,16 +672,20 @@ class RegistrationController extends Controller
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($athlete->contingent_id === $registration->contingent_id, 404);
+        abort_unless($this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
 
-        return $this->addMatchCategoryForEvent($request, $registration->event, $athlete);
+        return $this->addMatchCategoryForEvent($request, $registration->event, $athlete, true);
     }
 
     private function addMatchCategoryForEvent(
         StoreAthleteMatchCategoryEntryRequest $request,
         ?Event $activeEvent,
-        Athlete $athlete
+        Athlete $athlete,
+        bool $allowContingentOwner = false,
     ): RedirectResponse {
-        abort_unless($activeEvent instanceof Event && $this->canManageMatchEntries($request, $activeEvent), 403);
+        $isContingentOwner = $allowContingentOwner && $athlete->contingent?->user_id === $request->user()?->id;
+        abort_unless($activeEvent instanceof Event && ($this->canManageMatchEntries($request, $activeEvent) || $isContingentOwner), 403);
 
         DB::transaction(function () use ($request, $activeEvent, $athlete): void {
             $athlete = Athlete::query()->whereKey($athlete)->lockForUpdate()->firstOrFail();
@@ -757,7 +780,8 @@ class RegistrationController extends Controller
         AthleteMatchCategoryEntry $entry
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
-        abort_unless($registration->event instanceof Event && $this->canManageMatchEntries($request, $registration->event), 403);
+        abort_unless($registration->event instanceof Event && $this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
         abort_unless($athlete->contingent_id === $registration->contingent_id, 404);
         abort_unless($entry->event_id === $registration->event_id && $entry->athlete_id === $athlete->id, 404);
 
@@ -774,7 +798,8 @@ class RegistrationController extends Controller
         AthleteMatchCategoryEntry $entry
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
-        abort_unless($registration->event instanceof Event && $this->canManageMatchEntries($request, $registration->event), 403);
+        abort_unless($registration->event instanceof Event && $this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
         abort_unless($athlete->contingent_id === $registration->contingent_id && $entry->athlete_id === $athlete->id && $entry->event_id === $registration->event_id, 404);
 
         $validated = $request->validate(['team_number' => ['required', 'integer', 'min:1', 'max:20']]);
@@ -817,6 +842,7 @@ class RegistrationController extends Controller
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($registration->event instanceof Event && $this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
         abort_unless($category->event_id === $registration->event_id && $category->type === 'embu'
             && $category->is_active && $category->merged_into_id === null && $teamNumber >= 1 && $teamNumber <= 20, 404);
 
@@ -886,6 +912,7 @@ class RegistrationController extends Controller
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($registration->event instanceof Event && $this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
         abort_unless($category->event_id === $registration->event_id && $category->type === 'embu', 404);
         abort_unless($teamTechnique->event_id === $registration->event_id
             && $teamTechnique->contingent_id === $registration->contingent_id
@@ -939,6 +966,16 @@ class RegistrationController extends Controller
         abort_unless(! ($tenantEvent instanceof Event) || $registration->event_id === $tenantEvent->id, 404);
     }
 
+    private function ensureRegistrationEditable(Request $request, Registration $registration): void
+    {
+        if ($registration->status === RegistrationStatus::Verified
+            && ! $this->canManageMatchEntries($request, $registration->event)) {
+            throw ValidationException::withMessages([
+                'registration' => 'Registrasi sudah diverifikasi dan dikunci. Hubungi admin atau penyelenggara event jika data perlu diperbaiki.',
+            ]);
+        }
+    }
+
     private function eventForRequest(Request $request): ?Event
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
@@ -969,7 +1006,36 @@ class RegistrationController extends Controller
             ))
             ->orderByDesc('is_active')
             ->orderByDesc('start_date')
+            ->orderByDesc('id')
             ->get();
+    }
+
+    /**
+     * @param  Collection<int, Event>  $events
+     * @return Collection<int, array{id: string, name: string, city: ?string, date_label: string, status: string, status_label: string, is_active: bool, is_paid: bool, option_description: string}>
+     */
+    private function eventOptions(Collection $events): Collection
+    {
+        return $events->map(function (Event $event): array {
+            $dateLabel = $event->start_date?->translatedFormat('d M Y').' – '.$event->end_date?->translatedFormat('d M Y');
+
+            return [
+                'id' => $event->id,
+                'name' => $event->name,
+                'city' => $event->city,
+                'date_label' => $dateLabel,
+                'status' => $event->status->value,
+                'status_label' => $event->status->label(),
+                'is_active' => (bool) $event->is_active,
+                'is_paid' => (bool) $event->is_paid,
+                'option_description' => implode(' · ', array_filter([
+                    $event->status->label(),
+                    $dateLabel,
+                    $event->city,
+                    $event->is_active ? 'Operasional' : 'Nonaktif operasional',
+                ])),
+            ];
+        })->values();
     }
 
     private function canManageMatchEntries(Request $request, ?Event $event): bool
@@ -1011,6 +1077,7 @@ class RegistrationController extends Controller
         EventMatchCategory $matchCategory,
         Event $event
     ): void {
+        $this->eligibility->validateCategory($event, $athlete, $matchCategory, 'event_match_category_id');
         if ($matchCategory->min_weight !== null && ($athlete->weight === null || (float) $athlete->weight < (float) $matchCategory->min_weight)) {
             throw ValidationException::withMessages([
                 'event_match_category_id' => 'Berat badan atlet belum memenuhi batas minimal nomor pertandingan.',
@@ -1035,7 +1102,7 @@ class RegistrationController extends Controller
             return;
         }
 
-        if ($ageCategory !== null && ($ageCategory->min_age !== null || $ageCategory->max_age !== null)) {
+        if (! $this->eligibility->enabled($event) && $ageCategory !== null && ($ageCategory->min_age !== null || $ageCategory->max_age !== null)) {
             if ($athlete->birth_date === null) {
                 throw ValidationException::withMessages([
                     'event_match_category_id' => 'Tanggal lahir atlet diperlukan untuk nomor pertandingan berdasarkan kelompok umur.',
