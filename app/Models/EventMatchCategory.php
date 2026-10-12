@@ -116,4 +116,9 @@ class EventMatchCategory extends Model
     {
         return $this->hasOne(TournamentDrawing::class);
     }
+
+    public function tournamentResults(): HasMany
+    {
+        return $this->hasMany(TournamentResult::class);
+    }
 }

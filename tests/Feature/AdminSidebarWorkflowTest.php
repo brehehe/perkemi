@@ -30,6 +30,7 @@ test('admin can access all operational workflow pages in the sidebar', function 
     ['/admin/pendaftaran/registrasi', 'Admin/Registration/Index'],
     ['/admin/pendaftaran/verifikasi', 'Admin/Registration/Verification'],
     ['/admin/pertandingan/drawing', 'Admin/Tournament/Drawing'],
+    ['/admin/pertandingan/jadwal', 'Admin/Tournament/Schedule'],
     ['/admin/pertandingan/merge', 'Admin/Tournament/Merge'],
     ['/admin/arbitrase/wasit', 'Admin/Arbitration/Referee'],
     ['/admin/arbitrase/penugasan', 'Admin/Arbitration/Assignment'],

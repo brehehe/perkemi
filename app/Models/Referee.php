@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Referee extends Model
@@ -14,6 +16,7 @@ class Referee extends Model
 
     /** @var list<string> */
     protected $fillable = [
+        'user_id',
         'name',
         'gender',
         'dan_grade',
@@ -41,5 +44,25 @@ class Referee extends Model
     public function events(): BelongsToMany
     {
         return $this->belongsToMany(Event::class)->withPivot('role')->withTimestamps();
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(RefereeAttendance::class);
+    }
+
+    public function courtAttendances(): HasMany
+    {
+        return $this->hasMany(RefereeCourtAttendance::class);
+    }
+
+    public function embuJudgeScores(): HasMany
+    {
+        return $this->hasMany(EmbuJudgeScore::class);
     }
 }

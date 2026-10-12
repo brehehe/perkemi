@@ -59,8 +59,8 @@ class PopdaJatim2026Seeder extends Seeder
                 'fee_per_contingent' => 0,
                 'max_match_categories_per_athlete' => 2,
                 'allow_cross_age_group_embu' => false,
-                'match_duration_minutes' => 2,
-                'minimum_rest_minutes' => 15,
+                'match_duration_minutes' => 10,
+                'minimum_rest_minutes' => 10,
                 'minimum_entries_per_category' => 2,
                 'minimum_contingents_per_category' => 2,
                 'status' => 'open_registration',
@@ -143,17 +143,17 @@ class PopdaJatim2026Seeder extends Seeder
         EventAgeCategory $ageCategory,
     ): void {
         $categories = [
-            ['name' => 'Randori Putra Kelas 50 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => null, 'max' => 50],
-            ['name' => 'Randori Putra Kelas 55 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => 50.01, 'max' => 55],
-            ['name' => 'Randori Putra Kelas 60 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => 55.01, 'max' => 60],
             ['name' => 'Embu Berpasangan Putra Kyu III / II / I', 'type' => 'embu', 'gender' => 'male', 'team' => 2, 'min' => null, 'max' => null],
             ['name' => 'Embu Tandoku Putra Kyu III', 'type' => 'embu', 'gender' => 'male', 'team' => 1, 'min' => null, 'max' => null, 'min_kyu' => 'Kyu 3', 'max_kyu' => 'Kyu 3'],
-            ['name' => 'Randori Putri Kelas 50 kg', 'type' => 'randori', 'gender' => 'female', 'team' => 1, 'min' => null, 'max' => 50],
-            ['name' => 'Randori Putri Kelas 55 kg', 'type' => 'randori', 'gender' => 'female', 'team' => 1, 'min' => 50.01, 'max' => 55],
             ['name' => 'Embu Berpasangan Putri Kyu III / II / I', 'type' => 'embu', 'gender' => 'female', 'team' => 2, 'min' => null, 'max' => null],
             ['name' => 'Embu Tandoku Putri Kyu III', 'type' => 'embu', 'gender' => 'female', 'team' => 1, 'min' => null, 'max' => null, 'min_kyu' => 'Kyu 3', 'max_kyu' => 'Kyu 3'],
             ['name' => 'Embu Berpasangan Campuran Kyu III', 'type' => 'embu', 'gender' => 'mixed', 'team' => 2, 'min' => null, 'max' => null, 'min_kyu' => 'Kyu 3', 'max_kyu' => 'Kyu 3'],
             ['name' => 'Embu Berpasangan Campuran Kyu II / I', 'type' => 'embu', 'gender' => 'mixed', 'team' => 2, 'min' => null, 'max' => null, 'min_kyu' => 'Kyu 2', 'max_kyu' => 'Kyu 1'],
+            ['name' => 'Randori Putra Kelas 50 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => null, 'max' => 50],
+            ['name' => 'Randori Putra Kelas 55 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => 50.01, 'max' => 55],
+            ['name' => 'Randori Putra Kelas 60 kg', 'type' => 'randori', 'gender' => 'male', 'team' => 1, 'min' => 55.01, 'max' => 60],
+            ['name' => 'Randori Putri Kelas 50 kg', 'type' => 'randori', 'gender' => 'female', 'team' => 1, 'min' => null, 'max' => 50],
+            ['name' => 'Randori Putri Kelas 55 kg', 'type' => 'randori', 'gender' => 'female', 'team' => 1, 'min' => 50.01, 'max' => 55],
         ];
 
         $categoryIds = [];

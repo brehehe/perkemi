@@ -138,6 +138,14 @@ test('all registration and tournament menus keep an explicitly selected concurre
             ->has('categories', 1)
             ->where('categories.0.id', $selectedCategory->id));
 
+    $this->get('/admin/pertandingan/jadwal'.$query)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Tournament/Schedule')
+            ->where('activeEvent.id', $selectedEvent->id)
+            ->has('events', 2)
+            ->has('matches', 0));
+
     $this->get('/admin/pertandingan/merge'.$query)
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page

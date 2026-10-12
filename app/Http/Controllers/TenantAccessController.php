@@ -33,8 +33,14 @@ class TenantAccessController extends Controller
         $request->session()->put('tenant_event_id', $event->id);
         $request->session()->put('tenant_event_slug', $event->slug);
 
-        return redirect()->route($isContingentOwner && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === null
-            ? 'kontingen.registrasi' : 'admin.dashboard')
+        $routeName = match (true) {
+            $isContingentOwner && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === null => 'kontingen.registrasi',
+            $user->hasRole('Panitera') && ! $isFullAdmin => 'admin.panitera.scoring.index',
+            $user->hasRole('Wasit') && ! $isFullAdmin => 'wasit.portal',
+            default => 'admin.dashboard',
+        };
+
+        return redirect()->route($routeName)
             ->with('success', "Berhasil beralih ke panel event: {$event->name}");
     }
 

@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { Avatar, CommandPalette } from '@/Components/UI';
 import ContingentLayout from '@/Layouts/ContingentLayout';
+import RefereeLayout from '@/Layouts/RefereeLayout';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 
 export default function AdminLayout({ children, title = 'Admin Dashboard', auth = {} }) {
@@ -11,10 +12,16 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isMatchGroups = url.startsWith('/admin/pendaftaran/nomor-pertandingan');
     const isVerification = url.startsWith('/admin/pendaftaran/verifikasi');
     const isDrawing = url.startsWith('/admin/pertandingan/drawing');
+    const isSchedule = url.startsWith('/admin/pertandingan/jadwal');
+    const isEventReferees = url.startsWith('/admin/pertandingan/wasit');
     const isMerge = url.startsWith('/admin/pertandingan/merge');
     const isReferee = url.startsWith('/admin/arbitrase/wasit');
     const isAssignment = url.startsWith('/admin/arbitrase/penugasan');
     const isScoring = url.startsWith('/admin/arbitrase/scoring');
+    const isPaniteraDashboard = url.startsWith('/admin/panitera/scoring') && !url.includes('/embu-result') && !url.includes('/randori-result') && !url.includes('/champions');
+    const isPaniteraEmbu = url.startsWith('/admin/panitera/scoring/embu-result');
+    const isPaniteraRandori = url.startsWith('/admin/panitera/scoring/randori-result');
+    const isPaniteraChampions = url.startsWith('/admin/panitera/scoring/champions');
     const isMedals = url.startsWith('/admin/laporan/hasil');
     const isRecap = url.startsWith('/admin/laporan/rekap-embu');
     const isEventMaster = url.startsWith('/admin/master/event');
@@ -36,8 +43,9 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const [openSections, setOpenSections] = useState({
         pendaftaran: true,
         master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
-        pertandingan: isDrawing || isMerge,
+        pertandingan: isDrawing || isSchedule || isEventReferees || isMerge,
         arbitrase: isReferee || isAssignment || isScoring,
+        panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
         laporan: isMedals || isRecap,
     });
 
@@ -55,6 +63,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     };
     const tenant = props.tenant?.event || null;
     const isFullAdmin = user.roles?.some((role) => ['Super Admin', 'Admin'].includes(role));
+    const isPaniteraAccount = user.roles?.includes('Panitera') && !isFullAdmin;
     const isRestrictedTenant = Boolean(tenant) && !isFullAdmin;
     const isResponsibleTenant = tenant?.access_role === 'responsible';
     const requestedEventId = new URLSearchParams(url.split('?')[1] || '').get('event_id');
@@ -78,10 +87,16 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         'nomor-pertandingan',
         'verifikasi',
         'drawing',
+        'schedule',
+        'event-wasit',
         'merge',
         'wasit',
         'penugasan',
         'scoring',
+        'panitera-dashboard',
+        'panitera-embu',
+        'panitera-randori',
+        'panitera-champions',
         'medali',
         'rekap',
         'website',
@@ -189,6 +204,22 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             onSelect: () => router.visit(withEventContext('/admin/pertandingan/drawing')),
         },
         {
+            id: 'schedule',
+            title: 'Jadwal Pertandingan',
+            subtitle: 'Atur waktu dan court pertandingan per event',
+            category: 'Pertandingan',
+            icon: <i className="fa-solid fa-calendar-days text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/pertandingan/jadwal')),
+        },
+        {
+            id: 'event-wasit',
+            title: 'Wasit Event & Absensi QR',
+            subtitle: 'Akun, kehadiran, dan panel lima wasit per court',
+            category: 'Pertandingan',
+            icon: <i className="fa-solid fa-user-shield text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/pertandingan/wasit')),
+        },
+        {
             id: 'merge',
             title: 'Merge Nomer Pertandingan',
             subtitle: 'Penggabungan kelas tanding kurang kuota',
@@ -202,7 +233,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Daftar wasit terverifikasi & sertifikasi Dan',
             category: 'Arbitrase',
             icon: <i className="fa-solid fa-gavel text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/arbitrase/wasit'),
+            onSelect: () => router.visit(withEventContext('/admin/arbitrase/wasit')),
         },
         {
             id: 'penugasan',
@@ -210,7 +241,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Penempatan wasit utama & dewan juri court',
             category: 'Arbitrase',
             icon: <i className="fa-solid fa-users-gear text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/arbitrase/penugasan'),
+            onSelect: () => router.visit(withEventContext('/admin/arbitrase/penugasan')),
         },
         {
             id: 'scoring',
@@ -218,7 +249,39 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Sistem input poin wasit juri pertandingan',
             category: 'Arbitrase',
             icon: <i className="fa-solid fa-star text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/arbitrase/scoring'),
+            onSelect: () => router.visit(withEventContext('/admin/arbitrase/scoring')),
+        },
+        {
+            id: 'panitera-dashboard',
+            title: 'Pusat Kendali Panitera',
+            subtitle: 'Antrean partai dan penugasan meja per event',
+            category: 'Panitera',
+            icon: <i className="fa-solid fa-clipboard-check text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/panitera/scoring')),
+        },
+        {
+            id: 'panitera-embu',
+            title: 'Rekap Hasil Embu',
+            subtitle: 'Verifikasi nilai, finalis, dan juara Embu',
+            category: 'Panitera',
+            icon: <i className="fa-solid fa-ranking-star text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/panitera/scoring/embu-result')),
+        },
+        {
+            id: 'panitera-randori',
+            title: 'Hasil Randori',
+            subtitle: 'Pengesahan skor dan pembaruan bagan Randori',
+            category: 'Panitera',
+            icon: <i className="fa-solid fa-hand-fist text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/panitera/scoring/randori-result')),
+        },
+        {
+            id: 'panitera-champions',
+            title: 'Hasil Juara',
+            subtitle: 'Generate dan sesuaikan juara per nomor pertandingan',
+            category: 'Panitera',
+            icon: <i className="fa-solid fa-trophy text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/panitera/scoring/champions')),
         },
         {
             id: 'medali',
@@ -226,7 +289,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Klasemen perolehan emas, perak, dan perunggu',
             category: 'Laporan',
             icon: <i className="fa-solid fa-medal text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/laporan/hasil'),
+            onSelect: () => router.visit(withEventContext('/admin/laporan/hasil')),
         },
         {
             id: 'rekap',
@@ -234,7 +297,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             subtitle: 'Arsip seluruh hasil laga kejuaraan',
             category: 'Laporan',
             icon: <i className="fa-solid fa-chart-bar text-[#d4a843]"></i>,
-            onSelect: () => router.visit('/admin/laporan/rekap-embu'),
+            onSelect: () => router.visit(withEventContext('/admin/laporan/rekap-embu')),
         },
         {
             id: 'website',
@@ -247,6 +310,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     ].filter((command) => (
         (!isRestrictedTenant || tenantCommandIds.has(command.id))
         && (!isResponsibleTenant || !responsibleTenantHiddenCommandIds.has(command.id))
+        && (!isPaniteraAccount || ['panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'event-wasit', 'website'].includes(command.id))
     ));
 
     // Close mobile sidebar on resize to desktop
@@ -266,6 +330,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     };
 
     const isContingentAccount = user.roles?.some((role) => ['kontingen', 'Contingent'].includes(role)) && !isFullAdmin;
+    const isRefereeAccount = user.roles?.includes('Wasit') && !isFullAdmin;
 
     if (isContingentAccount) {
         const pageEvent = tenant || props.registration?.event || props.activeEvent || null;
@@ -285,6 +350,21 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         );
     }
 
+    if (isRefereeAccount) {
+        return (
+            <RefereeLayout
+                title={title}
+                portal={{
+                    event: props.activeEvent || tenant,
+                    referee: props.referee,
+                    events: props.events || [],
+                }}
+            >
+                {children}
+            </RefereeLayout>
+        );
+    }
+
     return (
         <>
             <Head title={`${title} | Smart Perkemi`} />
@@ -294,7 +374,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                     {tenant && (
                         <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
                             <Link
-                                href="/admin/master/event/detail"
+                                href={isPaniteraAccount ? withEventContext('/admin/panitera/scoring') : '/admin/master/event/detail'}
                                 className="flex items-center gap-3 text-left transition-colors hover:opacity-90"
                             >
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#f0c060]">
@@ -337,18 +417,19 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                     <nav className="flex-1 px-0 py-3 overflow-y-auto space-y-0.5 text-[13px] custom-scrollbar">
                         {/* Dashboard Link */}
                         <Link
-                            href="/admin/dashboard"
+                            href={isPaniteraAccount ? withEventContext('/admin/panitera/scoring') : '/admin/dashboard'}
                             className={`flex items-center gap-3 px-6 py-2.5 text-[13px] transition-colors ${
-                                isDashboard
+                                (isDashboard || (isPaniteraAccount && isPaniteraDashboard))
                                     ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 text-[#f0c060] font-medium'
                                     : 'text-white/80 font-medium hover:bg-white/5 hover:text-white'
                             }`}
                         >
                             <i className="fa-solid fa-gauge-high w-4 text-[13px]"></i>
-                            <span>{tenant ? 'Dashboard Event' : 'Dashboard'}</span>
+                            <span>{isPaniteraAccount ? 'Dashboard Panitera' : tenant ? 'Dashboard Event' : 'Dashboard'}</span>
                         </Link>
 
                         {/* Pendaftaran Section */}
+                        {!isPaniteraAccount && (
                         <div className="border-t border-white/5 mt-1 pt-1">
                             <button
                                 type="button"
@@ -396,6 +477,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* Pertandingan Section */}
                         <div className="border-t border-white/5 mt-1 pt-1">
@@ -409,6 +491,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             </button>
                             {openSections.pertandingan && (
                                 <div className="space-y-0.5 pl-2">
+                                    {!isPaniteraAccount && <>
                                     <Link
                                         href={withEventContext('/admin/pertandingan/drawing')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
@@ -421,6 +504,30 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Drawing & Bagan TM</span>
                                     </Link>
                                     <Link
+                                        href={withEventContext('/admin/pertandingan/jadwal')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
+                                            isSchedule
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <i className={`fa-solid fa-calendar-days w-4 text-[11px] ${isSchedule ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Jadwal Pertandingan</span>
+                                    </Link>
+                                    </>}
+                                    <Link
+                                        href={withEventContext('/admin/pertandingan/wasit')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
+                                            isEventReferees
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <i className={`fa-solid fa-user-shield w-4 text-[11px] ${isEventReferees ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Wasit Event & QR</span>
+                                    </Link>
+                                    {!isPaniteraAccount && (
+                                    <Link
                                         href={withEventContext('/admin/pertandingan/merge')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isMerge
@@ -431,11 +538,57 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <i className={`fa-solid fa-object-group w-4 text-[11px] ${isMerge ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
                                         <span>Merge Nomer Pertandingan</span>
                                     </Link>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Panitera Section */}
+                        <div className="border-t border-white/5 mt-1 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => toggleSection('panitera')}
+                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                            >
+                                <span>Panitera</span>
+                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.panitera ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                            </button>
+                            {openSections.panitera && (
+                                <div className="space-y-0.5 pl-2">
+                                    <Link
+                                        href={withEventContext('/admin/panitera/scoring')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraDashboard ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid fa-clipboard-check w-4 text-[11px] ${isPaniteraDashboard ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Pusat Kendali</span>
+                                    </Link>
+                                    <Link
+                                        href={withEventContext('/admin/panitera/scoring/embu-result')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraEmbu ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid fa-ranking-star w-4 text-[11px] ${isPaniteraEmbu ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Rekap Hasil Embu</span>
+                                    </Link>
+                                    <Link
+                                        href={withEventContext('/admin/panitera/scoring/randori-result')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraRandori ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid fa-hand-fist w-4 text-[11px] ${isPaniteraRandori ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Hasil Randori</span>
+                                    </Link>
+                                    <Link
+                                        href={withEventContext('/admin/panitera/scoring/champions')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraChampions ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid fa-trophy w-4 text-[11px] ${isPaniteraChampions ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Hasil Juara</span>
+                                    </Link>
                                 </div>
                             )}
                         </div>
 
                         {/* Sistem Arbitrase & Panitera Section */}
+                        {!isPaniteraAccount && (
                         <div className="border-t border-white/5 mt-1 pt-1">
                             <button
                                 type="button"
@@ -448,7 +601,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             {openSections.arbitrase && (
                                 <div className="space-y-0.5 pl-2">
                                     <Link
-                                        href="/admin/arbitrase/wasit"
+                                        href={withEventContext('/admin/arbitrase/wasit')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isReferee
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -459,7 +612,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Data Wasit & Juri</span>
                                     </Link>
                                     <Link
-                                        href="/admin/arbitrase/penugasan"
+                                        href={withEventContext('/admin/arbitrase/penugasan')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isAssignment
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -470,7 +623,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Penugasan Wasit</span>
                                     </Link>
                                     <Link
-                                        href="/admin/arbitrase/scoring"
+                                        href={withEventContext('/admin/arbitrase/scoring')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isScoring
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -483,8 +636,10 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* Laporan Section */}
+                        {!isPaniteraAccount && (
                         <div className="border-t border-white/5 mt-1 pt-1">
                             <button
                                 type="button"
@@ -497,7 +652,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             {openSections.laporan && (
                                 <div className="space-y-0.5 pl-2">
                                     <Link
-                                        href="/admin/laporan/hasil"
+                                        href={withEventContext('/admin/laporan/hasil')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isMedals
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -508,7 +663,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Hasil Juara & Medali</span>
                                     </Link>
                                     <Link
-                                        href="/admin/laporan/rekap-embu"
+                                        href={withEventContext('/admin/laporan/rekap-embu')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isRecap
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
@@ -521,8 +676,10 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* Master Data Section */}
+                        {!isPaniteraAccount && (
                         <div className="border-t border-white/5 mt-1 pt-1">
                             <button
                                 type="button"
@@ -685,6 +842,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* Profile & Logout */}
                         <div className="border-t border-white/10 pt-2 mt-2">
@@ -710,27 +868,27 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                 {/* ════ MAIN CONTENT CONTAINER ════ */}
                 <div className="min-w-0 flex-1 flex flex-col overflow-x-hidden lg:ml-[260px]">
                     {/* Header Sticky Topbar */}
-                    <header className="sticky top-0 z-40 h-16 bg-[#f7f4ef]/95 backdrop-blur-md border-b border-[#ede9e1] px-4 md:px-7 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
+                    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-3 backdrop-blur-md sm:gap-4 sm:px-4 md:px-7">
+                        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                             {/* Mobile Hamburger Toggle */}
                             <button
                                 type="button"
                                 onClick={() => setSidebarOpen(true)}
-                                className="lg:hidden p-2 rounded-lg text-[#0f0d0b] hover:bg-[#ede9e1] transition-colors cursor-pointer"
-                                aria-label="Open Sidebar"
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#0f0d0b] transition-colors hover:bg-[#ede9e1] lg:hidden"
+                                aria-label="Buka navigasi"
                             >
                                 <i className="fa-solid fa-bars text-base"></i>
                             </button>
 
                             {/* Page Title */}
-                            <h2 className="font-sans text-sm md:text-base font-semibold text-[#0f0d0b] flex items-center gap-1.5 tracking-tight">
-                                <span>{title}</span>
-                                <span className="text-[#c0392b] font-medium text-xs md:text-sm">/ Overview</span>
+                            <h2 className="flex min-w-0 items-center gap-1.5 font-sans text-sm font-semibold tracking-tight text-[#0f0d0b] md:text-base">
+                                <span className="truncate">{title}</span>
+                                <span className="hidden shrink-0 text-xs font-medium text-[#c0392b] sm:inline md:text-sm">/ Overview</span>
                             </h2>
                         </div>
 
                         {/* Topbar Right Actions */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
                             {/* Search bar (Desktop) - opens CommandPalette */}
                             <button
                                 type="button"
@@ -749,7 +907,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             {/* Notification Bell */}
                             <button
                                 type="button"
-                                className="w-9 h-9 rounded-xl border border-black/5 bg-white flex items-center justify-center text-[#555] hover:bg-[#ede9e1] transition-colors relative cursor-pointer"
+                                className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-black/5 bg-white text-[#555] transition-colors hover:bg-[#ede9e1]"
                                 title="Notifikasi"
                             >
                                 <i className="fa-solid fa-bell text-xs"></i>
@@ -761,7 +919,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 <button
                                     type="button"
                                     onClick={() => setProfileOpen(!profileOpen)}
-                                    className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#ede9e1] transition-colors cursor-pointer"
+                                className="flex min-h-11 items-center gap-2 rounded-xl px-1 transition-colors hover:bg-[#ede9e1]"
                                 >
                                     <Avatar
                                         name={user.name}
@@ -786,7 +944,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                             className="fixed inset-0 z-40"
                                             onClick={() => setProfileOpen(false)}
                                         />
-                                        <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl border border-[#ede9e1] shadow-xl overflow-hidden z-50 text-xs py-1">
+                                        <div className="absolute right-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-[#ede9e1] bg-white py-1 text-xs shadow-xl sm:w-52">
                                             <div className="px-4 py-2.5 border-b border-[#ede9e1] bg-[#f7f4ef]">
                                                 <p className="font-semibold text-[#0f0d0b] truncate">{user.name}</p>
                                                 <p className="text-[10.5px] text-[#b5afa6] truncate">{user.email}</p>
@@ -823,12 +981,12 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                     </header>
 
                     {/* Main Content Body */}
-                    <main className="admin-main min-w-0 p-4 md:px-7 md:pt-7 md:pb-5">
+                    <main className="admin-main min-w-0 p-3 sm:p-4 md:px-7 md:pb-5 md:pt-7">
                         {children}
                     </main>
 
                     {/* Footer */}
-                    <footer className="px-7 py-3 text-center border-t border-[#ede9e1] text-[11px] text-[#b5afa6]">
+                    <footer className="border-t border-[#ede9e1] px-4 py-3 text-center text-[11px] text-[#b5afa6] md:px-7">
                         © 2026 SMART-PERKEMI · Sistem Manajemen Kejuaraan Shorinji Kempo Indonesia. Seluruh hak cipta dilindungi.
                     </footer>
                 </div>

@@ -11,3 +11,4 @@ export { default as Textarea } from './Textarea';
 export { default as Editor } from './Editor';
 export { default as FormLayout } from './FormLayout';
 export { default as ActionPanel } from './ActionPanel';
+export { default as SignaturePad } from './SignaturePad';

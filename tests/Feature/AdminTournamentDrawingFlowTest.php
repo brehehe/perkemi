@@ -3,9 +3,13 @@
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
+use App\Models\EmbuJudgeScore;
+use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
+use App\Models\RandoriScore;
+use App\Models\Referee;
 use App\Models\Registration;
 use App\Models\Rundown;
 use App\Models\TournamentDrawing;
@@ -137,7 +141,10 @@ test('generate all creates event scoped randori bracket embu pool and schedule w
         }
     });
 
-    $this->actingAs($user)
+    $this->withSession([
+        'tenant_event_id' => $event->id,
+        'tenant_event_slug' => $event->slug,
+    ])->actingAs($user)
         ->post('/admin/pertandingan/drawing/generate', ['event_id' => $event->id])
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -153,8 +160,35 @@ test('generate all creates event scoped randori bracket embu pool and schedule w
         ->and(TournamentMatch::where('event_match_category_id', $embu->id)->count())->toBe(6)
         ->and(TournamentMatch::where('event_match_category_id', $randori->id)->pluck('event_court_id')->filter()->unique()->count())->toBe(1)
         ->and(TournamentMatch::where('event_match_category_id', $embu->id)->pluck('event_court_id')->filter()->unique()->count())->toBe(1)
-        ->and(TournamentMatch::where('event_match_category_id', $randori->id)->value('event_court_id'))->not->toBe(TournamentMatch::where('event_match_category_id', $embu->id)->value('event_court_id'))
-        ->and(TournamentMatch::where('event_id', $event->id)->whereNull('scheduled_start_at')->count())->toBe(0);
+        ->and(TournamentMatch::where('event_id', $event->id)->where('is_bye', false)->whereNull('scheduled_start_at')->count())->toBe(0)
+        ->and(TournamentMatch::where('event_id', $event->id)->where('is_bye', true)->whereNotNull('scheduled_start_at')->count())->toBe(0);
+
+    $lastEmbuEnd = TournamentMatch::query()
+        ->where('event_match_category_id', $embu->id)
+        ->max('scheduled_end_at');
+    $firstRandoriStart = TournamentMatch::query()
+        ->where('event_match_category_id', $randori->id)
+        ->min('scheduled_start_at');
+    expect($lastEmbuEnd)->toBeLessThanOrEqual($firstRandoriStart);
+
+    $sharedAthlete = $embuAthletes->firstOrFail();
+    $sharedAthleteMatches = TournamentMatch::query()
+        ->where('event_id', $event->id)
+        ->whereNotNull('scheduled_start_at')
+        ->get()
+        ->filter(fn (TournamentMatch $match): bool => in_array($sharedAthlete->id, $match->metadata['athlete_ids'] ?? [], true))
+        ->sortBy('scheduled_start_at')
+        ->values();
+    $lastSharedEmbuMatch = $sharedAthleteMatches
+        ->where('event_match_category_id', $embu->id)
+        ->last();
+    $firstSharedRandoriMatch = $sharedAthleteMatches
+        ->where('event_match_category_id', $randori->id)
+        ->first();
+
+    expect($firstSharedRandoriMatch->scheduled_start_at->greaterThanOrEqualTo(
+        $lastSharedEmbuMatch->scheduled_end_at->addMinutes(15),
+    ))->toBeTrue();
 
     $randoriFinal = TournamentMatch::query()
         ->where('event_match_category_id', $randori->id)
@@ -170,8 +204,19 @@ test('generate all creates event scoped randori bracket embu pool and schedule w
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    expect($randoriFinal->fresh()->scheduled_start_at->format('Y-m-d H:i'))->toBe('2026-10-01 11:00')
-        ->and(TournamentMatch::where('event_match_category_id', $randori->id)->pluck('event_court_id')->unique()->values()->all())->toBe([$thirdCourt->id]);
+    $otherRandoriCourtIds = TournamentMatch::query()
+        ->where('event_match_category_id', $randori->id)
+        ->where('is_bye', false)
+        ->where('id', '!=', $randoriFinal->id)
+        ->pluck('event_court_id')
+        ->unique()
+        ->values();
+
+    expect($randoriFinal->fresh())
+        ->event_court_id->toBe($thirdCourt->id)
+        ->scheduled_start_at->format('Y-m-d H:i')->toBe('2026-10-01 11:00')
+        ->and($otherRandoriCourtIds)->toHaveCount(1)
+        ->and($otherRandoriCourtIds->first())->not->toBe($thirdCourt->id);
 
     $this->actingAs($user)
         ->post('/admin/pertandingan/drawing/publish', ['event_id' => $event->id])
@@ -215,7 +260,10 @@ test('generate all creates event scoped randori bracket embu pool and schedule w
 
     expect(TournamentDrawing::where('event_id', $event->id)->where('status', 'completed')->count())->toBe(2);
 
-    $completedMatch = TournamentMatch::where('event_id', $event->id)->firstOrFail();
+    $completedMatch = TournamentMatch::where('event_id', $event->id)
+        ->where('is_bye', false)
+        ->whereNotNull('scheduled_start_at')
+        ->firstOrFail();
     $completedMatch->update([
         'status' => 'finished',
         'metadata' => [...($completedMatch->metadata ?? []), 'rank' => 1, 'total_score' => 268.5],
@@ -233,6 +281,113 @@ test('generate all creates event scoped randori bracket embu pool and schedule w
         ->and(TournamentMatch::where('event_id', $event->id)->where('status', 'pending')->count())->toBe(13)
         ->and($resetMatch->metadata)->not->toHaveKeys(['rank', 'total_score'])
         ->and($resetMatch->scheduled_start_at->equalTo($scheduledStart))->toBeTrue();
+});
+
+test('reset draft deletes event scores and referee signatures without affecting another event', function () {
+    $user = User::factory()->create();
+    $event = createDrawingEvent($user, 'Kejurda Reset Draft 2026');
+    $otherEvent = createDrawingEvent($user, 'Kejurda Reset Draft Lain 2026');
+    $eventCourt = EventCourt::create(['event_id' => $event->id, 'name' => 'Court Reset', 'order' => 1, 'is_active' => true]);
+    $otherEventCourt = EventCourt::create(['event_id' => $otherEvent->id, 'name' => 'Court Tetap', 'order' => 1, 'is_active' => true]);
+    $embuCategory = createDrawingCategory($event, 'Embu Reset Draft', 'embu', 1);
+    $randoriCategory = createDrawingCategory($event, 'Randori Reset Draft', 'randori', 2);
+    $otherCategory = createDrawingCategory($otherEvent, 'Embu Event Lain', 'embu', 1);
+    $referee = Referee::create([
+        'name' => 'Wasit Reset Draft',
+        'license_number' => 'WST-RESET-DRAFT',
+        'is_active' => true,
+    ]);
+
+    $embuDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+    ]);
+    $embuMatch = TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $eventCourt->id,
+        'match_sequence' => 1,
+    ]);
+    $judgeScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'event_court_id' => $eventCourt->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'signature' => 'data:image/png;base64,reset-signature',
+        'notes' => 'Catatan Wasit yang harus dihapus',
+    ]);
+    $embuScore = EmbuScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'submitted_by' => $user->id,
+        'verified_by' => $user->id,
+    ]);
+
+    $randoriDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+    ]);
+    $randoriMatch = TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $eventCourt->id,
+        'match_sequence' => 1,
+    ]);
+    $randoriScore = RandoriScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $randoriMatch->id,
+        'signatures' => ['panitera' => 'data:image/png;base64,randori-signature'],
+        'submitted_by' => $user->id,
+        'verified_by' => $user->id,
+    ]);
+
+    $otherDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $otherEvent->id,
+        'event_match_category_id' => $otherCategory->id,
+    ]);
+    $otherMatch = TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $otherDrawing->id,
+        'event_id' => $otherEvent->id,
+        'event_match_category_id' => $otherCategory->id,
+        'event_court_id' => $otherEventCourt->id,
+        'match_sequence' => 1,
+    ]);
+    $otherJudgeScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $otherEvent->id,
+        'tournament_match_id' => $otherMatch->id,
+        'event_court_id' => $otherEventCourt->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'signature' => 'data:image/png;base64,other-event-signature',
+    ]);
+
+    $this->actingAs($user)
+        ->withSession([
+            'tenant_event_id' => $event->id,
+            'tenant_event_slug' => $event->slug,
+        ])
+        ->delete('/admin/pertandingan/drawing/reset', ['event_id' => $event->id])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    $this->assertDatabaseMissing('embu_judge_scores', ['id' => $judgeScore->id]);
+    $this->assertDatabaseMissing('embu_scores', ['id' => $embuScore->id]);
+    $this->assertDatabaseMissing('randori_scores', ['id' => $randoriScore->id]);
+    $this->assertDatabaseMissing('tournament_matches', ['id' => $embuMatch->id]);
+    $this->assertDatabaseMissing('tournament_matches', ['id' => $randoriMatch->id]);
+    $this->assertDatabaseMissing('tournament_drawings', ['id' => $embuDrawing->id]);
+    $this->assertDatabaseMissing('tournament_drawings', ['id' => $randoriDrawing->id]);
+    $this->assertDatabaseHas('embu_judge_scores', [
+        'id' => $otherJudgeScore->id,
+        'event_id' => $otherEvent->id,
+        'signature' => 'data:image/png;base64,other-event-signature',
+    ]);
+    $this->assertDatabaseHas('tournament_matches', ['id' => $otherMatch->id]);
+    $this->assertDatabaseHas('tournament_drawings', ['id' => $otherDrawing->id]);
 });
 
 test('randori with four participants uses double elimination on one court', function () {
@@ -274,6 +429,144 @@ test('randori with four participants uses double elimination on one court', func
     expect($category->tournamentDrawing()->value('bracket_type'))->toBe('double_elimination')
         ->and($category->tournamentDrawing()->firstOrFail()->matches()->count())->toBe(6)
         ->and($category->tournamentDrawing()->firstOrFail()->matches()->pluck('event_court_id')->filter()->unique()->count())->toBe(1);
+});
+
+test('scheduler completes each embu category before another category uses the same court', function () {
+    $user = User::factory()->create();
+    $event = createDrawingEvent($user, 'Kejurda Embu Berurutan 2026');
+    $event->update([
+        'minimum_entries_per_category' => 1,
+        'minimum_contingents_per_category' => 1,
+    ]);
+    EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
+    EventCourt::create(['event_id' => $event->id, 'name' => 'Court 2', 'order' => 2, 'is_active' => true]);
+    Rundown::create([
+        'event_id' => $event->id,
+        'date' => '2026-10-01 08:00:00',
+        'end_time' => '2026-10-01 12:00:00',
+        'name' => 'Sesi Embu',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
+    ]);
+
+    $categories = collect(range(1, 4))->map(fn (int $number): EventMatchCategory => createDrawingCategory(
+        $event,
+        "Embu Berurutan {$number}",
+        'embu',
+        $number,
+    ));
+    $sharedContingent = createVerifiedDrawingContingent($event, $user, 61);
+    $thirdContingent = createVerifiedDrawingContingent($event, $user, 62);
+    $fourthContingent = createVerifiedDrawingContingent($event, $user, 63);
+    $sharedAthlete = Athlete::create(['contingent_id' => $sharedContingent->id, 'name' => 'Atlet Embu Bersama', 'gender' => 'L']);
+    $thirdAthlete = Athlete::create(['contingent_id' => $thirdContingent->id, 'name' => 'Atlet Embu Ketiga', 'gender' => 'L']);
+    $fourthAthlete = Athlete::create(['contingent_id' => $fourthContingent->id, 'name' => 'Atlet Embu Keempat', 'gender' => 'L']);
+
+    foreach ($categories as $index => $category) {
+        $athlete = match ($index) {
+            0, 1 => $sharedAthlete,
+            2 => $thirdAthlete,
+            default => $fourthAthlete,
+        };
+        AthleteMatchCategoryEntry::create([
+            'event_id' => $event->id,
+            'athlete_id' => $athlete->id,
+            'event_match_category_id' => $category->id,
+            'team_number' => 1,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->post('/admin/pertandingan/drawing/generate', ['event_id' => $event->id])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $scheduledMatches = TournamentMatch::query()
+        ->where('event_id', $event->id)
+        ->whereNotNull('scheduled_start_at')
+        ->get();
+
+    expect($scheduledMatches)->toHaveCount(8);
+
+    foreach ($categories as $category) {
+        $categoryMatches = $scheduledMatches
+            ->where('event_match_category_id', $category->id)
+            ->sortBy('scheduled_start_at')
+            ->values();
+        $firstMatch = $categoryMatches->firstOrFail();
+        $lastMatch = $categoryMatches->last();
+        $interleavedMatches = $scheduledMatches
+            ->where('event_court_id', $firstMatch->event_court_id)
+            ->where('event_match_category_id', '!=', $category->id)
+            ->filter(fn (TournamentMatch $match): bool => $match->scheduled_start_at->greaterThan($firstMatch->scheduled_start_at)
+                && $match->scheduled_start_at->lessThan($lastMatch->scheduled_end_at));
+
+        expect($categoryMatches)->toHaveCount(2)
+            ->and($categoryMatches->pluck('match_sequence')->all())->toBe([1, 2])
+            ->and($categoryMatches->pluck('event_court_id')->unique())->toHaveCount(1)
+            ->and($interleavedMatches)->toBeEmpty();
+    }
+});
+
+test('single elimination distributes byes to athletes and advances them without scheduling bye matches', function () {
+    $user = User::factory()->create();
+    $event = createDrawingEvent($user, 'Kejurda Single Elimination Bye 2026');
+    $category = createDrawingCategory($event, 'Randori Sembilan Peserta', 'randori', 1);
+
+    EventCourt::create(['event_id' => $event->id, 'name' => 'Court Utama', 'order' => 1, 'is_active' => true]);
+    Rundown::create([
+        'event_id' => $event->id,
+        'date' => '2026-10-01 08:00:00',
+        'end_time' => '2026-10-01 12:00:00',
+        'name' => 'Sesi Randori',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
+    ]);
+
+    foreach (range(1, 9) as $number) {
+        $contingent = createVerifiedDrawingContingent($event, $user, 40 + $number);
+        $athlete = Athlete::create([
+            'contingent_id' => $contingent->id,
+            'name' => "Atlet Single {$number}",
+            'gender' => 'L',
+            'weight' => 55,
+        ]);
+        AthleteMatchCategoryEntry::create([
+            'event_id' => $event->id,
+            'athlete_id' => $athlete->id,
+            'event_match_category_id' => $category->id,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->post('/admin/pertandingan/drawing/generate', ['event_id' => $event->id])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $matches = $category->tournamentDrawing()->firstOrFail()->matches()->with('nextMatch')->get();
+    $firstRound = $matches->where('round_label', 'Babak 1');
+    $byeMatches = $firstRound->where('is_bye', true);
+    $scheduledMatches = $matches->whereNotNull('scheduled_start_at');
+
+    expect($category->tournamentDrawing()->value('bracket_type'))->toBe('single_elimination')
+        ->and($matches)->toHaveCount(15)
+        ->and($firstRound)->toHaveCount(8)
+        ->and($byeMatches)->toHaveCount(7)
+        ->and($firstRound->contains(fn (TournamentMatch $match): bool => $match->red_label === 'BYE' && $match->blue_label === 'BYE'))->toBeFalse()
+        ->and($byeMatches->every(fn (TournamentMatch $match): bool => ($match->red_entry_id === null) !== ($match->blue_entry_id === null)))->toBeTrue()
+        ->and($byeMatches->every(fn (TournamentMatch $match): bool => $match->scheduled_start_at === null))->toBeTrue()
+        ->and($byeMatches->every(function (TournamentMatch $match): bool {
+            $advancedEntryId = $match->red_entry_id ?? $match->blue_entry_id;
+
+            return in_array($advancedEntryId, [
+                $match->nextMatch?->red_entry_id,
+                $match->nextMatch?->blue_entry_id,
+            ], true);
+        }))->toBeTrue()
+        ->and($scheduledMatches)->toHaveCount(8)
+        ->and($scheduledMatches->every(fn (TournamentMatch $match): bool => ! $match->is_bye))->toBeTrue();
 });
 
 test('precheck excludes registrations whose payment has not been verified', function () {

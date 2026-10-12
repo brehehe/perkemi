@@ -5,15 +5,18 @@ namespace App\Http\Controllers\Admin\Tournament;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Tournament\StoreCombinedEventMatchCategoryMergeRequest;
 use App\Http\Requests\Admin\Tournament\StoreEventMatchCategoryMergeRequest;
+use App\Http\Requests\Admin\Tournament\UpdateTournamentScheduleRequest;
 use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Services\TournamentDrawingGenerator;
-use Carbon\CarbonImmutable;
+use App\Services\TournamentScheduleUpdater;
+use App\Services\TournamentScheduleWorkbook;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -179,6 +182,108 @@ class TournamentController extends Controller
         ]);
     }
 
+    /**
+     * Display the draggable schedule board for one event.
+     */
+    public function schedule(Request $request): Response
+    {
+        $activeEvent = $this->eventForRequest($request);
+        $courts = $activeEvent instanceof Event
+            ? $activeEvent->courts()
+                ->where('is_active', true)
+                ->orderBy('order')
+                ->get(['id', 'name', 'order'])
+                ->map(fn ($court) => [
+                    'id' => $court->id,
+                    'name' => $court->name,
+                    'order' => (int) $court->order,
+                ])->values()
+            : collect();
+        $sessions = $activeEvent instanceof Event
+            ? $activeEvent->rundowns()
+                ->where('is_match_session', true)
+                ->orderBy('date')
+                ->orderBy('order')
+                ->get()
+                ->map(fn ($session) => [
+                    'id' => $session->id,
+                    'name' => $session->name,
+                    'date' => $session->date?->format('Y-m-d'),
+                    'date_formatted' => $session->date?->translatedFormat('d F Y'),
+                    'start_time' => $session->date?->format('H:i'),
+                    'end_time' => $session->end_time?->format('H:i'),
+                    'order' => (int) $session->order,
+                ])->values()
+            : collect();
+        $scheduledMatches = $activeEvent instanceof Event
+            ? $activeEvent->tournamentMatches()
+                ->where('is_bye', false)
+                ->whereNotNull('scheduled_start_at')
+                ->with(['matchCategory:id,name,type,order', 'court:id,name,order', 'rundown:id,name'])
+                ->orderBy('scheduled_start_at')
+                ->orderBy('match_sequence')
+                ->get()
+            : collect();
+        $matches = $scheduledMatches->map(fn (TournamentMatch $match) => [
+            'id' => $match->id,
+            'category_id' => $match->event_match_category_id,
+            'category_name' => $match->matchCategory?->name,
+            'category_type' => $match->matchCategory?->type,
+            'court_id' => $match->event_court_id,
+            'court' => $match->court?->name,
+            'session_id' => $match->rundown_id,
+            'session' => $match->rundown?->name,
+            'round_label' => $match->round_label,
+            'sequence' => $match->match_sequence,
+            'participant' => $match->participant_label
+                ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+            'status' => $match->status,
+            'scheduled_date' => $match->scheduled_start_at?->format('Y-m-d'),
+            'scheduled_date_formatted' => $match->scheduled_start_at?->translatedFormat('d M Y'),
+            'scheduled_start' => $match->scheduled_start_at?->format('H:i'),
+            'scheduled_end' => $match->scheduled_end_at?->format('H:i'),
+        ])->values();
+        $scheduleIsLocked = $activeEvent?->tournamentDrawings()
+            ->whereIn('status', ['published', 'in_progress', 'completed'])
+            ->exists() ?? false;
+
+        return Inertia::render('Admin/Tournament/Schedule', [
+            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
+            'events' => $this->accessibleEvents($request),
+            'courts' => $courts,
+            'sessions' => $sessions,
+            'matches' => $matches,
+            'settings' => $activeEvent ? [
+                'match_duration_minutes' => (int) $activeEvent->match_duration_minutes,
+                'minimum_rest_minutes' => (int) $activeEvent->minimum_rest_minutes,
+            ] : null,
+            'summary' => [
+                'scheduled_matches' => $matches->count(),
+                'unscheduled_matches' => $activeEvent?->tournamentMatches()
+                    ->where('is_bye', false)
+                    ->whereNull('scheduled_start_at')
+                    ->count() ?? 0,
+                'categories' => $scheduledMatches->pluck('event_match_category_id')->unique()->count(),
+                'courts' => $courts->count(),
+            ],
+            'scheduleIsLocked' => $scheduleIsLocked,
+            'canManageSchedule' => ! $scheduleIsLocked && $this->canManageTournament($request, $activeEvent),
+        ]);
+    }
+
+    public function exportSchedule(Request $request, TournamentScheduleWorkbook $workbook): HttpResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event, 404);
+
+        return response($workbook->build($activeEvent), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$workbook->filename($activeEvent).'"',
+            'Cache-Control' => 'private, no-store, no-cache, must-revalidate',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function generate(Request $request, TournamentDrawingGenerator $generator): RedirectResponse
     {
         $activeEvent = $this->eventForRequest($request);
@@ -249,8 +354,11 @@ class TournamentController extends Controller
         return back()->with('success', 'Publikasi dibatalkan. Drawing dan jadwal kembali dapat disesuaikan.');
     }
 
-    public function updateSchedule(Request $request, TournamentMatch $tournamentMatch): RedirectResponse
-    {
+    public function updateSchedule(
+        UpdateTournamentScheduleRequest $request,
+        TournamentMatch $tournamentMatch,
+        TournamentScheduleUpdater $updater,
+    ): RedirectResponse {
         $activeEvent = $this->eventForRequest($request);
         abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
         abort_unless($tournamentMatch->event_id === $activeEvent->id, 404);
@@ -262,86 +370,14 @@ class TournamentController extends Controller
             ]);
         }
 
-        $validated = $request->validate([
-            'event_court_id' => ['required', 'uuid'],
-            'rundown_id' => ['required', 'uuid'],
-            'start_time' => ['required', 'date_format:H:i'],
-        ]);
-        $court = $activeEvent->courts()
-            ->where('is_active', true)
-            ->find($validated['event_court_id']);
-        $session = $activeEvent->rundowns()
-            ->where('is_match_session', true)
-            ->find($validated['rundown_id']);
+        $validated = $request->validated();
+        $updater->update($activeEvent, $tournamentMatch, $validated);
 
-        if ($court === null || $session === null) {
-            throw ValidationException::withMessages([
-                'schedule' => 'Court atau sesi pertandingan tidak tersedia pada event ini.',
-            ]);
+        if (! empty($validated['swap_with_match_id'])) {
+            return back()->with('success', 'Dua partai berhasil ditukar. Partai lainnya tidak berubah.');
         }
 
-        $start = CarbonImmutable::instance($session->date)
-            ->setTimeFromTimeString($validated['start_time']);
-        $end = $start->addMinutes(max(1, (int) $activeEvent->match_duration_minutes));
-        $sessionStart = CarbonImmutable::instance($session->date);
-        $sessionEnd = $session->end_time
-            ? CarbonImmutable::instance($session->end_time)
-            : $sessionStart->addHours(4);
-
-        if ($start->lessThan($sessionStart) || $end->greaterThan($sessionEnd)) {
-            throw ValidationException::withMessages([
-                'start_time' => 'Jam pertandingan harus berada di dalam rentang sesi yang dipilih.',
-            ]);
-        }
-
-        $categoryMatches = $activeEvent->tournamentMatches()
-            ->where('event_match_category_id', $tournamentMatch->event_match_category_id)
-            ->get();
-        $proposedSchedules = $categoryMatches
-            ->filter(fn (TournamentMatch $match) => $match->id === $tournamentMatch->id || ($match->scheduled_start_at && $match->scheduled_end_at))
-            ->map(fn (TournamentMatch $match) => [
-                'id' => $match->id,
-                'start' => $match->id === $tournamentMatch->id
-                    ? $start
-                    : CarbonImmutable::instance($match->scheduled_start_at),
-                'end' => $match->id === $tournamentMatch->id
-                    ? $end
-                    : CarbonImmutable::instance($match->scheduled_end_at),
-            ])->values();
-
-        foreach ($proposedSchedules as $index => $proposed) {
-            $internalConflict = $proposedSchedules->slice($index + 1)->contains(
-                fn (array $other) => $proposed['start']->lessThan($other['end'])
-                    && $proposed['end']->greaterThan($other['start']),
-            );
-            $externalConflict = $activeEvent->tournamentMatches()
-                ->whereNotIn('id', $categoryMatches->modelKeys())
-                ->where('event_court_id', $court->id)
-                ->whereNotNull('scheduled_start_at')
-                ->where('scheduled_start_at', '<', $proposed['end'])
-                ->where('scheduled_end_at', '>', $proposed['start'])
-                ->exists();
-
-            if ($internalConflict || $externalConflict) {
-                throw ValidationException::withMessages([
-                    'schedule' => 'Jadwal bentrok dengan partai lain pada court yang dipilih.',
-                ]);
-            }
-        }
-
-        DB::transaction(function () use ($categoryMatches, $court, $tournamentMatch, $session, $start, $end): void {
-            TournamentMatch::query()
-                ->whereIn('id', $categoryMatches->modelKeys())
-                ->update(['event_court_id' => $court->id]);
-            $tournamentMatch->update([
-                'event_court_id' => $court->id,
-                'rundown_id' => $session->id,
-                'scheduled_start_at' => $start,
-                'scheduled_end_at' => $end,
-            ]);
-        });
-
-        return back()->with('success', 'Jadwal partai berhasil diperbarui. Court diterapkan ke seluruh nomor pertandingan.');
+        return back()->with('success', 'Partai berhasil dipindahkan. Partai lainnya tidak berubah.');
     }
 
     public function start(Request $request): RedirectResponse
@@ -421,9 +457,14 @@ class TournamentController extends Controller
             throw ValidationException::withMessages(['drawing' => 'Drawing tidak dapat direset karena pertandingan sudah dimulai.']);
         }
 
-        $activeEvent->tournamentDrawings()->delete();
+        DB::transaction(function () use ($activeEvent): void {
+            $activeEvent->embuJudgeScores()->delete();
+            $activeEvent->embuScores()->delete();
+            $activeEvent->randoriScores()->delete();
+            $activeEvent->tournamentDrawings()->delete();
+        });
 
-        return back()->with('success', 'Drawing dikembalikan ke Draft. Data peserta dan pengaturan event tetap tersimpan.');
+        return back()->with('success', 'Draft drawing, seluruh nilai pertandingan, lembar penilaian Wasit, dan tanda tangan berhasil dihapus. Data peserta dan pengaturan event tetap tersimpan.');
     }
 
     /**

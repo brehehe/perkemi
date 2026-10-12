@@ -1,301 +1,427 @@
-import Button from "@/Components/UI/Elements/Button";
+import Button from '@/Components/UI/Elements/Button';
+import SignaturePad from '@/Components/UI/Forms/SignaturePad';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Input } from '@/Components/UI';
-import { Head } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
-import Notification from '@/Components/UI/Feedback/Notification';
+import { Head, Link, router } from '@inertiajs/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-export default function ArbitrationScoring({ activeEvent }) {
-    const [mode, setMode] = useState('randori'); // 'randori' or 'embu'
-    const [notification, setNotification] = useState(null);
+const scoreChoices = [7, 8, 9, 10];
 
-    // Randori Scoring State
-    const [akaScore, setAkaScore] = useState(0);
-    const [shiroScore, setShiroScore] = useState(0);
-    const [akaFouls, setAkaFouls] = useState(0);
-    const [shiroFouls, setShiroFouls] = useState(0);
-    const [secondsLeft, setSecondsLeft] = useState(120);
-    const [timerRunning, setTimerRunning] = useState(false);
+const criteriaGroups = [
+    {
+        id: 'technique',
+        title: 'I. Penguasaan Teknik',
+        subtitle: 'GOHO & JUHO · Maksimal 60 poin',
+        items: [
+            ['goho_attack', 'GOHO 1', 'Serangan (Kougeki)'],
+            ['goho_defense', 'GOHO 2', 'Bertahan (Bougyo)'],
+            ['goho_counter', 'GOHO 3', 'Serangan balasan & 5 unsur serangan'],
+            ['juho_escape', 'JUHO 1', 'Shuha & Nukiwaza'],
+            ['juho_lock_throw', 'JUHO 2', 'Gyakuwaza & Nagewaza'],
+            ['juho_ground', 'JUHO 3', 'Katamewaza'],
+        ],
+    },
+    {
+        id: 'expression',
+        title: 'II. Penghayatan / Ekspresi',
+        subtitle: 'EKSPRESI · Maksimal 40 poin',
+        items: [
+            ['expression_sequence', 'EKSPRESI 1', 'Rangkaian, irama, dan harmoni'],
+            ['expression_stance', 'EKSPRESI 2', 'Tai Gamae, kuda-kuda, dan keindahan gerak'],
+            ['expression_spirit', 'EKSPRESI 3', 'Semangat dan disiplin'],
+            ['expression_breath_zanshin', 'EKSPRESI 4', 'Nafas, pandangan mata, dan Zanshin'],
+        ],
+    },
+];
 
-    // Embu Scoring State (5 Judges)
-    const [judgeScores, setJudgeScores] = useState([85, 88, 86, 84, 89]);
+const allCriteria = criteriaGroups.flatMap((group) => group.items);
 
-    useEffect(() => {
-        let interval = null;
-        if (timerRunning && secondsLeft > 0) {
-            interval = setInterval(() => {
-                setSecondsLeft((s) => s - 1);
-            }, 1000);
-        } else if (secondsLeft === 0 && timerRunning) {
-            setTimerRunning(false);
-            setNotification({ title: 'Waktu pertandingan habis', message: 'Yame / Sore-made. Timer telah dihentikan.', variant: 'warning' });
-        }
-        return () => clearInterval(interval);
-    }, [timerRunning, secondsLeft]);
+function initialAspectScores(savedScores = {}) {
+    return Object.fromEntries(allCriteria.map(([key]) => [key, savedScores?.[key] ?? null]));
+}
 
-    const formatTimer = (s) => {
-        const min = Math.floor(s / 60);
-        const sec = s % 60;
-        return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-    };
+function EmptyState({ session, activeEvent }) {
+    if (!session) {
+        return (
+            <section role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm sm:p-6">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Akun Wasit Diperlukan</p>
+                <h2 className="mt-2 text-xl font-black">Papan ini khusus penilaian Wasit Embu</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">Masuk menggunakan akun Wasit yang sudah ditugaskan ke Court. Admin dan Panitera memantau nilai dari halaman detail pertandingan.</p>
+            </section>
+        );
+    }
 
-    const resetRandori = () => {
-        setAkaScore(0);
-        setShiroScore(0);
-        setAkaFouls(0);
-        setShiroFouls(0);
-        setSecondsLeft(120);
-        setTimerRunning(false);
-    };
+    if (!session.is_checked_in) {
+        return (
+            <section role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm sm:p-6">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Papan Penilaian Belum Aktif</p>
+                <h2 className="mt-2 text-xl font-black">Scan QR {session.court_name} terlebih dahulu</h2>
+                <p className="mt-2 text-sm leading-6 text-amber-800">Penugasan sebagai {session.role} sudah tercatat, tetapi absensi event dan Court hari ini belum lengkap.</p>
+                <Link href={`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 text-sm font-bold text-white transition-colors hover:bg-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 sm:w-auto">
+                    <i className="fa-solid fa-qrcode" aria-hidden="true" />
+                    Buka Absensi Wasit
+                </Link>
+            </section>
+        );
+    }
 
-    // Calculate Embu Score: Remove highest & lowest, sum the remaining 3
-    const sortedScores = [...judgeScores].sort((a, b) => a - b);
-    const minScore = sortedScores[0];
-    const maxScore = sortedScores[sortedScores.length - 1];
-    const middleScores = sortedScores.slice(1, -1);
-    const finalEmbuScore = middleScores.reduce((acc, curr) => acc + curr, 0);
-
-    return (
-        <AdminLayout title="Penilaian Scoring Digital">
-            <Head title="Scoring Digital | Smart Perkemi" />
-            {notification && <div className="fixed right-4 top-20 z-50 max-w-[calc(100vw-2rem)]"><Notification {...notification} duration={0} onClose={() => setNotification(null)} /></div>}
-
-            <div className="space-y-6">
-                {/* Header Banner */}
-                <div className="bg-gradient-to-r from-[#0f0d0b] via-[#1a1714] to-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-xl relative overflow-hidden">
-                    <div className="absolute -top-12 -right-12 w-48 h-48 bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)] pointer-events-none" />
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div>
-                            <div className="flex items-center gap-2 text-xs text-[#d4a843] font-medium tracking-wide uppercase mb-1">
-                                <i className="fa-solid fa-star"></i>
-                                <span>Digital Scoring Board</span>
-                            </div>
-                            <h1 className="font-cinzel text-xl md:text-2xl font-bold tracking-tight text-white">
-                                Sistem Penilaian (Scoring Digital)
-                            </h1>
-                            <p className="text-xs text-[#b5afa6] mt-1 max-w-2xl">
-                                Papan skor digital interaktif untuk wasit juri, perhitungan otomatis poin Randori, serta eliminasi nilai ekstrem Embu (PB Perkemi Standard).
-                            </p>
-                        </div>
-
-                        {/* Mode Selector */}
-                        <div className="flex items-center gap-1.5 p-1 bg-white/10 rounded-xl border border-white/10">
-                            <Button variant="unstyled" size="none"
-                                type="button"
-                                onClick={() => setMode('randori')}
-                                className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                                    mode === 'randori' ? 'bg-[#c0392b] text-white shadow-md' : 'text-[#b5afa6] hover:text-white'
-                                }`}
-                            >
-                                <i className="fa-solid fa-hand-fist mr-1.5"></i> Randori (Tanding)
-                            </Button>
-                            <Button variant="unstyled" size="none"
-                                type="button"
-                                onClick={() => setMode('embu')}
-                                className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                                    mode === 'embu' ? 'bg-[#d4a843] text-[#0f0d0b] shadow-md' : 'text-[#b5afa6] hover:text-white'
-                                }`}
-                            >
-                                <i className="fa-solid fa-medal mr-1.5"></i> Embu (Kerapian Teknik)
-                            </Button>
-                        </div>
+    if (!session.active_match) {
+        return (
+            <section role="status" className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-950 shadow-sm sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Siaga di {session.court_name}</p>
+                        <h2 className="mt-2 text-xl font-black">Menunggu panggilan peserta dari Panitera</h2>
+                        <p className="mt-2 text-sm leading-6 text-blue-800">Form akan terbuka otomatis saat pertandingan di Court ini berstatus “Peserta Dipanggil”.</p>
+                    </div>
+                    <div className="flex min-h-16 min-w-16 items-center justify-center self-start rounded-2xl bg-white text-2xl text-blue-600 shadow-sm" aria-hidden="true">
+                        <i className="fa-solid fa-satellite-dish animate-pulse" />
                     </div>
                 </div>
+            </section>
+        );
+    }
 
-                {/* ════ RANDORI SCORING PANEL ════ */}
-                {mode === 'randori' && (
-                    <div className="space-y-6">
-                        {/* Timer and Tatami Control */}
-                        <div className="bg-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
-                            <div>
-                                <span className="text-xs text-[#d4a843] uppercase tracking-wider font-bold block">Partai #12 · Tatami 1</span>
-                                <p className="text-sm font-semibold text-white">Randori Perorangan Putra - Kelas 60 kg (Babak Semifinal)</p>
-                            </div>
+    return (
+        <section role="status" className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-700">Pertandingan Randori Aktif</p>
+            <h2 className="mt-2 text-xl font-black">Tidak ada form nilai pada perangkat Wasit</h2>
+            <p className="mt-2 text-sm leading-6 text-rose-800">Panel ini khusus Embu. Hasil Randori dicatat oleh meja Panitera sesuai alur pertandingan.</p>
+        </section>
+    );
+}
 
-                            {/* Digital Timer */}
-                            <div className="flex flex-col items-center">
-                                <span className="text-[10px] text-[#b5afa6] uppercase tracking-widest mb-1">Sisa Waktu Ronde</span>
-                                <div className="font-mono text-4xl md:text-5xl font-bold tracking-wider text-[#d4a843] bg-black/40 px-6 py-2 rounded-xl border border-white/10">
-                                    {formatTimer(secondsLeft)}
-                                </div>
-                                <div className="flex items-center gap-2 mt-3">
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setTimerRunning(!timerRunning)}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                                            timerRunning ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid ${timerRunning ? 'fa-pause' : 'fa-play'} mr-1.5`}></i>
-                                        {timerRunning ? 'Pause (Hantei)' : 'Mulai (Hajime)'}
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={resetRandori}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                                    >
-                                        <i className="fa-solid fa-rotate-left mr-1"></i> Reset
-                                    </Button>
-                                </div>
+function CriterionCard({ code, label, value, onSelect, disabled }) {
+    return (
+        <fieldset className="rounded-2xl border border-[#e8e1d8] bg-[#fbfaf8] p-4">
+            <legend className="sr-only">{label}</legend>
+            <div className="min-h-14">
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#a56f1c]">{code}</p>
+                <p className="mt-1 text-sm font-bold leading-5 text-[#17120f]">{label}</p>
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-2" aria-label={`Pilih nilai untuk ${label}`}>
+                {scoreChoices.map((score) => {
+                    const selected = value === score;
+
+                    return (
+                        <button
+                            key={score}
+                            type="button"
+                            aria-pressed={selected}
+                            aria-label={`${label}, nilai ${score}`}
+                            disabled={disabled}
+                            onClick={() => onSelect(score)}
+                            className={`min-h-12 rounded-xl border text-base font-black transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-not-allowed disabled:opacity-50 ${selected
+                                ? 'border-[#c0392b] bg-[#c0392b] text-white shadow-sm'
+                                : 'border-[#d9d1c7] bg-white text-[#4a423b] hover:border-[#d4a843] hover:bg-amber-50'
+                            }`}
+                        >
+                            {score}
+                        </button>
+                    );
+                })}
+            </div>
+        </fieldset>
+    );
+}
+
+function ParticipantDetails({ participant }) {
+    const athletes = participant?.athletes || [];
+    const techniques = participant?.techniques || [];
+
+    return (
+        <div className="mt-5 grid gap-3 border-t border-white/10 pt-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-4" aria-labelledby="athlete-list-title">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#f2cd73]">{participant?.kind || 'Tim Embu'}</p>
+                        <h3 id="athlete-list-title" className="mt-1 text-sm font-black text-white">Nama Atlet</h3>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/70">{athletes.length} atlet</span>
+                </div>
+                <ol className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {athletes.map((athlete, index) => (
+                        <li key={athlete.id || `${athlete.name}-${index}`} className="flex min-h-11 items-center gap-3 rounded-xl border border-white/10 bg-black/15 px-3 py-2">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#d4a843]/20 text-[10px] font-black text-[#f2cd73]">{index + 1}</span>
+                            <span className="break-words text-sm font-bold text-white">{athlete.name}</span>
+                        </li>
+                    ))}
+                    {athletes.length === 0 && <li className="rounded-xl border border-dashed border-white/15 px-3 py-4 text-xs text-white/55 sm:col-span-2">Nama atlet belum tersedia pada registrasi tim ini.</li>}
+                </ol>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-4" aria-labelledby="technique-list-title">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-200">Registrasi Embu</p>
+                        <h3 id="technique-list-title" className="mt-1 text-sm font-black text-white">Teknik yang Dibawakan</h3>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/70">{techniques.length} teknik</span>
+                </div>
+                <ol className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {techniques.map((technique, index) => (
+                        <li key={technique.id} className="flex min-h-11 items-center gap-3 rounded-xl border border-blue-300/10 bg-blue-300/5 px-3 py-2">
+                            <span className="font-mono text-[10px] font-black text-blue-200">{String(technique.order || index + 1).padStart(2, '0')}</span>
+                            <span className="break-words text-sm font-semibold text-white/90">{technique.name}</span>
+                        </li>
+                    ))}
+                    {techniques.length === 0 && <li className="rounded-xl border border-dashed border-white/15 px-3 py-4 text-xs text-white/55 sm:col-span-2">Teknik belum dimasukkan pada registrasi tim ini.</li>}
+                </ol>
+            </section>
+        </div>
+    );
+}
+
+function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
+    const match = session.active_match;
+    const saveTimer = useRef(null);
+    const [scores, setScores] = useState(() => initialAspectScores(session.score?.aspect_scores));
+    const [signature, setSignature] = useState(session.score?.signature || '');
+    const [notes, setNotes] = useState(session.score?.notes || '');
+    const [saveState, setSaveState] = useState(session.score?.status === 'submitted' ? 'submitted' : 'idle');
+    const [saveMessage, setSaveMessage] = useState('Perubahan nilai tersimpan otomatis.');
+    const [validationMessage, setValidationMessage] = useState('');
+
+    const totals = useMemo(() => {
+        const sumKeys = (items) => items.reduce((total, [key]) => total + (Number(scores[key]) || 0), 0);
+        const technique = sumKeys(criteriaGroups[0].items);
+        const expression = sumKeys(criteriaGroups[1].items);
+        const completed = allCriteria.filter(([key]) => scores[key] !== null).length;
+
+        return { technique, expression, total: technique + expression, completed };
+    }, [scores]);
+
+    useEffect(() => () => window.clearTimeout(saveTimer.current), []);
+
+    const persist = (nextScores, status, nextSignature = signature, nextNotes = notes) => {
+        onBusyChange(true);
+        setSaveState('saving');
+        setSaveMessage(status === 'submitted' ? 'Mengirim nilai ke Panitera…' : 'Menyimpan perubahan…');
+
+        router.put(match.score_update_url, {
+            event_id: activeEvent.id,
+            aspect_scores: nextScores,
+            signature: nextSignature || null,
+            notes: nextNotes || null,
+            status,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            only: ['refereeSession', 'flash', 'errors'],
+            onSuccess: () => {
+                setSaveState(status === 'submitted' ? 'submitted' : 'saved');
+                setSaveMessage(status === 'submitted' ? 'Nilai sudah dikirim dan tampil di meja Panitera.' : 'Draft terbaru sudah tersimpan.');
+                setValidationMessage('');
+            },
+            onError: (errors) => {
+                setSaveState('error');
+                setSaveMessage('Nilai belum tersimpan. Periksa koneksi atau coba lagi.');
+                setValidationMessage(errors.signature || errors.aspect_scores || 'Terjadi kesalahan saat menyimpan nilai.');
+            },
+            onFinish: () => onBusyChange(false),
+        });
+    };
+
+    const selectScore = (key, value) => {
+        const nextScores = { ...scores, [key]: value };
+        setScores(nextScores);
+        setSaveState('pending');
+        setSaveMessage('Menunggu penyimpanan otomatis…');
+        setValidationMessage('');
+        onBusyChange(true);
+
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => persist(nextScores, 'draft'), 450);
+    };
+
+    const updateSignature = (nextSignature) => {
+        setSignature(nextSignature);
+        setSaveState('pending');
+        setSaveMessage('Menunggu penyimpanan tanda tangan…');
+        setValidationMessage('');
+        onBusyChange(true);
+
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => persist(scores, 'draft', nextSignature, notes), 450);
+    };
+
+    const updateNotes = (nextNotes) => {
+        setNotes(nextNotes);
+        setSaveState('pending');
+        setSaveMessage('Menunggu penyimpanan catatan…');
+        onBusyChange(true);
+
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => persist(scores, 'draft', signature, nextNotes), 600);
+    };
+
+    const submitScore = (event) => {
+        event.preventDefault();
+        window.clearTimeout(saveTimer.current);
+
+        if (totals.completed !== allCriteria.length) {
+            setValidationMessage(`Lengkapi ${allCriteria.length - totals.completed} aspek yang masih kosong.`);
+            setSaveState('error');
+            onBusyChange(false);
+            return;
+        }
+
+        if (!signature) {
+            setValidationMessage('Bubuhkan tanda tangan digital sebelum mengirim nilai.');
+            setSaveState('error');
+            onBusyChange(false);
+            return;
+        }
+
+        persist(scores, 'submitted', signature, notes);
+    };
+
+    const isSaving = saveState === 'saving';
+    const statusTone = saveState === 'error'
+        ? 'border-rose-200 bg-rose-50 text-rose-800'
+        : saveState === 'submitted'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-blue-100 bg-blue-50 text-blue-800';
+
+    return (
+        <form onSubmit={submitScore} className="space-y-5">
+            <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
+                <div className="bg-[#17120f] p-4 text-white sm:p-6">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-blue-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-200">Embu</span>
+                                <span className="rounded-full bg-[#d4a843]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#f2cd73]">Juri {session.judge_number} · {session.role}</span>
                             </div>
+                            <h2 className="mt-3 break-words text-xl font-black sm:text-2xl">{match.category_name}</h2>
+                            <p className="mt-2 text-sm font-semibold text-[#f2cd73]">{match.participant_label || 'Peserta belum dicatat'}</p>
+                            <p className="mt-1 text-xs text-white/65">Partai #{match.sequence} · {match.round_label} · {session.court_name}</p>
                         </div>
-
-                        {/* Dual Score Board (Aka vs Shiro) */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* AKA (MERAH) */}
-                            <div className="bg-red-950/20 border-2 border-red-600/40 rounded-2xl p-6 shadow-sm flex flex-col items-center">
-                                <span className="px-4 py-1 rounded-full bg-red-600 text-white font-cinzel text-xs font-bold uppercase tracking-wider mb-2">
-                                    Sudut Merah (AKA)
-                                </span>
-                                <h3 className="font-cinzel text-base font-bold text-[#0f0d0b]">Kenshi Ahmad Fauzan</h3>
-                                <p className="text-xs text-[#7a746e] mb-4">Dojo Garuda Sakti Surabaya</p>
-
-                                <div className="font-mono text-7xl font-extrabold text-red-600 my-2">
-                                    {akaScore}
-                                </div>
-
-                                <div className="text-xs text-[#7a746e] mb-6">
-                                    Pelanggaran (Chui): <span className="font-bold text-red-600">{akaFouls}</span>
-                                </div>
-
-                                {/* Score Add Buttons */}
-                                <div className="flex items-center gap-2 w-full">
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setAkaScore(akaScore + 1)}
-                                        className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors cursor-pointer"
-                                    >
-                                        +1 Waza-ari
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setAkaScore(akaScore + 2)}
-                                        className="flex-1 py-2.5 rounded-xl bg-[#0f0d0b] hover:bg-[#25201b] text-[#f7f4ef] text-xs font-bold transition-colors cursor-pointer"
-                                    >
-                                        +2 Ippon
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setAkaFouls(akaFouls + 1)}
-                                        className="px-3 py-2.5 rounded-xl bg-red-100 hover:bg-red-200 text-red-800 text-xs font-semibold cursor-pointer"
-                                        title="Tambah Pelanggaran (Hansoku-chui)"
-                                    >
-                                        Chui +1
-                                    </Button>
-                                </div>
+                        <div className="grid grid-cols-3 gap-2 md:min-w-72">
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-center">
+                                <p className="text-[9px] font-bold uppercase text-white/55">Teknik</p>
+                                <p className="mt-1 font-mono text-xl font-black text-white">{totals.technique}</p>
                             </div>
-
-                            {/* SHIRO (PUTIH) */}
-                            <div className="bg-slate-50 border-2 border-slate-300 rounded-2xl p-6 shadow-sm flex flex-col items-center">
-                                <span className="px-4 py-1 rounded-full bg-white border border-slate-300 text-slate-800 font-cinzel text-xs font-bold uppercase tracking-wider mb-2">
-                                    Sudut Putih (SHIRO)
-                                </span>
-                                <h3 className="font-cinzel text-base font-bold text-[#0f0d0b]">Kenshi Satria Dewa</h3>
-                                <p className="text-xs text-[#7a746e] mb-4">Dojo Elang Sakti Sidoarjo</p>
-
-                                <div className="font-mono text-7xl font-extrabold text-slate-800 my-2">
-                                    {shiroScore}
-                                </div>
-
-                                <div className="text-xs text-[#7a746e] mb-6">
-                                    Pelanggaran (Chui): <span className="font-bold text-slate-800">{shiroFouls}</span>
-                                </div>
-
-                                {/* Score Add Buttons */}
-                                <div className="flex items-center gap-2 w-full">
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setShiroScore(shiroScore + 1)}
-                                        className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-colors cursor-pointer"
-                                    >
-                                        +1 Waza-ari
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setShiroScore(shiroScore + 2)}
-                                        className="flex-1 py-2.5 rounded-xl bg-[#0f0d0b] hover:bg-[#25201b] text-[#f7f4ef] text-xs font-bold transition-colors cursor-pointer"
-                                    >
-                                        +2 Ippon
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setShiroFouls(shiroFouls + 1)}
-                                        className="px-3 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold cursor-pointer"
-                                        title="Tambah Pelanggaran (Hansoku-chui)"
-                                    >
-                                        Chui +1
-                                    </Button>
-                                </div>
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-center">
+                                <p className="text-[9px] font-bold uppercase text-white/55">Ekspresi</p>
+                                <p className="mt-1 font-mono text-xl font-black text-white">{totals.expression}</p>
+                            </div>
+                            <div className="rounded-xl border border-[#d4a843]/40 bg-[#d4a843]/10 p-3 text-center">
+                                <p className="text-[9px] font-bold uppercase text-[#f2cd73]">Total</p>
+                                <p className="mt-1 font-mono text-xl font-black text-[#f2cd73]">{totals.total}</p>
                             </div>
                         </div>
                     </div>
-                )}
+                    <ParticipantDetails participant={match.participant} />
+                </div>
+                <div className={`flex flex-col gap-2 border-t p-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-5 ${statusTone}`} role="status" aria-live="polite">
+                    <span><i className={`fa-solid ${isSaving ? 'fa-spinner fa-spin' : saveState === 'error' ? 'fa-triangle-exclamation' : 'fa-cloud-arrow-up'} mr-2`} aria-hidden="true" />{saveMessage}</span>
+                    <span className="font-bold">{totals.completed}/{allCriteria.length} aspek terisi</span>
+                </div>
+            </section>
 
-                {/* ════ EMBU SCORING PANEL ════ */}
-                {mode === 'embu' && (
-                    <div className="bg-white rounded-2xl p-6 border border-[#ede9e1] shadow-xs space-y-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#ede9e1] pb-4 gap-2">
-                            <div>
-                                <h3 className="font-cinzel text-base font-bold text-[#0f0d0b]">
-                                    Papan Penilaian 5 Dewan Juri Embu
-                                </h3>
-                                <p className="text-xs text-[#7a746e]">
-                                    Pasangan: <span className="font-semibold text-[#0f0d0b]">Budi & Wahyu (Dojo Surabaya)</span> · Embu Pasangan Kyu 1 Putra
-                                </p>
-                            </div>
-
-                            <div className="text-right">
-                                <span className="text-xs text-[#7a746e]">Total Nilai Akhir (3 Nilai Tengah):</span>
-                                <p className="font-mono text-3xl font-extrabold text-[#d4a843]">{finalEmbuScore}</p>
-                            </div>
-                        </div>
-
-                        {/* 5 Judge Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-                            {judgeScores.map((score, idx) => {
-                                const isMin = score === minScore;
-                                const isMax = score === maxScore;
-
-                                return (
-                                    <div key={idx} className={`p-4 rounded-xl border text-center ${
-                                        isMin || isMax ? 'bg-red-50/50 border-red-200' : 'bg-[#fbfaf8] border-[#ede9e1]'
-                                    }`}>
-                                        <span className="text-[10px] uppercase font-bold text-[#7a746e] block mb-1">
-                                            Juri #{idx + 1}
-                                        </span>
-                                        <Input
-                                            type="number"
-                                            value={score}
-                                            onChange={(event) => {
-                                                const updated = [...judgeScores];
-                                                updated[idx] = Number(event.target.value);
-                                                setJudgeScores(updated);
-                                            }}
-                                            aria-label={`Nilai juri ${idx + 1}`}
-                                            className="font-mono text-2xl font-bold text-center"
-                                            size="sm"
-                                        />
-                                        <div className="mt-2 text-[10px]">
-                                            {isMin && <span className="text-red-600 font-bold">Terendah (Dibuang)</span>}
-                                            {isMax && <span className="text-red-600 font-bold">Tertinggi (Dibuang)</span>}
-                                            {!isMin && !isMax && <span className="text-emerald-700 font-medium">Dihitung (Sah)</span>}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="bg-[#f7f4ef] rounded-xl p-4 border border-[#ede9e1] text-xs text-[#7a746e] flex items-center justify-between">
-                            <span>Sistem kalkulasi: Nilai tertinggi ({maxScore}) dan terendah ({minScore}) otomatis dibuang untuk objektivitas penilaian.</span>
-                            <Button variant="unstyled" size="none"
-                                type="button"
-                                onClick={() => setNotification({ title: 'Ringkasan nilai Embu', message: `Nilai akhir: ${finalEmbuScore}. Nilai tertinggi (${maxScore}) dan terendah (${minScore}) dikeluarkan. Ringkasan ini belum disimpan ke hasil pertandingan.`, variant: 'info' })}
-                                className="px-4 py-2 text-xs font-semibold bg-[#0f0d0b] hover:bg-[#25201b] text-white rounded-lg transition-colors cursor-pointer"
-                            >
-                                <i className="fa-solid fa-calculator mr-1.5 text-[#d4a843]" aria-hidden="true"></i> Ringkasan Nilai
-                            </Button>
-                        </div>
+            {criteriaGroups.map((group) => (
+                <section key={group.id} className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby={`${group.id}-title`}>
+                    <div className="border-b border-[#eee8e0] pb-4">
+                        <h3 id={`${group.id}-title`} className="text-base font-black text-[#17120f] sm:text-lg">{group.title}</h3>
+                        <p className="mt-1 text-xs text-[#7a746e]">{group.subtitle}</p>
                     </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {group.items.map(([key, code, label]) => (
+                            <CriterionCard
+                                key={key}
+                                code={code}
+                                label={label}
+                                value={scores[key]}
+                                disabled={isSaving}
+                                onSelect={(value) => selectScore(key, value)}
+                            />
+                        ))}
+                    </div>
+                </section>
+            ))}
+
+            <section className="grid gap-5 rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]" aria-labelledby="signature-title">
+                <div>
+                    <h3 id="signature-title" className="text-base font-black text-[#17120f] sm:text-lg">Tanda Tangan Digital Wasit</h3>
+                    <p className="mt-1 text-xs leading-5 text-[#7a746e]">Tanda tangan mengunci identitas {session.referee_name} sebagai Juri {session.judge_number} pada partai ini.</p>
+                    <div className="mt-4"><SignaturePad value={signature} onChange={updateSignature} disabled={isSaving} /></div>
+                </div>
+                <label className="block">
+                    <span className="text-sm font-black text-[#17120f]">Catatan Wasit <span className="font-normal text-[#8b8178]">(opsional)</span></span>
+                    <textarea value={notes} disabled={isSaving} maxLength={1000} onChange={(event) => updateNotes(event.target.value)} rows={7} placeholder="Catatan teknik atau kejadian penting…" className="mt-3 min-h-36 w-full resize-y rounded-xl border border-[#d9d1c7] bg-[#fbfaf8] px-3 py-3 text-sm text-[#17120f] outline-none focus:border-[#c0392b] focus:ring-2 focus:ring-[#c0392b]/15 disabled:cursor-not-allowed disabled:opacity-60" />
+                    <span className="mt-2 block text-right text-[10px] font-semibold text-[#8b8178]">{notes.length}/1000</span>
+                </label>
+            </section>
+
+            <section className="sticky bottom-3 z-20 rounded-2xl border border-[#d8c9ae] bg-white/95 p-4 shadow-xl backdrop-blur sm:bottom-4 sm:p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <p className="text-sm font-black text-[#17120f]">Total nilai Anda: <span className="font-mono text-xl text-[#c0392b]">{totals.total}/100</span></p>
+                        <p className="mt-1 text-xs text-[#7a746e]">Jika lima Wasit mengirim nilai, nilai tertinggi dan terendah dibuang. Jika kurang, Panitera dapat mengunci nilai lengkap yang sudah terkirim.</p>
+                        {validationMessage && <p role="alert" className="mt-2 text-xs font-bold text-rose-700">{validationMessage}</p>}
+                    </div>
+                    <Button type="submit" loading={isSaving} disabled={totals.completed !== allCriteria.length || !signature || isSaving} className="min-h-12 w-full bg-[#17120f] px-6 text-white hover:bg-[#2a241f] lg:w-auto">
+                        <i className="fa-solid fa-paper-plane mr-2 text-[#d4a843]" aria-hidden="true" />
+                        {saveState === 'submitted' ? 'Kirim Ulang Nilai' : 'Kirim Penilaian'}
+                    </Button>
+                </div>
+            </section>
+        </form>
+    );
+}
+
+export default function ArbitrationScoring({ activeEvent, refereeSession = null }) {
+    const [scoreBusy, setScoreBusy] = useState(false);
+    const activeMatch = refereeSession?.active_match;
+    const isEmbu = activeMatch?.category_type?.toLowerCase() === 'embu';
+
+    useEffect(() => {
+        if (!window.Echo || !activeMatch?.id) return undefined;
+
+        const channelName = `tournament-match.${activeMatch.id}`;
+        const channel = window.Echo.private(channelName);
+        const closeCompletedMatch = (event) => {
+            if (event.event_id !== activeEvent.id || event.match_id !== activeMatch.id) return;
+            if (event.action !== 'save_result' && event.match_status !== 'completed') return;
+
+            router.reload({
+                only: ['refereeSession', 'flash'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        channel.listen('.panitera.match-state.updated', closeCompletedMatch);
+
+        return () => window.Echo.leave(channelName);
+    }, [activeEvent.id, activeMatch?.id]);
+
+    useEffect(() => {
+        if (scoreBusy) return undefined;
+
+        const interval = window.setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['refereeSession'], preserveScroll: true, preserveState: true });
+            }
+        }, activeMatch ? 5000 : 2500);
+
+        return () => window.clearInterval(interval);
+    }, [activeMatch, scoreBusy]);
+
+    return (
+        <AdminLayout title="Penilaian Embu">
+            <Head title="Penilaian Wasit Embu | Smart Perkemi" />
+
+            <div className="space-y-5">
+                {refereeSession?.is_checked_in && activeMatch && isEmbu ? (
+                    <EmbuScoreForm
+                        key={`${activeMatch.id}-${refereeSession.judge_number}`}
+                        activeEvent={activeEvent}
+                        session={refereeSession}
+                        onBusyChange={setScoreBusy}
+                    />
+                ) : (
+                    <EmptyState session={refereeSession} activeEvent={activeEvent} />
                 )}
             </div>
         </AdminLayout>

@@ -18,7 +18,7 @@ enum TournamentRank: int
             self::Gold => 'Emas (Juara 1)',
             self::Silver => 'Perak (Juara 2)',
             self::Bronze => 'Perunggu (Juara 3)',
-            self::RunnerUp => 'Peringkat 4 (Harapan)',
+            self::RunnerUp => 'Perunggu Bersama (Juara 3)',
         };
     }
 }

@@ -2,11 +2,17 @@
 
 namespace App\Http\Controllers\Admin\Arbitration;
 
+use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Arbitration\StoreEventCourtAssignmentRequest;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\RefereeAttendance;
+use App\Models\RefereeCourtAttendance;
+use App\Models\TournamentMatch;
+use App\Services\EmbuParticipantDetails;
+use App\Services\Referee\RefereeIdentity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -158,14 +164,102 @@ class ArbitrationController extends Controller
     }
 
     /**
-     * Display digital referee scoring panel simulator.
+     * Display the active Embu scoring sheet for the assigned referee and court.
      */
-    public function scoring(Request $request): Response
-    {
+    public function scoring(
+        Request $request,
+        RefereeIdentity $refereeIdentity,
+        EmbuParticipantDetails $participantDetails,
+    ): Response {
         $activeEvent = $this->eventForRequest($request);
+        $refereeSession = null;
+        $user = $request->user();
+
+        if ($activeEvent && $user?->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin'])) {
+            $referee = $refereeIdentity->forEvent($user, $activeEvent);
+            abort_unless($referee, 403);
+            $courtIds = $activeEvent->courts()->pluck('id');
+            $requestedCourtId = $request->string('court_id')->toString();
+            $assignment = EventCourtAssignment::query()
+                ->whereIn('event_court_id', $courtIds)
+                ->where('staff_type', 'referee')
+                ->where('staff_id', $referee->id)
+                ->when($requestedCourtId !== '', fn ($query) => $query->where('event_court_id', $requestedCourtId))
+                ->first();
+            abort_unless($assignment, 403, 'Anda belum memiliki penugasan court pada event ini.');
+            $role = RefereeCourtRole::tryFrom($assignment->role);
+            abort_unless($role, 403, 'Posisi juri pada court belum valid.');
+            $court = $activeEvent->courts()->findOrFail($assignment->event_court_id);
+            $activeMatch = TournamentMatch::query()
+                ->whereBelongsTo($activeEvent)
+                ->whereBelongsTo($court, 'court')
+                ->whereIn('status', ['ready', 'in_progress'])
+                ->where('call_status', 'participants_called')
+                ->with('matchCategory:id,name,type')
+                ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
+                ->orderByRaw('scheduled_start_at IS NULL')
+                ->orderBy('scheduled_start_at')
+                ->orderBy('match_sequence')
+                ->first();
+            $judgeScore = $activeMatch?->matchCategory?->type === 'embu'
+                ? $activeMatch->embuJudgeScores()
+                    ->where('tiebreak_round', 0)
+                    ->where('judge_number', $role->judgeNumber())
+                    ->first()
+                : null;
+
+            $refereeSession = [
+                'referee_name' => $referee->name,
+                'court_id' => $court->id,
+                'court_name' => $court->name,
+                'role_key' => $assignment->role,
+                'role' => $role->label(),
+                'judge_number' => $role->judgeNumber(),
+                'is_checked_in' => RefereeAttendance::query()
+                    ->whereBelongsTo($activeEvent)
+                    ->whereBelongsTo($referee)
+                    ->whereDate('attendance_date', now()->toDateString())
+                    ->where('is_present', true)
+                    ->exists()
+                    && RefereeCourtAttendance::query()
+                        ->whereBelongsTo($activeEvent)
+                        ->whereBelongsTo($court, 'court')
+                        ->whereBelongsTo($referee)
+                        ->whereDate('attendance_date', now()->toDateString())
+                        ->exists(),
+                'active_match' => $activeMatch ? [
+                    'id' => $activeMatch->id,
+                    'category_name' => $activeMatch->matchCategory?->name,
+                    'category_type' => $activeMatch->matchCategory?->type,
+                    'sequence' => $activeMatch->match_sequence,
+                    'round_label' => $activeMatch->round_label,
+                    'participant_label' => $activeMatch->participant_label,
+                    'red_label' => $activeMatch->red_label,
+                    'blue_label' => $activeMatch->blue_label,
+                    'scheduled_at' => $activeMatch->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                    'status' => $activeMatch->status,
+                    'call_status' => $activeMatch->call_status,
+                    'participant' => $participantDetails->forMatch($activeEvent, $activeMatch),
+                    'score_update_url' => route('admin.arbitrase.scoring.embu.update', $activeMatch, false),
+                ] : null,
+                'score' => $judgeScore ? [
+                    'aspect_scores' => $judgeScore->aspect_scores,
+                    'completed_items' => $judgeScore->completed_items,
+                    'technique_subtotal' => (float) $judgeScore->technique_subtotal,
+                    'expression_subtotal' => (float) $judgeScore->expression_subtotal,
+                    'total_score' => (float) $judgeScore->total_score,
+                    'status' => $judgeScore->status,
+                    'signature' => $judgeScore->signature,
+                    'notes' => $judgeScore->notes,
+                    'signed_at' => $judgeScore->signed_at?->toIso8601String(),
+                    'updated_at' => $judgeScore->updated_at?->toIso8601String(),
+                ] : null,
+            ];
+        }
 
         return Inertia::render('Admin/Arbitration/Scoring', [
             'activeEvent' => $activeEvent,
+            'refereeSession' => $refereeSession,
         ]);
     }
 

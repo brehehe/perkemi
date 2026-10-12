@@ -17,6 +17,10 @@ class AuthenticatedLandingService
             return route('home');
         }
 
+        if ($user->hasRole('Wasit') && ($checkInUrl = $this->refereeCheckInIntendedUrl($request))) {
+            return $checkInUrl;
+        }
+
         $hostEvent = $this->eventFromHost($request);
         $event = collect([
             $hostEvent,
@@ -45,9 +49,12 @@ class AuthenticatedLandingService
         $request->session()->put('tenant_event_slug', $event->slug);
         $request->session()->forget('url.intended');
 
-        $routeName = $this->isContingentOnlyAccess($event, $user)
-            ? 'kontingen.registrasi'
-            : 'admin.dashboard';
+        $routeName = match (true) {
+            $this->isContingentOnlyAccess($event, $user) => 'kontingen.registrasi',
+            $user->hasRole('Panitera') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => 'admin.panitera.scoring.index',
+            $user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => 'wasit.portal',
+            default => 'admin.dashboard',
+        };
 
         if ($hostEvent?->is($event)) {
             return $request->getSchemeAndHttpHost().route($routeName, [], false);
@@ -113,5 +120,27 @@ class AuthenticatedLandingService
         $eventId = $request->session()->get('tenant_event_id');
 
         return is_string($eventId) ? Event::query()->find($eventId) : null;
+    }
+
+    private function refereeCheckInIntendedUrl(Request $request): ?string
+    {
+        $intendedUrl = $request->session()->get('url.intended');
+
+        if (! is_string($intendedUrl)) {
+            return null;
+        }
+
+        $path = parse_url($intendedUrl, PHP_URL_PATH);
+        $host = parse_url($intendedUrl, PHP_URL_HOST);
+
+        if (! is_string($path) || ! Str::startsWith($path, '/wasit/check-in/')) {
+            return null;
+        }
+
+        if (is_string($host) && Str::lower($host) !== Str::lower($request->getHost())) {
+            return null;
+        }
+
+        return $intendedUrl;
     }
 }

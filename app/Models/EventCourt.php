@@ -60,4 +60,19 @@ class EventCourt extends Model
     {
         return $this->hasMany(EventCourtAssignment::class);
     }
+
+    public function refereeAttendances(): HasMany
+    {
+        return $this->hasMany(RefereeCourtAttendance::class);
+    }
+
+    public function refereeAssignmentHistories(): HasMany
+    {
+        return $this->hasMany(RefereeCourtAssignmentHistory::class);
+    }
+
+    public function embuJudgeScores(): HasMany
+    {
+        return $this->hasMany(EmbuJudgeScore::class);
+    }
 }

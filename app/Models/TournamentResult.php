@@ -16,17 +16,21 @@ class TournamentResult extends Model
 
     protected $fillable = [
         'event_id',
+        'event_match_category_id',
+        'participant_key',
         'contingent_id',
         'athlete_id',
         'contingent_name',
         'rank',
         'match_category',
+        'is_exhibition',
     ];
 
     protected function casts(): array
     {
         return [
             'rank' => TournamentRank::class,
+            'is_exhibition' => 'boolean',
             'deleted_at' => 'datetime',
         ];
     }
@@ -58,6 +62,11 @@ class TournamentResult extends Model
     public function event(): BelongsTo
     {
         return $this->belongsTo(Event::class);
+    }
+
+    public function matchCategory(): BelongsTo
+    {
+        return $this->belongsTo(EventMatchCategory::class, 'event_match_category_id');
     }
 
     public function contingent(): BelongsTo

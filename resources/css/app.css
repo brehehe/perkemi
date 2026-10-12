@@ -339,9 +339,92 @@ html:not(.dark) .gold-sep {
     overflow-wrap: anywhere;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
     .responsive-data-table :is(th, td) {
         padding-inline: 0.75rem;
+    }
+
+    /* Opt-in card layout for operational tables with data-label attributes. */
+    .responsive-data-table--cards {
+        min-width: 0;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .responsive-data-table--cards thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+    }
+
+    .responsive-data-table--cards tbody {
+        display: grid;
+        gap: 0.75rem;
+        padding: 0.75rem;
+    }
+
+    .responsive-data-table--cards tbody > tr {
+        display: block;
+        overflow: hidden;
+        border: 1px solid #e5ded4;
+        border-radius: 0.875rem;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(15 13 11 / 0.04);
+    }
+
+    .responsive-data-table--cards tbody > tr > td {
+        display: grid;
+        grid-template-columns: minmax(6.75rem, 0.42fr) minmax(0, 1fr);
+        gap: 0.75rem;
+        min-width: 0;
+        max-width: none;
+        padding-block: 0.75rem;
+        text-align: left;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .responsive-data-table--cards tbody > tr > td + td {
+        border-top: 1px solid #eee8e0;
+    }
+
+    .responsive-data-table--cards tbody > tr > td::before {
+        content: attr(data-label);
+        align-self: start;
+        grid-column: 1;
+        grid-row: 1;
+        color: #817970;
+        font-size: 0.625rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 1.25rem;
+        text-transform: uppercase;
+    }
+
+    .responsive-data-table--cards tbody > tr > td > * {
+        grid-column: 2;
+        min-width: 0;
+    }
+
+    .responsive-data-table--cards tbody > tr > td[colspan] {
+        display: block;
+        padding-block: 2rem;
+        text-align: center;
+    }
+
+    .responsive-data-table--cards tbody > tr > td[colspan]::before {
+        content: none;
+    }
+
+    .responsive-data-table--cards tbody > tr > td[data-label='Aksi'] > :is(button, a) {
+        width: 100%;
+        min-height: 2.75rem;
     }
 }
 

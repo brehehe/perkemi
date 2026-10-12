@@ -135,7 +135,7 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                     <div className="relative z-10 w-full max-w-md animate-fade-up-2">
                         <div className="login-card rounded-2xl border overflow-hidden">
                             {/* Card Header */}
-                            <div className="px-8 pt-8 pb-6 card-divider border-b">
+                            <div className="border-b px-5 pb-5 pt-6 sm:px-8 sm:pb-6 sm:pt-8 card-divider">
                                 {/* Mobile Brand (shown only on mobile) */}
                                 <div className="flex items-center gap-3 mb-6 lg:hidden">
                                     <div
@@ -166,7 +166,7 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                             </div>
 
                             {/* Form */}
-                            <form onSubmit={submit} className="px-8 py-7 space-y-5">
+                            <form onSubmit={submit} className="space-y-5 px-5 py-6 sm:px-8 sm:py-7">
                                 {status && (
                                     <div
                                         role="status"
@@ -209,7 +209,7 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                         <Button variant="unstyled" size="none"
                                             type="button"
                                             onClick={() => setShowPassword((current) => !current)}
-                                            className="eye-btn flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                                            className="eye-btn flex h-11 w-11 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 sm:h-8 sm:w-8"
                                             aria-label="Tampilkan atau sembunyikan kata sandi"
                                         >
                                             <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true" />
@@ -222,7 +222,7 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                 />
 
                                 {/* Remember + Forgot */}
-                                <div className="flex items-center justify-between pt-1 animate-fade-up-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3 pt-1 animate-fade-up-3">
                                     <Checkbox
                                         id="remember-login"
                                         label="Ingat saya"

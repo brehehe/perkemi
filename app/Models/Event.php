@@ -209,6 +209,31 @@ class Event extends Model
         return $this->hasMany(TournamentMatch::class);
     }
 
+    public function embuScores(): HasMany
+    {
+        return $this->hasMany(EmbuScore::class);
+    }
+
+    public function embuJudgeScores(): HasMany
+    {
+        return $this->hasMany(EmbuJudgeScore::class);
+    }
+
+    public function randoriScores(): HasMany
+    {
+        return $this->hasMany(RandoriScore::class);
+    }
+
+    public function refereeAttendances(): HasMany
+    {
+        return $this->hasMany(RefereeAttendance::class);
+    }
+
+    public function refereeCourtAttendances(): HasMany
+    {
+        return $this->hasMany(RefereeCourtAttendance::class);
+    }
+
     /**
      * Get payment methods accepted for registration in this event.
      */

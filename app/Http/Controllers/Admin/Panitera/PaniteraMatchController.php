@@ -1,0 +1,252 @@
+<?php
+
+namespace App\Http\Controllers\Admin\Panitera;
+
+use App\Enums\RefereeCourtRole;
+use App\Http\Controllers\Controller;
+use App\Models\EventCourtAssignment;
+use App\Models\TournamentMatch;
+use App\Services\Panitera\EventContext;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class PaniteraMatchController extends Controller
+{
+    public function show(
+        Request $request,
+        TournamentMatch $tournamentMatch,
+        EventContext $eventContext,
+    ): Response {
+        $event = $eventContext->eventFor($request);
+        abort_unless($tournamentMatch->event_id === $event->id, 404);
+
+        $tournamentMatch->load([
+            'matchCategory:id,name,type',
+            'court.assignments',
+            'court.refereeAttendances' => fn ($query) => $query
+                ->whereBelongsTo($event)
+                ->whereDate('attendance_date', now()->toDateString()),
+            'embuScores',
+            'embuJudgeScores.referee:id,name',
+            'randoriScore',
+        ]);
+        $event->load([
+            'referees:id,name',
+            'clerks:id,name',
+            'fieldCoordinators:id,name',
+        ]);
+
+        $staffNames = [
+            'referee' => $event->referees->pluck('name', 'id'),
+            'clerk' => $event->clerks->pluck('name', 'id'),
+            'field_coordinator' => $event->fieldCoordinators->pluck('name', 'id'),
+        ];
+        $activeRefereeIds = $tournamentMatch->court?->refereeAttendances
+            ->pluck('referee_id')
+            ->all() ?? [];
+        $staff = $tournamentMatch->court?->assignments
+            ->map(fn (EventCourtAssignment $assignment): array => [
+                'id' => $assignment->id,
+                'type' => $assignment->staff_type,
+                'type_label' => match ($assignment->staff_type) {
+                    'referee' => 'Wasit / Juri',
+                    'clerk' => 'Panitera',
+                    'field_coordinator' => 'Koordinator Lapangan',
+                    default => Str::title(str_replace('_', ' ', $assignment->staff_type)),
+                },
+                'name' => $staffNames[$assignment->staff_type]?->get($assignment->staff_id, 'Perangkat tidak tersedia'),
+                'role' => $assignment->staff_type === 'referee'
+                    ? (RefereeCourtRole::tryFrom($assignment->role)?->label() ?? Str::title(str_replace('_', ' ', $assignment->role)))
+                    : Str::title(str_replace('_', ' ', $assignment->role)),
+                'is_active' => $assignment->staff_type !== 'referee'
+                    || in_array($assignment->staff_id, $activeRefereeIds, true),
+            ])->values() ?? collect();
+
+        $judgeScores = $tournamentMatch->embuJudgeScores
+            ->where('tiebreak_round', 0)
+            ->keyBy('judge_number');
+        $refereeAssignments = $tournamentMatch->court?->assignments
+            ->where('staff_type', 'referee')
+            ->keyBy('role') ?? collect();
+        $judgeProgress = collect(RefereeCourtRole::cases())
+            ->map(function (RefereeCourtRole $role) use ($activeRefereeIds, $judgeScores, $refereeAssignments, $staffNames): array {
+                $assignment = $refereeAssignments->get($role->value);
+                $score = $judgeScores->get($role->judgeNumber());
+
+                return [
+                    'judge_number' => $role->judgeNumber(),
+                    'role' => $role->label(),
+                    'referee_id' => $assignment?->staff_id,
+                    'referee_name' => $assignment
+                        ? $staffNames['referee']->get($assignment->staff_id, 'Wasit tidak tersedia')
+                        : 'Belum ditugaskan',
+                    'is_active' => $assignment
+                        ? in_array($assignment->staff_id, $activeRefereeIds, true)
+                        : false,
+                    'completed_items' => $score?->completed_items ?? 0,
+                    'technique_subtotal' => $score ? (float) $score->technique_subtotal : 0,
+                    'expression_subtotal' => $score ? (float) $score->expression_subtotal : 0,
+                    'total_score' => $score ? (float) $score->total_score : 0,
+                    'status' => $score?->status ?? 'waiting',
+                    'is_signed' => $score?->signed_at !== null,
+                    'notes' => $score?->notes,
+                    'updated_at' => $score?->updated_at?->translatedFormat('H:i:s'),
+                ];
+            })
+            ->values();
+
+        $nextMatch = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->where('event_court_id', $tournamentMatch->event_court_id)
+            ->whereKeyNot($tournamentMatch->id)
+            ->where('is_bye', false)
+            ->whereIn('status', ['pending', 'ready', 'in_progress'])
+            ->with('matchCategory:id,name,type')
+            ->orderByRaw('scheduled_start_at IS NULL')
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->get()
+            ->first(fn (TournamentMatch $match): bool => ! ($match->metadata['placeholder'] ?? false));
+
+        $serverNow = now();
+
+        return Inertia::render('Admin/Panitera/MatchDetail', [
+            'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
+            'events' => $eventContext->accessibleEvents($request),
+            'match' => $this->matchData($tournamentMatch),
+            'staff' => $staff,
+            'judgeProgress' => $judgeProgress,
+            'nextMatch' => $nextMatch ? [
+                'id' => $nextMatch->id,
+                'category_name' => $nextMatch->matchCategory?->name,
+                'category_type' => $nextMatch->matchCategory?->type,
+                'round_label' => $nextMatch->round_label,
+                'sequence' => $nextMatch->match_sequence,
+                'scheduled_at' => $nextMatch->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+            ] : null,
+            'canManage' => $eventContext->canManage($request, $event),
+            'serverNow' => $serverNow->toIso8601String(),
+            'serverNowMs' => $serverNow->getTimestampMs(),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function matchData(TournamentMatch $match): array
+    {
+        $type = $match->matchCategory?->type;
+        $embuScore = $match->embuScores->first();
+        $randoriScore = $match->randoriScore;
+        $judgeScores = $match->embuJudgeScores->where('tiebreak_round', 0);
+        $submittedJudges = $judgeScores->filter(fn ($score): bool => $score->status === 'submitted'
+            && $score->completed_items === 10
+            && $score->signed_at !== null)->count();
+        $isEmbuFinished = (bool) data_get($match->metadata, 'panitera.finished_at');
+        $elapsedMilliseconds = max(0, (int) $match->timer_elapsed_ms);
+
+        if ($elapsedMilliseconds === 0 && $match->timer_elapsed_seconds > 0) {
+            $elapsedMilliseconds = $match->timer_elapsed_seconds * 1000;
+        }
+
+        $durationSeconds = max(10, (int) data_get($match->metadata, 'panitera.timer_duration_seconds', 120));
+
+        return [
+            'id' => $match->id,
+            'category_id' => $match->event_match_category_id,
+            'category_name' => $match->matchCategory?->name,
+            'category_type' => $type,
+            'phase' => $match->phase,
+            'round_label' => $match->round_label,
+            'pool' => $match->pool,
+            'sequence' => $match->match_sequence,
+            'court_id' => $match->event_court_id,
+            'court' => $match->court?->name,
+            'court_location' => $match->court?->location,
+            'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+            'scheduled_end_at' => $match->scheduled_end_at?->translatedFormat('H:i'),
+            'participant_label' => $match->participant_label,
+            'aka_label' => $match->red_label,
+            'shiro_label' => $match->blue_label,
+            'status' => $match->status,
+            'status_label' => data_get($match->metadata, 'panitera.finished_at')
+                ? 'Menunggu Verifikasi Hasil'
+                : $this->statusLabel($match->status),
+            'call_status' => $match->call_status,
+            'call_status_label' => $this->callStatusLabel($match->call_status),
+            'called_at' => $match->called_at?->translatedFormat('d M Y, H:i:s'),
+            'timer' => [
+                'status' => $match->timer_status,
+                'started_at' => $match->timer_started_at?->toIso8601String(),
+                'started_at_ms' => $match->timer_started_at_ms ?: $match->timer_started_at?->getTimestampMs(),
+                'elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
+                'elapsed_ms' => $elapsedMilliseconds,
+                'version' => max(0, (int) $match->timer_version),
+                'is_finished' => (bool) data_get($match->metadata, 'panitera.finished_at'),
+                'finished_at' => data_get($match->metadata, 'panitera.finished_at'),
+                'time_penalty' => data_get($match->metadata, 'panitera.time_penalty'),
+                'penalty_category' => Str::contains(Str::lower((string) $match->matchCategory?->name), ['tandoku', 'tunggal'])
+                    ? 'Tandoku / Tunggal'
+                    : 'Pasangan / Beregu',
+                'direction' => in_array(data_get($match->metadata, 'panitera.timer_direction'), ['up', 'down'], true)
+                    ? data_get($match->metadata, 'panitera.timer_direction')
+                    : 'up',
+                'duration_seconds' => $durationSeconds,
+                'duration_ms' => $durationSeconds * 1000,
+            ],
+            'is_placeholder' => (bool) ($match->metadata['placeholder'] ?? false),
+            'embu_verification' => $type === 'embu' ? [
+                'submitted_judges' => $submittedJudges,
+                'required_judges' => 5,
+                'minimum_judges' => 1,
+                'can_save' => $isEmbuFinished && $submittedJudges >= 1 && $embuScore?->status !== 'verified',
+                'is_saved' => $embuScore?->status === 'verified',
+            ] : null,
+            'result' => $type === 'embu'
+                ? ($embuScore ? [
+                    'judge_scores' => $embuScore->judge_scores,
+                    'judge_numbers' => data_get($match->metadata, 'panitera.result_judge_numbers')
+                        ?: range(1, count($embuScore->judge_scores)),
+                    'time_penalty' => (float) $embuScore->time_penalty,
+                    'middle_score' => (float) $embuScore->middle_score,
+                    'final_score' => (float) $embuScore->final_score,
+                    'duration_seconds' => $embuScore->duration_seconds,
+                    'status' => $embuScore->status,
+                    'verified_at' => $embuScore->verified_at?->translatedFormat('d M Y, H:i'),
+                ] : null)
+                : ($randoriScore ? [
+                    'aka_breakdown' => $randoriScore->aka_breakdown,
+                    'shiro_breakdown' => $randoriScore->shiro_breakdown,
+                    'aka_total' => $randoriScore->aka_total,
+                    'shiro_total' => $randoriScore->shiro_total,
+                    'winner_corner' => $randoriScore->winner_corner,
+                    'status' => $randoriScore->status,
+                    'is_locked' => $randoriScore->locked_at !== null,
+                    'locked_at' => $randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
+                    'signatures' => $randoriScore->signatures,
+                    'notes' => $randoriScore->notes,
+                    'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
+                ] : null),
+        ];
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return match ($status) {
+            'ready' => 'Siap Dipanggil',
+            'in_progress' => 'Sedang Berlangsung',
+            'completed' => 'Selesai',
+            default => 'Menunggu',
+        };
+    }
+
+    private function callStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'officials_called' => 'Ofisial Dipanggil',
+            'participants_called' => 'Peserta Dipanggil',
+            'completed' => 'Selesai',
+            default => 'Belum Dipanggil',
+        };
+    }
+}

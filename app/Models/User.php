@@ -44,6 +44,11 @@ class User extends Authenticatable
         return $this->hasOne(Contingent::class);
     }
 
+    public function referee(): HasOne
+    {
+        return $this->hasOne(Referee::class);
+    }
+
     public function accessibleEvents(): BelongsToMany
     {
         return $this->belongsToMany(Event::class)->withPivot('access_role')->withTimestamps();

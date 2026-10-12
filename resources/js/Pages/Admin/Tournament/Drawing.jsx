@@ -52,9 +52,11 @@ function WorkflowStep({ number, title, caption, active, complete }) {
 }
 
 function MatchCard({ match }) {
-    const schedule = match.scheduled_start_formatted
-        ? `${match.scheduled_start_formatted}–${match.scheduled_end_formatted}`
-        : 'Belum terjadwal';
+    const schedule = match.is_bye
+        ? 'Lolos otomatis · Tidak memerlukan jadwal'
+        : match.scheduled_start_formatted
+            ? `${match.scheduled_start_formatted}–${match.scheduled_end_formatted}`
+            : 'Belum terjadwal';
 
     if (match.participant_label) {
         return (
@@ -75,14 +77,14 @@ function MatchCard({ match }) {
     return (
         <article className="overflow-hidden rounded-xl border border-[#e8e1d8] bg-white shadow-sm">
             <div className="flex items-center justify-between bg-[#f7f4ef] px-3 py-2 text-xs font-bold uppercase tracking-wide text-[#746b63]">
-                <span>Partai #{match.sequence} · {match.round_label}</span>
+                <span>{match.is_bye ? 'Slot' : 'Partai'} #{match.sequence} · {match.round_label}</span>
                 {match.is_bye && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">BYE</span>}
             </div>
             <div className="divide-y divide-[#eee8e0]">
                 <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold"><span className="h-3 w-3 rounded-full bg-red-600" />{match.red_label || 'Menunggu hasil'}</div>
                 <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold"><span className="h-3 w-3 rounded-full border border-slate-300 bg-white" />{match.blue_label || 'Menunggu hasil'}</div>
             </div>
-            <p className="border-t border-[#eee8e0] px-3 py-2 text-xs leading-relaxed text-[#746b63]">{schedule} · {match.court || 'Lapangan belum ditentukan'}</p>
+            <p className="border-t border-[#eee8e0] px-3 py-2 text-xs leading-relaxed text-[#746b63]">{match.is_bye ? schedule : `${schedule} · ${match.court || 'Lapangan belum ditentukan'}`}</p>
         </article>
     );
 }
@@ -169,6 +171,77 @@ function EmbuStandingsTable({ title, nodes }) {
     );
 }
 
+function BracketRound({ round, nodes, position }) {
+    const matchGridClasses = nodes.length === 1
+        ? 'mx-auto max-w-xl'
+        : 'grid gap-3 md:grid-cols-2 2xl:grid-cols-3';
+
+    return (
+        <section className="rounded-2xl border border-[#e8e1d8] bg-[#f8f5f0] p-3.5 md:p-4">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#17120f] text-xs font-bold text-[#f0c060]">
+                        {position}
+                    </span>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-[#4f4740]">{round}</h4>
+                </div>
+                <span className="self-start rounded-full border border-[#e2d8ca] bg-white px-2.5 py-1 text-xs font-semibold text-[#746b63] sm:self-auto">
+                    {nodes.length} partai
+                </span>
+            </div>
+            <div className={matchGridClasses}>
+                {nodes.map((match) => <MatchCard key={match.id} match={match} />)}
+            </div>
+        </section>
+    );
+}
+
+function BracketSection({ title, description, icon, rounds, tone = 'neutral' }) {
+    const headerClasses = {
+        neutral: 'bg-slate-50 text-slate-900',
+        upper: 'bg-blue-50 text-blue-950',
+        lower: 'bg-amber-50 text-amber-950',
+        final: 'bg-[#17120f] text-white',
+    }[tone];
+    const iconClasses = {
+        neutral: 'bg-white text-slate-700',
+        upper: 'bg-white text-blue-700',
+        lower: 'bg-white text-amber-700',
+        final: 'bg-[#f0c060] text-[#17120f]',
+    }[tone];
+    const descriptionClasses = tone === 'final' ? 'text-white/65' : 'text-[#746b63]';
+
+    return (
+        <section className="overflow-hidden rounded-2xl border border-[#e8e1d8] bg-white shadow-sm">
+            <div className={`flex items-start gap-3 border-b border-[#e8e1d8] px-4 py-4 md:px-5 ${headerClasses}`}>
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-black/5 shadow-sm ${iconClasses}`}>
+                    <i className={`fa-solid ${icon}`} aria-hidden="true" />
+                </span>
+                <div>
+                    <h3 className="font-cinzel text-sm font-bold uppercase tracking-wide md:text-base">{title}</h3>
+                    <p className={`mt-1 text-xs leading-relaxed ${descriptionClasses}`}>{description}</p>
+                </div>
+            </div>
+            <div className="space-y-3 p-3.5 md:space-y-4 md:p-5">
+                {rounds.map(([round, nodes], index) => (
+                    <div key={round}>
+                        {index > 0 && (
+                            <div className="flex items-center gap-3 px-2 pb-3 md:pb-4" aria-hidden="true">
+                                <span className="h-px flex-1 bg-[#e8e1d8]" />
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[#ded5ca] bg-white text-xs text-[#9a6b20]">
+                                    <i className="fa-solid fa-arrow-down" />
+                                </span>
+                                <span className="h-px flex-1 bg-[#e8e1d8]" />
+                            </div>
+                        )}
+                        <BracketRound round={round} nodes={nodes} position={index + 1} />
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
 function BracketView({ category, drawing, matches }) {
     if (!drawing) {
         return <EmptyState icon="fa-diagram-project" title="Bagan kategori ini belum dibuat" description="Jalankan Generate Semua atau buat ulang kategori ini untuk membentuk node pertandingan." />;
@@ -195,15 +268,55 @@ function BracketView({ category, drawing, matches }) {
     }
 
     const rounds = groupBy(matches, (match) => match.round_label);
-    return (
-        <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max items-stretch gap-4">
-                {rounds.map(([round, nodes]) => <section key={round} className="w-72 rounded-2xl bg-[#f8f5f0] p-3">
-                    <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-bold uppercase tracking-wide text-[#5f574f]">{round}</h3><span className="rounded-full bg-white px-2 py-1 text-xs text-[#8c827a]">{nodes.length} partai</span></div>
-                    <div className="space-y-3">{nodes.map((match) => <MatchCard key={match.id} match={match} />)}</div>
-                </section>)}
+
+    if (drawing.format === 'double_elimination') {
+        const upperRounds = groupBy(
+            matches.filter((match) => match.round_label.includes('Upper Bracket')),
+            (match) => match.round_label,
+        );
+        const lowerRounds = groupBy(
+            matches.filter((match) => match.round_label.includes('Lower Bracket')),
+            (match) => match.round_label,
+        );
+        const grandFinalRounds = groupBy(
+            matches.filter((match) => match.round_label === 'Grand Final'),
+            (match) => match.round_label,
+        );
+
+        return (
+            <div className="space-y-5">
+                <BracketSection
+                    title="Bagan Pemenang (Upper Bracket)"
+                    description="Pemenang setiap partai melanjutkan perjalanan pada bagan utama. Baca urutan babak dari atas ke bawah."
+                    icon="fa-sitemap"
+                    rounds={upperRounds}
+                    tone="upper"
+                />
+                <BracketSection
+                    title="Bagan Harapan (Lower Bracket)"
+                    description="Atlet yang kalah pada bagan utama mendapat kesempatan berikutnya melalui bagan harapan."
+                    icon="fa-arrow-rotate-left"
+                    rounds={lowerRounds}
+                    tone="lower"
+                />
+                <BracketSection
+                    title="Grand Final"
+                    description="Pemenang upper bracket dan lower bracket bertemu pada pertandingan penentuan."
+                    icon="fa-crown"
+                    rounds={grandFinalRounds}
+                    tone="final"
+                />
             </div>
-        </div>
+        );
+    }
+
+    return (
+        <BracketSection
+            title="Bagan Eliminasi Tunggal"
+            description="Setiap babak ditampilkan berurutan dari atas ke bawah hingga pertandingan final."
+            icon="fa-diagram-project"
+            rounds={rounds}
+        />
     );
 }
 
@@ -235,7 +348,7 @@ function ScheduleMatchItem({ match, editable, onEdit }) {
             <p className="mt-2 rounded-lg bg-[#f8f5f0] px-2.5 py-2 text-xs leading-relaxed text-[#4f4740]">{participant}</p>
             <div className="mt-2 flex items-center justify-between gap-2">
                 {match.is_bye ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">BYE</span> : <span />}
-                {editable && <Button variant="unstyled" size="none" type="button" onClick={() => onEdit(match)} className="rounded-lg border border-[#d8cdbf] bg-white px-2.5 py-1.5 text-xs font-bold text-[#5f574f] hover:border-[#c0392b] hover:text-[#c0392b]"><i className="fa-solid fa-pen-to-square mr-1.5" />Ubah</Button>}
+                {editable && <Button variant="unstyled" size="none" type="button" onClick={() => onEdit(match)} className="rounded-lg border border-[#d8cdbf] bg-white px-2.5 py-1.5 text-xs font-bold text-[#5f574f] hover:border-[#c0392b] hover:text-[#c0392b]"><i className="fa-solid fa-pen-to-square mr-1.5" />Ubah Partai</Button>}
             </div>
         </article>
     );
@@ -254,7 +367,7 @@ function EventScheduleBoard({ courts, sessions, matches, editable, onEdit }) {
                 <div>
                     <p className="text-xs font-bold uppercase tracking-[.12em] text-[#9a6b20]">Hasil generate semua</p>
                     <h2 className="mt-1 text-lg font-bold text-[#17120f]">Jadwal Pertandingan per Sesi & Court</h2>
-                    <p className="mt-1 text-sm leading-relaxed text-[#746b63]">Setiap nomor pertandingan ditempatkan pada satu court tetap dari babak awal sampai final.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[#746b63]">Setiap kartu mewakili satu partai dan dapat diatur tanpa memindahkan partai lainnya.</p>
                 </div>
                 <div className="flex items-center gap-2 self-start md:self-auto">
                     {editable && <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-800"><i className="fa-solid fa-pen mr-1.5" />Mode edit aktif</span>}
@@ -320,7 +433,7 @@ function ScheduleEditorModal({ match, courts, sessions, draft, errors, processin
 
                 <div className="space-y-4 p-5">
                     <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-900">
-                        <i className="fa-solid fa-circle-info mr-2 text-blue-600" />Perubahan court diterapkan ke seluruh partai dalam nomor pertandingan ini.
+                        <i className="fa-solid fa-circle-info mr-2 text-blue-600" />Perubahan court, sesi, dan waktu hanya berlaku untuk partai yang dipilih.
                     </div>
                     {(errors.schedule || errors.start_time) && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{errors.schedule || errors.start_time}</div>}
 
@@ -459,6 +572,8 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                         <div className="flex flex-wrap gap-2">
                             <Link href={`/admin/master/event/${activeEvent.id}/detail`} className="rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef]"><i className="fa-solid fa-gear mr-1.5" />Pengaturan Event</Link>
                             <Link href={`/admin/pertandingan/merge${eventQuery}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"><i className="fa-solid fa-object-group mr-1.5" />Merge Kategori</Link>
+                            <Link href={`/admin/pertandingan/jadwal${eventQuery}`} className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-sm font-semibold text-blue-800 hover:bg-blue-100"><i className="fa-solid fa-calendar-days mr-1.5" />Kelola Jadwal</Link>
+                            <a href={`/admin/pertandingan/jadwal/export${eventQuery}`} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"><i className="fa-solid fa-file-excel mr-1.5" />Download Excel</a>
                             {canManageDrawing && workflow.generated_categories > 0 && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => setScheduleEditMode((active) => !active)} className={`rounded-lg border px-3.5 py-2.5 text-sm font-semibold ${scheduleEditMode ? 'border-[#c0392b] bg-[#fff2ef] text-[#a93226]' : 'border-[#ded5ca] text-[#5f574f] hover:bg-[#f7f4ef]'}`}><i className="fa-solid fa-calendar-pen mr-1.5" />{scheduleEditMode ? 'Selesai Edit Jadwal' : 'Edit Jadwal'}</Button>}
                             {canManageDrawing && workflow.generated_categories > 0 && !isInProgress && !isCompleted && <Button variant="unstyled" size="none" type="button" onClick={reset} disabled={!!processing} className="rounded-lg border border-rose-200 px-3.5 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"><i className="fa-solid fa-rotate-left mr-1.5" />{processing === 'reset' ? 'Mereset...' : 'Reset Draft'}</Button>}
                             {canManageDrawing && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/generate', {}, 'generate')} disabled={!!processing} className="rounded-lg bg-[#17120f] px-4 py-2.5 text-sm font-bold text-[#f0c060] hover:bg-black disabled:opacity-50"><i className={`fa-solid ${processing === 'generate' ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'} mr-1.5`} />{processing === 'generate' ? 'Membentuk bagan...' : 'Generate Semua'}</Button>}
@@ -503,9 +618,9 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                 onClose={() => setEditingMatch(null)}
                 onSave={saveSchedule}
             />
-            <AlertConfirm isOpen={Boolean(resetConfirmation)} title={resetConfirmation === 'competition' ? 'Reset seluruh status pertandingan?' : 'Reset draft drawing?'}
-                message={resetConfirmation === 'competition' ? 'Bagan dan jadwal tetap disimpan. Status partai dan nilai sementara akan dikembalikan ke awal.' : 'Draft bagan dan jadwal yang telah dibuat akan dihapus. Drawing perlu dibuat ulang.'}
-                confirmText={resetConfirmation === 'competition' ? 'Reset pertandingan' : 'Reset draft'} error={resetError} isLoading={Boolean(processing)}
+            <AlertConfirm isOpen={Boolean(resetConfirmation)} title={resetConfirmation === 'competition' ? 'Reset seluruh status pertandingan?' : 'Reset draft dan seluruh penilaian?'}
+                message={resetConfirmation === 'competition' ? 'Bagan dan jadwal tetap disimpan. Status partai dan nilai sementara akan dikembalikan ke awal.' : 'Seluruh draft bagan, jadwal, nilai Embu/Randori, lembar 10 aspek, catatan, dan tanda tangan lima Wasit pada event ini akan dihapus permanen. Data peserta dan pengaturan event tetap tersimpan. Tindakan ini tidak dapat dibatalkan.'}
+                confirmText={resetConfirmation === 'competition' ? 'Reset pertandingan' : 'Ya, reset & hapus nilai'} error={resetError} isLoading={Boolean(processing)}
                 onConfirm={confirmReset} onCancel={() => { if (!processing) setResetConfirmation(null); }} />
         </AdminLayout>
     );

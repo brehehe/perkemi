@@ -21,6 +21,8 @@ test('popda seeder creates the free event competition data rundown and responsib
         ->and((float) $event->fee_per_athlete)->toBe(0.0)
         ->and((float) $event->fee_per_contingent)->toBe(0.0)
         ->and($event->max_match_categories_per_athlete)->toBe(2)
+        ->and($event->match_duration_minutes)->toBe(10)
+        ->and($event->minimum_rest_minutes)->toBe(10)
         ->and($event->is_active)->toBeTrue()
         ->and($event->ageCategories()->where('is_active', true)->count())->toBe(1)
         ->and($event->matchCategories()->where('is_active', true)->count())->toBe(11)
@@ -30,6 +32,9 @@ test('popda seeder creates the free event competition data rundown and responsib
         ->and($responsibleUser->hasRole('Penanggung Jawab Event'))->toBeTrue()
         ->and($responsibleUser->hasRole('Admin'))->toBeFalse()
         ->and($event->responsibleUsers()->whereKey($responsibleUser->id)->exists())->toBeTrue();
+
+    expect($event->matchCategories()->where('is_active', true)->orderBy('order')->limit(6)->pluck('type')->unique()->all())
+        ->toBe(['embu']);
 
     $this->assertDatabaseHas('event_match_categories', [
         'event_id' => $event->id,

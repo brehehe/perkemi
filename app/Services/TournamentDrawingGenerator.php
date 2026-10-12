@@ -9,12 +9,13 @@ use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
-use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class TournamentDrawingGenerator
 {
+    public function __construct(private TournamentScheduleGenerator $scheduleGenerator) {}
+
     /** @return Collection<int, array<string, mixed>> */
     public function precheck(Event $event): Collection
     {
@@ -110,7 +111,7 @@ class TournamentDrawingGenerator
                 $generated++;
             }
 
-            $this->schedule($event);
+            $this->scheduleGenerator->schedule($event);
 
             return [
                 'generated' => $generated,
@@ -233,10 +234,19 @@ class TournamentDrawingGenerator
             default => [4, 2],
         };
         $poolNames = collect(range(0, $poolCount - 1))->map(fn (int $index) => chr(65 + $index));
+        $poolAthleteIds = collect();
         $sequence = 1;
 
         foreach ($participants as $index => $participant) {
             $pool = $poolNames[$index % $poolCount];
+            $poolAthleteIds->put(
+                $pool,
+                collect($poolAthleteIds->get($pool, []))
+                    ->merge($participant['athlete_ids'] ?? [])
+                    ->unique()
+                    ->values()
+                    ->all(),
+            );
             $this->createNode($event, $category, $drawing, [
                 'phase' => 'preliminary',
                 'round_label' => $poolCount === 1 ? 'Babak Penyisihan' : "Penyisihan Pool {$pool}",
@@ -275,7 +285,12 @@ class TournamentDrawingGenerator
                     'match_sequence' => $sequence++,
                     'bracket_position' => $sequence,
                     'participant_label' => "Peringkat {$rank} Pool {$pool}",
-                    'metadata' => ['placeholder' => true, 'source_pool' => $pool, 'source_rank' => $rank],
+                    'metadata' => [
+                        'placeholder' => true,
+                        'source_pool' => $pool,
+                        'source_rank' => $rank,
+                        'athlete_ids' => $poolAthleteIds->get($pool, []),
+                    ],
                 ]);
             }
         }
@@ -295,15 +310,12 @@ class TournamentDrawingGenerator
             $bracketSize *= 2;
         }
 
-        $seeded = $participants->values()->pad($bracketSize, null);
         $sequence = 1;
         $roundNumber = 1;
         $currentRound = collect();
 
-        foreach ($seeded->chunk(2) as $position => $pair) {
-            $pair = $pair->values();
-            $red = $pair->get(0);
-            $blue = $pair->get(1);
+        foreach ($this->singleEliminationFirstRoundPairs($participants, $bracketSize) as $position => $pair) {
+            [$red, $blue] = $pair;
             $currentRound->push($this->createNode($event, $category, $drawing, [
                 'phase' => 'preliminary',
                 'round_label' => 'Babak 1',
@@ -327,15 +339,29 @@ class TournamentDrawingGenerator
                 $sourceMatches = $sourceMatches->values();
                 $sourceA = $sourceMatches->get(0);
                 $sourceB = $sourceMatches->get(1);
+                $redSource = $this->randoriAdvancementSource($sourceA);
+                $blueSource = $this->randoriAdvancementSource($sourceB);
+                $athleteIds = collect([$redSource['athlete_ids'], $blueSource['athlete_ids']])
+                    ->flatten()
+                    ->unique()
+                    ->values()
+                    ->all();
                 $node = $this->createNode($event, $category, $drawing, [
                     'phase' => $isFinal ? 'final' : 'preliminary',
                     'round_label' => $isFinal ? 'Final' : "Babak {$roundNumber}",
                     'match_sequence' => $sequence++,
                     'bracket_position' => $position + 1,
-                    'red_label' => 'Pemenang Partai #'.$sourceA->match_sequence,
-                    'blue_label' => $sourceB ? 'Pemenang Partai #'.$sourceB->match_sequence : 'BYE',
-                    'is_bye' => $sourceB === null,
-                    'metadata' => ['placeholder' => true],
+                    'red_entry_id' => $redSource['entry_id'],
+                    'blue_entry_id' => $blueSource['entry_id'],
+                    'red_label' => $redSource['label'],
+                    'blue_label' => $blueSource['label'],
+                    'is_bye' => false,
+                    'metadata' => [
+                        'placeholder' => $redSource['participant'] === null || $blueSource['participant'] === null,
+                        'red' => $redSource['participant'],
+                        'blue' => $blueSource['participant'],
+                        'athlete_ids' => $athleteIds,
+                    ],
                 ]);
 
                 $sourceMatches->each(fn (TournamentMatch $source) => $source->update(['next_match_id' => $node->id]));
@@ -346,10 +372,63 @@ class TournamentDrawingGenerator
         }
     }
 
+    /**
+     * @param  Collection<int, array<string, mixed>>  $participants
+     * @return Collection<int, array{0: array<string, mixed>, 1: array<string, mixed>|null}>
+     */
+    private function singleEliminationFirstRoundPairs(Collection $participants, int $bracketSize): Collection
+    {
+        $participantQueue = $participants->values();
+        $firstRoundMatchCount = intdiv($bracketSize, 2);
+        $competitiveMatchCount = $participants->count() - $firstRoundMatchCount;
+        $competitivePositions = collect(range(0, $competitiveMatchCount - 1))
+            ->mapWithKeys(fn (int $index): array => [
+                intdiv(((2 * $index) + 1) * $firstRoundMatchCount, 2 * $competitiveMatchCount) => true,
+            ]);
+        $pairs = collect();
+
+        foreach (range(0, $firstRoundMatchCount - 1) as $position) {
+            $red = $participantQueue->shift();
+            $blue = $competitivePositions->has($position) ? $participantQueue->shift() : null;
+            $pairs->push([$red, $blue]);
+        }
+
+        return $pairs;
+    }
+
+    /**
+     * @return array{
+     *     entry_id: string|null,
+     *     label: string,
+     *     participant: array<string, mixed>|null,
+     *     athlete_ids: list<string>
+     * }
+     */
+    private function randoriAdvancementSource(TournamentMatch $source): array
+    {
+        $participant = null;
+
+        if ($source->is_bye) {
+            $participant = $source->metadata['red'] ?? $source->metadata['blue'] ?? null;
+        }
+
+        return [
+            'entry_id' => $participant['entry_id'] ?? null,
+            'label' => $participant['label'] ?? 'Pemenang Partai #'.$source->match_sequence,
+            'participant' => $participant,
+            'athlete_ids' => $participant['athlete_ids'] ?? $source->metadata['athlete_ids'] ?? [],
+        ];
+    }
+
     /** @param Collection<int, array<string, mixed>> $participants */
     private function createDoubleEliminationNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
     {
         $seeded = $participants->values()->pad(4, null);
+        $athleteIds = $participants
+            ->flatMap(fn (array $participant) => $participant['athlete_ids'] ?? [])
+            ->unique()
+            ->values()
+            ->all();
         $sequence = 1;
         $upperMatches = collect();
 
@@ -378,7 +457,7 @@ class TournamentDrawingGenerator
             'bracket_position' => 1,
             'red_label' => 'Kalah Partai #'.$upperMatches[0]->match_sequence,
             'blue_label' => 'Kalah Partai #'.$upperMatches[1]->match_sequence,
-            'metadata' => ['placeholder' => true],
+            'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
         ]);
 
         $upperFinal = $this->createNode($event, $category, $drawing, [
@@ -388,7 +467,7 @@ class TournamentDrawingGenerator
             'bracket_position' => 1,
             'red_label' => 'Pemenang Partai #'.$upperMatches[0]->match_sequence,
             'blue_label' => 'Pemenang Partai #'.$upperMatches[1]->match_sequence,
-            'metadata' => ['placeholder' => true],
+            'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
         ]);
         $upperMatches->each(fn (TournamentMatch $match) => $match->update(['next_match_id' => $upperFinal->id]));
 
@@ -399,7 +478,7 @@ class TournamentDrawingGenerator
             'bracket_position' => 1,
             'red_label' => 'Pemenang Partai #'.$lowerRound->match_sequence,
             'blue_label' => 'Kalah Partai #'.$upperFinal->match_sequence,
-            'metadata' => ['placeholder' => true],
+            'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
         ]);
         $lowerRound->update(['next_match_id' => $lowerFinal->id]);
 
@@ -410,7 +489,7 @@ class TournamentDrawingGenerator
             'bracket_position' => 1,
             'red_label' => 'Pemenang Partai #'.$upperFinal->match_sequence,
             'blue_label' => 'Pemenang Partai #'.$lowerFinal->match_sequence,
-            'metadata' => ['placeholder' => true],
+            'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
         ]);
         $upperFinal->update(['next_match_id' => $grandFinal->id]);
         $lowerFinal->update(['next_match_id' => $grandFinal->id]);
@@ -436,111 +515,5 @@ class TournamentDrawingGenerator
             'blue' => $blue,
             'athlete_ids' => collect([$red['athlete_ids'] ?? [], $blue['athlete_ids'] ?? []])->flatten()->values()->all(),
         ];
-    }
-
-    private function schedule(Event $event): void
-    {
-        $courts = $event->courts()->where('is_active', true)->get();
-        $sessions = $event->rundowns()->where('is_match_session', true)->orderBy('date')->get();
-
-        if ($courts->isEmpty() || $sessions->isEmpty()) {
-            return;
-        }
-
-        $duration = max(1, (int) $event->match_duration_minutes);
-        $rest = max(0, (int) $event->minimum_rest_minutes);
-        $slots = collect();
-
-        foreach ($sessions as $session) {
-            $start = CarbonImmutable::instance($session->date);
-            $end = $session->end_time
-                ? CarbonImmutable::instance($session->end_time)
-                : $start->addHours(4);
-
-            for ($cursor = $start; $cursor->addMinutes($duration)->lessThanOrEqualTo($end); $cursor = $cursor->addMinutes($duration)) {
-                foreach ($courts as $court) {
-                    $slots->push([
-                        'court_id' => $court->id,
-                        'rundown_id' => $session->id,
-                        'start' => $cursor,
-                        'end' => $cursor->addMinutes($duration),
-                    ]);
-                }
-            }
-        }
-
-        $matches = $event->tournamentMatches()
-            ->whereHas('drawing', fn ($query) => $query->where('status', 'generated'))
-            ->with('matchCategory:id,order')
-            ->orderBy('event_match_category_id')
-            ->orderBy('match_sequence')
-            ->get();
-        $categoryIds = $matches
-            ->sortBy(fn (TournamentMatch $match) => [
-                $match->matchCategory?->order ?? PHP_INT_MAX,
-                $match->event_match_category_id,
-            ])
-            ->pluck('event_match_category_id')
-            ->unique()
-            ->values();
-        $categoryCourtMap = $categoryIds->mapWithKeys(
-            fn (string $categoryId, int $index) => [$categoryId => $courts[$index % $courts->count()]->id],
-        );
-
-        $event->tournamentMatches()
-            ->whereHas('drawing', fn ($query) => $query->where('status', 'generated'))
-            ->update([
-                'event_court_id' => null,
-                'rundown_id' => null,
-                'scheduled_start_at' => null,
-                'scheduled_end_at' => null,
-            ]);
-        $usedSlots = collect();
-        $athleteAvailableAt = [];
-        $lastPreliminaryEnd = null;
-
-        foreach (['preliminary', 'final'] as $phase) {
-            $phaseMatches = $matches->where('phase', $phase);
-            $notBefore = $phase === 'final' && $lastPreliminaryEnd
-                ? $lastPreliminaryEnd->addMinutes($rest)
-                : null;
-
-            foreach ($phaseMatches as $match) {
-                $athleteIds = collect($match->metadata['athlete_ids'] ?? [])->filter();
-                $preferredCourtId = $categoryCourtMap->get($match->event_match_category_id);
-                $slotIndex = $slots->search(function (array $slot, int $index) use ($usedSlots, $athleteIds, $athleteAvailableAt, $notBefore, $preferredCourtId): bool {
-                    if ($slot['court_id'] !== $preferredCourtId
-                        || $usedSlots->contains($index)
-                        || ($notBefore && $slot['start']->lessThan($notBefore))) {
-                        return false;
-                    }
-
-                    return $athleteIds->every(function (string $athleteId) use ($athleteAvailableAt, $slot): bool {
-                        return ! isset($athleteAvailableAt[$athleteId]) || $slot['start']->greaterThanOrEqualTo($athleteAvailableAt[$athleteId]);
-                    });
-                });
-
-                if ($slotIndex === false) {
-                    continue;
-                }
-
-                $slot = $slots[$slotIndex];
-                $usedSlots->push($slotIndex);
-                $match->update([
-                    'event_court_id' => $slot['court_id'],
-                    'rundown_id' => $slot['rundown_id'],
-                    'scheduled_start_at' => $slot['start'],
-                    'scheduled_end_at' => $slot['end'],
-                ]);
-
-                foreach ($athleteIds as $athleteId) {
-                    $athleteAvailableAt[$athleteId] = $slot['end']->addMinutes($rest);
-                }
-
-                if ($phase === 'preliminary' && (! $lastPreliminaryEnd || $slot['end']->greaterThan($lastPreliminaryEnd))) {
-                    $lastPreliminaryEnd = $slot['end'];
-                }
-            }
-        }
     }
 }

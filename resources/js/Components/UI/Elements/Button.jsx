@@ -15,8 +15,8 @@ export default function Button({
 
     const sizeStyles = {
         none: '',
-        xs: 'min-h-8 text-[11px] px-2.5 py-1 rounded-md gap-1.5',
-        sm: 'min-h-9 text-xs px-3 py-1.5 rounded-lg gap-2',
+        xs: 'min-h-11 text-[11px] px-2.5 py-1 rounded-md gap-1.5 sm:min-h-8',
+        sm: 'min-h-11 text-xs px-3 py-1.5 rounded-lg gap-2 sm:min-h-9',
         md: 'min-h-11 text-xs md:text-sm px-3.5 py-2.5 rounded-xl gap-2',
         lg: 'min-h-12 text-sm md:text-base px-5 py-3 rounded-xl gap-2.5',
     };
