@@ -13,7 +13,11 @@ use Illuminate\Validation\ValidationException;
 
 class VerifyEmbuResult
 {
-    public function __construct(private readonly EmbuScoreCalculator $calculator) {}
+    public function __construct(
+        private readonly EmbuScoreCalculator $calculator,
+        private readonly EmbuPenaltyState $penaltyState,
+        private readonly PaniteraTimerState $timerState,
+    ) {}
 
     public function handle(Event $event, TournamentMatch $match, User $operator): EmbuScore
     {
@@ -54,27 +58,28 @@ class VerifyEmbuResult
                 ->orderBy('judge_number')
                 ->lockForUpdate()
                 ->get();
-            $submittedJudgeScores = $judgeScores
-                ->filter(fn (EmbuJudgeScore $score): bool => $score->status === 'submitted'
-                    && $score->completed_items === 10
-                    && $score->signed_at !== null)
+            $completedJudgeScores = $judgeScores
+                ->filter(fn (EmbuJudgeScore $score): bool => $score->completed_items === 10)
                 ->values();
 
-            if ($submittedJudgeScores->isEmpty()) {
+            if ($completedJudgeScores->isEmpty()) {
                 throw ValidationException::withMessages([
-                    'result' => 'Nilai belum dapat disimpan. Minimal satu Wasit harus mengisi 10 aspek, menandatangani, dan mengirim nilainya.',
+                    'result' => 'Nilai belum dapat disimpan. Minimal satu Wasit harus mengisi 10 aspek secara lengkap.',
                 ]);
             }
 
-            $totals = $submittedJudgeScores
+            $totals = $completedJudgeScores
                 ->pluck('total_score')
                 ->map(fn (string $score): float => (float) $score)
                 ->values()
                 ->all();
+            $chiefJudgeScore = $completedJudgeScores->firstWhere('judge_number', 1);
+            $penaltyState = $this->penaltyState->resolve($lockedMatch, $chiefJudgeScore);
             $calculation = $this->calculator->calculate(
                 $totals,
                 $durationSeconds,
                 (string) $lockedMatch->matchCategory->name,
+                violationPenalty: $penaltyState['points'],
             );
 
             $score = $existingScore ?? new EmbuScore([
@@ -85,6 +90,7 @@ class VerifyEmbuResult
             $score->fill([
                 'judge_scores' => $totals,
                 'duration_seconds' => $durationSeconds,
+                'violation_penalties' => $penaltyState['values'],
                 ...$calculation,
                 'status' => 'verified',
                 'submitted_by' => $operator->id,
@@ -97,8 +103,13 @@ class VerifyEmbuResult
                 ...($metadata['panitera'] ?? []),
                 'result_saved_at' => now()->toIso8601String(),
                 'result_saved_by' => $operator->id,
-                'result_judge_count' => $submittedJudgeScores->count(),
-                'result_judge_numbers' => $submittedJudgeScores->pluck('judge_number')->all(),
+                'result_judge_count' => $completedJudgeScores->count(),
+                'result_judge_numbers' => $completedJudgeScores->pluck('judge_number')->all(),
+                'result_penalty_referee_id' => $chiefJudgeScore?->referee_id,
+                'result_penalty_user_id' => $penaltyState['updated_by'] ?? $chiefJudgeScore?->user_id,
+                'result_penalty_source' => $penaltyState['source'],
+                'is_disqualified' => $calculation['is_disqualified'],
+                'disqualification_reason' => $calculation['disqualification_reason'],
             ];
             $lockedMatch->update([
                 'status' => 'completed',
@@ -114,7 +125,6 @@ class VerifyEmbuResult
 
             $lockedMatch->refresh();
             $serverNow = now();
-            $timerDurationSeconds = max(10, (int) data_get($metadata, 'panitera.timer_duration_seconds', 120));
 
             PaniteraMatchStateUpdated::dispatch(
                 eventId: $event->id,
@@ -124,20 +134,11 @@ class VerifyEmbuResult
                 matchStatus: 'completed',
                 callStatus: 'completed',
                 timer: [
-                    'status' => 'stopped',
-                    'started_at' => null,
-                    'started_at_ms' => null,
-                    'elapsed_seconds' => $durationSeconds,
-                    'elapsed_ms' => $durationSeconds * 1000,
-                    'direction' => in_array(data_get($metadata, 'panitera.timer_direction'), ['up', 'down'], true)
-                        ? data_get($metadata, 'panitera.timer_direction')
-                        : 'up',
-                    'duration_seconds' => $timerDurationSeconds,
-                    'duration_ms' => $timerDurationSeconds * 1000,
-                    'version' => max(0, (int) $lockedMatch->timer_version),
-                    'is_finished' => true,
-                    'finished_at' => $finishedAt,
+                    ...$this->timerState->timer($lockedMatch),
                     'time_penalty' => $calculation['time_penalty'],
+                    'violation_penalty' => $calculation['violation_penalty'],
+                    'total_penalty' => $calculation['total_penalty'],
+                    'is_disqualified' => $calculation['is_disqualified'],
                 ],
                 serverNow: $serverNow->toIso8601String(),
                 serverNowMs: $serverNow->getTimestampMs(),

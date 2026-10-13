@@ -39,6 +39,10 @@ function initialAspectScores(savedScores = {}) {
     return Object.fromEntries(allCriteria.map(([key]) => [key, savedScores?.[key] ?? null]));
 }
 
+function initialViolationPenalties(options = [], savedPenalties = {}) {
+    return Object.fromEntries(options.map((option) => [option.key, Number(savedPenalties?.[option.key] || 0)]));
+}
+
 function EmptyState({ session, activeEvent }) {
     if (!session) {
         return (
@@ -124,6 +128,84 @@ function CriterionCard({ code, label, value, onSelect, disabled }) {
     );
 }
 
+function PenaltyPanel({ match, penalties, penaltyTotal, canManage, disabled, onChange }) {
+    const options = match.penalty_options || [];
+    const automaticRules = match.automatic_penalty_rules || [];
+
+    return (
+        <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby="penalty-title">
+            <div className="flex flex-col gap-3 border-b border-[#eee8e0] pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#a56f1c]">Sanksi pertandingan</p>
+                    <h3 id="penalty-title" className="mt-1 text-base font-black text-[#17120f] sm:text-lg">Denda & Pelanggaran Embu</h3>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-[#7a746e]">Denda waktu dihitung dari timer Panitera. Pelanggaran teknis dicatat satu kali oleh Wasit Utama agar tidak terpotong berulang dari lima lembar juri.</p>
+                </div>
+                <div className="shrink-0 rounded-xl bg-rose-50 px-4 py-3 text-left sm:text-right">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-rose-600">Denda teknis</p>
+                    <p className="mt-1 font-mono text-xl font-black text-rose-700">-{penaltyTotal}</p>
+                </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {automaticRules.map((rule) => (
+                    <article key={rule.number} className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">{rule.number}</span>
+                            <div>
+                                <p className="text-sm font-black text-blue-950">{rule.label}</p>
+                                <p className="mt-1 text-xs font-bold text-blue-700">{rule.sanction}</p>
+                                <p className="mt-2 text-xs leading-5 text-blue-800">{rule.explanation}</p>
+                            </div>
+                        </div>
+                    </article>
+                ))}
+            </div>
+
+            {canManage ? (
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {options.map((option) => {
+                        const quantity = Number(penalties[option.key] || 0);
+
+                        return (
+                            <fieldset key={option.key} className={`rounded-2xl border p-4 ${quantity > 0 ? 'border-rose-300 bg-rose-50/70' : 'border-[#e8e1d8] bg-[#fbfaf8]'}`}>
+                                <legend className="sr-only">{option.label}</legend>
+                                <div className="flex items-start gap-3">
+                                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${quantity > 0 ? 'bg-rose-600 text-white' : 'bg-[#ece5dc] text-[#6f6258]'}`}>{option.number}</span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-black text-[#17120f]">{option.label}</p>
+                                        <p className="mt-1 text-xs font-bold text-rose-700">-{option.points} poin{option.per_item ? ' / teknik' : ''}</p>
+                                        <p className="mt-1 text-xs leading-5 text-[#6f665f]">{option.explanation}</p>
+                                    </div>
+                                </div>
+
+                                {option.per_item ? (
+                                    <div className="mt-4 grid grid-cols-7 gap-1.5" aria-label={`Jumlah pelanggaran ${option.label}`}>
+                                        {Array.from({ length: option.maximum_quantity + 1 }, (_, index) => index).map((value) => (
+                                            <button key={value} type="button" disabled={disabled} aria-pressed={quantity === value} onClick={() => onChange(option.key, value)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === value ? 'border-rose-600 bg-rose-600 text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b] hover:border-rose-300'}`}>
+                                                {value}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="mt-4 grid grid-cols-2 gap-2">
+                                        <button type="button" disabled={disabled} aria-pressed={quantity === 0} onClick={() => onChange(option.key, 0)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === 0 ? 'border-[#756a61] bg-[#756a61] text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b]'}`}>Tidak</button>
+                                        <button type="button" disabled={disabled} aria-pressed={quantity === 1} onClick={() => onChange(option.key, 1)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === 1 ? 'border-rose-600 bg-rose-600 text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b]'}`}>Ya · -{option.points}</button>
+                                    </div>
+                                )}
+                            </fieldset>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                    <i className="fa-solid fa-circle-info mr-2" aria-hidden="true" />
+                    Pelanggaran teknis dicatat oleh Juri 1 · Wasit Utama. Anda tetap mengisi 10 aspek dan tanda tangan seperti biasa.
+                </div>
+            )}
+        </section>
+    );
+}
+
 function ParticipantDetails({ participant }) {
     const athletes = participant?.athletes || [];
     const techniques = participant?.techniques || [];
@@ -175,11 +257,21 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
     const match = session.active_match;
     const saveTimer = useRef(null);
     const [scores, setScores] = useState(() => initialAspectScores(session.score?.aspect_scores));
+    const [penalties, setPenalties] = useState(() => initialViolationPenalties(
+        match.penalty_options,
+        session.score?.violation_penalties || session.penalty_state?.values,
+    ));
     const [signature, setSignature] = useState(session.score?.signature || '');
     const [notes, setNotes] = useState(session.score?.notes || '');
     const [saveState, setSaveState] = useState(session.score?.status === 'submitted' ? 'submitted' : 'idle');
     const [saveMessage, setSaveMessage] = useState('Perubahan nilai tersimpan otomatis.');
     const [validationMessage, setValidationMessage] = useState('');
+    const canManagePenalties = Boolean(session.can_manage_penalties);
+
+    const penaltyTotal = useMemo(() => (match.penalty_options || []).reduce(
+        (total, option) => total + (Number(penalties[option.key] || 0) * Number(option.points || 0)),
+        0,
+    ), [match.penalty_options, penalties]);
 
     const totals = useMemo(() => {
         const sumKeys = (items) => items.reduce((total, [key]) => total + (Number(scores[key]) || 0), 0);
@@ -192,7 +284,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
 
     useEffect(() => () => window.clearTimeout(saveTimer.current), []);
 
-    const persist = (nextScores, status, nextSignature = signature, nextNotes = notes) => {
+    const persist = (nextScores, status, nextSignature = signature, nextNotes = notes, nextPenalties = penalties) => {
         onBusyChange(true);
         setSaveState('saving');
         setSaveMessage(status === 'submitted' ? 'Mengirim nilai ke Panitera…' : 'Menyimpan perubahan…');
@@ -200,6 +292,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
         router.put(match.score_update_url, {
             event_id: activeEvent.id,
             aspect_scores: nextScores,
+            violation_penalties: canManagePenalties ? nextPenalties : {},
             signature: nextSignature || null,
             notes: nextNotes || null,
             status,
@@ -215,7 +308,8 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
             onError: (errors) => {
                 setSaveState('error');
                 setSaveMessage('Nilai belum tersimpan. Periksa koneksi atau coba lagi.');
-                setValidationMessage(errors.signature || errors.aspect_scores || 'Terjadi kesalahan saat menyimpan nilai.');
+                const penaltyError = Object.entries(errors).find(([key]) => key.startsWith('violation_penalties'))?.[1];
+                setValidationMessage(errors.signature || errors.aspect_scores || penaltyError || 'Terjadi kesalahan saat menyimpan nilai.');
             },
             onFinish: () => onBusyChange(false),
         });
@@ -254,6 +348,18 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
         saveTimer.current = window.setTimeout(() => persist(scores, 'draft', signature, nextNotes), 600);
     };
 
+    const updatePenalty = (key, quantity) => {
+        const nextPenalties = { ...penalties, [key]: quantity };
+        setPenalties(nextPenalties);
+        setSaveState('pending');
+        setSaveMessage('Menunggu penyimpanan pelanggaran…');
+        setValidationMessage('');
+        onBusyChange(true);
+
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => persist(scores, 'draft', signature, notes, nextPenalties), 450);
+    };
+
     const submitScore = (event) => {
         event.preventDefault();
         window.clearTimeout(saveTimer.current);
@@ -272,7 +378,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
             return;
         }
 
-        persist(scores, 'submitted', signature, notes);
+        persist(scores, 'submitted', signature, notes, penalties);
     };
 
     const isSaving = saveState === 'saving';
@@ -340,6 +446,17 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
                 </section>
             ))}
 
+            {canManagePenalties && (
+                <PenaltyPanel
+                    match={match}
+                    penalties={penalties}
+                    penaltyTotal={penaltyTotal}
+                    canManage
+                    disabled={isSaving}
+                    onChange={updatePenalty}
+                />
+            )}
+
             <section className="grid gap-5 rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]" aria-labelledby="signature-title">
                 <div>
                     <h3 id="signature-title" className="text-base font-black text-[#17120f] sm:text-lg">Tanda Tangan Digital Wasit</h3>
@@ -357,6 +474,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <p className="text-sm font-black text-[#17120f]">Total nilai Anda: <span className="font-mono text-xl text-[#c0392b]">{totals.total}/100</span></p>
+                        {canManagePenalties && <p className="mt-1 text-xs font-bold text-rose-700">Denda teknis pertandingan: -{penaltyTotal} poin (diterapkan sekali pada hasil akhir).</p>}
                         <p className="mt-1 text-xs text-[#7a746e]">Jika lima Wasit mengirim nilai, nilai tertinggi dan terendah dibuang. Jika kurang, Panitera dapat mengunci nilai lengkap yang sudah terkirim.</p>
                         {validationMessage && <p role="alert" className="mt-2 text-xs font-bold text-rose-700">{validationMessage}</p>}
                     </div>
@@ -376,13 +494,17 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
     const isEmbu = activeMatch?.category_type?.toLowerCase() === 'embu';
 
     useEffect(() => {
-        if (!window.Echo || !activeMatch?.id) return undefined;
+        if (!window.Echo || !refereeSession?.court_id) return undefined;
 
-        const channelName = `tournament-match.${activeMatch.id}`;
+        const channelName = activeMatch?.id
+            ? `tournament-match.${activeMatch.id}`
+            : `event-court.${refereeSession.court_id}`;
         const channel = window.Echo.private(channelName);
-        const closeCompletedMatch = (event) => {
-            if (event.event_id !== activeEvent.id || event.match_id !== activeMatch.id) return;
-            if (event.action !== 'save_result' && event.match_status !== 'completed') return;
+        const refreshMatchState = (event) => {
+            if (event.event_id !== activeEvent.id) return;
+            if (activeMatch?.id && event.match_id !== activeMatch.id) return;
+            if (!activeMatch?.id && event.court_id !== refereeSession.court_id) return;
+            if (!['save_result', 'reopen_result'].includes(event.action)) return;
 
             router.reload({
                 only: ['refereeSession', 'flash'],
@@ -390,11 +512,23 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
                 preserveState: false,
             });
         };
+        const refreshPenalties = (event) => {
+            if (event.event_id !== activeEvent.id || event.match_id !== activeMatch.id) return;
 
-        channel.listen('.panitera.match-state.updated', closeCompletedMatch);
+            router.reload({
+                only: ['refereeSession'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        channel.listen('.panitera.match-state.updated', refreshMatchState);
+        if (activeMatch?.id) {
+            channel.listen('.embu.penalties.updated', refreshPenalties);
+        }
 
         return () => window.Echo.leave(channelName);
-    }, [activeEvent.id, activeMatch?.id]);
+    }, [activeEvent.id, activeMatch?.id, refereeSession?.court_id]);
 
     useEffect(() => {
         if (scoreBusy) return undefined;

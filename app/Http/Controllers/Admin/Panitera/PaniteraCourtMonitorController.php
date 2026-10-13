@@ -13,6 +13,7 @@ use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\Panitera\PaniteraTimerState;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -23,7 +24,10 @@ class PaniteraCourtMonitorController extends Controller
     /** @var list<string> */
     private const Modes = ['arena', 'timer', 'result', 'officials'];
 
-    public function __construct(private readonly EmbuParticipantDetails $participantDetails) {}
+    public function __construct(
+        private readonly EmbuParticipantDetails $participantDetails,
+        private readonly PaniteraTimerState $timerState,
+    ) {}
 
     public function show(
         Request $request,
@@ -120,17 +124,9 @@ class PaniteraCourtMonitorController extends Controller
     /** @return array<string, mixed> */
     private function matchData(Event $event, TournamentMatch $match): array
     {
-        $metadata = $match->metadata ?? [];
         $embuScore = $match->embuScores->first();
         $randoriScore = $match->randoriScore;
         $type = $match->matchCategory?->type;
-        $elapsedMilliseconds = max(0, (int) $match->timer_elapsed_ms);
-
-        if ($elapsedMilliseconds === 0 && $match->timer_elapsed_seconds > 0) {
-            $elapsedMilliseconds = $match->timer_elapsed_seconds * 1000;
-        }
-
-        $durationSeconds = max(10, (int) data_get($metadata, 'panitera.timer_duration_seconds', 120));
 
         return [
             'id' => $match->id,
@@ -148,22 +144,7 @@ class PaniteraCourtMonitorController extends Controller
             'call_status' => $match->call_status,
             'call_status_label' => $this->callStatusLabel($match->call_status),
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
-            'timer' => [
-                'status' => $match->timer_status,
-                'started_at' => $match->timer_started_at?->toIso8601String(),
-                'started_at_ms' => $match->timer_started_at_ms ?: $match->timer_started_at?->getTimestampMs(),
-                'elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
-                'elapsed_ms' => $elapsedMilliseconds,
-                'version' => max(0, (int) $match->timer_version),
-                'is_finished' => (bool) data_get($metadata, 'panitera.finished_at'),
-                'finished_at' => data_get($metadata, 'panitera.finished_at'),
-                'time_penalty' => data_get($metadata, 'panitera.time_penalty'),
-                'direction' => in_array(data_get($metadata, 'panitera.timer_direction'), ['up', 'down'], true)
-                    ? data_get($metadata, 'panitera.timer_direction')
-                    : 'up',
-                'duration_seconds' => $durationSeconds,
-                'duration_ms' => $durationSeconds * 1000,
-            ],
+            'timer' => $this->timerState->timer($match),
             'result' => $type === 'embu'
                 ? $this->embuResultData($embuScore)
                 : ($randoriScore ? [
@@ -198,6 +179,10 @@ class PaniteraCourtMonitorController extends Controller
         return [
             'judge_scores' => $score->judge_scores,
             'time_penalty' => (float) $score->time_penalty,
+            'violation_penalty' => (float) $score->violation_penalty,
+            'total_penalty' => $score->effectiveTotalPenalty(),
+            'is_disqualified' => (bool) $score->is_disqualified,
+            'disqualification_reason' => $score->disqualification_reason,
             'final_score' => (float) $score->final_score,
             'duration_seconds' => $score->duration_seconds,
             'verified_at' => $score->verified_at?->translatedFormat('d M Y, H:i'),

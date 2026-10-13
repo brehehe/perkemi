@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\EmbuPenaltiesUpdated;
 use App\Events\PaniteraMatchStateUpdated;
 use App\Events\RandoriScoreStateUpdated;
 use App\Models\Athlete;
@@ -608,7 +609,7 @@ test('pausing a match broadcasts the authoritative timer state for its court mon
             && $broadcast->timer['status'] === 'paused'
             && $broadcast->timer['elapsed_seconds'] === 37
             && $broadcast->timer['elapsed_ms'] === 37650
-            && $broadcast->timer['direction'] === 'down'
+            && $broadcast->timer['direction'] === 'up'
             && $broadcast->timer['duration_seconds'] === 90
             && $broadcast->timer['duration_ms'] === 90000
             && $broadcast->timer['version'] === 8
@@ -628,6 +629,114 @@ test('pausing a match broadcasts the authoritative timer state for its court mon
     expect($match->fresh()->timer_status)->toBe('paused')
         ->and($match->fresh()->timer_version)->toBe(8);
 });
+
+test('timer direction follows the category and its run is shared with the monitor', function (string $type, string $direction) {
+    $this->freezeTime();
+    $event = createPaniteraEvent('Automatic Timer '.$type);
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Automatic '.$type, $type, $type === 'embu' ? 'embu_direct_final' : 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $court->id,
+        'phase' => 'final', 'round_label' => 'Final', 'match_sequence' => 1,
+        'status' => 'ready', 'call_status' => 'participants_called',
+        'metadata' => ['panitera' => ['timer_direction' => $direction === 'up' ? 'down' : 'up']],
+    ]);
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
+    $response = $this->actingAs($user)->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'start', 'timer_version' => 0,
+    ])->assertOk()
+        ->assertJsonPath('timer.direction', $direction)
+        ->assertJsonPath('timer.duration_ms', 120000)
+        ->assertJsonPath('timer.category_type', $type)
+        ->assertJsonPath('timer.run_id', 1)
+        ->assertJsonPath('timer.elapsed_ms', 0);
+
+    $this->assertDatabaseHas('tournament_matches', [
+        'id' => $match->id, 'timer_status' => 'running', 'timer_version' => 1,
+    ]);
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($broadcast): bool => $broadcast->timer === $response->json('timer'));
+
+    $this->getJson("/admin/panitera/scoring/monitors/{$court->id}/timer?event_id={$event->id}")
+        ->assertOk()->assertJsonPath('timer', $response->json('timer'));
+    $this->get("/admin/panitera/scoring/matches/{$match->id}?event_id={$event->id}")
+        ->assertInertia(fn (Assert $page) => $page->where('match.timer.direction', $direction)->where('match.timer.run_id', 1));
+    $this->getJson("/admin/panitera/scoring/monitors/{$court->id}/state?event_id={$event->id}")
+        ->assertOk()->assertJsonPath('active_match.timer', $response->json('timer'));
+})->with([['embu', 'up'], ['randori', 'down']]);
+
+test('an expired Randori timer starts a fresh two minute run and rejects a competing stale restart', function () {
+    $this->freezeTime();
+    $event = createPaniteraEvent('Randori Repeat Timer');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Repeat', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $court->id,
+        'phase' => 'final', 'round_label' => 'Final', 'match_sequence' => 1,
+        'status' => 'in_progress', 'call_status' => 'participants_called',
+        'timer_status' => 'running', 'timer_elapsed_ms' => 30000, 'timer_elapsed_seconds' => 30,
+        'timer_started_at' => now()->subSeconds(95), 'timer_started_at_ms' => now()->getTimestampMs() - 95000,
+        'timer_version' => 4, 'metadata' => ['panitera' => ['timer_run_id' => 1]],
+    ]);
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
+    $response = $this->actingAs($user)->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'start', 'timer_version' => 4,
+    ])->assertOk()->assertJsonPath('timer.elapsed_ms', 0)->assertJsonPath('timer.elapsed_seconds', 0)
+        ->assertJsonPath('timer.status', 'running')->assertJsonPath('timer.run_id', 5)
+        ->assertJsonPath('timer.started_at_ms', now()->getTimestampMs())
+        ->assertJsonPath('timer.duration_ms', 120000)->assertJsonPath('timer.is_finished', false);
+
+    $this->assertDatabaseHas('tournament_matches', [
+        'id' => $match->id, 'status' => 'in_progress', 'timer_status' => 'running',
+        'timer_elapsed_ms' => 0, 'timer_elapsed_seconds' => 0, 'timer_version' => 5,
+    ]);
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($broadcast): bool => $broadcast->timer === $response->json('timer'));
+
+    $this->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'start', 'timer_version' => 4,
+    ])->assertUnprocessable()->assertJsonValidationErrors('timer');
+    $this->assertDatabaseHas('tournament_matches', ['id' => $match->id, 'timer_version' => 5, 'timer_elapsed_ms' => 0]);
+
+    $this->travel(10)->seconds();
+    $this->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'pause', 'timer_version' => 5,
+    ])->assertOk()->assertJsonPath('timer.elapsed_ms', 10000)->assertJsonPath('timer.run_id', 5);
+    $this->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'start', 'timer_version' => 6,
+    ])->assertOk()->assertJsonPath('timer.elapsed_ms', 10000)->assertJsonPath('timer.run_id', 5);
+});
+
+test('pausing after two minutes caps Randori time but preserves the full Embu duration', function (string $type, int $elapsed) {
+    $this->freezeTime();
+    $event = createPaniteraEvent('Time Limit '.$type);
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Time Limit '.$type, $type, $type === 'embu' ? 'embu_direct_final' : 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $court->id,
+        'phase' => 'final', 'round_label' => 'Final', 'match_sequence' => 1,
+        'status' => 'in_progress', 'call_status' => 'participants_called',
+        'timer_status' => 'running', 'timer_started_at' => now()->subSeconds(125),
+        'timer_started_at_ms' => now()->getTimestampMs() - 125000,
+    ]);
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
+    $response = $this->actingAs($user)->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'pause', 'timer_version' => 0,
+    ])->assertOk()->assertJsonPath('timer.elapsed_ms', $elapsed)
+        ->assertJsonPath('timer.is_finished', false);
+
+    $this->assertDatabaseHas('tournament_matches', [
+        'id' => $match->id, 'status' => 'in_progress', 'timer_status' => 'paused', 'timer_elapsed_ms' => $elapsed,
+    ]);
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($broadcast): bool => $broadcast->timer === $response->json('timer'));
+})->with([['embu', 125000], ['randori', 120000]]);
 
 test('lightweight timer snapshots share precise state without returning scores or signatures', function () {
     $this->travelTo(Carbon::parse('2026-11-07 09:00:05.250'));
@@ -799,6 +908,94 @@ test('a clerk finishes an Embu match and the official duration penalty updates i
         );
 });
 
+test('a clerk records shared Embu technical penalties and immediately updates the final score', function () {
+    $event = createPaniteraEvent('Event Denda Teknis Panitera');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Denda Teknis',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    assignPaniteraUserToCourt($event, $user, $court);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Beregu Putra', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Denda Teknis',
+        'status' => 'in_progress',
+        'call_status' => 'participants_called',
+        'timer_status' => 'paused',
+        'timer_elapsed_seconds' => 100,
+    ]);
+    $referee = Referee::create([
+        'name' => 'Wasit Utama Denda',
+        'license_number' => 'PENALTY-CHIEF',
+        'is_active' => true,
+    ]);
+    EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'judge_number' => 1,
+        'role' => 'chief',
+        'total_score' => 80,
+    ]);
+    EventFacade::fake([EmbuPenaltiesUpdated::class]);
+
+    $this->actingAs($user)
+        ->put(route('admin.panitera.matches.embu-penalties.update', $match, false), [
+            'event_id' => $event->id,
+            'violation_penalties' => [
+                'composition_count' => 1,
+                'rank_mismatch' => 3,
+                'group_unsynchronized' => 0,
+                'group_signal' => 0,
+                'group_composition_mismatch' => 0,
+            ],
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success', 'Denda teknis Embu berhasil disimpan dan nilai akhir langsung diperbarui.');
+
+    $savedMatch = $match->fresh();
+    $aggregateScore = EmbuScore::query()->whereBelongsTo($match)->firstOrFail();
+
+    expect(data_get($savedMatch->metadata, 'panitera.violation_penalties'))->toBe([
+        'composition_count' => 1,
+        'rank_mismatch' => 3,
+    ])->and(data_get($savedMatch->metadata, 'panitera.violation_penalty_source'))->toBe('panitera')
+        ->and(data_get($savedMatch->metadata, 'panitera.violation_penalty_updated_by'))->toBe($user->id)
+        ->and($aggregateScore->judge_scores)->toEqual([80])
+        ->and((float) $aggregateScore->middle_score)->toBe(80.0)
+        ->and((float) $aggregateScore->violation_penalty)->toBe(40.0)
+        ->and((float) $aggregateScore->final_score)->toBe(40.0);
+
+    EventFacade::assertDispatched(EmbuPenaltiesUpdated::class, fn (EmbuPenaltiesUpdated $updated): bool => $updated->matchId === $match->id
+        && $updated->source === 'panitera'
+        && $updated->penaltyPoints === 40.0);
+
+    $this->actingAs($user)
+        ->get(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('match.embu_penalties.options', 5)
+            ->where('match.embu_penalties.values.composition_count', 1)
+            ->where('match.embu_penalties.values.rank_mismatch', 3)
+            ->where('match.embu_penalties.points', 40)
+            ->where('match.embu_penalties.source_label', 'Panitera')
+            ->where('match.result.final_score', 40)
+            ->where('judgeProgress.0.violation_penalty', 40));
+});
+
 test('an Embu match cannot finish before its timer starts', function () {
     $event = createPaniteraEvent('Event Validasi Selesai Embu');
     $user = createPaniteraUser($event);
@@ -834,6 +1031,58 @@ test('an Embu match cannot finish before its timer starts', function () {
         ->assertSessionHasErrors('action');
 
     expect(data_get($match->fresh()->metadata, 'panitera.finished_at'))->toBeNull();
+});
+
+test('finishing an Embu match over three minutes marks its result as disqualified', function () {
+    $this->travelTo(Carbon::parse('2026-11-07 09:03:01'));
+
+    $event = createPaniteraEvent('Event Diskualifikasi Waktu');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Diskualifikasi',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Beregu Putra', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Melebihi Waktu',
+        'status' => 'in_progress',
+        'call_status' => 'participants_called',
+        'timer_status' => 'running',
+        'timer_started_at' => now()->subSeconds(181),
+    ]);
+    EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'tiebreak_round' => 0,
+        'judge_scores' => [80, 81, 82, 83, 84],
+        'time_penalty' => 0,
+        'middle_score' => 246,
+        'final_score' => 246,
+        'status' => 'ready_for_verification',
+    ]);
+
+    $this->actingAs($user)
+        ->put("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+            'event_id' => $event->id,
+            'action' => 'finish',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $score = EmbuScore::query()->whereBelongsTo($match)->firstOrFail();
+    expect($score->duration_seconds)->toBe(181)
+        ->and($score->is_disqualified)->toBeTrue()
+        ->and($score->disqualification_reason)->toBe('Durasi Embu melebihi batas maksimum 3 menit.')
+        ->and((float) $score->final_score)->toBe(0.0)
+        ->and(data_get($match->fresh()->metadata, 'panitera.is_disqualified'))->toBeTrue();
 });
 
 test('a clerk saves five submitted judge scores and sees the verified Embu result', function () {
@@ -888,6 +1137,11 @@ test('a clerk saves five submitted judge scores and sees the verified Embu resul
             'judge_number' => $index + 1,
             'role' => $role,
             'total_score' => $totals[$index],
+            'violation_penalties' => $index === 0 ? [
+                'composition_count' => 1,
+                'rank_mismatch' => 1,
+            ] : [],
+            'violation_penalty' => $index === 0 ? 20 : 0,
         ]);
     }
 
@@ -911,7 +1165,13 @@ test('a clerk saves five submitted judge scores and sees the verified Embu resul
         ->and($score->duration_seconds)->toBe(121)
         ->and((float) $score->middle_score)->toBe(246.0)
         ->and((float) $score->time_penalty)->toBe(5.0)
-        ->and((float) $score->final_score)->toBe(241.0)
+        ->and((float) $score->violation_penalty)->toBe(20.0)
+        ->and((float) $score->total_penalty)->toBe(25.0)
+        ->and($score->violation_penalties)->toBe([
+            'composition_count' => 1,
+            'rank_mismatch' => 1,
+        ])
+        ->and((float) $score->final_score)->toBe(221.0)
         ->and($score->status)->toBe('verified')
         ->and($score->verified_by)->toBe($user->id)
         ->and($score->verified_at)->not->toBeNull()
@@ -931,11 +1191,11 @@ test('a clerk saves five submitted judge scores and sees the verified Embu resul
         ->assertInertia(fn (Assert $page) => $page
             ->where('preliminaryRankings.A.0.match_id', $match->id)
             ->where('preliminaryRankings.A.0.score.status', 'verified')
-            ->where('preliminaryRankings.A.0.score.final_score', 241)
+            ->where('preliminaryRankings.A.0.score.final_score', 221)
         );
 });
 
-test('a clerk saves the submitted judge scores without waiting for a complete panel', function () {
+test('a clerk accumulates completed judge scores even when a judge has not signed', function () {
     $event = createPaniteraEvent('Event Simpan Nilai Embu Parsial');
     $user = createPaniteraUser($event);
     $court = EventCourt::create([
@@ -1007,7 +1267,8 @@ test('a clerk saves the submitted judge scores without waiting for a complete pa
     $this->actingAs($user)
         ->get("/admin/panitera/scoring/matches/{$match->id}?event_id={$event->id}")
         ->assertInertia(fn (Assert $page) => $page
-            ->where('match.embu_verification.submitted_judges', 2)
+            ->where('match.embu_verification.completed_judges', 3)
+            ->where('match.embu_verification.signed_judges', 2)
             ->where('match.embu_verification.minimum_judges', 1)
             ->where('match.embu_verification.can_save', true));
 
@@ -1026,13 +1287,13 @@ test('a clerk saves the submitted judge scores without waiting for a complete pa
     $score = EmbuScore::query()->whereBelongsTo($match)->firstOrFail();
     $savedMatch = $match->fresh();
 
-    expect($score->judge_scores)->toEqual([80, 84])
-        ->and((float) $score->middle_score)->toBe(164.0)
-        ->and((float) $score->final_score)->toBe(164.0)
+    expect($score->judge_scores)->toEqual([80, 100, 84])
+        ->and((float) $score->middle_score)->toBe(264.0)
+        ->and((float) $score->final_score)->toBe(264.0)
         ->and($savedMatch->status)->toBe('completed')
         ->and($savedMatch->call_status)->toBe('completed')
-        ->and(data_get($savedMatch->metadata, 'panitera.result_judge_count'))->toBe(2)
-        ->and(data_get($savedMatch->metadata, 'panitera.result_judge_numbers'))->toBe([1, 3]);
+        ->and(data_get($savedMatch->metadata, 'panitera.result_judge_count'))->toBe(3)
+        ->and(data_get($savedMatch->metadata, 'panitera.result_judge_numbers'))->toBe([1, 2, 3]);
 
     EventFacade::assertDispatched(
         PaniteraMatchStateUpdated::class,
@@ -1040,6 +1301,123 @@ test('a clerk saves the submitted judge scores without waiting for a complete pa
             && $broadcast->action === 'save_result'
             && $broadcast->matchStatus === 'completed',
     );
+});
+
+test('a clerk reopens a verified Embu result while preserving the judge draft', function () {
+    $event = createPaniteraEvent('Event Buka Ulang Nilai Embu');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Buka Ulang',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    assignPaniteraUserToCourt($event, $user, $court);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Tandoku Buka Ulang', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Atlet Koreksi Nilai',
+        'status' => 'completed',
+        'call_status' => 'completed',
+        'timer_status' => 'stopped',
+        'timer_elapsed_seconds' => 90,
+        'timer_elapsed_ms' => 90000,
+        'timer_version' => 4,
+        'metadata' => [
+            'panitera' => [
+                'finished_at' => now()->toIso8601String(),
+                'duration_seconds' => 90,
+                'time_penalty' => 0,
+                'result_saved_at' => now()->toIso8601String(),
+                'result_saved_by' => $user->id,
+                'result_judge_count' => 1,
+                'result_judge_numbers' => [1],
+            ],
+        ],
+    ]);
+    $referee = Referee::create([
+        'name' => 'Wasit Koreksi Nilai',
+        'license_number' => 'REOPEN-CHIEF',
+        'is_active' => true,
+    ]);
+    $judgeScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'judge_number' => 1,
+        'role' => 'chief',
+        'total_score' => 80,
+    ]);
+    $score = EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'tiebreak_round' => 0,
+        'judge_scores' => [80],
+        'duration_seconds' => 90,
+        'time_penalty' => 0,
+        'middle_score' => 80,
+        'final_score' => 80,
+        'status' => 'verified',
+        'submitted_by' => $user->id,
+        'verified_by' => $user->id,
+        'verified_at' => now(),
+    ]);
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
+    $this->actingAs($user)
+        ->delete(route('admin.panitera.matches.embu-result.destroy', $match, false), [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ]))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success', 'Form penilaian Wasit berhasil dibuka ulang. Nilai lama tetap tersedia sebagai draft dan hasil harus disimpan ulang.');
+
+    $reopenedMatch = $match->fresh();
+    $reopenedScore = $score->fresh();
+    $preservedJudgeScore = $judgeScore->fresh();
+
+    expect($reopenedMatch->status)->toBe('in_progress')
+        ->and($reopenedMatch->call_status)->toBe('participants_called')
+        ->and($reopenedMatch->timer_status)->toBe('stopped')
+        ->and($reopenedMatch->timer_version)->toBe(5)
+        ->and(data_get($reopenedMatch->metadata, 'panitera.result_saved_at'))->toBeNull()
+        ->and(data_get($reopenedMatch->metadata, 'panitera.result_reopened_by'))->toBe($user->id)
+        ->and(data_get($reopenedMatch->metadata, 'panitera.result_reopened_at'))->not->toBeNull();
+    expect($reopenedScore->status)->toBe('draft')
+        ->and($reopenedScore->verified_by)->toBeNull()
+        ->and($reopenedScore->verified_at)->toBeNull();
+    expect($preservedJudgeScore->total_score)->toBe('80.00')
+        ->and($preservedJudgeScore->completed_items)->toBe(10)
+        ->and($preservedJudgeScore->signature)->toBe($judgeScore->signature);
+
+    EventFacade::assertDispatched(
+        PaniteraMatchStateUpdated::class,
+        fn (PaniteraMatchStateUpdated $broadcast): bool => $broadcast->matchId === $match->id
+            && $broadcast->action === 'reopen_result'
+            && $broadcast->matchStatus === 'in_progress'
+            && $broadcast->callStatus === 'participants_called',
+    );
+
+    $this->actingAs($user)
+        ->get(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('match.embu_verification.is_saved', false)
+            ->where('match.embu_verification.can_save', true)
+            ->where('match.result.status', 'draft')
+            ->where('match.result.final_score', 80));
 });
 
 test('a clerk cannot save an Embu result without a completed judge score', function () {
@@ -1081,7 +1459,7 @@ test('a clerk cannot save an Embu result without a completed judge score', funct
         ])
         ->assertRedirect()
         ->assertSessionHasErrors([
-            'result' => 'Nilai belum dapat disimpan. Minimal satu Wasit harus mengisi 10 aspek, menandatangani, dan mengirim nilainya.',
+            'result' => 'Nilai belum dapat disimpan. Minimal satu Wasit harus mengisi 10 aspek secara lengkap.',
         ]);
 
     expect(EmbuScore::query()->whereBelongsTo($match)->exists())->toBeFalse()
@@ -1400,13 +1778,20 @@ test('an assigned clerk stores a verified embu trimmed score with automatic pena
 });
 
 test('randori rejects a drawn score and accepts a result signed by all six parties', function () {
+    $this->freezeTime();
     $event = createPaniteraEvent('Event Hasil Randori');
     $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
     [$category, $drawing] = createPaniteraCategory($event, 'Randori Putra 55 kg', 'randori', 'single_elimination');
     $match = TournamentMatch::create([
         'tournament_drawing_id' => $drawing->id,
         'event_id' => $event->id,
         'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'status' => 'in_progress',
+        'timer_status' => 'running',
+        'timer_started_at' => now()->subSeconds(135),
+        'timer_started_at_ms' => now()->getTimestampMs() - 135000,
         'phase' => 'final',
         'round_label' => 'Final',
         'match_sequence' => 1,
@@ -1441,6 +1826,7 @@ test('randori rejects a drawn score and accepts a result signed by all six parti
         ->assertSessionHasErrors('score');
 
     $aka = [...$empty, 'ippon' => 1, 'waza_ari' => 1];
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
     $this->actingAs($user)
         ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
             'event_id' => $event->id,
@@ -1465,6 +1851,14 @@ test('randori rejects a drawn score and accepts a result signed by all six parti
     ]);
 
     $savedScore = RandoriScore::query()->whereBelongsTo($match)->firstOrFail();
+
+    $this->assertDatabaseHas('tournament_matches', [
+        'id' => $match->id, 'status' => 'completed', 'timer_status' => 'stopped',
+        'timer_elapsed_ms' => 120000, 'timer_started_at_ms' => null,
+    ]);
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($broadcast): bool => $broadcast->matchId === $match->id
+        && $broadcast->courtId === $court->id && $broadcast->matchStatus === 'completed'
+        && $broadcast->timer['status'] === 'stopped' && $broadcast->timer['elapsed_ms'] === 120000);
 
     expect($savedScore->signatures)->toMatchArray($signatures)
         ->and($savedScore->signature_names)->toMatchArray($signatureNames);

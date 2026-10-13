@@ -241,8 +241,9 @@ class PublicEventPageService
                     'court' => $match?->court?->name,
                     'judge_scores' => array_values($score->judge_scores ?? []),
                     'middle_score' => (float) $score->middle_score,
-                    'penalty' => (float) $score->time_penalty,
+                    'penalty' => $score->effectiveTotalPenalty(),
                     'final_score' => (float) $score->final_score,
+                    'is_disqualified' => (bool) $score->is_disqualified,
                     'duration_seconds' => $score->duration_seconds,
                     'verified_at' => $score->verified_at?->translatedFormat('d M Y, H:i'),
                 ];

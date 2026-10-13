@@ -140,6 +140,9 @@ class PaniteraMatchWorkflow
     /** @param array{expected_timer_version?: int|null, timer_direction?: string, timer_duration_seconds?: int} $options */
     private function applyAction(TournamentMatch $match, string $action, string $operatorId, array $options): void
     {
+        $startsNewRun = $action === self::ActionStart
+            && ($this->timerState->hasExpired($match)
+                || ($match->timer_status !== 'running' && $this->storedElapsedMilliseconds($match) === 0));
         $attributes = match ($action) {
             self::ActionCallOfficials => $this->officialCallAttributes($match),
             self::ActionCallParticipants => $this->participantCallAttributes($match),
@@ -158,16 +161,24 @@ class PaniteraMatchWorkflow
         $timePenalty = $finishDuration !== null
             ? $this->embuScoreCalculator->timePenalty($finishDuration, (string) $match->matchCategory?->name)
             : null;
+        $isDisqualified = $finishDuration !== null
+            ? $this->embuScoreCalculator->isDisqualified($finishDuration)
+            : false;
         $metadata['panitera'] = [
             ...($metadata['panitera'] ?? []),
+            'timer_direction' => $match->matchCategory?->type === 'randori' ? 'down' : 'up',
+            ...($startsNewRun ? ['timer_run_id' => max(0, (int) $match->timer_version) + 1] : []),
             ...($action === self::ActionConfigureTimer ? [
-                'timer_direction' => $options['timer_direction'],
                 'timer_duration_seconds' => $options['timer_duration_seconds'],
             ] : []),
             ...($action === self::ActionFinish ? [
                 'finished_at' => now()->toIso8601String(),
                 'duration_seconds' => $finishDuration,
                 'time_penalty' => $timePenalty,
+                'is_disqualified' => $isDisqualified,
+                'disqualification_reason' => $isDisqualified
+                    ? 'Durasi Embu melebihi batas maksimum 3 menit.'
+                    : null,
             ] : []),
             'last_action' => $action,
             'last_operator_id' => $operatorId,
@@ -214,7 +225,9 @@ class PaniteraMatchWorkflow
             ]);
         }
 
-        if ($match->timer_status === 'running') {
+        $expired = $this->timerState->hasExpired($match);
+
+        if ($match->timer_status === 'running' && ! $expired) {
             return [];
         }
 
@@ -225,7 +238,8 @@ class PaniteraMatchWorkflow
             'timer_status' => 'running',
             'timer_started_at' => $startedAt,
             'timer_started_at_ms' => $startedAt->getTimestampMs(),
-            'timer_elapsed_ms' => $this->storedElapsedMilliseconds($match),
+            'timer_elapsed_seconds' => $expired ? 0 : (int) floor($this->storedElapsedMilliseconds($match) / 1000),
+            'timer_elapsed_ms' => $expired ? 0 : $this->storedElapsedMilliseconds($match),
         ];
     }
 
@@ -328,20 +342,7 @@ class PaniteraMatchWorkflow
 
     private function elapsedMilliseconds(TournamentMatch $match): int
     {
-        $elapsedMilliseconds = $this->storedElapsedMilliseconds($match);
-
-        if ($match->timer_status !== 'running') {
-            return $elapsedMilliseconds;
-        }
-
-        $startedAtMilliseconds = $match->timer_started_at_ms
-            ?: $match->timer_started_at?->getTimestampMs();
-
-        if (! $startedAtMilliseconds) {
-            return $elapsedMilliseconds;
-        }
-
-        return $elapsedMilliseconds + max(0, now()->getTimestampMs() - $startedAtMilliseconds);
+        return $this->timerState->elapsedMilliseconds($match);
     }
 
     private function updateExistingEmbuScore(TournamentMatch $match, int $durationSeconds): void
@@ -359,13 +360,12 @@ class PaniteraMatchWorkflow
             $score->judge_scores,
             $durationSeconds,
             (string) $match->matchCategory?->name,
+            violationPenalty: (float) $score->violation_penalty,
         );
 
         $score->update([
             'duration_seconds' => $durationSeconds,
-            'time_penalty' => $calculation['time_penalty'],
-            'middle_score' => $calculation['middle_score'],
-            'final_score' => $calculation['final_score'],
+            ...$calculation,
         ]);
     }
 

@@ -8,6 +8,7 @@ use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\RandoriScore;
 use App\Services\EmbuParticipantDetails;
+use App\Services\Panitera\EmbuPenaltyCatalog;
 use Illuminate\Support\Str;
 
 class ScoreReportFormatter
@@ -39,7 +40,10 @@ class ScoreReportFormatter
         'white_manager' => 'Manajer Kontingen Putih',
     ];
 
-    public function __construct(private EmbuParticipantDetails $participantDetails) {}
+    public function __construct(
+        private EmbuParticipantDetails $participantDetails,
+        private EmbuPenaltyCatalog $penaltyCatalog,
+    ) {}
 
     /** @return array<string, mixed> */
     public function embu(EmbuJudgeScore $score, Event $event): array
@@ -71,6 +75,11 @@ class ScoreReportFormatter
             'technique_subtotal' => (float) $score->technique_subtotal,
             'expression_subtotal' => (float) $score->expression_subtotal,
             'total_score' => (float) $score->total_score,
+            'violation_penalty' => (float) $score->violation_penalty,
+            'penalty_summaries' => $this->penaltyCatalog->summaries(
+                $score->violation_penalties ?? [],
+                (string) $match?->matchCategory?->name,
+            ),
             'status' => $score->status,
             'status_label' => $score->status === 'submitted' ? 'Sudah dikirim' : 'Draft',
             'is_signed' => filled($score->signature),
@@ -130,6 +139,14 @@ class ScoreReportFormatter
             'duration_seconds' => $score->duration_seconds,
             'middle_score' => (float) $score->middle_score,
             'time_penalty' => (float) $score->time_penalty,
+            'violation_penalty' => (float) $score->violation_penalty,
+            'total_penalty' => $score->effectiveTotalPenalty(),
+            'penalty_summaries' => $this->penaltyCatalog->summaries(
+                $score->violation_penalties ?? [],
+                (string) $match?->matchCategory?->name,
+            ),
+            'is_disqualified' => (bool) $score->is_disqualified,
+            'disqualification_reason' => $score->disqualification_reason,
             'final_score' => (float) $score->final_score,
             'status' => $score->status,
             'status_label' => $score->status === 'verified' ? 'Verified' : Str::headline($score->status),

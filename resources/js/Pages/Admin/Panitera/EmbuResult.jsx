@@ -48,7 +48,7 @@ function RankingTable({ rows, quota = null, onScore, canManage, final = false })
                                 <td data-label="Peserta / Kontingen" className="min-w-64 px-4 py-3"><p className="font-bold text-[#17120f]">{row.participant_label}</p><p className="mt-0.5 text-[#7a746e]">{row.metadata?.members?.join(', ') || row.metadata?.contingent_name || 'Data peserta'}</p></td>
                                 <td data-label="Court & Jadwal" className="min-w-40 px-4 py-3"><p className="font-semibold text-[#17120f]">{row.court || 'Belum diplot'}</p><p className="mt-0.5 text-[#7a746e]">{row.scheduled_at || 'Belum dijadwalkan'}</p></td>
                                 <td data-label="Nilai Wasit" className="min-w-80 px-4 py-3"><JudgeScores score={row.score} /></td>
-                                <td data-label="Denda" className="whitespace-nowrap px-4 py-3 font-semibold text-rose-700">{row.score ? `-${formatScore(row.score.time_penalty)}` : '—'}</td>
+                                <td data-label="Denda" className="whitespace-nowrap px-4 py-3 font-semibold text-rose-700">{row.score ? `-${formatScore(row.score.total_penalty ?? row.score.time_penalty)}` : '—'}</td>
                                 <td data-label={final ? 'Akumulasi' : 'Nilai Akhir'} className="whitespace-nowrap px-4 py-3">
                                     {final ? (
                                         <div><p className="text-[11px] text-[#7a746e]">P {formatScore(row.preliminary_score)} + F {formatScore(row.final_round_score)}</p><p className="mt-0.5 text-lg font-black text-[#9a6b20]">{formatScore(row.total_score)}</p></div>

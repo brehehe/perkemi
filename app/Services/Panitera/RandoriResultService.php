@@ -2,6 +2,7 @@
 
 namespace App\Services\Panitera;
 
+use App\Events\PaniteraMatchStateUpdated;
 use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,10 @@ use Illuminate\Validation\ValidationException;
 
 class RandoriResultService
 {
-    public function __construct(private RandoriScoreCalculator $calculator) {}
+    public function __construct(
+        private RandoriScoreCalculator $calculator,
+        private readonly PaniteraTimerState $timerState,
+    ) {}
 
     /**
      * @param  array<string, int|string>  $akaBreakdown
@@ -75,18 +79,7 @@ class RandoriResultService
                 'shiro_total' => $shiroTotal,
                 'winner_corner' => $winnerCorner,
             ];
-            $runningMilliseconds = $match->timer_started_at_ms
-                ? max(0, now()->getTimestampMs() - $match->timer_started_at_ms)
-                : ($match->timer_started_at
-                    ? (int) floor($match->timer_started_at->diffInMilliseconds(now()))
-                    : 0);
-            $elapsedMilliseconds = max(0, (int) $match->timer_elapsed_ms);
-
-            if ($elapsedMilliseconds === 0 && $match->timer_elapsed_seconds > 0) {
-                $elapsedMilliseconds = $match->timer_elapsed_seconds * 1000;
-            }
-
-            $elapsedMilliseconds += $runningMilliseconds;
+            $elapsedMilliseconds = $this->timerState->elapsedMilliseconds($match);
             $match->update([
                 'status' => 'completed',
                 'call_status' => 'completed',
@@ -102,6 +95,21 @@ class RandoriResultService
             $winner = $metadata[$winnerCorner === 'aka' ? 'red' : 'blue'] ?? null;
             $loser = $metadata[$winnerCorner === 'aka' ? 'blue' : 'red'] ?? null;
             $this->routeResult($match->fresh(['drawing', 'nextMatch']), $winner, $loser);
+
+            if ($match->event_court_id) {
+                $serverNow = now();
+                PaniteraMatchStateUpdated::dispatch(
+                    eventId: $match->event_id,
+                    courtId: $match->event_court_id,
+                    matchId: $match->id,
+                    action: 'save_result',
+                    matchStatus: 'completed',
+                    callStatus: 'completed',
+                    timer: $this->timerState->timer($match),
+                    serverNow: $serverNow->toIso8601String(),
+                    serverNowMs: $serverNow->getTimestampMs(),
+                );
+            }
 
             return $score;
         });

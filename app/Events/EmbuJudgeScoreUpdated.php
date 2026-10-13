@@ -3,12 +3,12 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 
-class EmbuJudgeScoreUpdated implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
+class EmbuJudgeScoreUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 
@@ -19,6 +19,7 @@ class EmbuJudgeScoreUpdated implements ShouldBroadcast, ShouldDispatchAfterCommi
         public int $judgeNumber,
         public int $completedItems,
         public float $totalScore,
+        public float $violationPenalty,
         public string $status,
         public string $updatedAt,
     ) {}
@@ -50,13 +51,9 @@ class EmbuJudgeScoreUpdated implements ShouldBroadcast, ShouldDispatchAfterCommi
             'judge_number' => $this->judgeNumber,
             'completed_items' => $this->completedItems,
             'total_score' => $this->totalScore,
+            'violation_penalty' => $this->violationPenalty,
             'status' => $this->status,
             'updated_at' => $this->updatedAt,
         ];
-    }
-
-    public function broadcastQueue(): string
-    {
-        return 'broadcasts';
     }
 }

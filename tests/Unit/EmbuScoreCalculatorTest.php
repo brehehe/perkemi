@@ -34,3 +34,29 @@ test('fewer than five scores are summed without trimming', function () {
     expect($result['middle_score'])->toBe(326.0)
         ->and($result['final_score'])->toBe(326.0);
 });
+
+test('manual violation penalty is combined once with the automatic time penalty', function () {
+    $result = (new EmbuScoreCalculator)->calculate(
+        [80, 81, 82, 83, 84],
+        121,
+        'Embu Berpasangan Putra',
+        violationPenalty: 20,
+    );
+
+    expect($result)
+        ->middle_score->toBe(246.0)
+        ->time_penalty->toBe(5.0)
+        ->violation_penalty->toBe(20.0)
+        ->total_penalty->toBe(25.0)
+        ->final_score->toBe(221.0)
+        ->is_disqualified->toBeFalse();
+});
+
+test('an Embu duration over three minutes is automatically disqualified', function () {
+    $result = (new EmbuScoreCalculator)->calculate([80, 81, 82], 181, 'Embu Beregu Putra');
+
+    expect($result)
+        ->is_disqualified->toBeTrue()
+        ->final_score->toBe(0.0)
+        ->disqualification_reason->toBe('Durasi Embu melebihi batas maksimum 3 menit.');
+});

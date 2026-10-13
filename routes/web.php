@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\Master\TechniqueController;
 use App\Http\Controllers\Admin\Master\UserController;
 use App\Http\Controllers\Admin\Master\WeightClassController;
 use App\Http\Controllers\Admin\Panitera\ChampionResultController;
+use App\Http\Controllers\Admin\Panitera\EmbuPenaltyController;
 use App\Http\Controllers\Admin\Panitera\EmbuResultController;
 use App\Http\Controllers\Admin\Panitera\PaniteraCourtMonitorController;
 use App\Http\Controllers\Admin\Panitera\PaniteraDashboardController;
@@ -293,7 +294,9 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::get('scoring/matches/{tournamentMatch}', [PaniteraMatchController::class, 'show'])->name('matches.show');
     Route::get('scoring/matches/{tournamentMatch}/timer', [PaniteraTimerController::class, 'show'])->name('matches.timer');
     Route::put('scoring/matches/{tournamentMatch}/workflow', [PaniteraMatchWorkflowController::class, 'update'])->name('matches.workflow.update');
+    Route::put('scoring/matches/{tournamentMatch}/embu-penalties', [EmbuPenaltyController::class, 'update'])->name('matches.embu-penalties.update');
     Route::post('scoring/matches/{tournamentMatch}/embu-result', [VerifiedEmbuResultController::class, 'store'])->name('matches.embu-result.store');
+    Route::delete('scoring/matches/{tournamentMatch}/embu-result', [VerifiedEmbuResultController::class, 'destroy'])->name('matches.embu-result.destroy');
     Route::get('scoring/embu-result', [EmbuResultController::class, 'index'])->name('embu-result.index');
     Route::post('scoring/embu-result/{tournamentMatch}', [EmbuResultController::class, 'store'])->name('embu-result.store');
     Route::post('scoring/embu-result/{matchCategory}/advance-finalists', [EmbuResultController::class, 'advanceFinalists'])->name('embu-result.advance-finalists');

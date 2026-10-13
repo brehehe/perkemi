@@ -66,6 +66,16 @@
                 <div class="box"><div class="label">Ekspresi</div><div class="value">{{ $score['expression_subtotal'] }}</div></div>
                 <div class="box"><div class="label">Aspek Terisi</div><div class="value">{{ $score['completed_items'] }}/10</div></div>
             </section>
+            @if ($score['violation_penalty'] > 0)
+                <section class="box" style="margin-top: 14px; border-color: #efb4ad; background: #fff1ef;">
+                    <div class="label" style="color: #a72319;">Denda Pelanggaran · -{{ $score['violation_penalty'] }} poin</div>
+                    <ul class="list">
+                        @foreach ($score['penalty_summaries'] as $penalty)
+                            <li>No. {{ $penalty['number'] }} · {{ $penalty['label'] }}{{ $penalty['quantity'] > 1 ? ' × '.$penalty['quantity'] : '' }}: -{{ $penalty['points'] }} poin</li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
             <h2>Atlet & Teknik Terdaftar</h2>
             <div class="meta">
                 <div class="box" style="grid-column: span 2"><div class="label">Nama Atlet</div><ol class="list">@forelse ($score['participant_details']['athletes'] as $athlete)<li>{{ $athlete['name'] }}</li>@empty<li>Belum tercatat</li>@endforelse</ol></div>

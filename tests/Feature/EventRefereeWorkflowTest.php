@@ -21,6 +21,7 @@ use App\Models\Technique;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -464,6 +465,104 @@ test('a checked-in referee saves their Embu judge sheet and broadcasts the updat
             ->where('refereeSession.score.completed_items', 10)
             ->where('refereeSession.score.total_score', 83)
             ->where('refereeSession.score.status', 'submitted'));
+});
+
+test('the chief referee records technical Embu penalties by clicking a type and quantity', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('chief-penalty');
+    $refereeUser = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $refereeUser);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+    EventFacade::fake([EmbuJudgeScoreUpdated::class]);
+
+    $this->actingAs($refereeUser)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores(array_fill(0, 10, 8)),
+            'violation_penalties' => [
+                'composition_count' => 1,
+                'rank_mismatch' => 2,
+            ],
+            'signature' => refereeSignature(),
+            'status' => 'submitted',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $judgeScore = EmbuJudgeScore::query()->whereBelongsTo($match)->firstOrFail();
+    expect($judgeScore->violation_penalties)->toBe([
+        'composition_count' => 1,
+        'rank_mismatch' => 2,
+    ])->and((float) $judgeScore->violation_penalty)->toBe(30.0);
+
+    $aggregateScore = EmbuScore::query()->whereBelongsTo($match)->firstOrFail();
+    expect($aggregateScore->judge_scores)->toEqual([80])
+        ->and((float) $aggregateScore->middle_score)->toBe(80.0)
+        ->and((float) $aggregateScore->violation_penalty)->toBe(30.0)
+        ->and((float) $aggregateScore->final_score)->toBe(50.0)
+        ->and($aggregateScore->status)->toBe('ready_for_verification');
+
+    EventFacade::assertDispatched(EmbuJudgeScoreUpdated::class, fn (EmbuJudgeScoreUpdated $updated): bool => $updated instanceof ShouldBroadcastNow
+        && $updated->violationPenalty === 30.0);
+
+    $this->actingAs($refereeUser)
+        ->get(route('admin.arbitrase.scoring', [
+            'event_id' => $event->id,
+            'court_id' => $court->id,
+        ], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.judge_number', 1)
+            ->where('refereeSession.can_manage_penalties', true)
+            ->has('refereeSession.active_match.automatic_penalty_rules', 2)
+            ->has('refereeSession.active_match.penalty_options', 2)
+            ->where('refereeSession.score.violation_penalty', 30));
+});
+
+test('a non-chief referee cannot record Embu technical penalties', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('regional-penalty');
+    $refereeUser = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 2, $refereeUser);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::RegionalOne->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+
+    $this->actingAs($refereeUser)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores(array_fill(0, 10, 8)),
+            'violation_penalties' => ['composition_count' => 1],
+            'signature' => refereeSignature(),
+            'status' => 'submitted',
+        ])
+        ->assertSessionHasErrors('violation_penalties');
+
+    expect(EmbuJudgeScore::query()->whereBelongsTo($match)->exists())->toBeFalse();
+
+    $this->actingAs($refereeUser)
+        ->get(route('admin.arbitrase.scoring', [
+            'event_id' => $event->id,
+            'court_id' => $court->id,
+        ], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.judge_number', 2)
+            ->where('refereeSession.can_manage_penalties', false)
+            ->has('refereeSession.active_match.automatic_penalty_rules', 0)
+            ->has('refereeSession.active_match.penalty_options', 0));
 });
 
 test('a completed Embu match closes the assigned referee scoring board', function () {

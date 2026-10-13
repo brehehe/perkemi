@@ -202,7 +202,8 @@ class PortalController extends Controller
             ->latest('verified_at')
             ->get([
                 'id', 'event_id', 'tournament_match_id', 'tiebreak_round', 'judge_scores', 'duration_seconds',
-                'time_penalty', 'middle_score', 'final_score', 'status', 'verified_by', 'verified_at', 'notes',
+                'time_penalty', 'violation_penalties', 'violation_penalty', 'total_penalty', 'is_disqualified',
+                'disqualification_reason', 'middle_score', 'final_score', 'status', 'verified_by', 'verified_at', 'notes',
             ])
             ->map(function (EmbuScore $score) use ($event, $scoreFormatter): array {
                 $item = $scoreFormatter->embuResult($score, $event);

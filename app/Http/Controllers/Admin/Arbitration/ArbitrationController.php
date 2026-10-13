@@ -17,6 +17,8 @@ use App\Models\RefereeAttendance;
 use App\Models\RefereeCourtAttendance;
 use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
+use App\Services\Panitera\EmbuPenaltyCatalog;
+use App\Services\Panitera\EmbuPenaltyState;
 use App\Services\Referee\RefereeIdentity;
 use App\Services\Reports\ReportWorkbook;
 use App\Services\Reports\ScoreReportFormatter;
@@ -286,6 +288,8 @@ class ArbitrationController extends Controller
         Request $request,
         RefereeIdentity $refereeIdentity,
         EmbuParticipantDetails $participantDetails,
+        EmbuPenaltyCatalog $penaltyCatalog,
+        EmbuPenaltyState $penaltyState,
         ScoreReportFormatter $scoreReportFormatter,
     ): Response {
         $activeEvent = $this->eventForRequest($request);
@@ -328,6 +332,9 @@ class ArbitrationController extends Controller
                     ->where('judge_number', $role->judgeNumber())
                     ->first()
                 : null;
+            $sharedPenaltyState = $role === RefereeCourtRole::Chief && $activeMatch
+                ? $penaltyState->resolve($activeMatch, $judgeScore)
+                : ['values' => [], 'points' => 0.0, 'source' => null, 'updated_by' => null, 'updated_at' => null];
 
             $refereeSession = [
                 'referee_name' => $referee->name,
@@ -336,6 +343,8 @@ class ArbitrationController extends Controller
                 'role_key' => $assignment->role,
                 'role' => $role->label(),
                 'judge_number' => $role->judgeNumber(),
+                'can_manage_penalties' => $role === RefereeCourtRole::Chief,
+                'penalty_state' => $sharedPenaltyState,
                 'is_checked_in' => RefereeAttendance::query()
                     ->whereBelongsTo($activeEvent)
                     ->whereBelongsTo($referee)
@@ -361,6 +370,12 @@ class ArbitrationController extends Controller
                     'status' => $activeMatch->status,
                     'call_status' => $activeMatch->call_status,
                     'participant' => $participantDetails->forMatch($activeEvent, $activeMatch),
+                    'automatic_penalty_rules' => $role === RefereeCourtRole::Chief
+                        ? $penaltyCatalog->automaticRules()
+                        : [],
+                    'penalty_options' => $role === RefereeCourtRole::Chief
+                        ? $penaltyCatalog->options((string) $activeMatch->matchCategory?->name)
+                        : [],
                     'score_update_url' => route('admin.arbitrase.scoring.embu.update', $activeMatch, false),
                 ] : null,
                 'score' => $judgeScore ? [
@@ -369,6 +384,9 @@ class ArbitrationController extends Controller
                     'technique_subtotal' => (float) $judgeScore->technique_subtotal,
                     'expression_subtotal' => (float) $judgeScore->expression_subtotal,
                     'total_score' => (float) $judgeScore->total_score,
+                    'violation_penalties' => $sharedPenaltyState['values'],
+                    'violation_penalty' => $sharedPenaltyState['points'],
+                    'violation_penalty_source' => $sharedPenaltyState['source'],
                     'status' => $judgeScore->status,
                     'signature' => $judgeScore->signature,
                     'notes' => $judgeScore->notes,

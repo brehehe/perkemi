@@ -10,8 +10,11 @@ use App\Models\EventCourt;
 use App\Models\Referee;
 use App\Models\TournamentMatch;
 use App\Models\User;
+use App\Services\Panitera\EmbuPenaltyCatalog;
+use App\Services\Panitera\EmbuPenaltyState;
 use App\Services\Panitera\EmbuScoreCalculator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class EmbuRefereeScoreService
 {
@@ -39,10 +42,15 @@ class EmbuRefereeScoreService
         ...self::ExpressionKeys,
     ];
 
-    public function __construct(private EmbuScoreCalculator $calculator) {}
+    public function __construct(
+        private EmbuScoreCalculator $calculator,
+        private EmbuPenaltyCatalog $penaltyCatalog,
+        private EmbuPenaltyState $penaltyState,
+    ) {}
 
     /**
      * @param  array<string, int|null>  $aspectScores
+     * @param  array<string, int>  $violationPenalties
      */
     public function save(
         TournamentMatch $match,
@@ -51,11 +59,23 @@ class EmbuRefereeScoreService
         User $user,
         RefereeCourtRole $role,
         array $aspectScores,
+        array $violationPenalties,
         ?string $signature,
         ?string $notes,
         string $status,
     ): EmbuJudgeScore {
-        $score = DB::transaction(function () use ($match, $court, $referee, $user, $role, $aspectScores, $signature, $notes, $status): EmbuJudgeScore {
+        if ($role !== RefereeCourtRole::Chief && collect($violationPenalties)->contains(fn (mixed $quantity): bool => (int) $quantity > 0)) {
+            throw ValidationException::withMessages([
+                'violation_penalties' => 'Pelanggaran Embu hanya dapat dicatat oleh Wasit Utama.',
+            ]);
+        }
+
+        $score = DB::transaction(function () use ($match, $court, $referee, $user, $role, $aspectScores, $violationPenalties, $signature, $notes, $status): EmbuJudgeScore {
+            $lockedMatch = TournamentMatch::query()
+                ->whereKey($match->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedMatch->loadMissing('matchCategory:id,name,type');
             $normalizedScores = collect(self::AspectKeys)
                 ->mapWithKeys(fn (string $key): array => [
                     $key => isset($aspectScores[$key]) ? (int) $aspectScores[$key] : null,
@@ -64,18 +84,23 @@ class EmbuRefereeScoreService
             $completedItems = collect($normalizedScores)->filter(fn (?int $value): bool => $value !== null)->count();
             $techniqueSubtotal = $this->subtotal($normalizedScores, self::TechniqueKeys);
             $expressionSubtotal = $this->subtotal($normalizedScores, self::ExpressionKeys);
+            $categoryName = (string) $lockedMatch->matchCategory?->name;
+            $normalizedPenalties = $role === RefereeCourtRole::Chief
+                ? $this->penaltyCatalog->normalize($violationPenalties, $categoryName)
+                : [];
+            $violationPenalty = $this->penaltyCatalog->points($normalizedPenalties, $categoryName);
             $resolvedStatus = $status === 'submitted' && $completedItems === count(self::AspectKeys)
                 ? 'submitted'
                 : 'draft';
 
             $judgeScore = EmbuJudgeScore::query()->updateOrCreate(
                 [
-                    'tournament_match_id' => $match->id,
+                    'tournament_match_id' => $lockedMatch->id,
                     'tiebreak_round' => 0,
                     'judge_number' => $role->judgeNumber(),
                 ],
                 [
-                    'event_id' => $match->event_id,
+                    'event_id' => $lockedMatch->event_id,
                     'event_court_id' => $court->id,
                     'referee_id' => $referee->id,
                     'user_id' => $user->id,
@@ -85,6 +110,8 @@ class EmbuRefereeScoreService
                     'technique_subtotal' => $techniqueSubtotal,
                     'expression_subtotal' => $expressionSubtotal,
                     'total_score' => $techniqueSubtotal + $expressionSubtotal,
+                    'violation_penalties' => $normalizedPenalties,
+                    'violation_penalty' => $violationPenalty,
                     'status' => $resolvedStatus,
                     'signature' => $signature,
                     'notes' => $notes,
@@ -93,7 +120,16 @@ class EmbuRefereeScoreService
                 ],
             );
 
-            $this->synchronizeAggregate($match);
+            if ($role === RefereeCourtRole::Chief) {
+                $this->penaltyState->store(
+                    $lockedMatch,
+                    $normalizedPenalties,
+                    $user,
+                    EmbuPenaltyState::SourceChiefReferee,
+                );
+            }
+
+            $this->synchronizeAggregate($lockedMatch);
 
             return $judgeScore;
         });
@@ -105,6 +141,7 @@ class EmbuRefereeScoreService
             judgeNumber: $score->judge_number,
             completedItems: $score->completed_items,
             totalScore: (float) $score->total_score,
+            violationPenalty: (float) $score->violation_penalty,
             status: $score->status,
             updatedAt: $score->updated_at->toIso8601String(),
         );
@@ -129,7 +166,11 @@ class EmbuRefereeScoreService
             ->orderBy('judge_number')
             ->get();
 
-        if ($judgeScores->count() !== 5 || $judgeScores->contains(fn (EmbuJudgeScore $score): bool => $score->completed_items !== 10)) {
+        $completedJudgeScores = $judgeScores
+            ->filter(fn (EmbuJudgeScore $score): bool => $score->completed_items === count(self::AspectKeys))
+            ->values();
+
+        if ($completedJudgeScores->isEmpty()) {
             return;
         }
 
@@ -143,11 +184,14 @@ class EmbuRefereeScoreService
         }
 
         $durationSeconds = $this->durationSeconds($match);
-        $totals = $judgeScores->pluck('total_score')->map(fn (string $score): float => (float) $score)->values()->all();
+        $totals = $completedJudgeScores->pluck('total_score')->map(fn (string $score): float => (float) $score)->values()->all();
+        $chiefJudgeScore = $completedJudgeScores->firstWhere('judge_number', RefereeCourtRole::Chief->judgeNumber());
+        $penaltyState = $this->penaltyState->resolve($match, $chiefJudgeScore);
         $calculation = $this->calculator->calculate(
             $totals,
             $durationSeconds,
             (string) $match->matchCategory?->name,
+            violationPenalty: $penaltyState['points'],
         );
 
         EmbuScore::query()->updateOrCreate(
@@ -159,10 +203,9 @@ class EmbuRefereeScoreService
                 'event_id' => $match->event_id,
                 'judge_scores' => $totals,
                 'duration_seconds' => $durationSeconds,
-                'time_penalty' => $calculation['time_penalty'],
-                'middle_score' => $calculation['middle_score'],
-                'final_score' => $calculation['final_score'],
-                'status' => $judgeScores->every(fn (EmbuJudgeScore $score): bool => $score->status === 'submitted')
+                'violation_penalties' => $penaltyState['values'],
+                ...$calculation,
+                'status' => $completedJudgeScores->every(fn (EmbuJudgeScore $score): bool => $score->status === 'submitted')
                     ? 'ready_for_verification'
                     : 'draft',
                 'submitted_by' => null,

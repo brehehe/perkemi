@@ -21,6 +21,11 @@ class EmbuScore extends Model
         'judge_scores',
         'duration_seconds',
         'time_penalty',
+        'violation_penalties',
+        'violation_penalty',
+        'total_penalty',
+        'is_disqualified',
+        'disqualification_reason',
         'middle_score',
         'final_score',
         'status',
@@ -37,6 +42,10 @@ class EmbuScore extends Model
             'judge_scores' => 'array',
             'duration_seconds' => 'integer',
             'time_penalty' => 'decimal:2',
+            'violation_penalties' => 'array',
+            'violation_penalty' => 'decimal:2',
+            'total_penalty' => 'decimal:2',
+            'is_disqualified' => 'boolean',
             'middle_score' => 'decimal:2',
             'final_score' => 'decimal:2',
             'verified_at' => 'datetime',
@@ -61,5 +70,14 @@ class EmbuScore extends Model
     public function verifier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function effectiveTotalPenalty(): float
+    {
+        $storedTotal = (float) $this->total_penalty;
+
+        return $storedTotal > 0
+            ? $storedTotal
+            : (float) $this->time_penalty + (float) $this->violation_penalty;
     }
 }

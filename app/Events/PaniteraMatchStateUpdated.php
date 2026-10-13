@@ -20,6 +20,8 @@ class PaniteraMatchStateUpdated implements ShouldBroadcastNow, ShouldDispatchAft
      *     elapsed_seconds: int,
      *     elapsed_ms: int,
      *     direction: string,
+     *     category_type: string|null,
+     *     run_id: int|null,
      *     duration_seconds: int,
      *     duration_ms: int,
      *     version: int,

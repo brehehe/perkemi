@@ -28,6 +28,8 @@ class EmbuJudgeScore extends Model
         'technique_subtotal',
         'expression_subtotal',
         'total_score',
+        'violation_penalties',
+        'violation_penalty',
         'status',
         'signature',
         'notes',
@@ -46,6 +48,8 @@ class EmbuJudgeScore extends Model
             'technique_subtotal' => 'decimal:2',
             'expression_subtotal' => 'decimal:2',
             'total_score' => 'decimal:2',
+            'violation_penalties' => 'array',
+            'violation_penalty' => 'decimal:2',
             'signed_at' => 'datetime',
             'submitted_at' => 'datetime',
         ];

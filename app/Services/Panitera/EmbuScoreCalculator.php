@@ -8,10 +8,15 @@ class EmbuScoreCalculator
 {
     /**
      * @param  list<float|int|string>  $judgeScores
-     * @return array{middle_score: float, time_penalty: float, final_score: float}
+     * @return array{middle_score: float, time_penalty: float, violation_penalty: float, total_penalty: float, final_score: float, is_disqualified: bool, disqualification_reason: string|null}
      */
-    public function calculate(array $judgeScores, ?int $durationSeconds, string $categoryName, ?float $penaltyOverride = null): array
-    {
+    public function calculate(
+        array $judgeScores,
+        ?int $durationSeconds,
+        string $categoryName,
+        ?float $penaltyOverride = null,
+        float $violationPenalty = 0,
+    ): array {
         $scores = collect($judgeScores)->map(fn ($score): float => round((float) $score, 2))->values();
         $middleScore = $scores->sum();
 
@@ -20,11 +25,20 @@ class EmbuScoreCalculator
         }
 
         $timePenalty = $penaltyOverride ?? $this->timePenalty($durationSeconds, $categoryName);
+        $violationPenalty = max(0, $violationPenalty);
+        $totalPenalty = $timePenalty + $violationPenalty;
+        $isDisqualified = $this->isDisqualified($durationSeconds);
 
         return [
             'middle_score' => round($middleScore, 2),
             'time_penalty' => round($timePenalty, 2),
-            'final_score' => round(max(0, $middleScore - $timePenalty), 2),
+            'violation_penalty' => round($violationPenalty, 2),
+            'total_penalty' => round($totalPenalty, 2),
+            'final_score' => $isDisqualified ? 0.0 : round(max(0, $middleScore - $totalPenalty), 2),
+            'is_disqualified' => $isDisqualified,
+            'disqualification_reason' => $isDisqualified
+                ? 'Durasi Embu melebihi batas maksimum 3 menit.'
+                : null,
         ];
     }
 
@@ -53,5 +67,10 @@ class EmbuScoreCalculator
             $durationSeconds <= 130 => 5,
             default => 10,
         };
+    }
+
+    public function isDisqualified(?int $durationSeconds): bool
+    {
+        return $durationSeconds !== null && $durationSeconds > 180;
     }
 }

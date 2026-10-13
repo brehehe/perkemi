@@ -96,6 +96,10 @@ class EmbuResultController extends Controller
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
         $validated = $request->validated();
+        $existingScore = EmbuScore::query()
+            ->whereBelongsTo($tournamentMatch)
+            ->where('tiebreak_round', $validated['tiebreak_round'])
+            ->first();
         $calculated = $calculator->calculate(
             $validated['judge_scores'],
             $validated['duration_seconds'] ?? null,
@@ -103,6 +107,7 @@ class EmbuResultController extends Controller
             array_key_exists('penalty_override', $validated) && $validated['penalty_override'] !== null
                 ? (float) $validated['penalty_override']
                 : null,
+            (float) ($existingScore?->violation_penalty ?? 0),
         );
 
         EmbuScore::updateOrCreate(

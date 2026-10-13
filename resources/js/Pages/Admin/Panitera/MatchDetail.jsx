@@ -8,6 +8,8 @@ import { CourtMonitorButtons } from './Partials/CourtMonitorLinks';
 import RandoriScoreForm from './Partials/RandoriScoreForm';
 import useSynchronizedTimer from './Partials/useSynchronizedTimer';
 import useLiveTimer from './Partials/useLiveTimer';
+import useTimerBell from './Partials/useTimerBell';
+import TimerBellControls from './Partials/TimerBellControls';
 import { displayedTimerSeconds } from './Partials/timerSynchronization';
 import { http } from '@inertiajs/core';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -53,16 +55,36 @@ function ResultSummary({ match }) {
                     <Badge variant={match.result.status === 'verified' ? 'green' : 'yellow'}>
                         {match.result.status === 'verified' ? 'Terverifikasi' : match.result.status === 'ready_for_verification' ? 'Siap diverifikasi' : 'Draft Wasit'}
                     </Badge>
+                    {match.result.is_disqualified && <Badge variant="red">Diskualifikasi</Badge>}
                     <span className="text-xs text-[#7a746e]">Skor tengah: {Number(match.result.middle_score).toFixed(2)}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {match.result.judge_scores.map((score, index) => <Badge key={index} variant="blue">Juri {match.result.judge_numbers?.[index] || index + 1}: {Number(score).toFixed(2)}</Badge>)}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                {match.result.is_disqualified && (
+                    <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
+                        <i className="fa-solid fa-ban mr-2" aria-hidden="true" />{match.result.disqualification_reason}
+                    </div>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl bg-[#fbfaf8] p-3"><p className="text-[10px] font-bold uppercase text-[#7a746e]">Durasi</p><p className="mt-1 text-lg font-black">{match.result.duration_seconds ?? 0} detik</p></div>
-                    <div className="rounded-xl bg-rose-50 p-3"><p className="text-[10px] font-bold uppercase text-rose-600">Denda</p><p className="mt-1 text-lg font-black text-rose-700">-{Number(match.result.time_penalty).toFixed(2)}</p></div>
+                    <div className="rounded-xl bg-amber-50 p-3"><p className="text-[10px] font-bold uppercase text-amber-700">Denda waktu</p><p className="mt-1 text-lg font-black text-amber-800">-{Number(match.result.time_penalty).toFixed(2)}</p></div>
+                    <div className="rounded-xl bg-rose-50 p-3"><p className="text-[10px] font-bold uppercase text-rose-600">Denda pelanggaran</p><p className="mt-1 text-lg font-black text-rose-700">-{Number(match.result.violation_penalty || 0).toFixed(2)}</p></div>
                     <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase text-emerald-700">Nilai Akhir</p><p className="mt-1 text-lg font-black text-emerald-800">{Number(match.result.final_score).toFixed(2)}</p></div>
                 </div>
+                {match.result.penalty_summaries?.length > 0 && (
+                    <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Pelanggaran dicatat oleh {match.result.penalty_recorded_by || 'Wasit Utama'}</p>
+                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {match.result.penalty_summaries.map((penalty) => (
+                                <li key={penalty.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs">
+                                    <span className="font-semibold text-[#4a423b]">No. {penalty.number} · {penalty.label}{penalty.quantity > 1 ? ` × ${penalty.quantity}` : ''}</span>
+                                    <span className="shrink-0 font-black text-rose-700">-{penalty.points}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </div>
         );
     }
@@ -127,7 +149,7 @@ function JudgeProgressPanel({ judges = [] }) {
                                     <p className="mt-0.5 text-sm font-black text-[#17120f]">{judge.completed_items}/10</p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-[9px] font-bold uppercase text-[#8b8178]">Total</p>
+                                    <p className="text-[9px] font-bold uppercase text-[#8b8178]">Nilai mentah</p>
                                     <p className="mt-0.5 font-mono text-xl font-black text-[#c0392b]">{Number(judge.total_score).toFixed(0)}</p>
                                 </div>
                             </div>
@@ -136,6 +158,144 @@ function JudgeProgressPanel({ judges = [] }) {
                     );
                 })}
             </div>
+        </section>
+    );
+}
+
+function initialPenaltyValues(penaltyState) {
+    return Object.fromEntries(
+        (penaltyState?.options || []).map((option) => [option.key, Number(penaltyState?.values?.[option.key] || 0)]),
+    );
+}
+
+function EmbuPenaltyEditor({ activeEventId, canManage, penaltyState }) {
+    const [values, setValues] = useState(() => initialPenaltyValues(penaltyState));
+    const [processing, setProcessing] = useState(false);
+    const [confirmationOpen, setConfirmationOpen] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const options = penaltyState?.options || [];
+    const penaltyTotal = useMemo(() => options.reduce(
+        (total, option) => total + (Number(values[option.key] || 0) * Number(option.points || 0)),
+        0,
+    ), [options, values]);
+    const disabled = !canManage || !penaltyState?.can_edit || processing;
+
+    useEffect(() => {
+        setValues(initialPenaltyValues(penaltyState));
+    }, [penaltyState]);
+
+    if (!penaltyState) return null;
+
+    const updateValue = (key, value) => {
+        if (disabled) return;
+
+        setValues((current) => ({ ...current, [key]: value }));
+        setSaveError('');
+    };
+
+    const save = () => {
+        router.put(penaltyState.update_url, {
+            event_id: activeEventId,
+            violation_penalties: values,
+        }, {
+            preserveScroll: true,
+            onStart: () => {
+                setProcessing(true);
+                setSaveError('');
+            },
+            onSuccess: () => setConfirmationOpen(false),
+            onError: (responseErrors) => {
+                const penaltyError = Object.entries(responseErrors)
+                    .find(([key]) => key.startsWith('violation_penalties'))?.[1];
+                setSaveError(penaltyError || 'Denda teknis belum dapat disimpan. Silakan coba lagi.');
+            },
+            onFinish: () => setProcessing(false),
+        });
+    };
+
+    return (
+        <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby="panitera-penalty-title">
+            <div className="flex flex-col gap-3 border-b border-[#eee8e0] pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#a56f1c]">Sanksi pertandingan</p>
+                    <h2 id="panitera-penalty-title" className="mt-1 text-base font-black text-[#17120f] sm:text-lg">Input Denda Teknis Embu</h2>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-[#7a746e]">Nomor 1 dihitung otomatis dari timer dan nomor 2 otomatis diskualifikasi bila durasi melebihi 3 menit. Pilih pelanggaran nomor 3–7 di bawah ini.</p>
+                    <p className="mt-2 text-[11px] font-semibold text-[#7a746e]">Data ini digunakan bersama Wasit Utama. Perubahan terakhir dari Wasit Utama atau Panitera menjadi data resmi.</p>
+                </div>
+                <div className="shrink-0 rounded-xl bg-rose-50 px-4 py-3 text-left sm:text-right">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-rose-600">Denda dipilih</p>
+                    <p className="mt-1 font-mono text-xl font-black text-rose-700">-{penaltyTotal}</p>
+                </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {options.map((option) => {
+                    const quantity = Number(values[option.key] || 0);
+
+                    return (
+                        <fieldset key={option.key} className={`rounded-2xl border p-4 ${quantity > 0 ? 'border-rose-300 bg-rose-50/70' : 'border-[#e8e1d8] bg-[#fbfaf8]'}`}>
+                            <legend className="sr-only">{option.label}</legend>
+                            <div className="flex items-start gap-3">
+                                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${quantity > 0 ? 'bg-rose-600 text-white' : 'bg-[#ece5dc] text-[#6f6258]'}`}>{option.number}</span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-black text-[#17120f]">{option.label}</p>
+                                    <p className="mt-1 text-xs font-bold text-rose-700">-{option.points} poin{option.per_item ? ' / teknik' : ''}</p>
+                                    <p className="mt-1 text-xs leading-5 text-[#6f665f]">{option.explanation}</p>
+                                </div>
+                            </div>
+
+                            {option.per_item ? (
+                                <div className="mt-4 grid grid-cols-7 gap-1.5" aria-label={`Jumlah pelanggaran ${option.label}`}>
+                                    {Array.from({ length: option.maximum_quantity + 1 }, (_, index) => index).map((value) => (
+                                        <button key={value} type="button" disabled={disabled} aria-pressed={quantity === value} onClick={() => updateValue(option.key, value)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === value ? 'border-rose-600 bg-rose-600 text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b] hover:border-rose-300'}`}>
+                                            {value}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="mt-4 grid grid-cols-2 gap-2">
+                                    <button type="button" disabled={disabled} aria-pressed={quantity === 0} onClick={() => updateValue(option.key, 0)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === 0 ? 'border-[#756a61] bg-[#756a61] text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b]'}`}>Tidak</button>
+                                    <button type="button" disabled={disabled} aria-pressed={quantity === 1} onClick={() => updateValue(option.key, 1)} className={`min-h-11 rounded-xl border text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${quantity === 1 ? 'border-rose-600 bg-rose-600 text-white' : 'border-[#d9d1c7] bg-white text-[#4a423b]'}`}>Ya · -{option.points}</button>
+                                </div>
+                            )}
+                        </fieldset>
+                    );
+                })}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#e7dfd4] bg-[#fbfaf8] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p className="text-xs font-bold text-[#17120f]">Terakhir dicatat: {penaltyState.source_label}</p>
+                    <p className="mt-1 text-[11px] text-[#7a746e]">Denda hanya dipotong satu kali dari nilai akhir, bukan dari setiap lembar juri.</p>
+                </div>
+                <Button
+                    variant="danger"
+                    iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}
+                    disabled={disabled}
+                    loading={processing}
+                    onClick={() => setConfirmationOpen(true)}
+                >
+                    Simpan Denda Teknis
+                </Button>
+            </div>
+
+            {!penaltyState.can_edit && (
+                <p role="status" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">Denda sudah dikunci karena hasil pertandingan telah disimpan.</p>
+            )}
+            {saveError && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{saveError}</p>}
+
+            <AlertConfirm
+                isOpen={confirmationOpen}
+                title="Simpan denda teknis Embu?"
+                message={`Denda teknis ${penaltyTotal} poin akan dipakai bersama Wasit Utama dan langsung menghitung ulang nilai akhir pertandingan.`}
+                confirmText="Simpan Denda"
+                cancelText="Periksa Lagi"
+                variant="warning"
+                isLoading={processing}
+                error={saveError}
+                onCancel={() => setConfirmationOpen(false)}
+                onConfirm={save}
+            />
         </section>
     );
 }
@@ -175,10 +335,12 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const [processingAction, setProcessingAction] = useState(null);
     const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
     const [saveResultConfirmationOpen, setSaveResultConfirmationOpen] = useState(false);
-    const [timerDirection, setTimerDirection] = useState(match.timer.direction || 'up');
+    const [reopenResultConfirmationOpen, setReopenResultConfirmationOpen] = useState(false);
+    const timerDirection = match.timer.direction || (match.category_type === 'randori' ? 'down' : 'up');
     const [timerDurationSeconds, setTimerDurationSeconds] = useState(match.timer.duration_seconds || 120);
     const processingActionRef = useRef(processingAction);
     const elapsedMilliseconds = useSynchronizedTimer(match.timer, liveTimer.serverClock, match.id);
+    const bell = useTimerBell({ timer: match.timer, elapsedMilliseconds, matchId: match.id, synchronized: liveTimer.synchronized });
     const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
     const displayedSeconds = displayedTimerSeconds(match.timer, elapsedMilliseconds);
     const timerExpired = match.timer.direction === 'down' && elapsedSeconds >= Number(match.timer.duration_seconds);
@@ -193,7 +355,6 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     }, [processingAction]);
 
     useEffect(() => {
-        setTimerDirection(match.timer.direction || 'up');
         setTimerDurationSeconds(match.timer.duration_seconds || 120);
     }, [match.id, match.timer.direction, match.timer.duration_seconds]);
 
@@ -204,8 +365,12 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
         const channel = window.Echo.private(channelName);
         if (match.category_type === 'embu') {
             channel.listen('.embu.judge-score.updated', refreshLiveData);
+            channel.listen('.embu.penalties.updated', refreshLiveData);
         }
-        return () => channel.stopListening('.embu.judge-score.updated', refreshLiveData);
+        return () => {
+            channel.stopListening('.embu.judge-score.updated', refreshLiveData);
+            channel.stopListening('.embu.penalties.updated', refreshLiveData);
+        };
     }, [activeEvent.id, match.category_type, match.id, refreshLiveData]);
 
     useEffect(() => {
@@ -220,6 +385,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
 
     const updateWorkflow = async (action, payload = {}, callbacks = {}) => {
         if (processingActionRef.current) return;
+        if (action === 'start') bell.prepareForStart();
         processingActionRef.current = action;
         setProcessingAction(action);
         setWorkflowErrors({});
@@ -245,19 +411,6 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
         }
     };
 
-    const changeTimerDirection = (direction) => {
-        if (direction === timerDirection || processingAction) return;
-
-        const previousDirection = timerDirection;
-        setTimerDirection(direction);
-        updateWorkflow('configure_timer', {
-            timer_direction: direction,
-            timer_duration_seconds: Number(match.timer.duration_seconds) || 120,
-        }, {
-            onError: () => setTimerDirection(previousDirection),
-        });
-    };
-
     const saveEmbuResult = () => {
         router.post(`/admin/panitera/scoring/matches/${match.id}/embu-result`, {
             event_id: activeEvent.id,
@@ -265,6 +418,16 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
             preserveScroll: true,
             onStart: () => setProcessingAction('save_result'),
             onSuccess: () => setSaveResultConfirmationOpen(false),
+            onFinish: () => setProcessingAction(null),
+        });
+    };
+
+    const reopenEmbuResult = () => {
+        router.delete(match.embu_verification.reopen_url, {
+            data: { event_id: activeEvent.id },
+            preserveScroll: true,
+            onStart: () => setProcessingAction('reopen_result'),
+            onSuccess: () => setReopenResultConfirmationOpen(false),
             onFinish: () => setProcessingAction(null),
         });
     };
@@ -382,10 +545,10 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                         </div>
 
                         <div className={`grid gap-2 ${match.category_type === 'embu' ? 'sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3' : 'sm:grid-cols-2'}`}>
-                            {match.timer.status === 'running' ? (
+                            {match.timer.status === 'running' && !timerExpired ? (
                                 <Button iconLeft={<i className="fa-solid fa-pause" aria-hidden="true" />} disabled={timerWorkflowDisabled} loading={processingAction === 'pause'} onClick={() => updateWorkflow('pause')}>Jeda Waktu</Button>
                             ) : (
-                                <Button iconLeft={<i className="fa-solid fa-play" aria-hidden="true" />} disabled={timerWorkflowDisabled || match.call_status !== 'participants_called'} loading={processingAction === 'start'} onClick={() => updateWorkflow('start')}>Mulai Pertandingan</Button>
+                                <Button iconLeft={<i className="fa-solid fa-play" aria-hidden="true" />} disabled={timerWorkflowDisabled || match.call_status !== 'participants_called'} loading={processingAction === 'start'} onClick={() => updateWorkflow('start')}>{timerExpired ? `Mulai Lagi · ${formatTimer(match.timer.duration_seconds)}` : match.timer.status === 'paused' ? 'Lanjutkan Waktu' : 'Mulai Pertandingan'}</Button>
                             )}
                             <Button variant="outline" iconLeft={<i className="fa-solid fa-rotate-left" aria-hidden="true" />} disabled={timerWorkflowDisabled || elapsedSeconds === 0} loading={processingAction === 'reset_timer'} onClick={() => updateWorkflow('reset_timer')}>Reset Waktu</Button>
                             {match.category_type === 'embu' && (
@@ -412,24 +575,31 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     )}
 
                     <div className="mt-5 grid gap-4 border-t border-[#eee8e0] pt-4 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
-                        <fieldset>
-                            <legend className="text-xs font-bold text-[#17120f]">Arah Perhitungan</legend>
-                            <div className="mt-2 grid grid-cols-2 rounded-xl bg-slate-200 p-1 sm:max-w-sm">
-                                {[['up', 'Maju'], ['down', 'Mundur']].map(([value, label]) => (
-                                    <button key={value} type="button" aria-pressed={timerDirection === value} disabled={timerWorkflowDisabled || match.timer.status === 'running' || Boolean(processingAction)} onClick={() => changeTimerDirection(value)} className={`min-h-11 rounded-lg px-3 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-not-allowed disabled:opacity-50 ${timerDirection === value ? 'bg-white text-[#c0392b] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>
-                                ))}
-                            </div>
-                            <p className="mt-2 text-[10px] font-semibold text-[#7a746e]">{processingAction === 'configure_timer' ? 'Menyinkronkan pengaturan ke monitor…' : 'Pilihan Maju/Mundur langsung tersinkron ke monitor Court.'}</p>
-                        </fieldset>
+                        <div>
+                            <p className="text-xs font-bold text-[#17120f]">{match.category_type === 'embu' ? 'Embu · Otomatis Maju' : 'Randori · Otomatis Mundur'}</p>
+                            <p className="mt-2 text-xs leading-5 text-[#7a746e]">{match.category_type === 'embu' ? 'Bel saat mulai, 01:30, dan 02:00. Waktu terus berjalan hingga Selesai Pertandingan.' : 'Bel saat mulai dan 00:00. Setelah waktu habis, tekan Mulai Lagi untuk mengulang durasi.'}</p>
+                        </div>
                         <label htmlFor="timer-duration" className="block">
                             <span className="text-xs font-bold text-[#17120f]">Durasi acuan (detik)</span>
                             <input id="timer-duration" type="number" min="10" max="3600" value={timerDurationSeconds} disabled={timerWorkflowDisabled || match.timer.status === 'running'} onChange={(event) => setTimerDurationSeconds(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold outline-none focus:border-[#c0392b] focus:ring-2 focus:ring-[#c0392b]/15 disabled:cursor-not-allowed disabled:opacity-50" />
                         </label>
                         <Button variant="outline" disabled={timerWorkflowDisabled || match.timer.status === 'running' || Number(timerDurationSeconds) < 10 || Number(timerDurationSeconds) > 3600} loading={processingAction === 'configure_timer'} onClick={() => updateWorkflow('configure_timer', { timer_direction: timerDirection, timer_duration_seconds: Number(timerDurationSeconds) })} iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}>Simpan Durasi</Button>
                     </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee8e0] pt-4">
+                        <p className="text-xs text-[#7a746e]">Aktifkan bel pada perangkat yang digunakan sebagai pengeras suara.</p>
+                        <TimerBellControls bell={bell} />
+                    </div>
                 </section>
 
                 {match.category_type === 'embu' && <JudgeProgressPanel judges={judgeProgress} />}
+
+                {match.category_type === 'embu' && canManage && (
+                    <EmbuPenaltyEditor
+                        activeEventId={activeEvent.id}
+                        canManage={canManage}
+                        penaltyState={match.embu_penalties}
+                    />
+                )}
 
                 <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -445,10 +615,21 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                                 Simpan Nilai Embu
                             </Button>
                         ) : match.category_type === 'embu' && match.embu_verification?.is_saved ? (
-                            <Link href={resultIndexUrl} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
-                                <i className="fa-solid fa-ranking-star" aria-hidden="true" />
-                                Lihat di Hasil Embu
-                            </Link>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                <Button
+                                    variant="danger"
+                                    iconLeft={<i className="fa-solid fa-lock-open" aria-hidden="true" />}
+                                    disabled={!canManage}
+                                    loading={processingAction === 'reopen_result'}
+                                    onClick={() => setReopenResultConfirmationOpen(true)}
+                                >
+                                    Buka Ulang Form Wasit
+                                </Button>
+                                <Link href={resultIndexUrl} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+                                    <i className="fa-solid fa-ranking-star" aria-hidden="true" />
+                                    Lihat di Hasil Embu
+                                </Link>
+                            </div>
                         ) : match.category_type === 'randori' && canOpenScore ? (
                             <span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800">
                                 <i className="fa-solid fa-pen-to-square" aria-hidden="true" />
@@ -460,13 +641,14 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     </div>
                     {match.category_type === 'embu' && match.timer.is_finished && !match.embu_verification?.is_saved && (
                         <div role="status" className={`mt-4 rounded-xl border p-3 text-xs leading-5 ${match.embu_verification?.can_save ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                            <p className="font-bold">Nilai Wasit terkirim: {match.embu_verification?.submitted_judges || 0}/{match.embu_verification?.required_judges || 5}</p>
+                            <p className="font-bold">Nilai Wasit lengkap: {match.embu_verification?.completed_judges || 0}/{match.embu_verification?.required_judges || 5}</p>
+                            <p className="mt-0.5">Tanda tangan tercatat: {match.embu_verification?.signed_judges || 0}/{match.embu_verification?.completed_judges || 0}</p>
                             <p className="mt-0.5">
-                                {match.embu_verification?.submitted_judges === 5
-                                    ? 'Lima nilai lengkap. Nilai tertinggi dan terendah akan dibuang otomatis saat hasil disimpan.'
+                                {match.embu_verification?.completed_judges === 5
+                                    ? 'Lima nilai lengkap akan diakumulasi. Nilai tertinggi dan terendah dibuang otomatis saat hasil disimpan, meskipun masih ada tanda tangan yang belum diisi.'
                                     : match.embu_verification?.can_save
-                                        ? `${match.embu_verification.submitted_judges} nilai lengkap siap disimpan. Seluruh nilai Wasit yang sudah dikirim akan dijumlahkan tanpa menunggu lima Wasit.`
-                                        : 'Minimal satu Wasit harus mengirim 10 aspek lengkap beserta tanda tangan agar hasil dapat disimpan.'}
+                                        ? `${match.embu_verification.completed_judges} nilai lengkap siap diakumulasi tanpa menunggu tanda tangan atau lima Wasit.`
+                                        : 'Minimal satu Wasit harus mengisi seluruh 10 aspek. Tanda tangan tidak menghalangi akumulasi nilai.'}
                             </p>
                         </div>
                     )}
@@ -501,7 +683,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                 <AlertConfirm
                     isOpen={saveResultConfirmationOpen}
                     title="Simpan nilai Embu?"
-                    message={`${match.embu_verification?.submitted_judges || 0} nilai Wasit yang sudah lengkap, durasi resmi ${formatTimer(match.timer.elapsed_seconds)}, dan denda ${Number(match.timer.time_penalty || 0).toFixed(0)} poin akan dikunci. Papan penilaian Wasit otomatis kembali ke layar siaga setelah hasil disimpan.`}
+                    message={`${match.embu_verification?.completed_judges || 0} nilai Wasit yang sudah mengisi 10 aspek akan diakumulasi, termasuk yang belum bertanda tangan. Durasi resmi ${formatTimer(match.timer.elapsed_seconds)}, denda waktu ${Number(match.timer.time_penalty || 0).toFixed(0)} poin, dan denda pelanggaran ${Number(match.result?.violation_penalty || judgeProgress.find((judge) => judge.judge_number === 1)?.violation_penalty || 0).toFixed(0)} poin akan dikunci.${match.timer.elapsed_seconds > 180 ? ' Durasi melebihi 3 menit sehingga hasil ditetapkan diskualifikasi.' : ''} Papan penilaian Wasit otomatis kembali ke layar siaga setelah hasil disimpan.`}
                     confirmText="Simpan Nilai Embu"
                     cancelText="Periksa Lagi"
                     variant="warning"
@@ -509,6 +691,18 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     error={errors.result || ''}
                     onCancel={() => setSaveResultConfirmationOpen(false)}
                     onConfirm={saveEmbuResult}
+                />
+                <AlertConfirm
+                    isOpen={reopenResultConfirmationOpen}
+                    title="Buka ulang form penilaian Wasit?"
+                    message="Hasil resmi akan dikembalikan menjadi draft dan papan penilaian Wasit pada court ini langsung aktif kembali. Nilai lama tetap tersedia untuk dikoreksi, kemudian Panitera wajib menyimpan ulang hasilnya."
+                    confirmText="Buka Ulang Form"
+                    cancelText="Batal"
+                    variant="danger"
+                    isLoading={processingAction === 'reopen_result'}
+                    error={errors.result || ''}
+                    onCancel={() => setReopenResultConfirmationOpen(false)}
+                    onConfirm={reopenEmbuResult}
                 />
             </div>
         </AdminLayout>

@@ -6,8 +6,11 @@ use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Models\EventCourtAssignment;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\EmbuPenaltyCatalog;
+use App\Services\Panitera\EmbuPenaltyState;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\Panitera\PaniteraTimerState;
 use App\Services\Panitera\RandoriScoreDraftStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -16,12 +19,16 @@ use Inertia\Response;
 
 class PaniteraMatchController extends Controller
 {
+    public function __construct(private readonly PaniteraTimerState $timerState) {}
+
     public function show(
         Request $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
         PaniteraCourtAccess $courtAccess,
         RandoriScoreDraftStore $randoriDrafts,
+        EmbuPenaltyCatalog $penaltyCatalog,
+        EmbuPenaltyState $penaltyState,
     ): Response {
         $event = $eventContext->eventFor($request);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
@@ -72,11 +79,15 @@ class PaniteraMatchController extends Controller
         $judgeScores = $tournamentMatch->embuJudgeScores
             ->where('tiebreak_round', 0)
             ->keyBy('judge_number');
+        $sharedPenaltyState = $penaltyState->resolve(
+            $tournamentMatch,
+            $judgeScores->get(RefereeCourtRole::Chief->judgeNumber()),
+        );
         $refereeAssignments = $tournamentMatch->court?->assignments
             ->where('staff_type', 'referee')
             ->keyBy('role') ?? collect();
         $judgeProgress = collect(RefereeCourtRole::cases())
-            ->map(function (RefereeCourtRole $role) use ($activeRefereeIds, $judgeScores, $refereeAssignments, $staffNames): array {
+            ->map(function (RefereeCourtRole $role) use ($activeRefereeIds, $judgeScores, $refereeAssignments, $staffNames, $penaltyCatalog, $sharedPenaltyState, $tournamentMatch): array {
                 $assignment = $refereeAssignments->get($role->value);
                 $score = $judgeScores->get($role->judgeNumber());
 
@@ -94,6 +105,10 @@ class PaniteraMatchController extends Controller
                     'technique_subtotal' => $score ? (float) $score->technique_subtotal : 0,
                     'expression_subtotal' => $score ? (float) $score->expression_subtotal : 0,
                     'total_score' => $score ? (float) $score->total_score : 0,
+                    'violation_penalty' => $role === RefereeCourtRole::Chief ? $sharedPenaltyState['points'] : 0,
+                    'penalty_summaries' => $role === RefereeCourtRole::Chief
+                        ? $penaltyCatalog->summaries($sharedPenaltyState['values'], (string) $tournamentMatch->matchCategory?->name)
+                        : [],
                     'status' => $score?->status ?? 'waiting',
                     'is_signed' => $score?->signed_at !== null,
                     'notes' => $score?->notes,
@@ -130,7 +145,7 @@ class PaniteraMatchController extends Controller
         return Inertia::render('Admin/Panitera/MatchDetail', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
             'events' => $eventContext->accessibleEvents($request),
-            'match' => $this->matchData($tournamentMatch, $randoriDrafts),
+            'match' => $this->matchData($tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState),
             'staff' => $staff,
             'judgeProgress' => $judgeProgress,
             'nextMatch' => $nextMatch ? [
@@ -149,23 +164,27 @@ class PaniteraMatchController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function matchData(TournamentMatch $match, RandoriScoreDraftStore $randoriDrafts): array
-    {
+    private function matchData(
+        TournamentMatch $match,
+        RandoriScoreDraftStore $randoriDrafts,
+        EmbuPenaltyCatalog $penaltyCatalog,
+        EmbuPenaltyState $penaltyState,
+    ): array {
         $type = $match->matchCategory?->type;
         $embuScore = $match->embuScores->first();
         $randoriScore = $match->randoriScore;
         $judgeScores = $match->embuJudgeScores->where('tiebreak_round', 0);
-        $submittedJudges = $judgeScores->filter(fn ($score): bool => $score->status === 'submitted'
-            && $score->completed_items === 10
-            && $score->signed_at !== null)->count();
+        $sharedPenaltyState = $penaltyState->resolve(
+            $match,
+            $judgeScores->firstWhere('judge_number', RefereeCourtRole::Chief->judgeNumber()),
+        );
+        $completedJudges = $judgeScores
+            ->filter(fn ($score): bool => $score->completed_items === 10)
+            ->count();
+        $signedJudges = $judgeScores
+            ->filter(fn ($score): bool => $score->completed_items === 10 && $score->signed_at !== null)
+            ->count();
         $isEmbuFinished = (bool) data_get($match->metadata, 'panitera.finished_at');
-        $elapsedMilliseconds = max(0, (int) $match->timer_elapsed_ms);
-
-        if ($elapsedMilliseconds === 0 && $match->timer_elapsed_seconds > 0) {
-            $elapsedMilliseconds = $match->timer_elapsed_seconds * 1000;
-        }
-
-        $durationSeconds = max(10, (int) data_get($match->metadata, 'panitera.timer_duration_seconds', 120));
 
         return [
             'id' => $match->id,
@@ -192,31 +211,40 @@ class PaniteraMatchController extends Controller
             'call_status_label' => $this->callStatusLabel($match->call_status),
             'called_at' => $match->called_at?->translatedFormat('d M Y, H:i:s'),
             'timer' => [
-                'status' => $match->timer_status,
-                'started_at' => $match->timer_started_at?->toIso8601String(),
-                'started_at_ms' => $match->timer_started_at_ms ?: $match->timer_started_at?->getTimestampMs(),
-                'elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
-                'elapsed_ms' => $elapsedMilliseconds,
-                'version' => max(0, (int) $match->timer_version),
-                'is_finished' => (bool) data_get($match->metadata, 'panitera.finished_at'),
-                'finished_at' => data_get($match->metadata, 'panitera.finished_at'),
-                'time_penalty' => data_get($match->metadata, 'panitera.time_penalty'),
+                ...$this->timerState->timer($match),
                 'penalty_category' => Str::contains(Str::lower((string) $match->matchCategory?->name), ['tandoku', 'tunggal'])
                     ? 'Tandoku / Tunggal'
                     : 'Pasangan / Beregu',
-                'direction' => in_array(data_get($match->metadata, 'panitera.timer_direction'), ['up', 'down'], true)
-                    ? data_get($match->metadata, 'panitera.timer_direction')
-                    : 'up',
-                'duration_seconds' => $durationSeconds,
-                'duration_ms' => $durationSeconds * 1000,
             ],
             'is_placeholder' => (bool) ($match->metadata['placeholder'] ?? false),
             'embu_verification' => $type === 'embu' ? [
-                'submitted_judges' => $submittedJudges,
+                'completed_judges' => $completedJudges,
+                'signed_judges' => $signedJudges,
                 'required_judges' => 5,
                 'minimum_judges' => 1,
-                'can_save' => $isEmbuFinished && $submittedJudges >= 1 && $embuScore?->status !== 'verified',
+                'can_save' => $isEmbuFinished && $completedJudges >= 1 && $embuScore?->status !== 'verified',
                 'is_saved' => $embuScore?->status === 'verified',
+                'reopen_url' => route('admin.panitera.matches.embu-result.destroy', [
+                    'tournamentMatch' => $match,
+                    'event_id' => $match->event_id,
+                ], false),
+            ] : null,
+            'embu_penalties' => $type === 'embu' ? [
+                'options' => $penaltyCatalog->options((string) $match->matchCategory?->name),
+                'values' => $sharedPenaltyState['values'],
+                'points' => $sharedPenaltyState['points'],
+                'source' => $sharedPenaltyState['source'],
+                'source_label' => match ($sharedPenaltyState['source']) {
+                    EmbuPenaltyState::SourcePanitera => 'Panitera',
+                    EmbuPenaltyState::SourceChiefReferee => 'Wasit Utama',
+                    default => 'Belum diisi',
+                },
+                'updated_at' => $sharedPenaltyState['updated_at'],
+                'can_edit' => $match->status !== 'completed' && $embuScore?->status !== 'verified',
+                'update_url' => route('admin.panitera.matches.embu-penalties.update', [
+                    'tournamentMatch' => $match,
+                    'event_id' => $match->event_id,
+                ], false),
             ] : null,
             'randori_draft' => $type === 'randori'
                 ? $randoriDrafts->get($match, $randoriScore)
@@ -227,6 +255,17 @@ class PaniteraMatchController extends Controller
                     'judge_numbers' => data_get($match->metadata, 'panitera.result_judge_numbers')
                         ?: range(1, count($embuScore->judge_scores)),
                     'time_penalty' => (float) $embuScore->time_penalty,
+                    'violation_penalty' => (float) $embuScore->violation_penalty,
+                    'total_penalty' => $embuScore->effectiveTotalPenalty(),
+                    'penalty_summaries' => $penaltyCatalog->summaries(
+                        $embuScore->violation_penalties ?? [],
+                        (string) $match->matchCategory?->name,
+                    ),
+                    'penalty_recorded_by' => $sharedPenaltyState['source'] === EmbuPenaltyState::SourcePanitera
+                        ? 'Panitera'
+                        : $judgeScores->firstWhere('judge_number', 1)?->referee?->name,
+                    'is_disqualified' => (bool) $embuScore->is_disqualified,
+                    'disqualification_reason' => $embuScore->disqualification_reason,
                     'middle_score' => (float) $embuScore->middle_score,
                     'final_score' => (float) $embuScore->final_score,
                     'duration_seconds' => $embuScore->duration_seconds,

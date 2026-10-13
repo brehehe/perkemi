@@ -79,9 +79,18 @@ export function calculateElapsedMilliseconds(timer, serverClock) {
     return stored + Math.max(0, serverNow - startedAt);
 }
 
+export const timerDurationMilliseconds = (timer) => Number(timer?.duration_ms) || Number(timer?.duration_seconds) * 1000 || 120000;
+
 export function displayedTimerSeconds(timer, elapsedMilliseconds) {
     if (timer?.direction === 'down') {
-        return Math.max(0, Math.ceil(((Number(timer.duration_ms) || Number(timer.duration_seconds) * 1000) - elapsedMilliseconds) / 1000));
+        return Math.max(0, Math.ceil((timerDurationMilliseconds(timer) - elapsedMilliseconds) / 1000));
     }
     return Math.max(0, Math.floor(elapsedMilliseconds / 1000));
+}
+
+export function nextTimerTickDelay(timer, elapsedMilliseconds) {
+    if (timer?.status !== 'running'
+        || (timer.direction === 'down' && elapsedMilliseconds >= timerDurationMilliseconds(timer))) return null;
+    const remainingInSecond = 1000 - (elapsedMilliseconds % 1000);
+    return Math.max(16, remainingInSecond + 2);
 }

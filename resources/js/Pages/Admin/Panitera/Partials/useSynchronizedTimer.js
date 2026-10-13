@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { calculateElapsedMilliseconds } from './timerSynchronization';
+import { calculateElapsedMilliseconds, nextTimerTickDelay } from './timerSynchronization';
 
 export default function useSynchronizedTimer(timer, serverClock, matchId) {
-    const [elapsedMilliseconds, setElapsedMilliseconds] = useState(() => calculateElapsedMilliseconds(timer, serverClock));
+    const [sample, setSample] = useState(() => ({ timer, matchId, elapsed: calculateElapsedMilliseconds(timer, serverClock) }));
 
     useEffect(() => {
-        setElapsedMilliseconds(calculateElapsedMilliseconds(timer, serverClock));
-        if (timer?.status !== 'running') return undefined;
-        // React updates once per displayed second; there are no server ticks.
-        const interval = window.setInterval(() => {
+        let timeout;
+        const tick = () => {
             const next = calculateElapsedMilliseconds(timer, serverClock);
-            setElapsedMilliseconds((previous) => Math.floor(previous / 1000) === Math.floor(next / 1000) ? previous : next);
-        }, 50);
-        return () => window.clearInterval(interval);
+            setSample({ timer, matchId, elapsed: next });
+            const delay = nextTimerTickDelay(timer, next);
+            if (delay !== null) timeout = window.setTimeout(tick, delay);
+        };
+        // Wake only at the next displayed second, using the server clock each time.
+        tick();
+        return () => window.clearTimeout(timeout);
     }, [timer, serverClock, matchId]);
 
-    return timer?.status === 'running' ? elapsedMilliseconds : calculateElapsedMilliseconds(timer, serverClock);
+    // A new run must never render the elapsed time from the previous run, even for one render.
+    return timer?.status === 'running' && sample.timer === timer && sample.matchId === matchId
+        ? sample.elapsed : calculateElapsedMilliseconds(timer, serverClock);
 }

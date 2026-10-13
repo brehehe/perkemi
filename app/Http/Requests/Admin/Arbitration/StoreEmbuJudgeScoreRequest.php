@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Arbitration;
 
+use App\Services\Panitera\EmbuPenaltyCatalog;
 use App\Services\Referee\EmbuRefereeScoreService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,11 +29,18 @@ class StoreEmbuJudgeScoreRequest extends FormRequest
     public function rules(): array
     {
         $aspectKeys = implode(',', EmbuRefereeScoreService::AspectKeys);
+        $penaltyKeys = implode(',', EmbuPenaltyCatalog::ManualKeys);
 
         return [
             'event_id' => ['required', 'uuid', 'exists:events,id'],
             'aspect_scores' => ['required', "array:{$aspectKeys}"],
             'aspect_scores.*' => ['nullable', 'integer', Rule::in([7, 8, 9, 10])],
+            'violation_penalties' => ['sometimes', "array:{$penaltyKeys}"],
+            'violation_penalties.composition_count' => ['nullable', 'integer', Rule::in([0, 1])],
+            'violation_penalties.rank_mismatch' => ['nullable', 'integer', 'min:0', 'max:6'],
+            'violation_penalties.group_unsynchronized' => ['nullable', 'integer', Rule::in([0, 1])],
+            'violation_penalties.group_signal' => ['nullable', 'integer', Rule::in([0, 1])],
+            'violation_penalties.group_composition_mismatch' => ['nullable', 'integer', Rule::in([0, 1])],
             'signature' => ['nullable', 'string', 'max:2000000', 'regex:/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'status' => ['required', Rule::in(['draft', 'submitted'])],
@@ -69,6 +77,10 @@ class StoreEmbuJudgeScoreRequest extends FormRequest
         return [
             'aspect_scores.*.in' => 'Nilai setiap aspek hanya boleh 7, 8, 9, atau 10.',
             'aspect_scores.*.integer' => 'Nilai setiap aspek harus berupa angka bulat.',
+            'violation_penalties.array' => 'Pilihan pelanggaran Embu tidak valid.',
+            'violation_penalties.*.integer' => 'Jumlah pelanggaran harus berupa angka bulat.',
+            'violation_penalties.*.in' => 'Pilihan pelanggaran Embu tidak valid.',
+            'violation_penalties.rank_mismatch.max' => 'Maksimal enam teknik dapat ditandai tidak sesuai tingkat.',
             'signature.regex' => 'Format tanda tangan digital tidak valid.',
             'signature.max' => 'Ukuran tanda tangan digital terlalu besar.',
             'notes.max' => 'Catatan maksimal 1.000 karakter.',

@@ -269,8 +269,12 @@ class EmbuResultService
                         'judge_numbers' => $judgeNumbers,
                         'duration_seconds' => $score->duration_seconds,
                         'time_penalty' => (float) $score->time_penalty,
+                        'violation_penalty' => (float) $score->violation_penalty,
+                        'total_penalty' => $score->effectiveTotalPenalty(),
                         'middle_score' => (float) $score->middle_score,
                         'final_score' => (float) $score->final_score,
+                        'is_disqualified' => (bool) $score->is_disqualified,
+                        'disqualification_reason' => $score->disqualification_reason,
                         'status' => $score->status,
                     ] : null,
                 ];

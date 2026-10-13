@@ -13,6 +13,7 @@ class PaniteraTimerState
     {
         $elapsed = max(0, (int) $match->timer_elapsed_ms) ?: max(0, (int) $match->timer_elapsed_seconds) * 1000;
         $duration = max(10, (int) data_get($match->metadata, 'panitera.timer_duration_seconds', 120));
+        $type = $match->matchCategory?->type;
 
         return [
             'status' => $match->timer_status,
@@ -20,7 +21,9 @@ class PaniteraTimerState
             'started_at_ms' => $match->timer_started_at_ms ?: $match->timer_started_at?->getTimestampMs(),
             'elapsed_seconds' => (int) floor($elapsed / 1000),
             'elapsed_ms' => $elapsed,
-            'direction' => data_get($match->metadata, 'panitera.timer_direction') === 'down' ? 'down' : 'up',
+            'direction' => $type === 'randori' ? 'down' : 'up',
+            'category_type' => $type,
+            'run_id' => data_get($match->metadata, 'panitera.timer_run_id'),
             'duration_seconds' => $duration,
             'duration_ms' => $duration * 1000,
             'version' => max(0, (int) $match->timer_version),
@@ -29,6 +32,24 @@ class PaniteraTimerState
             'time_penalty' => data_get($match->metadata, 'panitera.time_penalty') !== null
                 ? (float) data_get($match->metadata, 'panitera.time_penalty') : null,
         ];
+    }
+
+    public function hasExpired(TournamentMatch $match): bool
+    {
+        return $match->matchCategory?->type === 'randori'
+            && $this->elapsedMilliseconds($match) >= $this->timer($match)['duration_ms'];
+    }
+
+    public function elapsedMilliseconds(TournamentMatch $match): int
+    {
+        $timer = $this->timer($match);
+        $elapsed = $timer['elapsed_ms'];
+
+        if ($timer['status'] === 'running' && $timer['started_at_ms']) {
+            $elapsed += max(0, now()->getTimestampMs() - $timer['started_at_ms']);
+        }
+
+        return $timer['direction'] === 'down' ? min($timer['duration_ms'], $elapsed) : $elapsed;
     }
 
     public function response(Request $request, ?TournamentMatch $match, string $eventId, ?string $courtId, int $observedAtMs): JsonResponse

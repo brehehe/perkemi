@@ -21,7 +21,7 @@
         .final-score strong { display: block; margin-top: 4px; color: #bb3025; font-size: 34px; }
         .meta, .stats, .participant-grid, .signatures { display: grid; gap: 10px; }
         .meta { grid-template-columns: repeat(4, 1fr); margin-top: 18px; }
-        .stats { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+        .stats { grid-template-columns: repeat(5, 1fr); margin-top: 10px; }
         .participant-grid { grid-template-columns: repeat(2, 1fr); }
         .signatures { grid-template-columns: repeat(3, 1fr); }
         .box { border: 1px solid #e5ded4; border-radius: 10px; padding: 12px; background: #fcfbf9; }
@@ -86,7 +86,26 @@
             <div class="box"><div class="label">Nilai Juri</div><div class="value">{{ collect($score['judge_scores'])->implode(' · ') ?: '-' }}</div></div>
             <div class="box"><div class="label">Skor Tengah</div><div class="value">{{ $score['middle_score'] }}</div></div>
             <div class="box"><div class="label">Denda Waktu</div><div class="value">{{ $score['time_penalty'] }}</div></div>
+            <div class="box"><div class="label">Denda Pelanggaran</div><div class="value">{{ $score['violation_penalty'] }}</div></div>
         </section>
+
+        @if ($score['is_disqualified'])
+            <section class="box" style="margin-top: 10px; border-color: #efb4ad; background: #fff1ef;">
+                <div class="label" style="color: #a72319;">Diskualifikasi</div>
+                <div class="value" style="color: #a72319;">{{ $score['disqualification_reason'] }}</div>
+            </section>
+        @endif
+
+        @if (count($score['penalty_summaries']))
+            <h2>Rincian Denda Pelanggaran</h2>
+            <section class="box">
+                <ul class="list">
+                    @foreach ($score['penalty_summaries'] as $penalty)
+                        <li>No. {{ $penalty['number'] }} · {{ $penalty['label'] }}{{ $penalty['quantity'] > 1 ? ' × '.$penalty['quantity'] : '' }}: -{{ $penalty['points'] }} poin</li>
+                    @endforeach
+                </ul>
+            </section>
+        @endif
 
         <h2>Atlet & Teknik Terdaftar</h2>
         <section class="participant-grid">

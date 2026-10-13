@@ -96,7 +96,7 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
     useEffect(() => {
         if (!window.Echo || !channelName) return undefined;
         const channel = window.Echo.private(channelName);
-        const subscribed = () => { setConnected(true); resynchronize(); };
+        const subscribed = () => { setConnected(true); refresh(); };
         const disconnected = () => setConnected(false);
         const handleState = (incoming) => {
             if (incoming.event_id !== eventId || (courtId && incoming.court_id !== courtId)) return;
@@ -105,16 +105,18 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             const cleared = courtId && incoming.match_status === 'completed';
             acceptState(cleared ? { ...incoming, match_id: null, timer: null } : incoming);
         };
-        const stopConnectionListener = window.Echo.connector?.onConnectionChange?.((status) => {
-            if (status !== 'connected') setConnected(false);
+        const connection = window.Echo.connector?.pusher?.connection;
+        const onConnectionChange = ({ current }) => {
+            if (current !== 'connected') setConnected(false);
             else refresh();
-        });
+        };
+        connection?.bind('state_change', onConnectionChange);
         if (channel.subscription?.subscribed) subscribed();
         channel.subscription?.bind('pusher:subscription_succeeded', subscribed);
         channel.subscription?.bind('pusher:subscription_error', disconnected);
         channel.listen('.panitera.match-state.updated', handleState);
         return () => {
-            stopConnectionListener?.();
+            connection?.unbind('state_change', onConnectionChange);
             channel.stopListening('.panitera.match-state.updated', handleState);
             channel.subscription?.unbind('pusher:subscription_succeeded', subscribed);
             channel.subscription?.unbind('pusher:subscription_error', disconnected);

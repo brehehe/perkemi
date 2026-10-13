@@ -245,7 +245,7 @@ function EmbuResultsSection({ results = [] }) {
             </div>
             <div className="grid grid-cols-3 gap-3 p-5 text-center text-xs">
                 <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Skor tengah</p><p className="mt-1 font-bold">{Number(result.middle_score || 0).toFixed(2)}</p></div>
-                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Denda</p><p className="mt-1 font-bold text-red-600">{Number(result.time_penalty || 0).toFixed(2)}</p></div>
+                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Total denda</p><p className="mt-1 font-bold text-red-600">{Number(result.total_penalty ?? result.time_penalty ?? 0).toFixed(2)}</p></div>
                 <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Durasi</p><p className="mt-1 font-bold">{result.duration_seconds || 0} dtk</p></div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-[#eee8e0] px-5 py-4">{(result.judge_scores || []).map((score, index) => <span key={`${result.id}-${index}`} className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">J{index + 1}: {Number(score).toFixed(2)}</span>)}</div>
