@@ -6,7 +6,10 @@ import FlashMessage from './Partials/FlashMessage';
 import PaniteraHeader from './Partials/PaniteraHeader';
 import { CourtMonitorButtons } from './Partials/CourtMonitorLinks';
 import RandoriScoreForm from './Partials/RandoriScoreForm';
-import useSynchronizedTimer, { createServerClock, monotonicNow } from './Partials/useSynchronizedTimer';
+import useSynchronizedTimer from './Partials/useSynchronizedTimer';
+import useLiveTimer from './Partials/useLiveTimer';
+import { displayedTimerSeconds } from './Partials/timerSynchronization';
+import { http } from '@inertiajs/core';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -137,30 +140,9 @@ function JudgeProgressPanel({ judges = [] }) {
     );
 }
 
-export default function MatchDetail({ activeEvent, events = [], match, judgeProgress = [], nextMatch, canManage = false, serverNow, serverNowMs }) {
+export default function MatchDetail({ activeEvent, events = [], match: initialMatch, judgeProgress = [], nextMatch, canManage = false, serverNowMs, timerStateUrl }) {
     const { flash = {}, errors = {} } = usePage().props;
-    const [processingAction, setProcessingAction] = useState(null);
-    const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
-    const [saveResultConfirmationOpen, setSaveResultConfirmationOpen] = useState(false);
-    const [timerDirection, setTimerDirection] = useState(match.timer.direction || 'up');
-    const [timerDurationSeconds, setTimerDurationSeconds] = useState(match.timer.duration_seconds || 120);
-    const processingActionRef = useRef(processingAction);
-    const serverClock = useMemo(() => createServerClock({
-        serverNow,
-        serverNowMs,
-        receivedAt: monotonicNow(),
-    }), [serverNow, serverNowMs]);
-    const elapsedMilliseconds = useSynchronizedTimer(match.timer, serverClock);
-    const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
-    const displayedSeconds = timerDirection === 'down'
-        ? Math.max(0, Number(timerDurationSeconds) - elapsedSeconds)
-        : elapsedSeconds;
-    const timerExpired = timerDirection === 'down' && elapsedSeconds >= Number(timerDurationSeconds);
-    const stage = currentStage(match);
-    const workflowDisabled = !canManage || !match.court || match.is_placeholder || match.status === 'completed' || match.timer.is_finished;
-    const timerWorkflowDisabled = workflowDisabled;
-    const canOpenScore = canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
-    const resultIndexUrl = `/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(match.category_id)}`;
+    const [workflowErrors, setWorkflowErrors] = useState({});
     const refreshLiveData = useCallback(() => {
         router.reload({
             only: ['match', 'judgeProgress', 'serverNow', 'serverNowMs'],
@@ -168,6 +150,43 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
             preserveState: true,
         });
     }, []);
+    const initialTimerState = useMemo(() => ({
+        event_id: activeEvent.id, match_id: initialMatch.id, timer: initialMatch.timer,
+        match_status: initialMatch.status, call_status: initialMatch.call_status, server_now_ms: serverNowMs,
+    }), [activeEvent.id, initialMatch, serverNowMs]);
+    const liveTimer = useLiveTimer({
+        initialState: initialTimerState, stateUrl: timerStateUrl,
+        channelName: `tournament-match.${initialMatch.id}`, eventId: activeEvent.id,
+        onChange: (next) => {
+            if (!['start', 'pause', 'reset_timer', 'configure_timer'].includes(next.action)) refreshLiveData();
+        },
+    });
+    const match = useMemo(() => {
+        if (liveTimer.state?.match_id !== initialMatch.id) return initialMatch;
+        const status = liveTimer.state.match_status;
+        const callStatus = liveTimer.state.call_status;
+        return {
+            ...initialMatch, status, call_status: callStatus,
+            status_label: { pending: 'Menunggu', ready: 'Siap Dipanggil', in_progress: 'Berlangsung', completed: 'Selesai' }[status] || initialMatch.status_label,
+            call_status_label: { waiting: 'Belum Dipanggil', officials_called: 'Ofisial Dipanggil', participants_called: 'Peserta Dipanggil', completed: 'Selesai' }[callStatus] || initialMatch.call_status_label,
+            timer: { ...initialMatch.timer, ...liveTimer.state.timer },
+        };
+    }, [initialMatch, liveTimer.state]);
+    const [processingAction, setProcessingAction] = useState(null);
+    const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
+    const [saveResultConfirmationOpen, setSaveResultConfirmationOpen] = useState(false);
+    const [timerDirection, setTimerDirection] = useState(match.timer.direction || 'up');
+    const [timerDurationSeconds, setTimerDurationSeconds] = useState(match.timer.duration_seconds || 120);
+    const processingActionRef = useRef(processingAction);
+    const elapsedMilliseconds = useSynchronizedTimer(match.timer, liveTimer.serverClock, match.id);
+    const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
+    const displayedSeconds = displayedTimerSeconds(match.timer, elapsedMilliseconds);
+    const timerExpired = match.timer.direction === 'down' && elapsedSeconds >= Number(match.timer.duration_seconds);
+    const stage = currentStage(match);
+    const workflowDisabled = !canManage || !match.court || match.is_placeholder || match.status === 'completed' || match.timer.is_finished;
+    const timerWorkflowDisabled = workflowDisabled;
+    const canOpenScore = canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
+    const resultIndexUrl = `/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(match.category_id)}`;
 
     useEffect(() => {
         processingActionRef.current = processingAction;
@@ -183,18 +202,10 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
 
         const channelName = `tournament-match.${match.id}`;
         const channel = window.Echo.private(channelName);
-        const handleMatchState = (event) => {
-            if (event.event_id !== activeEvent.id || event.match_id !== match.id || processingActionRef.current) return;
-
-            refreshLiveData();
-        };
-
         if (match.category_type === 'embu') {
             channel.listen('.embu.judge-score.updated', refreshLiveData);
         }
-        channel.listen('.panitera.match-state.updated', handleMatchState);
-
-        return () => window.Echo.leave(channelName);
+        return () => channel.stopListening('.embu.judge-score.updated', refreshLiveData);
     }, [activeEvent.id, match.category_type, match.id, refreshLiveData]);
 
     useEffect(() => {
@@ -207,25 +218,31 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
         return () => window.clearInterval(fallback);
     }, [match.category_type, processingAction, refreshLiveData]);
 
-    const updateWorkflow = (action, payload = {}, callbacks = {}) => {
-        router.put(`/admin/panitera/scoring/matches/${match.id}/workflow`, {
-            event_id: activeEvent.id,
-            action,
-            timer_version: match.timer.version,
-            ...payload,
-        }, {
-            preserveScroll: true,
-            onStart: () => setProcessingAction(action),
-            onSuccess: () => {
-                if (action === 'finish') setFinishConfirmationOpen(false);
-                callbacks.onSuccess?.();
-            },
-            onError: (responseErrors) => callbacks.onError?.(responseErrors),
-            onFinish: () => {
-                setProcessingAction(null);
-                callbacks.onFinish?.();
-            },
-        });
+    const updateWorkflow = async (action, payload = {}, callbacks = {}) => {
+        if (processingActionRef.current) return;
+        processingActionRef.current = action;
+        setProcessingAction(action);
+        setWorkflowErrors({});
+        try {
+            const response = await http.getClient().request({
+                method: 'put', url: `/admin/panitera/scoring/matches/${match.id}/workflow`,
+                data: JSON.stringify({ event_id: activeEvent.id, action, timer_version: match.timer.version, ...payload }),
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            });
+            liveTimer.acceptState({ ...JSON.parse(response.data), action });
+            if (action === 'finish') setFinishConfirmationOpen(false);
+            callbacks.onSuccess?.();
+        } catch (error) {
+            let responseErrors = { timer: 'Perintah belum dapat dikonfirmasi. Memuat status resmi terbaru…' };
+            try { responseErrors = JSON.parse(error.response?.data)?.errors || responseErrors; } catch { /* Keep connection error. */ }
+            setWorkflowErrors(responseErrors);
+            callbacks.onError?.(responseErrors);
+            await liveTimer.refresh();
+        } finally {
+            processingActionRef.current = null;
+            setProcessingAction(null);
+            callbacks.onFinish?.();
+        }
     };
 
     const changeTimerDirection = (direction) => {
@@ -267,7 +284,7 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
                     path="/admin/panitera/scoring"
                     icon="fa-clipboard-list"
                 />
-                <FlashMessage flash={flash} errors={errors} />
+                <FlashMessage flash={flash} errors={{ ...errors, ...workflowErrors }} />
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link href={`/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] sm:min-h-10">
@@ -360,8 +377,8 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
                                 <h2 id="match-timer-title" className="font-bold text-[#17120f]">Waktu Pertandingan</h2>
                                 <span className="rounded-full bg-[#fff4cf] px-2.5 py-1 text-[10px] font-bold uppercase text-[#9a6b20]">{timerDirection === 'down' ? 'Mode Mundur' : 'Mode Maju'}</span>
                             </div>
-                            <p className={`mt-3 font-mono text-5xl font-black tracking-tight sm:text-6xl ${timerExpired ? 'text-rose-600' : 'text-[#17120f]'}`} aria-live="off">{formatTimer(displayedSeconds)}</p>
-                            <p className="mt-2 text-xs font-semibold text-[#7a746e]">{match.timer.is_finished ? 'Pertandingan selesai · durasi resmi terkunci' : timerExpired ? 'Waktu habis' : match.timer.status === 'running' ? 'Sedang berjalan' : match.timer.status === 'paused' ? 'Dijeda' : 'Belum dimulai'}</p>
+                            <p className={`mt-3 font-mono text-5xl font-black tracking-tight sm:text-6xl ${timerExpired ? 'text-rose-600' : 'text-[#17120f]'}`} aria-live="off">{match.timer.status === 'running' && !liveTimer.synchronized ? '--:--' : formatTimer(displayedSeconds)}</p>
+                            <p className="mt-2 text-xs font-semibold text-[#7a746e]">{!liveTimer.synchronized && match.timer.status === 'running' ? 'Menyinkronkan jam server…' : match.timer.is_finished ? 'Pertandingan selesai · durasi resmi terkunci' : timerExpired ? 'Waktu habis' : match.timer.status === 'running' ? 'Sedang berjalan' : match.timer.status === 'paused' ? 'Dijeda' : 'Belum dimulai'}{liveTimer.synchronized && (liveTimer.connected ? ' · Reverb terhubung' : liveTimer.httpConnected ? ' · Sinkronisasi cadangan' : ' · Koneksi terputus, menunggu status resmi')}</p>
                         </div>
 
                         <div className={`grid gap-2 ${match.category_type === 'embu' ? 'sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3' : 'sm:grid-cols-2'}`}>
@@ -477,7 +494,7 @@ export default function MatchDetail({ activeEvent, events = [], match, judgeProg
                     cancelText="Kembali"
                     variant="warning"
                     isLoading={processingAction === 'finish'}
-                    error={errors.action || errors.match || ''}
+                    error={Object.values(workflowErrors).flat().join(' ') || errors.action || errors.match || ''}
                     onCancel={() => setFinishConfirmationOpen(false)}
                     onConfirm={() => updateWorkflow('finish')}
                 />

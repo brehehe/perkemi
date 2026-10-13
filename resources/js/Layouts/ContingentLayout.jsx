@@ -1,6 +1,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
+import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
 
 const navigation = [
     { id: 'pendaftaran', label: 'Pendaftaran', items: [
@@ -11,7 +12,9 @@ const navigation = [
         { label: 'Jadwal Pertandingan', href: '/kontingen/jadwal', icon: 'fa-calendar-days' },
     ] },
     { id: 'laporan', label: 'Laporan & Hasil', items: [
-        { label: 'Hasil Pertandingan', href: '/kontingen/hasil', icon: 'fa-medal' },
+        { label: 'Hasil Juara', href: '/kontingen/hasil/juara', icon: 'fa-trophy' },
+        { label: 'Hasil Embu', href: '/kontingen/hasil/embu', icon: 'fa-ranking-star' },
+        { label: 'Hasil Randori', href: '/kontingen/hasil/randori', icon: 'fa-hand-fist' },
     ] },
     { id: 'master', label: 'Data Kontingen', items: [
         { label: 'Atlet / Kenshi', href: '/kontingen/atlet', icon: 'fa-user-group' },
@@ -27,7 +30,8 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
     const isActive = (href) => url.split('?')[0] === href
         || (href === '/kontingen/registrasi' && (url.startsWith('/admin/pendaftaran/registrasi') || url.startsWith('/kontingen/registrasi/')));
     const eventQuery = portal.event?.id ? `?event_id=${encodeURIComponent(portal.event.id)}` : '';
-    const contextualHref = (href) => href.startsWith('/kontingen/') ? `${href}${eventQuery}` : href;
+    const eventIndependentPaths = new Set(['/kontingen/atlet', '/kontingen/official']);
+    const contextualHref = (href) => href.startsWith('/kontingen/') && !eventIndependentPaths.has(href) ? `${href}${eventQuery}` : href;
     const [openSections, setOpenSections] = useState(() => Object.fromEntries(navigation.map((section) =>
         [section.id, section.id === 'pendaftaran' || section.items.some((item) => isActive(item.href))])));
     const [profileOpen, setProfileOpen] = useState(false);
@@ -56,7 +60,7 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
         : 'KT';
 
     return (
-        <div className="min-h-screen bg-[#f7f4ef] font-dm text-[#0f0d0b] antialiased">
+        <div className="theme-shell min-h-screen bg-[#f7f4ef] font-dm text-[#0f0d0b] antialiased dark:bg-[#0f1115] dark:text-slate-100">
             <Head title={`${title} | Portal Kontingen`} />
 
             <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle="Portal Kontingen · 2026">
@@ -103,7 +107,7 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
             </PanelSidebar>
 
             <div className="min-h-screen lg:pl-[260px]">
-                <header className="sticky top-0 z-40 flex h-16 items-center border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-4 backdrop-blur-md md:px-7">
+                <header className="sticky top-0 z-40 flex h-16 items-center border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#11151b]/95 md:px-7">
                     <button type="button" className="mr-3 flex h-10 w-10 items-center justify-center rounded-xl border border-[#e4ddd3] bg-white text-[#514a43] lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Buka navigasi">
                         <i className="fa-solid fa-bars" />
                     </button>
@@ -114,6 +118,7 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
                     </div>
 
                     <div className="ml-auto flex items-center gap-2.5">
+                        <ThemeToggle />
                         <div ref={profileRef} className="relative">
                             <button type="button" onClick={() => setProfileOpen((value) => !value)} className="flex h-11 items-center gap-2 rounded-xl px-1.5 hover:bg-[#f1ede7]" aria-expanded={profileOpen} aria-haspopup="menu">
                                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b92f24] text-xs font-bold text-white">{initials}</span>
@@ -151,7 +156,7 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
                     {children}
                 </main>
 
-                <footer className="border-t border-[#e7e0d8] px-5 py-4 text-center text-[11px] text-[#aaa29a]">
+                <footer className="border-t border-[#e7e0d8] px-5 py-4 text-center text-[11px] text-[#aaa29a] dark:border-slate-800 dark:text-slate-500">
                     © 2026 SMART-PERKEMI · Portal Kontingen Shorinji Kempo Indonesia
                 </footer>
             </div>

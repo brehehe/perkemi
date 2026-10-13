@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Event;
+use App\Services\Admin\DashboardEventAccessService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -10,6 +11,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ResolveEventTenant
 {
+    public function __construct(private DashboardEventAccessService $dashboardEventAccess) {}
+
     /**
      * Handle an incoming request.
      *
@@ -41,16 +44,22 @@ class ResolveEventTenant
             : null;
         $isResponsibleUser = $eventAccessRole === Event::AccessRoleResponsible;
         $isContingentOwner = $user && $tenantEvent->contingents()->where('user_id', $user->id)->exists();
+        $hasOperationalAssignment = $user && $this->dashboardEventAccess->canAccess($user, $tenantEvent);
         $hasTenantAccess = $user
             && ($isFullAdmin
                 || $isResponsibleUser
                 || $eventAccessRole !== null
+                || $hasOperationalAssignment
                 || $isContingentOwner);
 
         abort_unless($hasTenantAccess, 403);
 
         if ($isContingentOwner && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === null) {
             abort_unless($request->routeIs(['admin.pendaftaran.registrasi*', 'admin.pendaftaran.nomor-pertandingan']), 403);
+        }
+
+        if ($user->hasRole('Wasit') && ! $isFullAdmin && $eventAccessRole === null) {
+            abort_unless($request->routeIs(['wasit.*', 'admin.arbitrase.scoring*']), 403);
         }
 
         $isEventAdministration = $request->routeIs([
@@ -138,13 +147,8 @@ class ResolveEventTenant
 
         // 4. Auto-scope for restricted event users without full admin privileges
         $user = $request->user();
-        if ($user && ! $user->hasAnyRole(['Super Admin', 'Admin'])) {
-            $assignedEvent = Event::query()
-                ->whereHas('users', fn ($q) => $q->whereKey($user->id))
-                ->orderByDesc('is_active')
-                ->orderByDesc('start_date')
-                ->orderByDesc('id')
-                ->first();
+        if ($user && ! $user->hasAnyRole(['Super Admin', 'Admin']) && $this->dashboardEventAccess->requiresEventScope($user)) {
+            $assignedEvent = $this->dashboardEventAccess->eventsFor($user)->first();
 
             if ($assignedEvent) {
                 if ($request->hasSession()) {

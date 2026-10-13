@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\EventCourtAssignment;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\Panitera\RandoriScoreDraftStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -18,9 +20,12 @@ class PaniteraMatchController extends Controller
         Request $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
+        RandoriScoreDraftStore $randoriDrafts,
     ): Response {
         $event = $eventContext->eventFor($request);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
         $tournamentMatch->load([
             'matchCategory:id,name,type',
@@ -103,6 +108,16 @@ class PaniteraMatchController extends Controller
             ->whereKeyNot($tournamentMatch->id)
             ->where('is_bye', false)
             ->whereIn('status', ['pending', 'ready', 'in_progress'])
+            ->when(
+                $tournamentMatch->scheduled_start_at,
+                fn ($query, $scheduledStartAt) => $query->where(function ($scheduled) use ($scheduledStartAt, $tournamentMatch): void {
+                    $scheduled->where('scheduled_start_at', '>', $scheduledStartAt)
+                        ->orWhere(function ($sameSlot) use ($scheduledStartAt, $tournamentMatch): void {
+                            $sameSlot->where('scheduled_start_at', $scheduledStartAt)
+                                ->where('id', '>', $tournamentMatch->id);
+                        });
+                }),
+            )
             ->with('matchCategory:id,name,type')
             ->orderByRaw('scheduled_start_at IS NULL')
             ->orderBy('scheduled_start_at')
@@ -115,7 +130,7 @@ class PaniteraMatchController extends Controller
         return Inertia::render('Admin/Panitera/MatchDetail', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
             'events' => $eventContext->accessibleEvents($request),
-            'match' => $this->matchData($tournamentMatch),
+            'match' => $this->matchData($tournamentMatch, $randoriDrafts),
             'staff' => $staff,
             'judgeProgress' => $judgeProgress,
             'nextMatch' => $nextMatch ? [
@@ -129,11 +144,12 @@ class PaniteraMatchController extends Controller
             'canManage' => $eventContext->canManage($request, $event),
             'serverNow' => $serverNow->toIso8601String(),
             'serverNowMs' => $serverNow->getTimestampMs(),
+            'timerStateUrl' => route('admin.panitera.matches.timer', ['tournamentMatch' => $tournamentMatch, 'event_id' => $event->id]),
         ]);
     }
 
     /** @return array<string, mixed> */
-    private function matchData(TournamentMatch $match): array
+    private function matchData(TournamentMatch $match, RandoriScoreDraftStore $randoriDrafts): array
     {
         $type = $match->matchCategory?->type;
         $embuScore = $match->embuScores->first();
@@ -202,6 +218,9 @@ class PaniteraMatchController extends Controller
                 'can_save' => $isEmbuFinished && $submittedJudges >= 1 && $embuScore?->status !== 'verified',
                 'is_saved' => $embuScore?->status === 'verified',
             ] : null,
+            'randori_draft' => $type === 'randori'
+                ? $randoriDrafts->get($match, $randoriScore)
+                : null,
             'result' => $type === 'embu'
                 ? ($embuScore ? [
                     'judge_scores' => $embuScore->judge_scores,
@@ -224,6 +243,7 @@ class PaniteraMatchController extends Controller
                     'is_locked' => $randoriScore->locked_at !== null,
                     'locked_at' => $randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
                     'signatures' => $randoriScore->signatures,
+                    'signature_names' => $randoriScore->signature_names,
                     'notes' => $randoriScore->notes,
                     'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
                 ] : null),

@@ -33,8 +33,8 @@ test('admin can access all operational workflow pages in the sidebar', function 
     ['/admin/pertandingan/jadwal', 'Admin/Tournament/Schedule'],
     ['/admin/pertandingan/merge', 'Admin/Tournament/Merge'],
     ['/admin/arbitrase/wasit', 'Admin/Arbitration/Referee'],
-    ['/admin/arbitrase/penugasan', 'Admin/Arbitration/Assignment'],
-    ['/admin/arbitrase/scoring', 'Admin/Arbitration/Scoring'],
+    ['/admin/arbitrase/scoring', 'Admin/Arbitration/ScoreReport'],
+    ['/admin/laporan', 'Admin/Report/Index'],
     ['/admin/laporan/hasil', 'Admin/Report/Medals'],
     ['/admin/laporan/rekap-embu', 'Admin/Report/Recap'],
 ]);

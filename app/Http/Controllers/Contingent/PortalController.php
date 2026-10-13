@@ -6,15 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
+use App\Models\EmbuScore;
 use App\Models\Event;
+use App\Models\Kyu;
 use App\Models\Official;
+use App\Models\RandoriScore;
 use App\Models\Registration;
 use App\Models\Rundown;
 use App\Models\TournamentMatch;
 use App\Models\TournamentResult;
+use App\Services\Reports\ScoreReportFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -173,42 +178,197 @@ class PortalController extends Controller
         ]);
     }
 
+    public function embuResults(Request $request, ScoreReportFormatter $scoreFormatter): Response
+    {
+        [$contingent, $event, $eventOptions] = $this->context($request);
+        $entryIds = $this->entryIds($event, $contingent);
+
+        $scores = EmbuScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'verified')
+            ->whereHas('tournamentMatch', fn ($query) => $query->whereIn('participant_entry_id', $entryIds))
+            ->with([
+                'verifier:id,name',
+                'tournamentMatch:id,event_id,event_match_category_id,event_court_id,participant_entry_id,participant_label,round_label,pool,match_sequence,scheduled_start_at,metadata',
+                'tournamentMatch.matchCategory:id,name,type',
+                'tournamentMatch.court:id,name',
+                'tournamentMatch.embuJudgeScores' => fn ($query) => $query
+                    ->with([
+                        'referee:id,name,license_number,certification_level',
+                        'court:id,name',
+                    ])
+                    ->orderBy('judge_number'),
+            ])
+            ->latest('verified_at')
+            ->get([
+                'id', 'event_id', 'tournament_match_id', 'tiebreak_round', 'judge_scores', 'duration_seconds',
+                'time_penalty', 'middle_score', 'final_score', 'status', 'verified_by', 'verified_at', 'notes',
+            ])
+            ->map(function (EmbuScore $score) use ($event, $scoreFormatter): array {
+                $item = $scoreFormatter->embuResult($score, $event);
+
+                return [
+                    ...$item,
+                    'category' => $item['category_name'],
+                    'round' => $item['round_label'],
+                    'judges' => collect($item['judges'])
+                        ->map(fn (array $judge): array => collect($judge)->only([
+                            'id', 'referee_name', 'judge_number', 'role_label', 'aspect_scores',
+                            'aspect_labels', 'completed_items', 'technique_subtotal',
+                            'expression_subtotal', 'total_score', 'status_label', 'is_signed',
+                        ])->all())
+                        ->values()
+                        ->all(),
+                    'verified_at' => $score->verified_at?->toIso8601String(),
+                    'print_url' => route('kontingen.hasil.embu.print', [
+                        'embuScore' => $score->id,
+                        'event_id' => $event->id,
+                    ], false),
+                ];
+            });
+
+        return $this->render('embu-results', $contingent, $event, $eventOptions, [
+            'embu_results' => $scores,
+        ]);
+    }
+
+    public function printEmbuResult(
+        Request $request,
+        EmbuScore $embuScore,
+        ScoreReportFormatter $scoreFormatter,
+    ): View {
+        [$contingent, $event] = $this->context($request);
+        abort_unless($embuScore->event_id === $event->id && $embuScore->status === 'verified', 404);
+
+        $entryIds = $this->entryIds($event, $contingent);
+        $embuScore->load([
+            'verifier:id,name',
+            'tournamentMatch:id,event_id,event_match_category_id,event_court_id,participant_entry_id,participant_label,round_label,pool,match_sequence,scheduled_start_at,metadata',
+            'tournamentMatch.matchCategory:id,name,type',
+            'tournamentMatch.court:id,name',
+            'tournamentMatch.embuJudgeScores' => fn ($query) => $query
+                ->with([
+                    'referee:id,name,license_number,certification_level',
+                    'court:id,name',
+                ])
+                ->orderBy('judge_number'),
+        ]);
+        $match = $embuScore->tournamentMatch;
+        abort_unless($match && $entryIds->contains($match->participant_entry_id), 404);
+
+        return view('reports.embu-result-detail', [
+            'event' => $event,
+            'score' => $scoreFormatter->embuResult($embuScore, $event),
+        ]);
+    }
+
+    public function randoriResults(Request $request): Response
+    {
+        [$contingent, $event, $eventOptions] = $this->context($request);
+        $entryIds = $this->entryIds($event, $contingent);
+
+        $scores = RandoriScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'verified')
+            ->whereHas('tournamentMatch', fn ($query) => $query->where(function ($matchQuery) use ($entryIds): void {
+                $matchQuery->whereIn('red_entry_id', $entryIds)
+                    ->orWhereIn('blue_entry_id', $entryIds);
+            }))
+            ->with([
+                'tournamentMatch:id,event_match_category_id,event_court_id,red_entry_id,blue_entry_id,red_label,blue_label,round_label,match_sequence,scheduled_start_at',
+                'tournamentMatch.matchCategory:id,name,type',
+                'tournamentMatch.court:id,name',
+            ])
+            ->latest('verified_at')
+            ->get([
+                'id', 'event_id', 'tournament_match_id', 'aka_total', 'shiro_total',
+                'winner_corner', 'signatures', 'status', 'verified_at',
+            ])
+            ->map(function (RandoriScore $score) use ($entryIds): array {
+                $match = $score->tournamentMatch;
+                $ownCorner = $match && $entryIds->contains($match->red_entry_id) ? 'aka' : 'shiro';
+
+                return [
+                    'id' => $score->id,
+                    'category' => $match?->matchCategory?->name,
+                    'round' => $match?->round_label,
+                    'sequence' => $match?->match_sequence,
+                    'court' => $match?->court?->name,
+                    'aka_label' => $match?->red_label,
+                    'shiro_label' => $match?->blue_label,
+                    'aka_total' => (int) $score->aka_total,
+                    'shiro_total' => (int) $score->shiro_total,
+                    'winner_corner' => $score->winner_corner,
+                    'own_corner' => $ownCorner,
+                    'is_winner' => $score->winner_corner === $ownCorner,
+                    'signatures_count' => collect($score->signatures ?? [])->filter()->count(),
+                    'verified_at' => $score->verified_at?->toIso8601String(),
+                ];
+            });
+
+        return $this->render('randori-results', $contingent, $event, $eventOptions, [
+            'randori_results' => $scores,
+        ]);
+    }
+
     public function athletes(Request $request): Response
     {
         [$contingent, $event, $eventOptions] = $this->context($request);
+        $masterContingentIds = $this->masterContingentIds($request);
 
         $athletes = Athlete::query()
-            ->whereBelongsTo($contingent)
+            ->whereIn('contingent_id', $masterContingentIds)
             ->with([
-                'ageCategory:id,name,min_age,max_age',
                 'matchCategoryEntries' => fn ($query) => $query
-                    ->whereBelongsTo($event)
                     ->with('matchCategory:id,name,type'),
             ])
             ->orderBy('name')
             ->get([
-                'id', 'contingent_id', 'event_age_category_id', 'name', 'nik', 'kenshi_number',
-                'gender', 'birth_place', 'birth_date', 'dojo_name', 'kyu_dan', 'weight', 'bpjs_status',
+                'id', 'contingent_id', 'name', 'nik', 'kenshi_number', 'gender', 'birth_place',
+                'birth_date', 'blood_type', 'home_address', 'dojo_name', 'profile_photo_path',
+                'kyu_dan', 'weight', 'height', 'bpjs_number', 'bpjs_status', 'school_name',
+                'school_level', 'school_entry_year', 'school_grade',
+            ])
+            ->map(fn (Athlete $athlete): array => [
+                ...$athlete->only([
+                    'id', 'name', 'nik', 'kenshi_number', 'birth_place', 'blood_type',
+                    'home_address', 'dojo_name', 'kyu_dan', 'weight', 'height', 'bpjs_number',
+                    'bpjs_status', 'school_name', 'school_level', 'school_entry_year', 'school_grade',
+                ]),
+                'gender' => in_array($athlete->gender, ['male', 'putra', 'L'], true) ? 'male' : 'female',
+                'birth_date' => $athlete->birth_date?->format('Y-m-d'),
+                'profile_photo_url' => $athlete->profile_photo_path
+                    ? route('kontingen.atlet.photo', $athlete)
+                    : null,
+                'match_category_entries' => $athlete->matchCategoryEntries,
             ]);
 
         return $this->render('athletes', $contingent, $event, $eventOptions, [
             'athletes' => $athletes,
-            'manage_url' => $this->registrationDetailUrl($contingent, $event, 3),
+            'kyus' => Kyu::query()
+                ->where('is_active', true)
+                ->orderBy('order')
+                ->orderByDesc('name')
+                ->pluck('name'),
         ]);
     }
 
     public function officials(Request $request): Response
     {
         [$contingent, $event, $eventOptions] = $this->context($request);
+        $masterContingentIds = $this->masterContingentIds($request);
 
         $officials = Official::query()
-            ->whereBelongsTo($contingent)
+            ->whereIn('contingent_id', $masterContingentIds)
             ->orderBy('name')
-            ->get(['id', 'contingent_id', 'name', 'role', 'gender', 'phone', 'email', 'id_card_number', 'notes']);
+            ->get(['id', 'contingent_id', 'name', 'role', 'gender', 'phone', 'email', 'notes'])
+            ->map(fn (Official $official): array => [
+                ...$official->only(['id', 'name', 'role', 'phone', 'email', 'notes']),
+                'gender' => in_array($official->gender, ['male', 'putra', 'L'], true) ? 'male' : 'female',
+            ]);
 
         return $this->render('officials', $contingent, $event, $eventOptions, [
             'officials' => $officials,
-            'manage_url' => $this->registrationDetailUrl($contingent, $event, 2),
         ]);
     }
 
@@ -370,16 +530,29 @@ class PortalController extends Controller
         ]);
     }
 
-    private function registrationDetailUrl(Contingent $contingent, Event $event, int $step): ?string
+    /** @return Collection<int, string> */
+    private function entryIds(Event $event, Contingent $contingent): Collection
     {
-        $registration = Registration::query()
+        return AthleteMatchCategoryEntry::query()
             ->whereBelongsTo($event)
-            ->whereBelongsTo($contingent)
-            ->latest()
-            ->first();
+            ->whereHas('athlete', fn ($query) => $query->whereBelongsTo($contingent))
+            ->pluck('id');
+    }
 
-        return $registration
-            ? route('kontingen.registrasi.detail', ['registration' => $registration, 'step' => $step])
-            : null;
+    /** @return Collection<int, string> */
+    private function masterContingentIds(Request $request): Collection
+    {
+        $ownedContingents = Contingent::query()
+            ->where('user_id', $request->user()->id)
+            ->get(['id', 'source_contingent_id']);
+        $ownedIds = $ownedContingents->pluck('id');
+
+        return $ownedContingents
+            ->map(fn (Contingent $ownedContingent): string => $ownedContingent->source_contingent_id
+                && $ownedIds->contains($ownedContingent->source_contingent_id)
+                    ? $ownedContingent->source_contingent_id
+                    : $ownedContingent->id)
+            ->unique()
+            ->values();
     }
 }

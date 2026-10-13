@@ -133,7 +133,7 @@ test('tenant arbitration page shows only referees assigned to its event', functi
         );
 });
 
-test('tenant assignment page uses courts and event staff from its event', function () {
+test('legacy tenant assignment page redirects to event referee management', function () {
     config()->set('app.tenant_base_domain', 'localhost');
 
     $user = User::factory()->create();
@@ -185,15 +185,5 @@ test('tenant assignment page uses courts and event staff from its event', functi
 
     $this->actingAs($user)
         ->get('http://kejurda-penugasan-2026.localhost/admin/arbitrase/penugasan')
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('Admin/Arbitration/Assignment')
-            ->where('activeEvent.id', $event->id)
-            ->has('tatamis', 1)
-            ->where('tatamis.0.id', $court->id)
-            ->where('tatamis.0.chief_referee', 'Sensei Chief Tenant')
-            ->where('tatamis.0.judges.0', 'Judge: Sensei Judge Tenant')
-            ->where('tatamis.0.clerks.0', 'Timekeeper: Panitera Tenant')
-            ->where('tatamis.0.field_coordinators.0', 'Koordinator: Koordinator Tenant')
-            ->where('canManageEventStaff', false)
-        );
+        ->assertRedirect(route('admin.arbitrase.wasit', ['event_id' => $event->id]));
 });

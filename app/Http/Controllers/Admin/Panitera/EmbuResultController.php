@@ -10,6 +10,7 @@ use App\Models\TournamentMatch;
 use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -86,11 +87,13 @@ class EmbuResultController extends Controller
         StoreEmbuScoreRequest $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
         EmbuScoreCalculator $calculator,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'embu', 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
         $validated = $request->validated();
         $calculated = $calculator->calculate(

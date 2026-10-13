@@ -1,13 +1,27 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import { Avatar, CommandPalette } from '@/Components/UI';
+import { Avatar, CommandPalette, ThemeToggle } from '@/Components/UI';
 import ContingentLayout from '@/Layouts/ContingentLayout';
 import RefereeLayout from '@/Layouts/RefereeLayout';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 
+const reportMenuItems = [
+    { key: 'champions', title: 'Hasil Juara', subtitle: 'Susunan juara resmi per nomor pertandingan', icon: 'fa-trophy' },
+    { key: 'all-scores', title: 'Skor Menyeluruh', subtitle: 'Gabungan seluruh hasil Embu dan Randori', icon: 'fa-chart-line' },
+    { key: 'embu-recap', title: 'Rekap Embu', subtitle: 'Nilai akhir, durasi, dan denda Embu', icon: 'fa-ranking-star' },
+    { key: 'randori-recap', title: 'Rekap Randori', subtitle: 'Skor AKA-SHIRO dan pengesahan', icon: 'fa-hand-fist' },
+    { key: 'referee-scores', title: 'Penilaian Wasit', subtitle: 'Rincian nilai 10 aspek per Wasit', icon: 'fa-user-shield' },
+    { key: 'referee-analysis', title: 'Analisis Per Wasit', subtitle: 'Statistik dan kelengkapan penilaian', icon: 'fa-chart-column' },
+    { key: 'embu-summary', title: 'Rekapitulasi Embu', subtitle: 'Matriks lima Juri dan nilai akhir', icon: 'fa-table-list' },
+    { key: 'scoring-summary', title: 'Rekap Penilaian', subtitle: 'Ringkasan status seluruh penilaian', icon: 'fa-clipboard-check' },
+];
+
 export default function AdminLayout({ children, title = 'Admin Dashboard', auth = {} }) {
     const { url, props } = usePage();
-    const isDashboard = url === '/admin/dashboard';
+    const [currentPath, currentQuery = ''] = url.split('?');
+    const currentSearchParams = new URLSearchParams(currentQuery);
+    const activeReport = currentSearchParams.get('report') || 'champions';
+    const isDashboard = currentPath === '/admin/dashboard';
     const isRegistration = url.startsWith('/admin/pendaftaran/registrasi');
     const isMatchGroups = url.startsWith('/admin/pendaftaran/nomor-pertandingan');
     const isVerification = url.startsWith('/admin/pendaftaran/verifikasi');
@@ -16,14 +30,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isEventReferees = url.startsWith('/admin/pertandingan/wasit');
     const isMerge = url.startsWith('/admin/pertandingan/merge');
     const isReferee = url.startsWith('/admin/arbitrase/wasit');
-    const isAssignment = url.startsWith('/admin/arbitrase/penugasan');
     const isScoring = url.startsWith('/admin/arbitrase/scoring');
     const isPaniteraDashboard = url.startsWith('/admin/panitera/scoring') && !url.includes('/embu-result') && !url.includes('/randori-result') && !url.includes('/champions');
     const isPaniteraEmbu = url.startsWith('/admin/panitera/scoring/embu-result');
     const isPaniteraRandori = url.startsWith('/admin/panitera/scoring/randori-result');
     const isPaniteraChampions = url.startsWith('/admin/panitera/scoring/champions');
-    const isMedals = url.startsWith('/admin/laporan/hasil');
-    const isRecap = url.startsWith('/admin/laporan/rekap-embu');
+    const isReportHub = currentPath === '/admin/laporan';
+    const isMedals = currentPath === '/admin/laporan/hasil';
+    const isRecap = currentPath === '/admin/laporan/rekap-embu';
     const isEventMaster = url.startsWith('/admin/master/event');
     const isContingentMaster = url.startsWith('/admin/master/contingent');
     const isAthleteMaster = url.startsWith('/admin/master/athlete');
@@ -44,9 +58,9 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         pendaftaran: true,
         master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
         pertandingan: isDrawing || isSchedule || isEventReferees || isMerge,
-        arbitrase: isReferee || isAssignment || isScoring,
+        arbitrase: isReferee || isScoring,
         panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
-        laporan: isMedals || isRecap,
+        laporan: isReportHub || isMedals || isRecap,
     });
 
     const toggleSection = (section) => {
@@ -66,15 +80,25 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isPaniteraAccount = user.roles?.includes('Panitera') && !isFullAdmin;
     const isRestrictedTenant = Boolean(tenant) && !isFullAdmin;
     const isResponsibleTenant = tenant?.access_role === 'responsible';
-    const requestedEventId = new URLSearchParams(url.split('?')[1] || '').get('event_id');
+    const requestedEventId = currentSearchParams.get('event_id');
     const currentEventId = tenant?.id
         || props.activeEvent?.id
         || props.registration?.event?.id
         || props.event?.id
         || requestedEventId;
-    const withEventContext = (path) => currentEventId
-        ? `${path}?event_id=${encodeURIComponent(currentEventId)}`
-        : path;
+    const withEventContext = (path) => {
+        const [pathname, query = ''] = path.split('?');
+        const searchParams = new URLSearchParams(query);
+
+        if (currentEventId) {
+            searchParams.set('event_id', currentEventId);
+        }
+
+        const queryString = searchParams.toString();
+
+        return queryString ? `${pathname}?${queryString}` : pathname;
+    };
+    const reportHref = (report) => withEventContext(`/admin/laporan?report=${encodeURIComponent(report)}`);
 
     const initials = user.name ? user.name.substring(0, 2).toUpperCase() : 'AD';
     const tenantCommandIds = new Set([
@@ -91,14 +115,12 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         'event-wasit',
         'merge',
         'wasit',
-        'penugasan',
         'scoring',
         'panitera-dashboard',
         'panitera-embu',
         'panitera-randori',
         'panitera-champions',
-        'medali',
-        'rekap',
+        ...reportMenuItems.map((report) => `report-${report.key}`),
         'website',
     ]);
     const responsibleTenantHiddenCommandIds = new Set([
@@ -236,19 +258,11 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             onSelect: () => router.visit(withEventContext('/admin/arbitrase/wasit')),
         },
         {
-            id: 'penugasan',
-            title: 'Penugasan Wasit Tatami',
-            subtitle: 'Penempatan wasit utama & dewan juri court',
-            category: 'Arbitrase',
-            icon: <i className="fa-solid fa-users-gear text-[#d4a843]"></i>,
-            onSelect: () => router.visit(withEventContext('/admin/arbitrase/penugasan')),
-        },
-        {
             id: 'scoring',
-            title: 'Penilaian (Scoring Digital)',
-            subtitle: 'Sistem input poin wasit juri pertandingan',
+            title: 'Laporan Hasil Penilaian',
+            subtitle: 'Rekap draft dan nilai yang dikirim Wasit',
             category: 'Arbitrase',
-            icon: <i className="fa-solid fa-star text-[#d4a843]"></i>,
+            icon: <i className="fa-solid fa-chart-column text-[#d4a843]"></i>,
             onSelect: () => router.visit(withEventContext('/admin/arbitrase/scoring')),
         },
         {
@@ -283,22 +297,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             icon: <i className="fa-solid fa-trophy text-[#d4a843]"></i>,
             onSelect: () => router.visit(withEventContext('/admin/panitera/scoring/champions')),
         },
-        {
-            id: 'medali',
-            title: 'Perolehan Medali & Juara',
-            subtitle: 'Klasemen perolehan emas, perak, dan perunggu',
+        ...reportMenuItems.map((report) => ({
+            id: `report-${report.key}`,
+            title: report.title,
+            subtitle: report.subtitle,
             category: 'Laporan',
-            icon: <i className="fa-solid fa-medal text-[#d4a843]"></i>,
-            onSelect: () => router.visit(withEventContext('/admin/laporan/hasil')),
-        },
-        {
-            id: 'rekap',
-            title: 'Rekapitulasi Embu & Randori',
-            subtitle: 'Arsip seluruh hasil laga kejuaraan',
-            category: 'Laporan',
-            icon: <i className="fa-solid fa-chart-bar text-[#d4a843]"></i>,
-            onSelect: () => router.visit(withEventContext('/admin/laporan/rekap-embu')),
-        },
+            icon: <i className={`fa-solid ${report.icon} text-[#d4a843]`}></i>,
+            onSelect: () => router.visit(reportHref(report.key)),
+        })),
         {
             id: 'website',
             title: 'Kembali ke Website Utama',
@@ -369,7 +375,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         <>
             <Head title={`${title} | Smart Perkemi`} />
 
-            <div className="min-h-screen bg-[#f7f4ef] text-[#0f0d0b] font-dm flex flex-col antialiased">
+            <div className="theme-shell min-h-screen bg-[#f7f4ef] text-[#0f0d0b] font-dm flex flex-col antialiased dark:bg-[#0f1115] dark:text-slate-100">
                 <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
                     {tenant && (
                         <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
@@ -612,17 +618,6 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Data Wasit & Juri</span>
                                     </Link>
                                     <Link
-                                        href={withEventContext('/admin/arbitrase/penugasan')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isAssignment
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-users-gear w-4 text-[11px] ${isAssignment ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Penugasan Wasit</span>
-                                    </Link>
-                                    <Link
                                         href={withEventContext('/admin/arbitrase/scoring')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
                                             isScoring
@@ -630,8 +625,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                                 : 'text-white/65 hover:text-white hover:bg-white/5'
                                         }`}
                                     >
-                                        <i className={`fa-solid fa-star w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Penilaian (Scoring)</span>
+                                        <i className={`fa-solid fa-chart-column w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Laporan Hasil Penilaian</span>
                                     </Link>
                                 </div>
                             )}
@@ -651,28 +646,25 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             </button>
                             {openSections.laporan && (
                                 <div className="space-y-0.5 pl-2">
-                                    <Link
-                                        href={withEventContext('/admin/laporan/hasil')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isMedals
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-medal w-4 text-[11px] ${isMedals ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Hasil Juara & Medali</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/laporan/rekap-embu')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isRecap
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-chart-bar w-4 text-[11px] ${isRecap ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Rekapitulasi Embu & Randori</span>
-                                    </Link>
+                                    {reportMenuItems.map((report) => {
+                                        const isActive = isReportHub && activeReport === report.key;
+
+                                        return (
+                                            <Link
+                                                key={report.key}
+                                                href={reportHref(report.key)}
+                                                aria-current={isActive ? 'page' : undefined}
+                                                className={`flex min-h-11 items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${
+                                                    isActive
+                                                        ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
+                                                        : 'text-white/65 hover:bg-white/5 hover:text-white'
+                                                }`}
+                                            >
+                                                <i className={`fa-solid ${report.icon} w-4 shrink-0 text-[11px] ${isActive ? 'text-[#f0c060]' : 'text-[#d4a843]'}`} aria-hidden="true"></i>
+                                                <span>{report.title}</span>
+                                            </Link>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -868,7 +860,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                 {/* ════ MAIN CONTENT CONTAINER ════ */}
                 <div className="min-w-0 flex-1 flex flex-col overflow-x-hidden lg:ml-[260px]">
                     {/* Header Sticky Topbar */}
-                    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-3 backdrop-blur-md sm:gap-4 sm:px-4 md:px-7">
+                    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-3 backdrop-blur-md dark:border-slate-800 dark:bg-[#11151b]/95 sm:gap-4 sm:px-4 md:px-7">
                         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                             {/* Mobile Hamburger Toggle */}
                             <button
@@ -903,6 +895,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                     ⌘K
                                 </kbd>
                             </button>
+
+                            <ThemeToggle />
 
                             {/* Notification Bell */}
                             <button
@@ -986,7 +980,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                     </main>
 
                     {/* Footer */}
-                    <footer className="border-t border-[#ede9e1] px-4 py-3 text-center text-[11px] text-[#b5afa6] md:px-7">
+                    <footer className="border-t border-[#ede9e1] px-4 py-3 text-center text-[11px] text-[#b5afa6] dark:border-slate-800 dark:text-slate-500 md:px-7">
                         © 2026 SMART-PERKEMI · Sistem Manajemen Kejuaraan Shorinji Kempo Indonesia. Seluruh hak cipta dilindungi.
                     </footer>
                 </div>

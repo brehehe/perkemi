@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Event;
+use App\Services\Admin\DashboardEventAccessService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -11,8 +12,11 @@ class TenantAccessController extends Controller
     /**
      * Enter event tenant context by slug.
      */
-    public function enter(Request $request, string $slug): RedirectResponse
-    {
+    public function enter(
+        Request $request,
+        string $slug,
+        DashboardEventAccessService $eventAccess,
+    ): RedirectResponse {
         $event = Event::query()->where('slug', $slug)->firstOrFail();
 
         $user = $request->user();
@@ -26,7 +30,7 @@ class TenantAccessController extends Controller
         $eventAccessRole = $event->accessRoleFor($user);
         $isResponsibleUser = $eventAccessRole === Event::AccessRoleResponsible;
         $isContingentOwner = $event->contingents()->where('user_id', $user->id)->exists();
-        $hasTenantAccess = $isFullAdmin || $isResponsibleUser || ($eventAccessRole !== null) || $isContingentOwner;
+        $hasTenantAccess = $eventAccess->canAccess($user, $event) || $isContingentOwner;
 
         abort_unless($hasTenantAccess, 403, 'Anda tidak memiliki hak akses untuk mengelola event ini.');
 

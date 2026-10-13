@@ -12,7 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class PaniteraMatchWorkflow
 {
-    public function __construct(private readonly EmbuScoreCalculator $embuScoreCalculator) {}
+    public function __construct(
+        private readonly EmbuScoreCalculator $embuScoreCalculator,
+        private readonly PaniteraTimerState $timerState,
+    ) {}
 
     public const ActionCallOfficials = 'call_officials';
 
@@ -118,17 +121,20 @@ class PaniteraMatchWorkflow
         $courtMatches
             ->where('id', '!=', $currentMatch->id)
             ->filter(fn (TournamentMatch $match): bool => in_array($match->status, ['ready', 'in_progress'], true))
-            ->each(fn (TournamentMatch $match) => $match->update([
-                'status' => 'pending',
-                'call_status' => 'waiting',
-                'called_at' => null,
-                'timer_status' => 'stopped',
-                'timer_started_at' => null,
-                'timer_started_at_ms' => null,
-                'timer_elapsed_seconds' => 0,
-                'timer_elapsed_ms' => 0,
-                'timer_version' => max(0, (int) $match->timer_version) + 1,
-            ]));
+            ->each(function (TournamentMatch $match): void {
+                $match->update([
+                    'status' => 'pending',
+                    'call_status' => 'waiting',
+                    'called_at' => null,
+                    'timer_status' => 'stopped',
+                    'timer_started_at' => null,
+                    'timer_started_at_ms' => null,
+                    'timer_elapsed_seconds' => 0,
+                    'timer_elapsed_ms' => 0,
+                    'timer_version' => max(0, (int) $match->timer_version) + 1,
+                ]);
+                $this->broadcastMatchState($match, 'release');
+            });
     }
 
     /** @param array{expected_timer_version?: int|null, timer_direction?: string, timer_duration_seconds?: int} $options */
@@ -365,12 +371,7 @@ class PaniteraMatchWorkflow
 
     private function broadcastMatchState(TournamentMatch $match, string $action): void
     {
-        $metadata = $match->metadata ?? [];
         $serverNow = now();
-        $durationSeconds = max(10, (int) data_get($metadata, 'panitera.timer_duration_seconds', 120));
-        $startedAtMilliseconds = $match->timer_started_at_ms
-            ?: $match->timer_started_at?->getTimestampMs();
-        $elapsedMilliseconds = $this->storedElapsedMilliseconds($match);
 
         PaniteraMatchStateUpdated::dispatch(
             eventId: $match->event_id,
@@ -379,24 +380,7 @@ class PaniteraMatchWorkflow
             action: $action,
             matchStatus: $match->status,
             callStatus: $match->call_status,
-            timer: [
-                'status' => $match->timer_status,
-                'started_at' => $match->timer_started_at?->toIso8601String(),
-                'started_at_ms' => $startedAtMilliseconds,
-                'elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
-                'elapsed_ms' => $elapsedMilliseconds,
-                'direction' => in_array(data_get($metadata, 'panitera.timer_direction'), ['up', 'down'], true)
-                    ? data_get($metadata, 'panitera.timer_direction')
-                    : 'up',
-                'duration_seconds' => $durationSeconds,
-                'duration_ms' => $durationSeconds * 1000,
-                'version' => max(0, (int) $match->timer_version),
-                'is_finished' => (bool) data_get($metadata, 'panitera.finished_at'),
-                'finished_at' => data_get($metadata, 'panitera.finished_at'),
-                'time_penalty' => data_get($metadata, 'panitera.time_penalty') !== null
-                    ? (float) data_get($metadata, 'panitera.time_penalty')
-                    : null,
-            ],
+            timer: $this->timerState->timer($match),
             serverNow: $serverNow->toIso8601String(),
             serverNowMs: $serverNow->getTimestampMs(),
         );

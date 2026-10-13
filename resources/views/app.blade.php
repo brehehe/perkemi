@@ -12,18 +12,22 @@
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
         <link rel="manifest" href="/site.webmanifest">
-        <meta name="theme-color" content="#0f172a">
+        <meta name="theme-color" content="#f7f4ef">
 
         <!-- Pre-hydration Theme Script -->
         <script>
             (function() {
                 const saved = localStorage.getItem('kempo-theme');
                 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                if (saved === 'dark' || (!saved && prefersDark)) {
-                    document.documentElement.classList.add('dark');
-                } else if (saved === 'light') {
-                    document.documentElement.classList.remove('dark');
-                }
+                const theme = saved === 'dark' || saved === 'light'
+                    ? saved
+                    : (prefersDark ? 'dark' : 'light');
+                document.documentElement.classList.toggle('dark', theme === 'dark');
+                document.documentElement.dataset.theme = theme;
+                document.querySelector('meta[name="theme-color"]')?.setAttribute(
+                    'content',
+                    theme === 'dark' ? '#0f1115' : '#f7f4ef',
+                );
             })();
         </script>
 

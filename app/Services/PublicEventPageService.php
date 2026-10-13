@@ -2,12 +2,19 @@
 
 namespace App\Services;
 
+use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventAgeCategory;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
 use App\Models\PaymentMethod;
+use App\Models\RandoriScore;
+use App\Models\Referee;
 use App\Models\Rundown;
+use App\Models\TournamentDrawing;
+use App\Models\TournamentMatch;
+use App\Models\TournamentResult;
+use Illuminate\Support\Collection;
 
 class PublicEventPageService
 {
@@ -21,6 +28,7 @@ class PublicEventPageService
             'matchCategories' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
             'rundowns' => fn ($query) => $query->orderBy('date')->orderBy('order'),
             'paymentMethods' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
+            'referees' => fn ($query) => $query->where('referees.is_active', true)->orderBy('referees.name'),
         ])->loadCount(['contingents', 'registrations']);
     }
 
@@ -121,9 +129,174 @@ class PublicEventPageService
                 'account_number' => $paymentMethod->account_number,
                 'instructions' => $paymentMethod->instructions,
             ]),
+            'referees' => $event->referees->map(fn (Referee $referee): array => [
+                'id' => $referee->id,
+                'name' => $referee->name,
+                'role' => match ($referee->pivot->role) {
+                    'chief' => 'Wasit Utama',
+                    'judge' => 'Juri',
+                    'reserve' => 'Wasit Cadangan',
+                    default => 'Wasit',
+                },
+                'certification' => $referee->certification_level ?: $referee->license_number,
+                'dan_grade' => $referee->dan_grade,
+                'region' => $referee->region,
+                'photo_url' => $referee->profilePhotoUrl(),
+            ])->values(),
+            'matchSchedule' => $this->matchSchedule($event),
+            'championGroups' => $this->championGroups($event),
+            'embuScores' => $this->embuScores($event),
+            'randoriBrackets' => $this->randoriBrackets($event),
             'canManage' => $canManage,
             'canAccessDashboard' => $canAccessDashboard,
             'isHomepage' => $isHomepage,
+        ];
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function matchSchedule(Event $event): Collection
+    {
+        return TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->where('is_bye', false)
+            ->whereNotNull('scheduled_start_at')
+            ->with(['matchCategory:id,name,type', 'court:id,name'])
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->limit(300)
+            ->get()
+            ->map(fn (TournamentMatch $match): array => [
+                'id' => $match->id,
+                'date' => $match->scheduled_start_at?->format('Y-m-d'),
+                'date_label' => $match->scheduled_start_at?->translatedFormat('l, d F Y'),
+                'time' => $match->scheduled_start_at?->format('H:i'),
+                'end_time' => $match->scheduled_end_at?->format('H:i'),
+                'category' => $match->matchCategory?->name,
+                'type' => $match->matchCategory?->type,
+                'court' => $match->court?->name,
+                'round' => $match->round_label,
+                'sequence' => $match->match_sequence,
+                'participant' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+                'status' => $match->status,
+            ]);
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function championGroups(Event $event): Collection
+    {
+        return TournamentResult::query()
+            ->whereBelongsTo($event)
+            ->with(['matchCategory:id,name,type', 'athlete:id,name'])
+            ->orderBy('event_match_category_id')
+            ->orderBy('rank')
+            ->get()
+            ->groupBy(fn (TournamentResult $result): string => $result->event_match_category_id ?: (string) $result->match_category)
+            ->map(function (Collection $results): array {
+                /** @var TournamentResult $first */
+                $first = $results->first();
+
+                return [
+                    'id' => $first->event_match_category_id ?: $first->match_category,
+                    'category' => $first->matchCategory?->name ?: $first->match_category,
+                    'type' => $first->matchCategory?->type ?: strtolower((string) $first->match_category),
+                    'is_exhibition' => (bool) $first->is_exhibition,
+                    'champions' => $results->sortBy(fn (TournamentResult $result): int => $result->rank->value)
+                        ->map(fn (TournamentResult $result): array => [
+                            'id' => $result->id,
+                            'rank' => $result->rank->value,
+                            'rank_label' => match ($result->rank->value) {
+                                1 => 'Juara 1',
+                                2 => 'Juara 2',
+                                3, 4 => 'Juara 3 Bersama',
+                                default => 'Peringkat '.$result->rank->value,
+                            },
+                            'participant' => $result->athlete?->name ?: $result->contingent_name,
+                            'contingent' => $result->contingent_name,
+                        ])->values(),
+                ];
+            })
+            ->values();
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function embuScores(Event $event): Collection
+    {
+        return EmbuScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'verified')
+            ->with(['tournamentMatch.matchCategory:id,name,type', 'tournamentMatch.court:id,name'])
+            ->latest('verified_at')
+            ->limit(200)
+            ->get()
+            ->map(function (EmbuScore $score): array {
+                $match = $score->tournamentMatch;
+
+                return [
+                    'id' => $score->id,
+                    'category' => $match?->matchCategory?->name,
+                    'participant' => $match?->participant_label,
+                    'round' => $match?->round_label,
+                    'pool' => $match?->pool,
+                    'sequence' => $match?->match_sequence,
+                    'court' => $match?->court?->name,
+                    'judge_scores' => array_values($score->judge_scores ?? []),
+                    'middle_score' => (float) $score->middle_score,
+                    'penalty' => (float) $score->time_penalty,
+                    'final_score' => (float) $score->final_score,
+                    'duration_seconds' => $score->duration_seconds,
+                    'verified_at' => $score->verified_at?->translatedFormat('d M Y, H:i'),
+                ];
+            });
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function randoriBrackets(Event $event): Collection
+    {
+        return TournamentDrawing::query()
+            ->whereBelongsTo($event)
+            ->whereIn('status', ['published', 'in_progress', 'completed'])
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'randori'))
+            ->with([
+                'matchCategory:id,name,type',
+                'matches' => fn ($query) => $query
+                    ->with(['randoriScore', 'court:id,name'])
+                    ->orderBy('match_sequence'),
+            ])
+            ->get()
+            ->map(fn (TournamentDrawing $drawing): array => [
+                'id' => $drawing->id,
+                'category' => $drawing->matchCategory?->name,
+                'format' => $drawing->bracket_type,
+                'status' => $drawing->status,
+                'rounds' => $drawing->matches
+                    ->groupBy('round_label')
+                    ->map(fn (Collection $matches, string $round): array => [
+                        'name' => $round,
+                        'matches' => $matches->map(fn (TournamentMatch $match): array => $this->randoriMatch($match))->values(),
+                    ])->values(),
+            ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function randoriMatch(TournamentMatch $match): array
+    {
+        /** @var RandoriScore|null $score */
+        $score = $match->randoriScore;
+
+        return [
+            'id' => $match->id,
+            'sequence' => $match->match_sequence,
+            'position' => $match->bracket_position,
+            'phase' => $match->phase,
+            'court' => $match->court?->name,
+            'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M, H:i'),
+            'aka' => $match->red_label ?: 'Menunggu peserta',
+            'shiro' => $match->blue_label ?: 'Menunggu peserta',
+            'aka_score' => $score?->aka_total,
+            'shiro_score' => $score?->shiro_total,
+            'winner' => $score?->winner_corner,
+            'status' => $match->status,
+            'is_bye' => $match->is_bye,
         ];
     }
 }

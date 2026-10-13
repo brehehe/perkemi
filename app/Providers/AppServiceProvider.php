@@ -2,6 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\Athlete;
+use App\Models\Contingent;
+use App\Models\Registration;
+use App\Models\Rundown;
+use App\Models\TournamentResult;
+use App\Observers\DashboardRealtimeObserver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +29,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Athlete::observe(DashboardRealtimeObserver::class);
+        Contingent::observe(DashboardRealtimeObserver::class);
+        Registration::observe(DashboardRealtimeObserver::class);
+        Rundown::observe(DashboardRealtimeObserver::class);
+        TournamentResult::observe(DashboardRealtimeObserver::class);
+
         Event::listen('eloquent.booted: *', function ($eventName, array $data) {
             $model = $data[0];
             $modelClass = get_class($model);

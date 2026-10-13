@@ -1,4 +1,5 @@
 import Button from '@/Components/UI/Elements/Button';
+import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
 import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
@@ -113,18 +114,20 @@ export default function Welcome({
                     </Link>
                     <nav aria-label="Navigasi utama" className="hidden items-center gap-8 lg:flex">
                         <a href="#events" className="event-text-link">Event kejuaraan</a>
+                        <Link href="/athelete" className="event-text-link">Peserta</Link>
                         <a href="#guide" className="event-text-link">Panduan pendaftaran</a>
                         <a href="#about" className="event-text-link">Tentang portal</a>
                     </nav>
                     <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-                        <Link href={user ? '/admin/dashboard' : '/login'} className="event-button event-button-primary">{user ? 'Dashboard' : 'Masuk'}<Icon name={user ? 'fa-gauge-high' : 'fa-arrow-right-to-bracket'} className="hidden sm:inline" /></Link>
+                        <ThemeToggle />
+                        <Link href={user ? (user.dashboard_url || '/admin/dashboard') : '/login'} className="event-button event-button-primary">{user ? 'Dashboard' : 'Masuk'}<Icon name={user ? 'fa-gauge-high' : 'fa-arrow-right-to-bracket'} className="hidden sm:inline" /></Link>
                         <Button variant="unstyled" size="none" className="home-menu-button lg:hidden" aria-expanded={mobileMenuOpen} aria-controls="home-mobile-nav" aria-label={mobileMenuOpen ? 'Tutup navigasi' : 'Buka navigasi'} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
                             <Icon name={mobileMenuOpen ? 'fa-xmark' : 'fa-bars'} />
                         </Button>
                     </div>
                 </div>
                 {mobileMenuOpen && <nav id="home-mobile-nav" aria-label="Navigasi seluler" className="home-mobile-nav event-container flex flex-col lg:hidden" onKeyDown={(event) => { if (event.key === 'Escape') { closeMobileMenu(); } }}>
-                    <a href="#events" onClick={closeMobileMenu}>Event kejuaraan</a><a href="#guide" onClick={closeMobileMenu}>Panduan pendaftaran</a><a href="#about" onClick={closeMobileMenu}>Tentang portal</a>
+                    <a href="#events" onClick={closeMobileMenu}>Event kejuaraan</a><Link href="/athelete" onClick={closeMobileMenu}>Peserta</Link><a href="#guide" onClick={closeMobileMenu}>Panduan pendaftaran</a><a href="#about" onClick={closeMobileMenu}>Tentang portal</a>
                 </nav>}
             </header>
 

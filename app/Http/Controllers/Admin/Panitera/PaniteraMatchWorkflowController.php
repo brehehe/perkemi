@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Panitera\UpdatePaniteraMatchWorkflowRequest;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\PaniteraMatchWorkflow;
+use App\Services\Panitera\PaniteraTimerState;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 
 class PaniteraMatchWorkflowController extends Controller
@@ -15,14 +18,17 @@ class PaniteraMatchWorkflowController extends Controller
         UpdatePaniteraMatchWorkflowRequest $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
         PaniteraMatchWorkflow $workflow,
-    ): RedirectResponse {
+        PaniteraTimerState $timerState,
+    ): RedirectResponse|JsonResponse {
         $event = $eventContext->eventFor($request);
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
         $validated = $request->validated();
-        $workflow->update(
+        $updatedMatch = $workflow->update(
             $event,
             $tournamentMatch,
             $validated['action'],
@@ -33,6 +39,10 @@ class PaniteraMatchWorkflowController extends Controller
                 'timer_duration_seconds' => (int) ($validated['timer_duration_seconds'] ?? 120),
             ],
         );
+
+        if ($request->expectsJson()) {
+            return $timerState->response($request, $updatedMatch, $event->id, $updatedMatch->event_court_id, now()->getTimestampMs());
+        }
 
         return redirect()
             ->route('admin.panitera.matches.show', [

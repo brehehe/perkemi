@@ -1,12 +1,17 @@
 import ContingentLayout from '@/Layouts/ContingentLayout';
-import { Link, router } from '@inertiajs/react';
+import SchoolFields, { schoolData, schoolDefaults } from '@/Components/UI/Forms/SchoolFields';
+import { AlertConfirm, Button, Input, Modal, Select, Textarea } from '@/Components/UI';
+import { Link, router, useForm } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
 const sectionMeta = {
     registration: ['Registrasi', 'Kelola berkas pendaftaran kontingen untuk event aktif.', 'fa-file-signature'],
     schedule: ['Jadwal', 'Pantau rundown event dan jadwal pertandingan kontingen.', 'fa-calendar-days'],
-    results: ['Hasil', 'Lihat perolehan medali dan hasil pertandingan kontingen.', 'fa-medal'],
-    athletes: ['Data Atlet', 'Daftar atlet yang terdaftar pada kontingen dan nomor tandingnya.', 'fa-user-group'],
-    officials: ['Data Official', 'Daftar manajer, pelatih, dan pendamping kontingen.', 'fa-id-badge'],
+    results: ['Hasil Juara', 'Lihat perolehan medali resmi kontingen pada event terpilih.', 'fa-trophy'],
+    'embu-results': ['Hasil Embu', 'Rincian nilai Embu yang telah diverifikasi untuk kontingen.', 'fa-ranking-star'],
+    'randori-results': ['Hasil Randori', 'Rincian skor Randori yang telah disahkan untuk kontingen.', 'fa-hand-fist'],
+    athletes: ['Data Atlet', 'Master atlet kontingen lintas event, tanpa bergantung pada event aktif.', 'fa-user-group'],
+    officials: ['Data Official', 'Master official kontingen lintas event, tanpa bergantung pada event aktif.', 'fa-id-badge'],
     history: ['Riwayat Pendaftaran', 'Arsip pendaftaran kontingen pada seluruh event.', 'fa-clock-rotate-left'],
 };
 
@@ -27,10 +32,13 @@ const formatDate = (value, withTime = false) => value ? new Intl.DateTimeFormat(
     day: '2-digit', month: 'short', year: 'numeric', ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
 }).format(new Date(value)) : '-';
 const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
+const dateOnly = (value) => value ? String(value).slice(0, 10) : '';
 const sectionPath = {
     registration: '/kontingen/registrasi',
     schedule: '/kontingen/jadwal',
-    results: '/kontingen/hasil',
+    results: '/kontingen/hasil/juara',
+    'embu-results': '/kontingen/hasil/embu',
+    'randori-results': '/kontingen/hasil/randori',
     athletes: '/kontingen/atlet',
     officials: '/kontingen/official',
     history: '/kontingen/riwayat-pendaftaran',
@@ -193,17 +201,326 @@ function ResultsSection({ results = [], medalSummary = {} }) {
     </div>;
 }
 
-function AthletesSection({ athletes = [], manageUrl }) {
+function EmbuJudgeBreakdown({ judge }) {
+    return (
+        <section className="rounded-xl border border-[#e7dfd5] bg-[#fcfbf9] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#a37019]">Juri {judge.judge_number} · {judge.role_label}</p>
+                    <h3 className="mt-1 text-sm font-black text-[#201a16]">{judge.referee_name}</h3>
+                </div>
+                <div className="text-right">
+                    <p className="font-mono text-xl font-black text-[#bd3428]">{Number(judge.total_score || 0).toFixed(2)}</p>
+                    <p className={`text-[9px] font-bold uppercase ${judge.is_signed ? 'text-emerald-700' : 'text-amber-700'}`}>{judge.is_signed ? 'TTD tercatat' : 'Belum TTD'}</p>
+                </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {Object.entries(judge.aspect_labels || {}).map(([key, label], index) => (
+                    <div key={key} className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-[#eee7de] bg-white px-3 py-2">
+                        <span className="text-[11px] leading-4 text-[#5f5750]"><strong className="mr-1 text-[#9b6c18]">{index + 1}.</strong>{label}</span>
+                        <strong className="shrink-0 font-mono text-base text-[#17120f]">{judge.aspect_scores?.[key] ?? '-'}</strong>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">Teknik {Number(judge.technique_subtotal || 0).toFixed(2)}</span>
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">Ekspresi {Number(judge.expression_subtotal || 0).toFixed(2)}</span>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">{judge.completed_items || 0}/10 aspek</span>
+            </div>
+        </section>
+    );
+}
+
+function EmbuResultsSection({ results = [] }) {
+    return results.length ? <div className="space-y-4">{results.map((result) => (
+        <article key={result.id} className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm">
+            <div className="border-b border-[#eee8e0] p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">Embu · Partai #{result.sequence || '-'}</p><h2 className="mt-1 text-sm font-black">{result.category || 'Nomor Embu'}</h2><p className="mt-1 text-xs text-[#817970]">{result.participant_details?.contingent_name || result.participant || 'Tim kontingen'}</p></div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <a href={result.print_url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9d0c5] bg-white px-3 text-xs font-bold text-[#4e4640] transition-colors hover:bg-[#f8f5f1]"><i className="fa-solid fa-print" aria-hidden="true" />Cetak Detail</a>
+                        <div className="rounded-xl bg-amber-50 px-4 py-2 text-right"><p className="text-[9px] font-bold uppercase text-amber-700">Nilai akhir</p><p className="font-mono text-2xl font-black text-[#b17c13]">{Number(result.final_score || 0).toFixed(2)}</p></div>
+                    </div>
+                </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 p-5 text-center text-xs">
+                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Skor tengah</p><p className="mt-1 font-bold">{Number(result.middle_score || 0).toFixed(2)}</p></div>
+                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Denda</p><p className="mt-1 font-bold text-red-600">{Number(result.time_penalty || 0).toFixed(2)}</p></div>
+                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Durasi</p><p className="mt-1 font-bold">{result.duration_seconds || 0} dtk</p></div>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-[#eee8e0] px-5 py-4">{(result.judge_scores || []).map((score, index) => <span key={`${result.id}-${index}`} className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">J{index + 1}: {Number(score).toFixed(2)}</span>)}</div>
+            <details className="group border-t border-[#eee8e0] px-5 py-4">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl bg-[#f8f5f1] px-4 text-xs font-black text-[#4f4740] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b17c13]">
+                    <span><i className="fa-solid fa-list-check mr-2 text-[#b17c13]" aria-hidden="true" />Rincian 10 Aspek per Wasit</span>
+                    <i className="fa-solid fa-chevron-down transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    {(result.judges || []).length ? result.judges.map((judge) => <EmbuJudgeBreakdown key={judge.id} judge={judge} />) : <p className="rounded-xl border border-dashed border-[#ddd4c9] px-4 py-6 text-center text-xs text-[#847c74] xl:col-span-2">Rincian nilai per Wasit belum tersedia.</p>}
+                </div>
+            </details>
+        </article>
+    ))}</div> : <EmptyState icon="fa-ranking-star" title="Belum ada hasil Embu" description="Nilai Embu kontingen akan tampil setelah disimpan dan diverifikasi panitera." />;
+}
+
+function RandoriResultsSection({ results = [] }) {
+    return results.length ? <div className="space-y-4">{results.map((result) => (
+        <article key={result.id} className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${result.is_winner ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{result.is_winner ? 'MENANG' : 'SELESAI'}</span><span className="text-[10px] font-bold uppercase text-[#a47c25]">Partai #{result.sequence || '-'} · {result.round || '-'}</span></div><h2 className="mt-2 text-sm font-black">{result.category || 'Nomor Randori'}</h2><p className="mt-1 text-xs text-[#817970]">{result.court || 'Court belum tercatat'} · {result.signatures_count}/6 tanda tangan</p></div>
+                <div className="grid min-w-[280px] grid-cols-[1fr_auto_1fr] items-center overflow-hidden rounded-xl border border-[#e6dfd6] text-center">
+                    <div className={`p-3 ${result.winner_corner === 'aka' ? 'bg-red-50' : ''}`}><p className="truncate text-[10px] font-bold text-red-700">{result.aka_label || 'AKA'}</p><p className="font-mono text-2xl font-black text-red-600">{result.aka_total}</p></div><span className="px-2 text-[10px] font-bold text-[#aaa29a]">VS</span><div className={`p-3 ${result.winner_corner === 'shiro' ? 'bg-blue-50' : ''}`}><p className="truncate text-[10px] font-bold text-blue-700">{result.shiro_label || 'SHIRO'}</p><p className="font-mono text-2xl font-black text-blue-600">{result.shiro_total}</p></div>
+                </div>
+            </div>
+        </article>
+    ))}</div> : <EmptyState icon="fa-hand-fist" title="Belum ada hasil Randori" description="Skor Randori kontingen akan tampil setelah hasil disahkan panitera." />;
+}
+
+const athleteDefaults = {
+    ...schoolDefaults,
+    name: '', nik: '', kenshi_number: '', gender: 'male', birth_place: '', birth_date: '', blood_type: '',
+    home_address: '', dojo_name: '', kyu_dan: '', weight: '', height: '', bpjs_number: '', bpjs_status: '', profile_photo: null,
+};
+
+function AthletesSection({ athletes = [], kyus = [] }) {
+    const [editing, setEditing] = useState(null);
+    const [formOpen, setFormOpen] = useState(false);
+    const [deleting, setDeleting] = useState(null);
+    const [deleteError, setDeleteError] = useState('');
+    const [deleteProcessing, setDeleteProcessing] = useState(false);
+    const [photoPreview, setPhotoPreview] = useState(null);
+    const photoInputRef = useRef(null);
+    const form = useForm(athleteDefaults);
+    const hasSelectedPhoto = typeof File !== 'undefined' && form.data.profile_photo instanceof File;
+
+    useEffect(() => {
+        if (typeof File === 'undefined' || !(form.data.profile_photo instanceof File)) {
+            setPhotoPreview(null);
+
+            return undefined;
+        }
+
+        const previewUrl = URL.createObjectURL(form.data.profile_photo);
+        setPhotoPreview(previewUrl);
+
+        return () => URL.revokeObjectURL(previewUrl);
+    }, [form.data.profile_photo]);
+
+    const clearSelectedPhoto = () => {
+        form.setData('profile_photo', null);
+        form.clearErrors('profile_photo');
+        if (photoInputRef.current) photoInputRef.current.value = '';
+    };
+
+    const resetAthleteForm = () => {
+        setFormOpen(false);
+        setEditing(null);
+        form.reset();
+        form.clearErrors();
+        if (photoInputRef.current) photoInputRef.current.value = '';
+    };
+    const closeForm = () => {
+        if (!form.processing) resetAthleteForm();
+    };
+    const createAthlete = () => {
+        setEditing(null);
+        form.setData({ ...athleteDefaults });
+        form.clearErrors();
+        if (photoInputRef.current) photoInputRef.current.value = '';
+        setFormOpen(true);
+    };
+    const editAthlete = (athlete) => {
+        setEditing(athlete);
+        form.setData({
+            ...athleteDefaults,
+            ...schoolData(athlete),
+            name: athlete.name || '',
+            nik: athlete.nik || '',
+            kenshi_number: athlete.kenshi_number || '',
+            gender: athlete.gender || 'male',
+            birth_place: athlete.birth_place || '',
+            birth_date: dateOnly(athlete.birth_date),
+            blood_type: athlete.blood_type || '',
+            home_address: athlete.home_address || '',
+            dojo_name: athlete.dojo_name || '',
+            kyu_dan: athlete.kyu_dan || '',
+            weight: athlete.weight || '',
+            height: athlete.height || '',
+            bpjs_number: athlete.bpjs_number || '',
+            bpjs_status: athlete.bpjs_status || '',
+            profile_photo: null,
+        });
+        form.clearErrors();
+        if (photoInputRef.current) photoInputRef.current.value = '';
+        setFormOpen(true);
+    };
+    const submit = (event) => {
+        event.preventDefault();
+        const endpoint = editing ? `/kontingen/atlet/${editing.id}` : '/kontingen/atlet';
+        form.transform((data) => ({ ...data, ...(editing ? { _method: 'put' } : {}) })).post(endpoint, {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: resetAthleteForm,
+        });
+    };
+    const deleteAthlete = () => {
+        if (!deleting || deleteProcessing) return;
+        setDeleteProcessing(true);
+        setDeleteError('');
+        router.delete(`/kontingen/atlet/${deleting.id}`, {
+            preserveScroll: true,
+            onSuccess: () => setDeleting(null),
+            onError: (errors) => setDeleteError(Object.values(errors).flat().join(' ')),
+            onFinish: () => setDeleteProcessing(false),
+        });
+    };
+
     return <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#7d756d]"><strong className="text-[#1c1815]">{athletes.length}</strong> atlet terdaftar</p>{manageUrl && <Link href={manageUrl} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#c93629] px-4 py-2 text-xs font-bold text-white"><i className="fa-solid fa-user-plus" /> Kelola Atlet</Link>}</div>
-        {athletes.length ? <div className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left text-xs"><thead className="bg-[#f8f5f1] text-[10px] uppercase tracking-[0.08em] text-[#7e766e]"><tr><th className="px-4 py-3">Atlet</th><th className="px-4 py-3">Gender</th><th className="px-4 py-3">Tingkat</th><th className="px-4 py-3">Kelompok Umur</th><th className="px-4 py-3">Nomor Pertandingan</th></tr></thead><tbody className="divide-y divide-[#eee8e0]">{athletes.map((athlete) => <tr key={athlete.id} className="align-top hover:bg-[#fcfaf7]"><td className="px-4 py-3"><p className="font-bold">{athlete.name}</p><p className="mt-0.5 text-[10px] text-[#8c847d]">{athlete.kenshi_number || athlete.nik || 'Nomor belum dilengkapi'}</p></td><td className="px-4 py-3">{athlete.gender || '-'}</td><td className="px-4 py-3">{athlete.kyu_dan || '-'}</td><td className="px-4 py-3">{athlete.age_category?.name || '-'}</td><td className="px-4 py-3"><div className="flex max-w-md flex-wrap gap-1.5">{athlete.match_category_entries?.length ? athlete.match_category_entries.map((entry) => <span key={entry.id} className="rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{entry.match_category?.name}</span>) : <span className="text-[#99918a]">Belum dipilih</span>}</div></td></tr>)}</tbody></table></div></div> : <EmptyState icon="fa-user-group" title="Belum ada atlet" description="Tambahkan atlet melalui detail registrasi kontingen." />}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><p className="text-xs text-[#7d756d]"><strong className="text-[#1c1815]">{athletes.length}</strong> atlet master</p><p className="mt-1 text-[11px] text-[#918980]">Data dapat digunakan kembali saat mengikuti event berikutnya.</p></div>
+            <Button type="button" onClick={createAthlete} iconLeft={<i className="fa-solid fa-user-plus" />}>Tambah Atlet</Button>
+        </div>
+        {athletes.length ? <div className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-xs"><thead className="bg-[#f8f5f1] text-[10px] uppercase tracking-[0.08em] text-[#7e766e]"><tr><th className="px-4 py-3">Atlet</th><th className="px-4 py-3">Gender</th><th className="px-4 py-3">Lahir</th><th className="px-4 py-3">Tingkat</th><th className="px-4 py-3">Riwayat Nomor</th><th className="px-4 py-3 text-right">Aksi</th></tr></thead><tbody className="divide-y divide-[#eee8e0]">{athletes.map((athlete) => {
+            const categories = [...new Set((athlete.match_category_entries || []).map((entry) => entry.match_category?.name).filter(Boolean))];
+            return <tr key={athlete.id} className="align-top hover:bg-[#fcfaf7]"><td className="px-4 py-3"><div className="flex items-center gap-3">{athlete.profile_photo_url ? <img src={athlete.profile_photo_url} alt={`Foto ${athlete.name}`} className="h-10 w-10 rounded-xl object-cover" /> : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f7e9e4] font-bold text-[#b73528]">{athlete.name.slice(0, 2).toUpperCase()}</span>}<div><p className="font-bold">{athlete.name}</p><p className="mt-0.5 text-[10px] text-[#8c847d]">{athlete.kenshi_number || 'Nomor kenshi belum dilengkapi'}</p></div></div></td><td className="px-4 py-3">{athlete.gender === 'male' ? 'Putra' : 'Putri'}</td><td className="px-4 py-3">{athlete.birth_place || '-'}{athlete.birth_date ? `, ${formatDate(athlete.birth_date)}` : ''}</td><td className="px-4 py-3">{athlete.kyu_dan || '-'}</td><td className="px-4 py-3"><div className="flex max-w-md flex-wrap gap-1.5">{categories.length ? categories.map((category) => <span key={category} className="rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{category}</span>) : <span className="text-[#99918a]">Belum pernah dipilih</span>}</div></td><td className="px-4 py-3"><div className="flex justify-end gap-2"><Button type="button" size="sm" variant="outline" onClick={() => editAthlete(athlete)} iconLeft={<i className="fa-solid fa-pen" />}>Edit</Button><Button type="button" size="sm" variant="danger" onClick={() => { setDeleteError(''); setDeleting(athlete); }} aria-label={`Hapus ${athlete.name}`}><i className="fa-solid fa-trash" /></Button></div></td></tr>;
+        })}</tbody></table></div></div> : <EmptyState icon="fa-user-group" title="Belum ada atlet master" description="Tambahkan atlet sekali, lalu gunakan kembali datanya pada registrasi event mana pun." />}
+
+        <Modal isOpen={formOpen} onClose={closeForm} title={editing ? 'Edit Master Atlet' : 'Tambah Master Atlet'} subtitle="Data ini tidak terikat pada satu event." size="4xl" closeOnBackdrop={!form.processing} footer={<><Button type="button" variant="outline" onClick={closeForm} disabled={form.processing}>Batal</Button><Button type="submit" form="master-athlete-form" loading={form.processing}>{editing ? 'Simpan Perubahan' : 'Simpan Atlet'}</Button></>}>
+            <form id="master-athlete-form" onSubmit={submit} className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                    <Input id="athlete-name" label="Nama Lengkap" required value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} error={form.errors.name} />
+                    <Input id="athlete-nik" label="NIK" inputMode="numeric" maxLength={16} value={form.data.nik} onChange={(event) => form.setData('nik', event.target.value.replace(/\D/g, ''))} error={form.errors.nik} hint="Disimpan privat dan tidak ditampilkan pada halaman publik." />
+                    <Input id="athlete-kenshi-number" label="Nomor Induk Kenshi" value={form.data.kenshi_number} onChange={(event) => form.setData('kenshi_number', event.target.value)} error={form.errors.kenshi_number} />
+                    <Select label="Gender" required clearable={false} value={form.data.gender} onChange={(value) => form.setData('gender', value)} options={[{ value: 'male', label: 'Putra' }, { value: 'female', label: 'Putri' }]} error={form.errors.gender} />
+                    <Input id="athlete-birth-place" label="Tempat Lahir" value={form.data.birth_place} onChange={(event) => form.setData('birth_place', event.target.value)} error={form.errors.birth_place} />
+                    <Input id="athlete-birth-date" label="Tanggal Lahir" type="date" value={form.data.birth_date} onChange={(event) => form.setData('birth_date', event.target.value)} error={form.errors.birth_date} />
+                    <Select label="Golongan Darah" value={form.data.blood_type} onChange={(value) => form.setData('blood_type', value)} options={['A', 'B', 'AB', 'O']} error={form.errors.blood_type} />
+                    <Input id="athlete-dojo" label="Dojo" value={form.data.dojo_name} onChange={(event) => form.setData('dojo_name', event.target.value)} error={form.errors.dojo_name} />
+                    <Select label="Tingkatan Kyu/Dan" required value={form.data.kyu_dan} onChange={(value) => form.setData('kyu_dan', value)} options={kyus} error={form.errors.kyu_dan} />
+                    <div className="grid grid-cols-2 gap-3"><Input id="athlete-weight" label="Berat (kg)" type="number" min="20" max="200" step="0.01" value={form.data.weight} onChange={(event) => form.setData('weight', event.target.value)} error={form.errors.weight} /><Input id="athlete-height" label="Tinggi (cm)" type="number" min="80" max="250" step="0.01" value={form.data.height} onChange={(event) => form.setData('height', event.target.value)} error={form.errors.height} /></div>
+                    <Input id="athlete-bpjs" label="Nomor BPJS" value={form.data.bpjs_number} onChange={(event) => form.setData('bpjs_number', event.target.value)} error={form.errors.bpjs_number} />
+                    <Select label="Status BPJS" value={form.data.bpjs_status} onChange={(value) => form.setData('bpjs_status', value)} options={[{ value: 'active', label: 'Aktif' }, { value: 'inactive', label: 'Tidak aktif' }, { value: 'none', label: 'Tidak memiliki' }]} error={form.errors.bpjs_status} />
+                    <div className="md:col-span-2">
+                        <p className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-[#34425d] dark:text-slate-200">Foto Profil</p>
+                        <div className={`flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center ${form.errors.profile_photo ? 'border-red-400 bg-red-50/60 dark:border-red-500 dark:bg-red-950/20' : 'border-[#d9e0e9] bg-[#f8fafc] dark:border-slate-700 dark:bg-slate-900/70'}`}>
+                            <div className="relative mx-auto h-28 w-28 shrink-0 overflow-hidden rounded-2xl border border-[#d9e0e9] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:mx-0">
+                                {(photoPreview || editing?.profile_photo_url) ? (
+                                    <img src={photoPreview || editing.profile_photo_url} alt={`Preview foto ${form.data.name || 'atlet'}`} className="h-full w-full object-cover" />
+                                ) : (
+                                    <span className="flex h-full w-full flex-col items-center justify-center gap-2 text-[#9aa5b5] dark:text-slate-500">
+                                        <i className="fa-solid fa-user text-3xl" aria-hidden="true" />
+                                        <span className="text-[10px] font-bold uppercase">Belum ada foto</span>
+                                    </span>
+                                )}
+                                {photoPreview && <span className="absolute bottom-1.5 left-1.5 rounded-md bg-emerald-600 px-2 py-1 text-[9px] font-bold text-white">PREVIEW BARU</span>}
+                            </div>
+                            <div className="min-w-0 flex-1 text-center sm:text-left">
+                                <p className="text-sm font-black text-[#172033] dark:text-white">Unggah foto atlet</p>
+                                <p className="mt-1 text-xs leading-5 text-[#728098] dark:text-slate-400">Format JPG, PNG, atau WebP. Maksimal 2 MB. Foto akan tampil di daftar kontingen dan profil peserta publik.</p>
+                                {hasSelectedPhoto && (
+                                    <p className="mt-2 truncate text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                                        <i className="fa-solid fa-circle-check mr-1.5" aria-hidden="true" />
+                                        {form.data.profile_photo.name} · {(form.data.profile_photo.size / 1024).toFixed(0)} KB
+                                    </p>
+                                )}
+                                <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                                    <label htmlFor="athlete-photo" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#c0392b] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#a82718] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#c0392b]">
+                                        <i className="fa-solid fa-camera" aria-hidden="true" />
+                                        {photoPreview || editing?.profile_photo_url ? 'Ganti Foto' : 'Pilih Foto'}
+                                    </label>
+                                    {photoPreview && <Button type="button" variant="outline" size="sm" onClick={clearSelectedPhoto}>Batalkan Foto Baru</Button>}
+                                </div>
+                                <input
+                                    ref={photoInputRef}
+                                    id="athlete-photo"
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    className="sr-only"
+                                    onChange={(event) => form.setData('profile_photo', event.target.files?.[0] || null)}
+                                />
+                                {form.errors.profile_photo && <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-300">{form.errors.profile_photo}</p>}
+                            </div>
+                        </div>
+                    </div>
+                    <Textarea id="athlete-address" label="Alamat Rumah" rows={3} value={form.data.home_address} onChange={(event) => form.setData('home_address', event.target.value)} error={form.errors.home_address} containerClassName="md:col-span-2" />
+                </div>
+                <SchoolFields form={form} />
+            </form>
+        </Modal>
+        <AlertConfirm isOpen={Boolean(deleting)} title="Hapus master atlet?" message={`${deleting?.name || 'Atlet'} akan dihapus dari daftar aktif. Riwayat pertandingan yang sudah tercatat tetap tersimpan.`} confirmText="Hapus Atlet" isLoading={deleteProcessing} error={deleteError} onConfirm={deleteAthlete} onCancel={() => { if (!deleteProcessing) setDeleting(null); }} />
     </div>;
 }
 
-function OfficialsSection({ officials = [], manageUrl }) {
+const officialDefaults = { name: '', role: '', gender: 'male', phone: '', email: '', notes: '' };
+
+function OfficialsSection({ officials = [] }) {
+    const [editing, setEditing] = useState(null);
+    const [formOpen, setFormOpen] = useState(false);
+    const [deleting, setDeleting] = useState(null);
+    const [deleteError, setDeleteError] = useState('');
+    const [deleteProcessing, setDeleteProcessing] = useState(false);
+    const form = useForm(officialDefaults);
+
+    const resetOfficialForm = () => {
+        setFormOpen(false);
+        setEditing(null);
+        form.reset();
+        form.clearErrors();
+    };
+    const closeForm = () => {
+        if (!form.processing) resetOfficialForm();
+    };
+    const createOfficial = () => {
+        setEditing(null);
+        form.setData({ ...officialDefaults });
+        form.clearErrors();
+        setFormOpen(true);
+    };
+    const editOfficial = (official) => {
+        setEditing(official);
+        form.setData({
+            name: official.name || '',
+            role: official.role || '',
+            gender: official.gender || 'male',
+            phone: official.phone || '',
+            email: official.email || '',
+            notes: official.notes || '',
+        });
+        form.clearErrors();
+        setFormOpen(true);
+    };
+    const submit = (event) => {
+        event.preventDefault();
+        const options = { preserveScroll: true, onSuccess: resetOfficialForm };
+        if (editing) form.put(`/kontingen/official/${editing.id}`, options);
+        else form.post('/kontingen/official', options);
+    };
+    const deleteOfficial = () => {
+        if (!deleting || deleteProcessing) return;
+        setDeleteProcessing(true);
+        setDeleteError('');
+        router.delete(`/kontingen/official/${deleting.id}`, {
+            preserveScroll: true,
+            onSuccess: () => setDeleting(null),
+            onError: (errors) => setDeleteError(Object.values(errors).flat().join(' ')),
+            onFinish: () => setDeleteProcessing(false),
+        });
+    };
+
     return <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#7d756d]"><strong className="text-[#1c1815]">{officials.length}</strong> official terdaftar</p>{manageUrl && <Link href={manageUrl} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#c93629] px-4 py-2 text-xs font-bold text-white"><i className="fa-solid fa-plus" /> Kelola Official</Link>}</div>
-        {officials.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{officials.map((official) => <article key={official.id} className="rounded-2xl border border-[#e6dfd6] bg-white p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fff4df] text-[#b17c13]"><i className="fa-solid fa-id-badge" /></span><div className="min-w-0"><h2 className="truncate text-sm font-bold">{official.name}</h2><p className="mt-0.5 text-xs font-semibold text-[#c93629]">{official.role || 'Official'}</p></div></div><dl className="mt-4 space-y-2 border-t border-[#eee8e0] pt-3 text-xs"><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Telepon</dt><dd className="text-right font-semibold">{official.phone || '-'}</dd></div><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Email</dt><dd className="truncate text-right font-semibold">{official.email || '-'}</dd></div><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Gender</dt><dd className="text-right font-semibold">{official.gender || '-'}</dd></div></dl></article>)}</div> : <EmptyState icon="fa-id-badge" title="Belum ada official" description="Tambahkan manajer, pelatih, dan pendamping melalui detail registrasi." />}
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-[#7d756d]"><strong className="text-[#1c1815]">{officials.length}</strong> official master</p><p className="mt-1 text-[11px] text-[#918980]">Tidak terikat event dan dapat dipilih kembali saat registrasi.</p></div><Button type="button" onClick={createOfficial} iconLeft={<i className="fa-solid fa-plus" />}>Tambah Official</Button></div>
+        {officials.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{officials.map((official) => <article key={official.id} className="rounded-2xl border border-[#e6dfd6] bg-white p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fff4df] text-[#b17c13]"><i className="fa-solid fa-id-badge" /></span><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-bold">{official.name}</h2><p className="mt-0.5 text-xs font-semibold text-[#c93629]">{official.role || 'Official'}</p></div></div><dl className="mt-4 space-y-2 border-t border-[#eee8e0] pt-3 text-xs"><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Telepon</dt><dd className="text-right font-semibold">{official.phone || '-'}</dd></div><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Email</dt><dd className="truncate text-right font-semibold">{official.email || '-'}</dd></div><div className="flex justify-between gap-3"><dt className="text-[#8b837b]">Gender</dt><dd className="text-right font-semibold">{official.gender === 'male' ? 'Putra' : 'Putri'}</dd></div></dl><div className="mt-4 flex justify-end gap-2 border-t border-[#eee8e0] pt-3"><Button type="button" size="sm" variant="outline" onClick={() => editOfficial(official)} iconLeft={<i className="fa-solid fa-pen" />}>Edit</Button><Button type="button" size="sm" variant="danger" onClick={() => { setDeleteError(''); setDeleting(official); }} aria-label={`Hapus ${official.name}`}><i className="fa-solid fa-trash" /></Button></div></article>)}</div> : <EmptyState icon="fa-id-badge" title="Belum ada official master" description="Tambahkan manajer, pelatih, medis, atau pendamping yang dapat digunakan pada seluruh event." />}
+
+        <Modal isOpen={formOpen} onClose={closeForm} title={editing ? 'Edit Master Official' : 'Tambah Master Official'} subtitle="Data ini tidak terikat pada satu event." size="2xl" closeOnBackdrop={!form.processing} footer={<><Button type="button" variant="outline" onClick={closeForm} disabled={form.processing}>Batal</Button><Button type="submit" form="master-official-form" loading={form.processing}>{editing ? 'Simpan Perubahan' : 'Simpan Official'}</Button></>}>
+            <form id="master-official-form" onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+                <Input id="official-name" label="Nama Official" required value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} error={form.errors.name} />
+                <Input id="official-role" label="Jabatan" required placeholder="Pelatih, Manajer, Medis..." value={form.data.role} onChange={(event) => form.setData('role', event.target.value)} error={form.errors.role} />
+                <Select label="Gender" required clearable={false} value={form.data.gender} onChange={(value) => form.setData('gender', value)} options={[{ value: 'male', label: 'Putra' }, { value: 'female', label: 'Putri' }]} error={form.errors.gender} />
+                <Input id="official-phone" label="Nomor HP / WhatsApp" inputMode="tel" value={form.data.phone} onChange={(event) => form.setData('phone', event.target.value)} error={form.errors.phone} />
+                <Input id="official-email" label="Email" type="email" value={form.data.email} onChange={(event) => form.setData('email', event.target.value)} error={form.errors.email} />
+                <Textarea id="official-notes" label="Catatan" rows={3} value={form.data.notes} onChange={(event) => form.setData('notes', event.target.value)} error={form.errors.notes} containerClassName="md:col-span-2" />
+            </form>
+        </Modal>
+        <AlertConfirm isOpen={Boolean(deleting)} title="Hapus master official?" message={`${deleting?.name || 'Official'} akan dihapus dari daftar aktif kontingen.`} confirmText="Hapus Official" isLoading={deleteProcessing} error={deleteError} onConfirm={deleteOfficial} onCancel={() => { if (!deleteProcessing) setDeleting(null); }} />
     </div>;
 }
 
@@ -217,8 +534,10 @@ export default function ContingentPortal(props) {
         registration: <RegistrationSection registration={props.registration} summary={props.summary} registrationEvents={props.registration_events} activeEventId={props.portal?.event?.id} />,
         schedule: <ScheduleSection rundowns={props.rundowns} matches={props.matches} />,
         results: <ResultsSection results={props.results} medalSummary={props.medal_summary} />,
-        athletes: <AthletesSection athletes={props.athletes} manageUrl={props.manage_url} />,
-        officials: <OfficialsSection officials={props.officials} manageUrl={props.manage_url} />,
+        'embu-results': <EmbuResultsSection results={props.embu_results} />,
+        'randori-results': <RandoriResultsSection results={props.randori_results} />,
+        athletes: <AthletesSection athletes={props.athletes} kyus={props.kyus} />,
+        officials: <OfficialsSection officials={props.officials} />,
         history: <HistorySection registrations={props.registrations} />,
     }[props.section];
 
@@ -232,7 +551,7 @@ export default function ContingentPortal(props) {
                         <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#d7a93e]">{props.portal?.contingent?.name}</p><h1 className="mt-1 font-cinzel text-xl font-bold md:text-2xl">{meta[0]}</h1><p className="mt-1 max-w-2xl text-xs leading-5 text-[#bdb4ac]">{meta[1]}</p></div>
                     </div>
                 </section>
-                {['schedule', 'results', 'athletes', 'officials'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
+                {['schedule', 'results', 'embu-results', 'randori-results'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
                 {content}
             </div>
         </ContingentLayout>

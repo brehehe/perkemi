@@ -4,11 +4,14 @@ namespace App\Services;
 
 use App\Models\Event;
 use App\Models\User;
+use App\Services\Admin\DashboardEventAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class AuthenticatedLandingService
 {
+    public function __construct(private DashboardEventAccessService $dashboardEventAccess) {}
+
     public function urlFor(Request $request): string
     {
         $user = $request->user();
@@ -29,9 +32,7 @@ class AuthenticatedLandingService
         ])->first(fn (?Event $candidate): bool => $candidate instanceof Event && $this->canAccessEvent($candidate, $user));
 
         if (! $event && ! $user->hasAnyRole(['Super Admin', 'Admin'])) {
-            $event = $user->accessibleEvents()
-                ->orderByDesc('events.is_active')
-                ->orderByDesc('events.start_date')
+            $event = $this->dashboardEventAccess->assignedEventsFor($user)
                 ->first();
 
             $event ??= $user->contingent()->with('event')->first()?->event;
@@ -65,9 +66,27 @@ class AuthenticatedLandingService
 
     public function canAccessEvent(Event $event, User $user): bool
     {
-        return $user->hasAnyRole(['Super Admin', 'Admin'])
-            || $event->accessRoleFor($user) !== null
+        return $this->dashboardEventAccess->canAccess($user, $event)
             || $event->contingents()->where('user_id', $user->id)->exists();
+    }
+
+    public function dashboardUrl(Request $request): string
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return route('login');
+        }
+
+        $eventId = $request->session()->get('tenant_event_id');
+        $parameters = is_string($eventId) && $eventId !== '' ? ['event_id' => $eventId] : [];
+
+        return match (true) {
+            $user->hasAnyRole(['kontingen', 'Contingent']) && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('kontingen.registrasi', $parameters),
+            $user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('wasit.portal', $parameters),
+            $user->hasRole('Panitera') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('admin.panitera.scoring.index', $parameters),
+            default => route('admin.dashboard', $parameters),
+        };
     }
 
     private function isContingentOnlyAccess(Event $event, User $user): bool

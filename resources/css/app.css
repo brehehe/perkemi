@@ -32,6 +32,107 @@
     font-variant-numeric: tabular-nums;
 }
 
+html {
+    color-scheme: light;
+    background: #f7f4ef;
+}
+
+html.dark {
+    color-scheme: dark;
+    background: #0f1115;
+}
+
+body {
+    min-height: 100vh;
+    background: inherit;
+}
+
+/* Shared bridge for legacy admin screens while components migrate to semantic tokens. */
+.theme-shell {
+    --panel-bg: #ffffff;
+    --panel-soft: #faf8f5;
+    --panel-border: #e7e0d8;
+    --panel-text: #17120f;
+    --panel-muted: #776f67;
+}
+
+.dark .theme-shell {
+    --panel-bg: #171a20;
+    --panel-soft: #1e222a;
+    --panel-border: #343a45;
+    --panel-text: #f4f4f5;
+    --panel-muted: #a7adb7;
+}
+
+.dark .theme-shell :is([class~='bg-white'], [class*='bg-[#fff]'], [class*='bg-[#fbfaf8]'], [class*='bg-[#faf8f5]'], [class*='bg-[#fcfbf9]']) {
+    background-color: var(--panel-bg);
+}
+
+.dark .theme-shell :is([class*='bg-[#f7f4ef]'], [class*='bg-[#f8f5f0]'], [class*='bg-[#f5f1eb]'], [class*='bg-[#eeeae4]'], [class*='bg-[#ede9e1]']) {
+    background-color: var(--panel-soft);
+}
+
+.dark .theme-shell :is([class*='bg-[#efeae3]'], [class*='bg-[#f4efe7]']) {
+    background-color: var(--panel-soft);
+}
+
+.dark .theme-shell [class*='bg-[#fff8e8]'] {
+    background-color: #332a18;
+}
+
+.dark .theme-shell :is([class*='text-[#0f0d0b]'], [class*='text-[#17120f]'], [class*='text-[#1b1714]'], [class*='text-[#3d3732]'], [class*='text-[#403a35]'], [class*='text-[#514a43]'], [class*='text-[#555]']) {
+    color: var(--panel-text);
+}
+
+.dark .theme-shell :is([class*='text-[#706860]'], [class*='text-[#756c63]'], [class*='text-[#756e67]'], [class*='text-[#776f67]'], [class*='text-[#7a746e]'], [class*='text-[#888078]'], [class*='text-[#8b837b]'], [class*='text-[#8c847c]'], [class*='text-[#938a82]'], [class*='text-[#958d85]'], [class*='text-[#b5afa6]']) {
+    color: var(--panel-muted);
+}
+
+.dark .theme-shell :is([class*='border-[#ede9e1]'], [class*='border-[#eee8e0]'], [class*='border-[#e7e0d8]'], [class*='border-[#e6dfd6]'], [class*='border-[#e4ddd3]'], [class*='border-[#e5ded4]'], [class*='border-[#e7dfd5]'], [class*='border-[#e8e0d6]'], [class*='border-[#e8e1d8]'], [class*='border-[#e9e2d8]'], [class*='border-[#d7c7ad]']) {
+    border-color: var(--panel-border);
+}
+
+.dark .theme-shell :is(input, select, textarea) {
+    color: var(--panel-text);
+}
+
+.dark .theme-shell :is(input, select, textarea):not([type='checkbox']):not([type='radio']) {
+    border-color: var(--panel-border);
+    background-color: #11151b;
+}
+
+.dark .theme-shell :is(input, textarea)::placeholder {
+    color: #717784;
+}
+
+/* Court monitor keeps the broadcast look in dark mode and gains a high-contrast light mode. */
+html:not(.dark) .court-monitor {
+    background: #f3f0eb;
+    color: #17120f;
+}
+
+html:not(.dark) .court-monitor :is([class*='bg-[#151210]'], [class*='bg-[#090807]']) {
+    background-color: #ffffff;
+}
+
+html:not(.dark) .court-monitor :is([class*='bg-white/'], [class*='bg-black/']) {
+    background-color: #f5f1eb;
+}
+
+html:not(.dark) .court-monitor [class*='border-white/'] {
+    border-color: #ddd5ca;
+}
+
+html:not(.dark) .court-monitor :is([class*='text-white/'], [class~='text-white']) {
+    color: #6d665f;
+}
+
+html:not(.dark) .court-monitor .theme-toggle {
+    border-color: #d8d0c5;
+    background-color: #ffffff;
+    color: #332d28;
+}
+
 /* ── CSS variables per mode for Auth Theme ── */
 :root {
     --bg:          #f7f4ef;

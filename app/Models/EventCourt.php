@@ -75,4 +75,9 @@ class EventCourt extends Model
     {
         return $this->hasMany(EmbuJudgeScore::class);
     }
+
+    public function tournamentMatches(): HasMany
+    {
+        return $this->hasMany(TournamentMatch::class);
+    }
 }

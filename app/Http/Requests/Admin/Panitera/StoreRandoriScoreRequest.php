@@ -40,8 +40,10 @@ class StoreRandoriScoreRequest extends FormRequest
             'shiro.batsu_5' => ['required', 'integer', 'between:0,20'],
             'shiro.batsu_10' => ['required', 'integer', 'between:0,20'],
             'signatures' => ['required', 'array:'.implode(',', RandoriScore::SignatureKeys)],
+            'signature_names' => ['nullable', 'array:'.implode(',', RandoriScore::SignatureKeys)],
             'notes' => ['nullable', 'string', 'max:1000'],
             'return_to_match' => ['nullable', 'boolean'],
+            'sync_client_id' => ['nullable', 'string', 'max:100'],
         ];
 
         foreach (RandoriScore::SignatureKeys as $signatureKey) {
@@ -51,6 +53,7 @@ class StoreRandoriScoreRequest extends FormRequest
                 'max:500000',
                 'regex:/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/',
             ];
+            $rules["signature_names.{$signatureKey}"] = ['nullable', 'string', 'max:120'];
         }
 
         return $rules;
@@ -64,6 +67,8 @@ class StoreRandoriScoreRequest extends FormRequest
             'signatures.*.string' => 'Tanda tangan :attribute tidak valid.',
             'signatures.*.regex' => 'Format tanda tangan :attribute tidak valid.',
             'signatures.*.max' => 'Ukuran tanda tangan :attribute terlalu besar.',
+            'signature_names.*.string' => 'Nama penandatangan :attribute tidak valid.',
+            'signature_names.*.max' => 'Nama penandatangan :attribute maksimal 120 karakter.',
         ];
     }
 
@@ -77,6 +82,12 @@ class StoreRandoriScoreRequest extends FormRequest
             'signatures.clerk' => 'Panitera',
             'signatures.red_manager' => 'Manajer Kontingen Merah',
             'signatures.white_manager' => 'Manajer Kontingen Putih',
+            'signature_names.arbitrase' => 'Arbitrase',
+            'signature_names.field_coordinator' => 'Koordinator Lapangan',
+            'signature_names.referee' => 'Wasit Lapangan',
+            'signature_names.clerk' => 'Panitera',
+            'signature_names.red_manager' => 'Manajer Kontingen Merah',
+            'signature_names.white_manager' => 'Manajer Kontingen Putih',
         ];
     }
 }

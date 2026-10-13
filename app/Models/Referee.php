@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class Referee extends Model
 {
@@ -25,6 +26,7 @@ class Referee extends Model
         'region',
         'phone',
         'email',
+        'profile_photo_path',
         'notes',
         'is_active',
     ];
@@ -64,5 +66,12 @@ class Referee extends Model
     public function embuJudgeScores(): HasMany
     {
         return $this->hasMany(EmbuJudgeScore::class);
+    }
+
+    public function profilePhotoUrl(): ?string
+    {
+        return $this->profile_photo_path
+            ? Storage::disk('public')->url($this->profile_photo_path)
+            : null;
     }
 }

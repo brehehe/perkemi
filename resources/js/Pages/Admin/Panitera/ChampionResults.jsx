@@ -33,6 +33,30 @@ function ClassificationBadge({ isExhibition, participantCount, hasDrawing = true
     );
 }
 
+function ChampionPreview({ candidates }) {
+    return (
+        <div className="mt-3 grid gap-2 border-t border-current/10 pt-3 sm:grid-cols-2">
+            {candidates.map((candidate) => {
+                const rank = rankDetails[candidate.rank] || rankDetails[3];
+
+                return (
+                    <div key={candidate.rank} className={`rounded-xl border p-3 ${rank.color}`}>
+                        <div className="flex items-center gap-2">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-xs">
+                                <i className={`fa-solid ${rank.icon}`} aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0">
+                                <p className="text-[9px] font-black uppercase tracking-wide">{rank.label} · {rank.medal}</p>
+                                <p className="mt-0.5 break-words text-xs font-black leading-5 text-[#17120f]">{candidate.label}</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 function CategoryDirectory({ activeEvent, categories, selectedCategory, canManage, errors, onSelect }) {
     const [generateTarget, setGenerateTarget] = useState(null);
     const [generatingId, setGeneratingId] = useState(null);
@@ -99,9 +123,7 @@ function CategoryDirectory({ activeEvent, categories, selectedCategory, canManag
                                     <div className={`mt-3 rounded-xl border p-3 text-[11px] leading-5 ${category.generation_ready ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
                                         <p className="font-bold">{category.generation_message}</p>
                                         {category.generation_candidates?.length > 0 && (
-                                            <ol className="mt-2 space-y-1 border-t border-current/10 pt-2">
-                                                {category.generation_candidates.map((candidate) => <li key={candidate.rank}><span className="font-black">#{candidate.rank}</span> {candidate.label}</li>)}
-                                            </ol>
+                                            <ChampionPreview candidates={category.generation_candidates} />
                                         )}
                                     </div>
 
@@ -231,7 +253,7 @@ function ChampionEditor({ activeEvent, championship, canManage }) {
 
                         {(form.errors.champions || errors.category) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{form.errors.champions || errors.category}</p>}
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="mt-4 grid gap-4">
                             {form.data.champions.map((champion) => {
                                 const rank = rankDetails[champion.rank];
                                 return (

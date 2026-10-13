@@ -15,12 +15,14 @@ class RandoriResultService
      * @param  array<string, int|string>  $akaBreakdown
      * @param  array<string, int|string>  $shiroBreakdown
      * @param  array<string, string>|null  $signatures
+     * @param  array<string, string|null>|null  $signatureNames
      */
     public function record(
         TournamentMatch $match,
         array $akaBreakdown,
         array $shiroBreakdown,
         ?array $signatures,
+        ?array $signatureNames,
         ?string $notes,
         string $userId,
     ): RandoriScore {
@@ -33,7 +35,7 @@ class RandoriResultService
             ]);
         }
 
-        return DB::transaction(function () use ($match, $akaBreakdown, $shiroBreakdown, $akaTotal, $shiroTotal, $signatures, $notes, $userId): RandoriScore {
+        return DB::transaction(function () use ($match, $akaBreakdown, $shiroBreakdown, $akaTotal, $shiroTotal, $signatures, $signatureNames, $notes, $userId): RandoriScore {
             $winnerCorner = $akaTotal > $shiroTotal ? 'aka' : 'shiro';
             $score = RandoriScore::query()
                 ->where('tournament_match_id', $match->id)
@@ -55,6 +57,10 @@ class RandoriResultService
                 'shiro_total' => $shiroTotal,
                 'winner_corner' => $winnerCorner,
                 'signatures' => $signatures,
+                'signature_names' => collect($signatureNames)
+                    ->only(RandoriScore::SignatureKeys)
+                    ->map(fn (mixed $name): ?string => is_string($name) && trim($name) !== '' ? trim($name) : null)
+                    ->all(),
                 'status' => 'verified',
                 'submitted_by' => $userId,
                 'verified_by' => $userId,

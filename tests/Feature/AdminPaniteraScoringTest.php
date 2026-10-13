@@ -1,14 +1,17 @@
 <?php
 
 use App\Events\PaniteraMatchStateUpdated;
+use App\Events\RandoriScoreStateUpdated;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
+use App\Models\Clerk;
 use App\Models\Contingent;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
 use App\Models\EmbuTeamTechnique;
 use App\Models\Event;
 use App\Models\EventCourt;
+use App\Models\EventCourtAssignment;
 use App\Models\EventMatchCategory;
 use App\Models\RandoriScore;
 use App\Models\Referee;
@@ -76,6 +79,24 @@ function createPaniteraUser(Event $event): User
     return $user;
 }
 
+function assignPaniteraUserToCourt(Event $event, User $user, EventCourt $court): Clerk
+{
+    $clerk = Clerk::create([
+        'name' => $user->name,
+        'email' => $user->email,
+        'is_active' => true,
+    ]);
+    $event->clerks()->attach($clerk, ['role' => 'scorer']);
+    EventCourtAssignment::create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'clerk',
+        'staff_id' => $clerk->id,
+        'role' => 'scorer',
+    ]);
+
+    return $clerk;
+}
+
 test('an assigned clerk sees only the selected event dashboard', function () {
     $event = createPaniteraEvent('Event Panitera Utama');
     $otherEvent = createPaniteraEvent('Event Panitera Lain');
@@ -95,7 +116,7 @@ test('an assigned clerk sees only the selected event dashboard', function () {
         ->assertNotFound();
 });
 
-test('the Panitera dashboard separates Embu and Randori match tables', function () {
+test('the Panitera dashboard combines Embu and Randori into one scheduled list', function () {
     $event = createPaniteraEvent('Event Tabel Panitera');
     $user = createPaniteraUser($event);
     [$embuCategory, $embuDrawing] = createPaniteraCategory($event, 'Embu Putra', 'embu', 'embu_direct_final');
@@ -125,10 +146,123 @@ test('the Panitera dashboard separates Embu and Randori match tables', function 
         ->get("/admin/panitera/scoring?event_id={$event->id}")
         ->assertInertia(fn (Assert $page) => $page
             ->component('Admin/Panitera/Dashboard')
-            ->has('embuMatches', 1)
-            ->where('embuMatches.0.id', $embuMatch->id)
-            ->has('randoriMatches', 1)
-            ->where('randoriMatches.0.id', $randoriMatch->id)
+            ->has('matches.data', 2)
+            ->where('matches.total', 2)
+            ->where('matches.data', fn ($matches): bool => collect($matches)->pluck('id')->sort()->values()->all() === collect([$embuMatch->id, $randoriMatch->id])->sort()->values()->all())
+        );
+});
+
+test('an assigned Panitera sees and opens only matches from the assigned court', function () {
+    $event = createPaniteraEvent('Event Court Terbatas');
+    $user = createPaniteraUser($event);
+    $firstCourt = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $secondCourt = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    assignPaniteraUserToCourt($event, $user, $firstCourt);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Court Terbatas', 'embu', 'embu_direct_final');
+    $firstCourtMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $firstCourt->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Court 1',
+        'scheduled_start_at' => '2026-11-07 08:30:00',
+    ]);
+    $secondCourtMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $secondCourt->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 2,
+        'participant_label' => 'Tim Court 2',
+        'scheduled_start_at' => '2026-11-07 08:40:00',
+    ]);
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('isCourtRestricted', true)
+            ->has('courts', 1)
+            ->where('courts.0.id', $firstCourt->id)
+            ->where('matches.total', 1)
+            ->where('matches.data.0.id', $firstCourtMatch->id)
+        );
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/matches/{$secondCourtMatch->id}?event_id={$event->id}")
+        ->assertNotFound();
+});
+
+test('the Panitera dashboard paginates the combined schedule and filters completion status', function () {
+    $event = createPaniteraEvent('Event Filter dan Paginasi');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Paginasi',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    [$embuCategory, $embuDrawing] = createPaniteraCategory($event, 'Embu Paginasi', 'embu', 'embu_direct_final');
+    [$randoriCategory, $randoriDrawing] = createPaniteraCategory($event, 'Randori Paginasi', 'randori', 'single_elimination');
+
+    foreach (range(1, 16) as $index) {
+        $isEmbu = $index % 2 === 1;
+        TournamentMatch::create([
+            'tournament_drawing_id' => $isEmbu ? $embuDrawing->id : $randoriDrawing->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $isEmbu ? $embuCategory->id : $randoriCategory->id,
+            'event_court_id' => $court->id,
+            'phase' => $isEmbu ? 'preliminary' : 'upper',
+            'round_label' => $isEmbu ? 'Penyisihan' : 'Babak 1',
+            'match_sequence' => (int) ceil($index / 2),
+            'participant_label' => $isEmbu ? "Tim Embu {$index}" : null,
+            'red_label' => $isEmbu ? null : "Atlet Merah {$index}",
+            'blue_label' => $isEmbu ? null : "Atlet Putih {$index}",
+            'scheduled_start_at' => Carbon::parse('2026-11-07 08:00:00')->addMinutes($index * 10),
+            'status' => $index <= 6 ? 'completed' : 'pending',
+            'metadata' => ['placeholder' => false],
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('matches.total', 16)
+            ->where('matches.per_page', 15)
+            ->where('matches.last_page', 2)
+            ->has('matches.data', 15)
+        );
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}&status=completed")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.status', 'completed')
+            ->where('matches.total', 6)
+            ->has('matches.data', 6)
+            ->where('matches.data', fn ($matches): bool => collect($matches)->every(fn (array $match): bool => $match['status'] === 'completed'))
+        );
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}&category_type=randori")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.category_type', 'randori')
+            ->where('matches.total', 8)
+            ->has('matches.data', 8)
+            ->where('matches.data', fn ($matches): bool => collect($matches)->every(fn (array $match): bool => $match['category_type'] === 'randori'))
         );
 });
 
@@ -189,12 +323,21 @@ test('randori match detail provides the saved breakdown for inline editing', fun
     ]);
     $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     $signatures = array_fill_keys(['arbitrase', 'field_coordinator', 'referee', 'clerk', 'red_manager', 'white_manager'], $signature);
+    $signatureNames = [
+        'arbitrase' => 'Sensei Arbitrase',
+        'field_coordinator' => 'Koordinator Court 1',
+        'referee' => 'Wasit Lapangan A',
+        'clerk' => 'Panitera Court 1',
+        'red_manager' => 'Manajer Merah',
+        'white_manager' => 'Manajer Putih',
+    ];
     RandoriScore::factory()->create([
         'event_id' => $event->id,
         'tournament_match_id' => $match->id,
         'aka_breakdown' => ['mujoken' => 0, 'ippon' => 1, 'waza_ari' => 1, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0],
         'shiro_breakdown' => ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 1, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0],
         'signatures' => $signatures,
+        'signature_names' => $signatureNames,
         'notes' => 'Keputusan final meja Panitera.',
         'submitted_by' => $user->id,
         'verified_by' => $user->id,
@@ -209,7 +352,70 @@ test('randori match detail provides the saved breakdown for inline editing', fun
             ->where('match.result.shiro_breakdown.waza_ari', 1)
             ->where('match.result.signatures.arbitrase', $signature)
             ->where('match.result.signatures.white_manager', $signature)
+            ->where('match.result.signature_names.arbitrase', 'Sensei Arbitrase')
+            ->where('match.result.signature_names.white_manager', 'Manajer Putih')
             ->where('match.result.notes', 'Keputusan final meja Panitera.')
+        );
+});
+
+test('the next match follows the later court schedule instead of an older unfinished match', function () {
+    $event = createPaniteraEvent('Event Urutan Jadwal Panitera');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Urutan',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    [$embuCategory, $embuDrawing] = createPaniteraCategory($event, 'Embu Jadwal Lama', 'embu', 'embu_direct_final');
+    [$randoriCategory, $randoriDrawing] = createPaniteraCategory($event, 'Randori Jadwal Aktif', 'randori', 'single_elimination');
+    TournamentMatch::create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Lama Belum Selesai',
+        'scheduled_start_at' => '2026-11-07 10:00:00',
+        'status' => 'pending',
+    ]);
+    $currentMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'upper',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 1,
+        'red_label' => 'Atlet Merah Saat Ini',
+        'blue_label' => 'Atlet Putih Saat Ini',
+        'scheduled_start_at' => '2026-11-08 09:40:00',
+        'status' => 'in_progress',
+        'metadata' => ['placeholder' => false],
+    ]);
+    $scheduledNextMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'upper',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 2,
+        'red_label' => 'Atlet Merah Berikutnya',
+        'blue_label' => 'Atlet Putih Berikutnya',
+        'scheduled_start_at' => '2026-11-08 09:50:00',
+        'status' => 'pending',
+        'metadata' => ['placeholder' => false],
+    ]);
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/matches/{$currentMatch->id}?event_id={$event->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('nextMatch.id', $scheduledNextMatch->id)
+            ->where('nextMatch.category_type', 'randori')
+            ->where('nextMatch.scheduled_at', '08 Nov 2026, 09:50')
         );
 });
 
@@ -259,6 +465,8 @@ test('calling a new match releases the previous active match on the same court',
     expect($firstMatch->fresh()->status)->toBe('in_progress')
         ->and($firstMatch->fresh()->timer_status)->toBe('running');
 
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
     $this->actingAs($user)
         ->put("/admin/panitera/scoring/matches/{$secondMatch->id}/workflow", [
             'event_id' => $event->id,
@@ -271,6 +479,9 @@ test('calling a new match releases the previous active match on the same court',
         ->and($firstMatch->fresh()->timer_status)->toBe('stopped')
         ->and($secondMatch->fresh()->status)->toBe('ready')
         ->and($secondMatch->fresh()->call_status)->toBe('officials_called');
+
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($broadcast): bool => $broadcast->matchId === $firstMatch->id
+        && $broadcast->action === 'release' && $broadcast->timer['status'] === 'stopped' && $broadcast->timer['version'] === 4);
 });
 
 test('a match cannot start before its participant is called', function () {
@@ -390,6 +601,98 @@ test('pausing a match broadcasts the authoritative timer state for its court mon
 
     expect($match->fresh()->timer_status)->toBe('paused')
         ->and($match->fresh()->timer_version)->toBe(8);
+});
+
+test('lightweight timer snapshots share precise state without returning scores or signatures', function () {
+    $this->travelTo(Carbon::parse('2026-11-07 09:00:05.250'));
+    $event = createPaniteraEvent('Snapshot Timer');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court 1', 'order' => 1, 'is_active' => true]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Timer', 'randori', 'double_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $court->id,
+        'phase' => 'upper', 'round_label' => 'Upper Bracket', 'match_sequence' => 1,
+        'status' => 'in_progress', 'call_status' => 'participants_called', 'called_at' => now(),
+        'timer_status' => 'running', 'timer_started_at' => now()->subSeconds(5),
+        'timer_started_at_ms' => now()->getTimestampMs() - 5250,
+        'timer_elapsed_ms' => 32400, 'timer_version' => 7,
+        'metadata' => ['panitera' => ['timer_direction' => 'down', 'timer_duration_seconds' => 90]],
+    ]);
+    $this->withServerVariables(['REQUEST_TIME_FLOAT' => (now()->getTimestampMs() - 20) / 1000]);
+
+    foreach (["matches/{$match->id}", "monitors/{$court->id}"] as $path) {
+        $this->actingAs($user)->getJson("/admin/panitera/scoring/{$path}/timer?event_id={$event->id}")
+            ->assertOk()
+            ->assertHeaderContains('Cache-Control', 'no-store')
+            ->assertJsonPath('match_id', $match->id)
+            ->assertJsonPath('event_id', $event->id)
+            ->assertJsonPath('court_id', $court->id)
+            ->assertJsonPath('timer.elapsed_ms', 32400)
+            ->assertJsonPath('timer.started_at_ms', now()->getTimestampMs() - 5250)
+            ->assertJsonPath('timer.duration_ms', 90000)
+            ->assertJsonPath('timer.direction', 'down')
+            ->assertJsonPath('timer.version', 7)
+            ->assertJsonPath('observed_at_ms', now()->getTimestampMs())
+            ->assertJsonPath('server_received_at_ms', now()->getTimestampMs() - 20)
+            ->assertJsonPath('server_now_ms', now()->getTimestampMs())
+            ->assertJsonMissingPaths(['result', 'staff', 'judgeProgress', 'signatures']);
+    }
+    expect($match->fresh()->timer_version)->toBe(7);
+});
+
+test('json timer commands return the authoritative state without redirecting the operator', function () {
+    $this->travelTo(Carbon::parse('2026-11-07 09:00:05.250'));
+    $event = createPaniteraEvent('JSON Timer');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court JSON', 'order' => 1]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu JSON Timer', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $court->id,
+        'phase' => 'final', 'round_label' => 'Final', 'match_sequence' => 1,
+        'status' => 'in_progress', 'call_status' => 'participants_called',
+        'timer_status' => 'running', 'timer_started_at' => now()->subSeconds(5),
+        'timer_started_at_ms' => now()->getTimestampMs() - 5250,
+        'timer_elapsed_ms' => 32400, 'timer_version' => 7,
+    ]);
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
+
+    $response = $this->actingAs($user)->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'pause', 'timer_version' => 7,
+    ])->assertOk()->assertHeaderMissing('Location')
+        ->assertJsonPath('timer.status', 'paused')->assertJsonPath('timer.elapsed_ms', 37650)->assertJsonPath('timer.version', 8);
+
+    $this->assertDatabaseHas('tournament_matches', ['id' => $match->id, 'timer_status' => 'paused', 'timer_elapsed_ms' => 37650, 'timer_version' => 8]);
+    EventFacade::assertDispatched(PaniteraMatchStateUpdated::class, fn ($event): bool => $event->timer === $response->json('timer'));
+
+    $this->actingAs($user)->putJson("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+        'event_id' => $event->id, 'action' => 'reset_timer', 'timer_version' => 7,
+    ])->assertUnprocessable()->assertJsonValidationErrors('timer');
+    $this->assertDatabaseHas('tournament_matches', ['id' => $match->id, 'timer_status' => 'paused', 'timer_elapsed_ms' => 37650, 'timer_version' => 8]);
+    EventFacade::assertDispatchedTimes(PaniteraMatchStateUpdated::class, 1);
+});
+
+test('timer snapshots are scoped to the authenticated event and assigned court', function () {
+    $event = createPaniteraEvent('Timer Access');
+    $otherEvent = createPaniteraEvent('Other Timer Event');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court Assigned', 'order' => 1]);
+    $otherCourt = EventCourt::create(['event_id' => $event->id, 'name' => 'Court Other', 'order' => 2]);
+    assignPaniteraUserToCourt($event, $user, $court);
+    [$category, $drawing] = createPaniteraCategory($event, 'Timer Scoped', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id, 'event_id' => $event->id,
+        'event_match_category_id' => $category->id, 'event_court_id' => $otherCourt->id,
+        'phase' => 'final', 'round_label' => 'Final', 'match_sequence' => 1, 'status' => 'pending',
+    ]);
+
+    $this->getJson("/admin/panitera/scoring/monitors/{$court->id}/timer?event_id={$event->id}")->assertUnauthorized();
+    $this->actingAs($user)->getJson("/admin/panitera/scoring/monitors/{$court->id}/timer?event_id={$event->id}")
+        ->assertOk()->assertJsonPath('match_id', null)->assertJsonPath('timer', null);
+    $this->actingAs($user)->getJson("/admin/panitera/scoring/monitors/{$otherCourt->id}/timer?event_id={$event->id}")->assertNotFound();
+    $this->actingAs($user)->getJson("/admin/panitera/scoring/matches/{$match->id}/timer?event_id={$event->id}")->assertNotFound();
+    $this->actingAs($user)->getJson("/admin/panitera/scoring/monitors/{$court->id}/timer?event_id={$otherEvent->id}")->assertNotFound();
 });
 
 test('a clerk finishes an Embu match and the official duration penalty updates its score', function () {
@@ -865,6 +1168,37 @@ test('a clerk configures a countdown and opens the event scoped court monitor', 
         ->assertNotFound();
 });
 
+test('the officials monitor exposes only referees ordered by judge position', function () {
+    $event = createPaniteraEvent('Event Monitor Wasit');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court Wasit',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    assignPaniteraUserToCourt($event, $user, $court);
+    $chief = Referee::query()->create(['name' => 'Wasit Utama Monitor', 'gender' => 'male', 'is_active' => true]);
+    $assistant = Referee::query()->create(['name' => 'Wasit Pembantu Monitor', 'gender' => 'female', 'is_active' => true]);
+    $event->referees()->attach($chief, ['role' => 'chief']);
+    $event->referees()->attach($assistant, ['role' => 'judge']);
+    EventCourtAssignment::query()->create(['event_court_id' => $court->id, 'staff_type' => 'referee', 'staff_id' => $assistant->id, 'role' => 'assistant_2']);
+    EventCourtAssignment::query()->create(['event_court_id' => $court->id, 'staff_type' => 'referee', 'staff_id' => $chief->id, 'role' => 'chief']);
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/monitors/{$court->id}?event_id={$event->id}&mode=officials")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/CourtMonitor')
+            ->where('mode', 'officials')
+            ->has('monitor.staff', 2)
+            ->where('monitor.staff.0.name', 'Wasit Utama Monitor')
+            ->where('monitor.staff.0.judge_number', 1)
+            ->where('monitor.staff.1.name', 'Wasit Pembantu Monitor')
+            ->where('monitor.staff.1.judge_number', 5)
+            ->where('monitor.staff.0.type', 'referee'));
+});
+
 test('the court monitor shows the registered Embu athletes and techniques', function () {
     $event = createPaniteraEvent('Event Monitor Peserta Embu');
     $user = createPaniteraUser($event);
@@ -979,7 +1313,7 @@ test('the Panitera dashboard reports match progress for each court', function ()
             ->where('courts.0.total_matches', 2)
             ->where('courts.0.completed_matches', 1)
             ->where('courts.0.active_match.id', $activeMatch->id)
-            ->where('embuMatches.0.court_id', $court->id)
+            ->where('matches.data.0.court_id', $court->id)
         );
 });
 
@@ -1061,6 +1395,14 @@ test('randori rejects a drawn score and accepts a result signed by all six parti
     $empty = ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 0, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0];
     $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     $signatures = array_fill_keys(['arbitrase', 'field_coordinator', 'referee', 'clerk', 'red_manager', 'white_manager'], $signature);
+    $signatureNames = [
+        'arbitrase' => 'Arbitrase Utama',
+        'field_coordinator' => 'Koordinator Lapangan',
+        'referee' => 'Wasit Lapangan',
+        'clerk' => 'Panitera Meja',
+        'red_manager' => 'Manajer Merah',
+        'white_manager' => 'Manajer Putih',
+    ];
 
     $this->actingAs($user)
         ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
@@ -1079,6 +1421,7 @@ test('randori rejects a drawn score and accepts a result signed by all six parti
             'aka' => $aka,
             'shiro' => $empty,
             'signatures' => $signatures,
+            'signature_names' => $signatureNames,
             'return_to_match' => true,
         ])
         ->assertRedirect(route('admin.panitera.matches.show', [
@@ -1095,8 +1438,95 @@ test('randori rejects a drawn score and accepts a result signed by all six parti
         'winner_corner' => 'aka',
     ]);
 
-    expect(RandoriScore::query()->whereBelongsTo($match)->firstOrFail()->signatures)
-        ->toMatchArray($signatures);
+    $savedScore = RandoriScore::query()->whereBelongsTo($match)->firstOrFail();
+
+    expect($savedScore->signatures)->toMatchArray($signatures)
+        ->and($savedScore->signature_names)->toMatchArray($signatureNames);
+});
+
+test('randori score and signature drafts are broadcast and restored for another device', function () {
+    $event = createPaniteraEvent('Event Draft Realtime Randori');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Realtime 60 kg', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'red_label' => 'Atlet Merah',
+        'blue_label' => 'Atlet Putih',
+        'metadata' => ['placeholder' => false],
+    ]);
+    $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    EventFacade::fake([RandoriScoreStateUpdated::class]);
+
+    $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/randori-result/{$match->id}/draft", [
+            'event_id' => $event->id,
+            'client_id' => 'device-panitera-a',
+            'changes' => [
+                'aka' => ['ippon' => 1],
+                'signatures' => ['arbitrase' => $signature],
+                'signature_names' => ['arbitrase' => 'Arbitrase Realtime'],
+                'notes' => 'Draft dari meja utama.',
+            ],
+        ])
+        ->assertOk()
+        ->assertJson([
+            'version' => 1,
+            'changed' => true,
+        ]);
+
+    EventFacade::assertDispatched(
+        RandoriScoreStateUpdated::class,
+        fn (RandoriScoreStateUpdated $broadcast): bool => $broadcast->eventId === $event->id
+            && $broadcast->matchId === $match->id
+            && $broadcast->action === 'draft_updated'
+            && $broadcast->version === 1
+            && $broadcast->clientId === 'device-panitera-a'
+            && $broadcast->changes['aka']['ippon'] === 1
+            && $broadcast->changes['signatures']['arbitrase'] === $signature,
+    );
+
+    $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/randori-result/{$match->id}/draft", [
+            'event_id' => $event->id,
+            'client_id' => 'device-panitera-b',
+            'changes' => [
+                'shiro' => ['waza_ari' => 1],
+                'signatures' => ['referee' => $signature],
+            ],
+        ])
+        ->assertOk()
+        ->assertJson([
+            'version' => 2,
+            'changed' => true,
+        ]);
+
+    EventFacade::assertDispatched(
+        RandoriScoreStateUpdated::class,
+        fn (RandoriScoreStateUpdated $broadcast): bool => $broadcast->version === 2
+            && $broadcast->clientId === 'device-panitera-b'
+            && $broadcast->changes['shiro']['waza_ari'] === 1
+            && $broadcast->changes['signatures']['referee'] === $signature,
+    );
+
+    $this->actingAs($user)
+        ->get(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('match.randori_draft.version', 2)
+            ->where('match.randori_draft.aka.ippon', 1)
+            ->where('match.randori_draft.shiro.waza_ari', 1)
+            ->where('match.randori_draft.signatures.arbitrase', $signature)
+            ->where('match.randori_draft.signatures.referee', $signature)
+            ->where('match.randori_draft.signature_names.arbitrase', 'Arbitrase Realtime')
+            ->where('match.randori_draft.notes', 'Draft dari meja utama.'));
 });
 
 test('randori requires a digital signature from each of the six approving parties', function () {

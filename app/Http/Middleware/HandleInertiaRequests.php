@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Event;
+use App\Services\AuthenticatedLandingService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -44,6 +45,7 @@ class HandleInertiaRequests extends Middleware
                     'name' => $request->user()->name,
                     'email' => $request->user()->email,
                     'roles' => $request->user()->roles ? $request->user()->roles->pluck('name')->toArray() : [],
+                    'dashboard_url' => app(AuthenticatedLandingService::class)->dashboardUrl($request),
                 ] : null,
             ],
             'flash' => [

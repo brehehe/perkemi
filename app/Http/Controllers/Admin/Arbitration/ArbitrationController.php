@@ -5,17 +5,29 @@ namespace App\Http\Controllers\Admin\Arbitration;
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Arbitration\StoreEventCourtAssignmentRequest;
+use App\Http\Requests\Admin\Arbitration\StoreEventRefereeRequest;
+use App\Http\Requests\Admin\Arbitration\UpdateEventRefereeRequest;
+use App\Models\EmbuJudgeScore;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\RandoriScore;
+use App\Models\Referee;
 use App\Models\RefereeAttendance;
 use App\Models\RefereeCourtAttendance;
 use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use App\Services\Referee\RefereeIdentity;
+use App\Services\Reports\ReportWorkbook;
+use App\Services\Reports\ScoreReportFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,11 +40,47 @@ class ArbitrationController extends Controller
     {
         $activeEvent = $this->eventForRequest($request);
         $search = $request->string('search')->trim()->toString();
+        $status = $request->string('status')->toString();
+        $status = in_array($status, ['active', 'inactive'], true) ? $status : 'all';
         $likeOperator = config('database.default') === 'pgsql' ? 'ilike' : 'like';
+
+        $allAssignedReferees = $activeEvent instanceof Event
+            ? $activeEvent->referees()
+                ->select([
+                    'referees.id',
+                    'referees.name',
+                    'referees.gender',
+                    'referees.dan_grade',
+                    'referees.license_number',
+                    'referees.certification_level',
+                    'referees.region',
+                    'referees.phone',
+                    'referees.email',
+                    'referees.profile_photo_path',
+                    'referees.notes',
+                    'referees.is_active',
+                ])
+                ->get()
+            : collect();
 
         $assignedReferees = $activeEvent instanceof Event
             ? $activeEvent->referees()
-                ->select(['referees.id', 'referees.name', 'referees.dan_grade', 'referees.license_number', 'referees.certification_level', 'referees.region', 'referees.phone', 'referees.is_active'])
+                ->select([
+                    'referees.id',
+                    'referees.name',
+                    'referees.gender',
+                    'referees.dan_grade',
+                    'referees.license_number',
+                    'referees.certification_level',
+                    'referees.region',
+                    'referees.phone',
+                    'referees.email',
+                    'referees.profile_photo_path',
+                    'referees.notes',
+                    'referees.is_active',
+                ])
+                ->when($status === 'active', fn ($query) => $query->where('referees.is_active', true))
+                ->when($status === 'inactive', fn ($query) => $query->where('referees.is_active', false))
                 ->when($search, fn ($query) => $query->where(fn ($query) => $query
                     ->where('referees.name', $likeOperator, "%{$search}%")
                     ->orWhere('referees.dan_grade', $likeOperator, "%{$search}%")
@@ -42,94 +90,162 @@ class ArbitrationController extends Controller
                 ->get()
             : collect();
 
-        $nationalA = $assignedReferees->filter(fn ($referee) => Str::contains(Str::lower((string) $referee->certification_level), ['nasional a', 'national a']))->count();
-        $nationalB = $assignedReferees->filter(fn ($referee) => Str::contains(Str::lower((string) $referee->certification_level), ['nasional b', 'national b']))->count();
+        $nationalA = $allAssignedReferees->filter(fn ($referee) => Str::contains(Str::lower((string) $referee->certification_level), ['nasional a', 'national a']))->count();
+        $nationalB = $allAssignedReferees->filter(fn ($referee) => Str::contains(Str::lower((string) $referee->certification_level), ['nasional b', 'national b']))->count();
 
         $referees = $assignedReferees->map(fn ($referee) => [
             'id' => $referee->id,
             'name' => $referee->name,
+            'gender' => $referee->gender,
             'dan_grade' => $referee->dan_grade ?: '-',
             'license' => $referee->certification_level ?: ($referee->license_number ?: 'Belum terverifikasi'),
+            'license_number' => $referee->license_number,
+            'certification_level' => $referee->certification_level,
             'region' => $referee->region ?: '-',
             'phone' => $referee->phone ?: '-',
+            'email' => $referee->email,
+            'photo_url' => $referee->profilePhotoUrl(),
+            'notes' => $referee->notes,
             'role' => $referee->pivot->role,
+            'role_label' => match ($referee->pivot->role) {
+                'chief' => 'Wasit Utama',
+                'judge' => 'Juri',
+                'reserve' => 'Wasit Cadangan',
+                default => 'Wasit',
+            },
             'is_active' => $referee->is_active,
         ])->values();
 
         $canManageEventReferees = $this->canManageEventStaff($request, $activeEvent);
+        $assignedRefereeIds = $allAssignedReferees->pluck('id');
+        $availableReferees = Referee::query()
+            ->whereNotIn('id', $assignedRefereeIds)
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'dan_grade', 'license_number', 'certification_level', 'region', 'is_active'])
+            ->map(fn (Referee $referee): array => [
+                'id' => $referee->id,
+                'name' => $referee->name,
+                'sublabel' => implode(' · ', array_filter([
+                    $referee->certification_level ?: $referee->license_number,
+                    $referee->dan_grade,
+                    $referee->region,
+                    $referee->is_active ? 'Aktif' : 'Tidak aktif',
+                ])),
+            ])
+            ->values();
 
         return Inertia::render('Admin/Arbitration/Referee', [
             'referees' => $referees,
             'stats' => [
-                'total_referees' => $assignedReferees->count(),
+                'total_referees' => $allAssignedReferees->count(),
+                'active_referees' => $allAssignedReferees->where('is_active', true)->count(),
+                'inactive_referees' => $allAssignedReferees->where('is_active', false)->count(),
                 'national_a' => $nationalA,
                 'national_b' => $nationalB,
-                'regional' => $assignedReferees->count() - $nationalA - $nationalB,
+                'regional' => $allAssignedReferees->count() - $nationalA - $nationalB,
             ],
             'filters' => [
                 'search' => $search,
+                'status' => $status,
             ],
             'activeEvent' => $activeEvent?->only(['id', 'name']),
+            'events' => $this->eventOptions($request),
+            'availableReferees' => $availableReferees,
             'canManageEventReferees' => $canManageEventReferees,
         ]);
+    }
+
+    public function storeReferee(StoreEventRefereeRequest $request): RedirectResponse
+    {
+        $event = $this->eventForRequest($request);
+        abort_unless($this->canManageEventStaff($request, $event), 403);
+
+        $validated = $request->validated();
+        $role = $validated['role'];
+        $source = $validated['source'];
+        $refereeId = $validated['referee_id'] ?? null;
+        $profilePhoto = $validated['profile_photo'] ?? null;
+        unset($validated['role'], $validated['source'], $validated['referee_id'], $validated['profile_photo']);
+
+        if ($source === 'new' && $profilePhoto) {
+            $validated['profile_photo_path'] = $profilePhoto->store('referee-photos', 'public');
+        }
+
+        DB::transaction(function () use ($event, $validated, $role, $source, $refereeId): void {
+            $referee = $source === 'existing'
+                ? Referee::query()->findOrFail($refereeId)
+                : Referee::query()->create($validated);
+
+            if ($event->referees()->whereKey($referee->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'referee_id' => 'Wasit tersebut sudah terdaftar pada event ini.',
+                ]);
+            }
+
+            $event->referees()->attach($referee, ['role' => $role]);
+        });
+
+        return back()->with('success', $source === 'existing'
+            ? 'Wasit dari master berhasil ditambahkan ke event.'
+            : 'Wasit baru berhasil dibuat dan ditambahkan ke event.');
+    }
+
+    public function updateReferee(UpdateEventRefereeRequest $request, Referee $referee): RedirectResponse
+    {
+        $event = $this->eventForRequest($request);
+        abort_unless($this->canManageEventStaff($request, $event), 403);
+        abort_unless($event?->referees()->whereKey($referee->id)->exists(), 404);
+
+        $validated = $request->validated();
+        $role = $validated['role'];
+        $profilePhoto = $validated['profile_photo'] ?? null;
+        unset($validated['role'], $validated['profile_photo']);
+
+        $previousPhotoPath = $referee->profile_photo_path;
+        if ($profilePhoto) {
+            $validated['profile_photo_path'] = $profilePhoto->store('referee-photos', 'public');
+        }
+
+        DB::transaction(function () use ($event, $referee, $validated, $role): void {
+            $referee->update($validated);
+            $event->referees()->updateExistingPivot($referee->id, ['role' => $role]);
+        });
+
+        if ($profilePhoto && $previousPhotoPath) {
+            Storage::disk('public')->delete($previousPhotoPath);
+        }
+
+        return back()->with('success', 'Data Wasit berhasil diperbarui.');
+    }
+
+    public function destroyReferee(Request $request, Referee $referee): RedirectResponse
+    {
+        $event = $this->eventForRequest($request);
+        abort_unless($this->canManageEventStaff($request, $event), 403);
+        abort_unless($event?->referees()->whereKey($referee->id)->exists(), 404);
+
+        DB::transaction(function () use ($event, $referee): void {
+            EventCourtAssignment::query()
+                ->whereIn('event_court_id', $event->courts()->select('id'))
+                ->where('staff_type', 'referee')
+                ->where('staff_id', $referee->id)
+                ->delete();
+
+            $event->referees()->detach($referee->id);
+        });
+
+        return back()->with('success', 'Wasit dihapus dari event. Riwayat penilaiannya tetap tersimpan.');
     }
 
     /**
      * Display court / tatami referee assignments.
      */
-    public function assignment(Request $request): Response
+    public function assignment(Request $request): RedirectResponse
     {
         $activeEvent = $this->eventForRequest($request);
 
-        if ($activeEvent instanceof Event) {
-            $activeEvent->load([
-                'courts.assignments',
-                'referees:id,name,dan_grade,is_active',
-                'clerks:id,name,is_active',
-                'fieldCoordinators:id,name,is_active',
-            ]);
-        }
-
-        $staffNames = [
-            'referee' => $activeEvent?->referees->pluck('name', 'id') ?? collect(),
-            'clerk' => $activeEvent?->clerks->pluck('name', 'id') ?? collect(),
-            'field_coordinator' => $activeEvent?->fieldCoordinators->pluck('name', 'id') ?? collect(),
-        ];
-
-        $tatamis = $activeEvent?->courts
-            ->map(function ($court) use ($staffNames) {
-                $assignments = $court->assignments->map(fn (EventCourtAssignment $assignment) => [
-                    'id' => $assignment->id,
-                    'staff_type' => $assignment->staff_type,
-                    'staff_name' => $staffNames[$assignment->staff_type]->get($assignment->staff_id, 'Perangkat tidak tersedia'),
-                    'role' => $assignment->role,
-                ]);
-
-                return [
-                    'id' => $court->id,
-                    'name' => $court->name,
-                    'current_match' => $court->location ?: ($court->description ?: 'Belum ada jadwal pertandingan'),
-                    'status' => $court->is_active ? 'Siap digunakan' : 'Tidak aktif',
-                    'chief_referee' => $assignments->first(fn ($assignment) => $assignment['staff_type'] === 'referee' && $assignment['role'] === 'chief')['staff_name'] ?? 'Belum ditentukan',
-                    'judges' => $assignments->filter(fn ($assignment) => $assignment['staff_type'] === 'referee' && $assignment['role'] !== 'chief')->map(fn ($assignment) => Str::title($assignment['role']).': '.$assignment['staff_name'])->values(),
-                    'clerks' => $assignments->filter(fn ($assignment) => $assignment['staff_type'] === 'clerk')->map(fn ($assignment) => Str::title($assignment['role']).': '.$assignment['staff_name'])->values(),
-                    'field_coordinators' => $assignments->filter(fn ($assignment) => $assignment['staff_type'] === 'field_coordinator')->map(fn ($assignment) => Str::title($assignment['role']).': '.$assignment['staff_name'])->values(),
-                    'assignments' => $assignments,
-                ];
-            })
-            ->values()
-            ->all() ?? [];
-
-        return Inertia::render('Admin/Arbitration/Assignment', [
-            'activeEvent' => $activeEvent?->only(['id', 'name']),
-            'tatamis' => $tatamis,
-            'canManageEventStaff' => $this->canManageEventStaff($request, $activeEvent),
-            'staffOptions' => [
-                'referee' => $activeEvent?->referees->map(fn ($staff) => ['id' => $staff->id, 'name' => $staff->name])->values(),
-                'clerk' => $activeEvent?->clerks->map(fn ($staff) => ['id' => $staff->id, 'name' => $staff->name])->values(),
-                'field_coordinator' => $activeEvent?->fieldCoordinators->map(fn ($staff) => ['id' => $staff->id, 'name' => $staff->name])->values(),
-            ],
-        ]);
+        return to_route('admin.arbitrase.wasit', ['event_id' => $activeEvent?->id]);
     }
 
     public function storeCourtAssignment(StoreEventCourtAssignmentRequest $request, EventCourt $court): RedirectResponse
@@ -170,12 +286,17 @@ class ArbitrationController extends Controller
         Request $request,
         RefereeIdentity $refereeIdentity,
         EmbuParticipantDetails $participantDetails,
+        ScoreReportFormatter $scoreReportFormatter,
     ): Response {
         $activeEvent = $this->eventForRequest($request);
         $refereeSession = null;
         $user = $request->user();
 
-        if ($activeEvent && $user?->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if (! $user?->hasRole('Wasit') || $user->hasAnyRole(['Super Admin', 'Admin'])) {
+            return $this->scoreReport($request, $activeEvent, $scoreReportFormatter);
+        }
+
+        if ($activeEvent) {
             $referee = $refereeIdentity->forEvent($user, $activeEvent);
             abort_unless($referee, 403);
             $courtIds = $activeEvent->courts()->pluck('id');
@@ -267,9 +388,179 @@ class ArbitrationController extends Controller
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
 
-        return $tenantEvent instanceof Event
-            ? $tenantEvent
-            : Event::where('is_active', true)->first();
+        if ($tenantEvent instanceof Event) {
+            $requestedEventId = $request->string('event_id')->toString();
+            abort_if($requestedEventId !== '' && $requestedEventId !== $tenantEvent->id, 404);
+
+            return $tenantEvent;
+        }
+
+        $eventId = $request->string('event_id')->toString();
+
+        return $eventId !== ''
+            ? Event::query()->findOrFail($eventId)
+            : Event::query()->where('is_active', true)->orderByDesc('start_date')->first();
+    }
+
+    public function exportScores(
+        Request $request,
+        ScoreReportFormatter $formatter,
+        ReportWorkbook $workbook,
+    ): HttpResponse {
+        $event = $this->eventForRequest($request);
+        abort_unless($event instanceof Event, 404, 'Event belum tersedia.');
+        $type = $request->string('type')->toString() === 'randori' ? 'randori' : 'embu';
+
+        if ($type === 'randori') {
+            $scores = RandoriScore::query()
+                ->whereBelongsTo($event)
+                ->with($this->randoriReportRelations())
+                ->latest('updated_at')
+                ->get();
+            $headers = ['No.', 'Nomor Pertandingan', 'Partai', 'Court', 'AKA / Merah', 'Nilai AKA', 'SHIRO / Putih', 'Nilai SHIRO', 'Pemenang', 'Status', 'Pengesahan', 'Nama Penandatangan', 'Catatan'];
+            $rows = $scores->values()->map(function (RandoriScore $score, int $index) use ($event, $formatter): array {
+                $item = $formatter->randori($score, $event);
+
+                return [
+                    $index + 1,
+                    $item['category_name'],
+                    'Partai #'.$item['sequence'].' · '.$item['round_label'],
+                    $item['court'],
+                    $item['aka_label'],
+                    $item['aka_total'],
+                    $item['shiro_label'],
+                    $item['shiro_total'],
+                    $item['winner_label'],
+                    $item['status_label'],
+                    $item['signed_count'].'/6 tanda tangan',
+                    collect($item['signatures'])->map(fn (array $signature): string => $signature['label'].': '.($signature['name'] ?: '-'))->implode(' | '),
+                    $item['notes'],
+                ];
+            })->all();
+            $reportName = 'Laporan Nilai Randori';
+        } else {
+            $scores = EmbuJudgeScore::query()
+                ->whereBelongsTo($event)
+                ->with($this->embuReportRelations())
+                ->latest('updated_at')
+                ->get();
+            $headers = ['No.', 'Nomor Pertandingan', 'Partai', 'Court', 'Kontingen', 'Atlet', 'Teknik Terdaftar', 'Wasit / Juri', 'Posisi', 'Nilai Teknik', 'Nilai Ekspresi', 'Total', 'Status', 'Tanda Tangan', 'Catatan'];
+            $rows = $scores->values()->map(function (EmbuJudgeScore $score, int $index) use ($event, $formatter): array {
+                $item = $formatter->embu($score, $event);
+                $participant = $item['participant_details'];
+
+                return [
+                    $index + 1,
+                    $item['category_name'],
+                    'Partai #'.$item['sequence'].' · '.$item['round_label'],
+                    $item['court'],
+                    $participant['contingent_name'] ?: $item['participant'],
+                    collect($participant['athletes'])->pluck('name')->implode(', '),
+                    collect($participant['techniques'])->pluck('name')->implode(', '),
+                    $item['referee_name'],
+                    'Juri '.$item['judge_number'].' · '.$item['role_label'],
+                    $item['technique_subtotal'],
+                    $item['expression_subtotal'],
+                    $item['total_score'],
+                    $item['status_label'],
+                    $item['is_signed'] ? 'Tercatat' : 'Belum ada',
+                    $item['notes'],
+                ];
+            })->all();
+            $reportName = 'Laporan Nilai Embu per Wasit';
+        }
+
+        return response($workbook->build(
+            $reportName,
+            $event->name.' · Diekspor '.now()->translatedFormat('d M Y, H:i'),
+            $headers,
+            $rows,
+        ), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$workbook->filename($reportName, $event->name).'"',
+        ]);
+    }
+
+    private function scoreReport(Request $request, ?Event $event, ScoreReportFormatter $formatter): Response
+    {
+        abort_unless($event instanceof Event, 404, 'Event belum tersedia.');
+
+        $search = $request->string('search')->trim()->toString();
+        $status = $request->string('status')->toString();
+        $status = in_array($status, ['submitted', 'draft'], true) ? $status : 'all';
+        $type = $request->string('type')->toString() === 'randori' ? 'randori' : 'embu';
+        $likeOperator = config('database.default') === 'pgsql' ? 'ilike' : 'like';
+
+        $scoreQuery = $type === 'randori'
+            ? RandoriScore::query()->whereBelongsTo($event)
+            : EmbuJudgeScore::query()->whereBelongsTo($event);
+        $filteredScores = (clone $scoreQuery)
+            ->when($status === 'submitted', fn ($query) => $query->where('status', $type === 'randori' ? 'verified' : 'submitted'))
+            ->when($status === 'draft', fn ($query) => $query->where('status', '!=', $type === 'randori' ? 'verified' : 'submitted'))
+            ->when($search, fn ($query) => $query->where(function ($query) use ($search, $likeOperator, $type): void {
+                if ($type === 'embu') {
+                    $query->whereHas('referee', fn ($referees) => $referees->where('name', $likeOperator, "%{$search}%"));
+                } else {
+                    $query->whereHas('tournamentMatch.matchCategory', fn ($categories) => $categories->where('name', $likeOperator, "%{$search}%"));
+                }
+
+                $query->orWhereHas('tournamentMatch.matchCategory', fn ($categories) => $categories->where('name', $likeOperator, "%{$search}%"))
+                    ->orWhereHas('tournamentMatch', fn ($matches) => $matches
+                        ->where('participant_label', $likeOperator, "%{$search}%")
+                        ->orWhere('red_label', $likeOperator, "%{$search}%")
+                        ->orWhere('blue_label', $likeOperator, "%{$search}%"))
+                    ->orWhereHas('tournamentMatch.court', fn ($courts) => $courts->where('name', $likeOperator, "%{$search}%"));
+            }));
+
+        $scores = $filteredScores
+            ->with($type === 'randori' ? $this->randoriReportRelations() : $this->embuReportRelations())
+            ->latest('updated_at')
+            ->latest('id')
+            ->paginate(12)
+            ->withQueryString()
+            ->through(fn (EmbuJudgeScore|RandoriScore $score): array => $type === 'randori'
+                ? $formatter->randori($score, $event)
+                : $formatter->embu($score, $event));
+
+        $submittedQuery = (clone $scoreQuery)->where('status', $type === 'randori' ? 'verified' : 'submitted');
+
+        return Inertia::render('Admin/Arbitration/ScoreReport', [
+            'activeEvent' => $event->only(['id', 'name']),
+            'events' => $this->eventOptions($request),
+            'filters' => ['search' => $search, 'status' => $status, 'type' => $type],
+            'summary' => [
+                'total' => (clone $scoreQuery)->count(),
+                'submitted' => (clone $submittedQuery)->count(),
+                'drafts' => (clone $scoreQuery)->where('status', '!=', $type === 'randori' ? 'verified' : 'submitted')->count(),
+                'actors' => (clone $scoreQuery)->distinct()->count($type === 'randori' ? 'submitted_by' : 'referee_id'),
+                'embu' => EmbuJudgeScore::query()->whereBelongsTo($event)->count(),
+                'randori' => RandoriScore::query()->whereBelongsTo($event)->count(),
+            ],
+            'scores' => $scores,
+        ]);
+    }
+
+    /** @return list<string> */
+    private function embuReportRelations(): array
+    {
+        return [
+            'referee:id,name,license_number,certification_level',
+            'court:id,name',
+            'tournamentMatch:id,event_id,event_match_category_id,event_court_id,participant_entry_id,round_label,pool,match_sequence,participant_label,scheduled_start_at,metadata',
+            'tournamentMatch.matchCategory:id,name,type',
+        ];
+    }
+
+    /** @return list<string> */
+    private function randoriReportRelations(): array
+    {
+        return [
+            'submitter:id,name',
+            'verifier:id,name',
+            'tournamentMatch:id,event_id,event_match_category_id,event_court_id,round_label,pool,match_sequence,red_label,blue_label,scheduled_start_at,metadata',
+            'tournamentMatch.matchCategory:id,name,type',
+            'tournamentMatch.court:id,name',
+        ];
     }
 
     private function canManageEventStaff(Request $request, ?Event $event): bool
@@ -288,5 +579,27 @@ class ArbitrationController extends Controller
             Event::AccessRoleResponsible,
             Event::AccessRoleAdmin,
         ], true);
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function eventOptions(Request $request): Collection
+    {
+        $tenantEvent = $request->attributes->get('tenantEvent');
+        $events = $tenantEvent instanceof Event
+            ? Event::query()->whereKey($tenantEvent->id)
+            : Event::query();
+
+        return $events
+            ->orderByDesc('is_active')
+            ->orderByDesc('start_date')
+            ->get(['id', 'name', 'city', 'start_date', 'end_date', 'status', 'is_active'])
+            ->map(fn (Event $event): array => [
+                'id' => $event->id,
+                'name' => $event->name,
+                'city' => $event->city,
+                'date_label' => $event->start_date?->translatedFormat('d M Y').' – '.$event->end_date?->translatedFormat('d M Y'),
+                'status_label' => $event->status->label(),
+                'is_active' => (bool) $event->is_active,
+            ]);
     }
 }

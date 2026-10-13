@@ -2,12 +2,18 @@
 
 use App\Enums\EventStatus;
 use App\Models\Contingent;
+use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventAgeCategory;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
+use App\Models\RandoriScore;
+use App\Models\Referee;
 use App\Models\Role;
 use App\Models\Rundown;
+use App\Models\TournamentDrawing;
+use App\Models\TournamentMatch;
+use App\Models\TournamentResult;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -73,6 +79,124 @@ test('guest can access public event landing page via slug', function () {
             ->has('matchCategories', 1)
             ->has('rundowns', 1)
         );
+});
+
+test('public event page exposes only its own referees schedules champions scores and Randori brackets', function () {
+    $event = Event::create([
+        'name' => 'Event Publik Lengkap',
+        'slug' => 'event-publik-lengkap',
+        'venue' => 'GOR Publik',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-11-03',
+        'status' => EventStatus::Ongoing,
+        'is_active' => true,
+    ]);
+    $otherEvent = Event::create([
+        'name' => 'Event Publik Lain',
+        'slug' => 'event-publik-lain',
+        'venue' => 'GOR Lain',
+        'city' => 'Malang',
+        'start_date' => '2026-12-01',
+        'end_date' => '2026-12-03',
+        'status' => EventStatus::Ongoing,
+        'is_active' => true,
+    ]);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court Publik', 'order' => 1, 'is_active' => true]);
+    $referee = Referee::create(['name' => 'Wasit Publik', 'gender' => 'male', 'certification_level' => 'Nasional A', 'is_active' => true]);
+    $event->referees()->attach($referee, ['role' => 'chief']);
+
+    $embuCategory = EventMatchCategory::create(['event_id' => $event->id, 'name' => 'Embu Publik', 'type' => 'embu', 'gender' => 'mixed', 'order' => 1, 'is_active' => true]);
+    $embuDrawing = TournamentDrawing::create(['event_id' => $event->id, 'event_match_category_id' => $embuCategory->id, 'status' => 'published', 'bracket_type' => 'embu_pool', 'participant_count' => 4, 'contingent_count' => 4]);
+    $embuMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Kontingen Publik · Tim 1',
+        'scheduled_start_at' => '2026-11-01 08:00:00',
+        'status' => 'completed',
+    ]);
+    EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'judge_scores' => [80, 81, 82, 83, 84],
+        'middle_score' => 246,
+        'final_score' => 246,
+        'status' => 'verified',
+        'verified_at' => now(),
+    ]);
+    TournamentResult::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'participant_key' => 'embu-public-team-1',
+        'contingent_name' => 'Kontingen Publik',
+        'rank' => 1,
+        'match_category' => 'Embu',
+    ]);
+
+    $randoriCategory = EventMatchCategory::create(['event_id' => $event->id, 'name' => 'Randori Publik', 'type' => 'randori', 'gender' => 'male', 'order' => 2, 'is_active' => true]);
+    $randoriDrawing = TournamentDrawing::create(['event_id' => $event->id, 'event_match_category_id' => $randoriCategory->id, 'status' => 'published', 'bracket_type' => 'double_elimination', 'participant_count' => 4, 'contingent_count' => 4]);
+    $randoriMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'upper',
+        'round_label' => 'Upper Bracket',
+        'match_sequence' => 2,
+        'red_label' => 'Atlet AKA',
+        'blue_label' => 'Atlet SHIRO',
+        'scheduled_start_at' => '2026-11-01 08:10:00',
+        'status' => 'completed',
+    ]);
+    RandoriScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $randoriMatch->id,
+        'aka_breakdown' => [],
+        'shiro_breakdown' => [],
+        'aka_total' => 15,
+        'shiro_total' => 10,
+        'winner_corner' => 'aka',
+        'status' => 'verified',
+    ]);
+    TournamentMatch::create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'upper',
+        'round_label' => 'Upper Bracket',
+        'match_sequence' => 3,
+        'bracket_position' => 2,
+        'red_label' => 'Atlet Lolos Otomatis',
+        'blue_label' => 'BYE',
+        'status' => 'completed',
+        'is_bye' => true,
+    ]);
+
+    Referee::create(['name' => 'Wasit Event Lain', 'gender' => 'male', 'is_active' => true])->events()->attach($otherEvent, ['role' => 'judge']);
+
+    $this->get('/event/event-publik-lengkap')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Public/Event/Show')
+            ->has('referees', 1)
+            ->where('referees.0.name', 'Wasit Publik')
+            ->has('matchSchedule', 2)
+            ->has('championGroups', 1)
+            ->where('championGroups.0.category', 'Embu Publik')
+            ->has('embuScores', 1)
+            ->where('embuScores.0.final_score', 246)
+            ->has('randoriBrackets', 1)
+            ->where('randoriBrackets.0.category', 'Randori Publik')
+            ->has('randoriBrackets.0.rounds.0.matches', 2)
+            ->where('randoriBrackets.0.rounds.0.matches.0.winner', 'aka')
+            ->where('randoriBrackets.0.rounds.0.matches.1.is_bye', true)
+            ->where('randoriBrackets.0.rounds.0.matches.1.shiro', 'BYE'));
 });
 
 test('draft event is not accessible by public guests', function () {

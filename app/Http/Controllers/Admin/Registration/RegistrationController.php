@@ -432,14 +432,19 @@ class RegistrationController extends Controller
             ?? $events->first();
         $search = $request->input('search');
         $contingentId = $request->input('contingent_id');
+        $requestedCategoryType = $request->string('category_type')->toString();
+        $categoryType = in_array($requestedCategoryType, ['embu', 'randori'], true)
+            ? $requestedCategoryType
+            : '';
         $query = Athlete::query()
             ->with([
                 'contingent:id,name,city',
                 'matchCategoryEntries' => fn ($entryQuery) => $entryQuery
                     ->when($activeEvent instanceof Event, fn ($eventQuery) => $eventQuery->whereBelongsTo($activeEvent))
-                    ->with('matchCategory:id,name'),
+                    ->with('matchCategory:id,name,type,order'),
             ])
-            ->latest();
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
 
         if ($activeEvent instanceof Event) {
             $query->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->whereBelongsTo($activeEvent));
@@ -458,6 +463,12 @@ class RegistrationController extends Controller
             $query->where('contingent_id', $contingentId);
         }
 
+        if ($categoryType !== '') {
+            $query->whereHas('matchCategoryEntries', fn ($entryQuery) => $entryQuery
+                ->when($activeEvent instanceof Event, fn ($eventQuery) => $eventQuery->whereBelongsTo($activeEvent))
+                ->whereHas('matchCategory', fn ($categoryQuery) => $categoryQuery->where('type', $categoryType)));
+        }
+
         $athletes = $query->paginate(15)->withQueryString()->through(fn (Athlete $athlete) => [
             'id' => $athlete->id,
             'name' => $athlete->name,
@@ -467,11 +478,18 @@ class RegistrationController extends Controller
             'height' => $athlete->height,
             'birth_date' => $athlete->birth_date?->format('Y-m-d'),
             'contingent' => $athlete->contingent?->only(['id', 'name', 'city']),
-            'match_categories' => $athlete->matchCategoryEntries->map(fn (AthleteMatchCategoryEntry $entry) => [
-                'id' => $entry->id,
-                'category_id' => $entry->event_match_category_id,
-                'name' => $entry->matchCategory?->name ?? 'Nomor pertandingan tidak tersedia',
-            ])->values(),
+            'match_categories' => $athlete->matchCategoryEntries
+                ->sortBy([
+                    fn (AthleteMatchCategoryEntry $left, AthleteMatchCategoryEntry $right): int => ($left->matchCategory?->order ?? PHP_INT_MAX) <=> ($right->matchCategory?->order ?? PHP_INT_MAX),
+                    fn (AthleteMatchCategoryEntry $left, AthleteMatchCategoryEntry $right): int => strcmp($left->matchCategory?->name ?? '', $right->matchCategory?->name ?? ''),
+                ])
+                ->map(fn (AthleteMatchCategoryEntry $entry) => [
+                    'id' => $entry->id,
+                    'category_id' => $entry->event_match_category_id,
+                    'name' => $entry->matchCategory?->name ?? 'Nomor pertandingan tidak tersedia',
+                    'type' => $entry->matchCategory?->type,
+                    'team_number' => $entry->team_number,
+                ])->values(),
         ]);
         $contingentsQuery = Contingent::select(['id', 'name'])->orderBy('name');
 
@@ -500,6 +518,8 @@ class RegistrationController extends Controller
                 ->whereNull('merged_into_id')
                 ->with('ageCategory:id,name,min_age,max_age')
                 ->withCount('athleteEntries')
+                ->orderBy('order')
+                ->orderBy('name')
                 ->get()
                 ->map(fn (EventMatchCategory $category) => [
                     'id' => $category->id,
@@ -528,6 +548,7 @@ class RegistrationController extends Controller
             'filters' => [
                 'search' => $search ?? '',
                 'contingent_id' => $contingentId ?? '',
+                'category_type' => $categoryType,
                 'event_id' => $activeEvent?->id,
             ],
             'activeEvent' => $activeEvent?->only(['id', 'name']),

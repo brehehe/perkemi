@@ -1,12 +1,21 @@
 <?php
 
 use App\Models\Athlete;
+use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
+use App\Models\EmbuJudgeScore;
+use App\Models\EmbuScore;
 use App\Models\Event;
+use App\Models\EventCourt;
+use App\Models\EventMatchCategory;
 use App\Models\Official;
+use App\Models\RandoriScore;
+use App\Models\Referee;
 use App\Models\Registration;
 use App\Models\Role;
 use App\Models\Rundown;
+use App\Models\TournamentDrawing;
+use App\Models\TournamentMatch;
 use App\Models\TournamentResult;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -233,4 +242,333 @@ test('contingent can view schedules and results for each owned event', function 
     $unownedEvent = portalEvent('Event Bukan Milik', 'event-bukan-milik');
     $this->actingAs($owner)->get('/kontingen/hasil?event_id='.$unownedEvent->id)->assertNotFound();
     $this->actingAs($owner)->get(route('kontingen.registrasi.start', $unownedEvent))->assertNotFound();
+});
+
+test('contingent has separate embu and randori reports limited to its own participants', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $otherOwner = User::factory()->create();
+    $otherOwner->assignRole('kontingen');
+    $event = portalEvent('Event Laporan', 'event-laporan', true);
+    $court = EventCourt::create(['event_id' => $event->id, 'name' => 'Court Laporan', 'order' => 1, 'is_active' => true]);
+    $ownContingent = portalContingent($owner, $event, 'Kontingen Laporan');
+    $otherContingent = portalContingent($otherOwner, $event, 'Kontingen Lawan');
+    $ownAthlete = Athlete::create(['contingent_id' => $ownContingent->id, 'name' => 'Atlet Milik', 'gender' => 'L']);
+    $otherAthlete = Athlete::create(['contingent_id' => $otherContingent->id, 'name' => 'Atlet Lawan', 'gender' => 'L']);
+
+    $embuCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Embu Tandoku Putra',
+        'type' => 'embu',
+        'gender' => 'male',
+    ]);
+    $ownEmbuEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $ownAthlete->id,
+        'event_match_category_id' => $embuCategory->id,
+    ]);
+    $embuDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'bracket_type' => 'embu_direct_final',
+    ]);
+    $embuMatch = TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $court->id,
+        'participant_entry_id' => $ownEmbuEntry->id,
+        'participant_label' => 'Atlet Milik',
+        'match_sequence' => 1,
+    ]);
+    $embuScore = EmbuScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'final_score' => 245,
+    ]);
+    $referee = Referee::create(['name' => 'Wasit Kontingen', 'gender' => 'male', 'is_active' => true]);
+    EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $owner->id,
+        'judge_number' => 1,
+    ]);
+
+    $randoriCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 55 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+    ]);
+    $ownRandoriEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $ownAthlete->id,
+        'event_match_category_id' => $randoriCategory->id,
+    ]);
+    $otherRandoriEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $otherAthlete->id,
+        'event_match_category_id' => $randoriCategory->id,
+    ]);
+    $randoriDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'bracket_type' => 'single_elimination',
+    ]);
+    $randoriMatch = TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'red_entry_id' => $ownRandoriEntry->id,
+        'blue_entry_id' => $otherRandoriEntry->id,
+        'red_label' => 'Atlet Milik',
+        'blue_label' => 'Atlet Lawan',
+        'match_sequence' => 2,
+    ]);
+    RandoriScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $randoriMatch->id,
+        'aka_total' => 15,
+        'shiro_total' => 5,
+        'winner_corner' => 'aka',
+    ]);
+
+    $this->actingAs($owner)->get('/kontingen/hasil/embu?event_id='.$event->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'embu-results')
+            ->has('embu_results', 1)
+            ->where('embu_results.0.final_score', 245)
+            ->has('embu_results.0.judges', 1)
+            ->where('embu_results.0.judges.0.aspect_labels.goho_attack', 'GOHO 1 · Serangan (Kougeki)')
+            ->where('embu_results.0.print_url', route('kontingen.hasil.embu.print', [
+                'embuScore' => $embuScore,
+                'event_id' => $event->id,
+            ], false)));
+
+    $this->actingAs($owner)
+        ->get(route('kontingen.hasil.embu.print', ['embuScore' => $embuScore, 'event_id' => $event->id]))
+        ->assertOk()
+        ->assertSee('Rincian 10 Aspek Penilaian Embu')
+        ->assertSee('Serangan (Kougeki)');
+
+    $this->actingAs($otherOwner)
+        ->get(route('kontingen.hasil.embu.print', ['embuScore' => $embuScore, 'event_id' => $event->id]))
+        ->assertNotFound();
+
+    $this->actingAs($owner)->get('/kontingen/hasil/randori?event_id='.$event->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'randori-results')
+            ->has('randori_results', 1)
+            ->where('randori_results.0.is_winner', true)
+            ->where('randori_results.0.own_corner', 'aka'));
+});
+
+test('contingent athlete and official masters use source data independent from event query', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $firstEvent = portalEvent('Event Master Satu', 'event-master-satu', true);
+    $secondEvent = portalEvent('Event Master Dua', 'event-master-dua');
+    $source = portalContingent($owner, $firstEvent, 'Kontingen Master');
+    $copy = Contingent::create([
+        'event_id' => $secondEvent->id,
+        'source_contingent_id' => $source->id,
+        'user_id' => $owner->id,
+        'name' => 'Kontingen Master',
+        'city' => 'Surabaya',
+        'manager_name' => 'Manajer Master',
+        'phone' => '081234567890',
+    ]);
+    Athlete::create([
+        'contingent_id' => $source->id,
+        'name' => 'Atlet Master',
+        'nik' => '3578000000000002',
+        'gender' => 'L',
+    ]);
+    Athlete::create([
+        'contingent_id' => $copy->id,
+        'name' => 'Atlet Salinan Event',
+        'nik' => '3578000000000002',
+        'gender' => 'L',
+    ]);
+    Official::create(['contingent_id' => $source->id, 'name' => 'Official Master', 'role' => 'Pelatih', 'id_card_number' => 'ID-PRIVATE']);
+    Official::create(['contingent_id' => $copy->id, 'name' => 'Official Salinan Event', 'role' => 'Pelatih']);
+
+    $this->actingAs($owner)->get('/kontingen/atlet?event_id='.$secondEvent->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('section', 'athletes')
+            ->has('athletes', 1)
+            ->where('athletes.0.name', 'Atlet Master')
+            ->where('athletes.0.nik', '3578000000000002'));
+
+    $this->actingAs($owner)->get('/kontingen/official?event_id='.$secondEvent->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('section', 'officials')
+            ->has('officials', 1)
+            ->where('officials.0.name', 'Official Master')
+            ->missing('officials.0.id_card_number'));
+});
+
+test('contingent can create update and delete its master athlete without event context', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $firstEvent = portalEvent('Event Master Atlet Satu', 'event-master-atlet-satu', true);
+    $secondEvent = portalEvent('Event Master Atlet Dua', 'event-master-atlet-dua');
+    $source = portalContingent($owner, $firstEvent, 'Kontingen Master Atlet');
+    Contingent::create([
+        'event_id' => $secondEvent->id,
+        'source_contingent_id' => $source->id,
+        'user_id' => $owner->id,
+        'name' => 'Kontingen Master Atlet',
+        'city' => 'Surabaya',
+        'manager_name' => 'Manajer Master Atlet',
+        'phone' => '081234567890',
+    ]);
+
+    $this->actingAs($owner)->post('/kontingen/atlet', [
+        'name' => 'Atlet Master Baru',
+        'nik' => '3578000000000011',
+        'kenshi_number' => 'KENSHI-0011',
+        'gender' => 'male',
+        'birth_place' => 'Surabaya',
+        'birth_date' => '2010-01-10',
+        'kyu_dan' => 'Kyu 3',
+        'weight' => 55,
+        'height' => 165,
+    ])->assertRedirect()->assertSessionHas('success');
+
+    $athlete = Athlete::query()->where('name', 'Atlet Master Baru')->firstOrFail();
+    expect($athlete->contingent_id)->toBe($source->id);
+
+    $this->actingAs($owner)->put('/kontingen/atlet/'.$athlete->id, [
+        'name' => 'Atlet Master Diperbarui',
+        'nik' => '3578000000000011',
+        'kenshi_number' => 'KENSHI-0011',
+        'gender' => 'male',
+        'birth_place' => 'Surabaya',
+        'birth_date' => '2010-01-10',
+        'kyu_dan' => 'Kyu 2',
+        'weight' => 56,
+        'height' => 166,
+    ])->assertRedirect()->assertSessionHas('success');
+
+    $this->assertDatabaseHas('athletes', [
+        'id' => $athlete->id,
+        'contingent_id' => $source->id,
+        'name' => 'Atlet Master Diperbarui',
+        'kyu_dan' => 'Kyu 2',
+    ]);
+
+    $this->actingAs($owner)
+        ->delete('/kontingen/atlet/'.$athlete->id)
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $this->assertSoftDeleted($athlete);
+});
+
+test('contingent can create update and delete its master official without event context', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('Event Master Official', 'event-master-official', true);
+    $source = portalContingent($owner, $event, 'Kontingen Master Official');
+
+    $this->actingAs($owner)->post('/kontingen/official', [
+        'name' => 'Official Master Baru',
+        'role' => 'Pelatih',
+        'gender' => 'female',
+        'phone' => '081234567800',
+        'email' => 'official@example.test',
+    ])->assertRedirect()->assertSessionHas('success');
+
+    $official = Official::query()->where('name', 'Official Master Baru')->firstOrFail();
+    expect($official->contingent_id)->toBe($source->id);
+
+    $this->actingAs($owner)->put('/kontingen/official/'.$official->id, [
+        'name' => 'Official Master Diperbarui',
+        'role' => 'Manajer',
+        'gender' => 'female',
+        'phone' => '081234567801',
+        'email' => 'official@example.test',
+        'notes' => 'Kontak utama kontingen.',
+    ])->assertRedirect()->assertSessionHas('success');
+
+    $this->assertDatabaseHas('officials', [
+        'id' => $official->id,
+        'contingent_id' => $source->id,
+        'name' => 'Official Master Diperbarui',
+        'role' => 'Manajer',
+    ]);
+
+    $this->actingAs($owner)
+        ->delete('/kontingen/official/'.$official->id)
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $this->assertSoftDeleted($official);
+});
+
+test('contingent cannot mutate another contingents master records', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $otherOwner = User::factory()->create();
+    $otherOwner->assignRole('kontingen');
+    $event = portalEvent('Event Isolasi Master', 'event-isolasi-master', true);
+    portalContingent($owner, $event, 'Kontingen Pemilik');
+    $otherContingent = portalContingent($otherOwner, $event, 'Kontingen Lain');
+    $otherAthlete = Athlete::create([
+        'contingent_id' => $otherContingent->id,
+        'name' => 'Atlet Kontingen Lain',
+        'gender' => 'male',
+        'kyu_dan' => 'Kyu 3',
+    ]);
+    $otherOfficial = Official::create([
+        'contingent_id' => $otherContingent->id,
+        'name' => 'Official Kontingen Lain',
+        'role' => 'Pelatih',
+        'gender' => 'male',
+    ]);
+
+    $this->actingAs($owner)->put('/kontingen/atlet/'.$otherAthlete->id, [
+        'name' => 'Percobaan Perubahan',
+        'gender' => 'male',
+        'kyu_dan' => 'Kyu 2',
+    ])->assertNotFound();
+    $this->actingAs($owner)->delete('/kontingen/atlet/'.$otherAthlete->id)->assertNotFound();
+    $this->actingAs($owner)->put('/kontingen/official/'.$otherOfficial->id, [
+        'name' => 'Percobaan Perubahan',
+        'role' => 'Manajer',
+        'gender' => 'male',
+    ])->assertNotFound();
+    $this->actingAs($owner)->delete('/kontingen/official/'.$otherOfficial->id)->assertNotFound();
+
+    $this->assertDatabaseHas('athletes', ['id' => $otherAthlete->id, 'name' => 'Atlet Kontingen Lain']);
+    $this->assertDatabaseHas('officials', ['id' => $otherOfficial->id, 'name' => 'Official Kontingen Lain']);
+});
+
+test('contingent master forms validate required and sensitive identity fields', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('Event Validasi Master', 'event-validasi-master', true);
+    portalContingent($owner, $event, 'Kontingen Validasi');
+
+    $this->actingAs($owner)->post('/kontingen/atlet', [
+        'name' => '',
+        'nik' => '123',
+        'gender' => 'invalid',
+        'kyu_dan' => '',
+    ])->assertSessionHasErrors(['name', 'nik', 'gender', 'kyu_dan']);
+
+    $this->actingAs($owner)->post('/kontingen/official', [
+        'name' => '',
+        'role' => '',
+        'gender' => 'invalid',
+        'email' => 'bukan-email',
+    ])->assertSessionHasErrors(['name', 'role', 'gender', 'email']);
+
+    $this->assertDatabaseCount('athletes', 0);
+    $this->assertDatabaseCount('officials', 0);
 });

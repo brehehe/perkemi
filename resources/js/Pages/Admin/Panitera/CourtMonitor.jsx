@@ -1,6 +1,9 @@
 import { Head } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useSynchronizedTimer, { createServerClock, monotonicNow, timerVersion } from './Partials/useSynchronizedTimer';
+import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
+import useSynchronizedTimer from './Partials/useSynchronizedTimer';
+import useLiveTimer from './Partials/useLiveTimer';
+import { displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
 
 const modes = [
     ['arena', 'Arena', 'fa-tv'],
@@ -86,29 +89,14 @@ function EmptyCourt({ court }) {
     );
 }
 
-export default function CourtMonitor({ activeEvent, court, mode = 'arena', monitor, stateUrl }) {
-    const [snapshot, setSnapshot] = useState(() => {
-        const receivedAt = monotonicNow();
-
-        return {
-            ...monitor,
-            server_clock: createServerClock({
-                serverNow: monitor.server_now,
-                serverNowMs: monitor.server_now_ms,
-                receivedAt,
-            }),
-        };
-    });
-    const [httpConnected, setHttpConnected] = useState(true);
-    const [realtimeConnected, setRealtimeConnected] = useState(false);
+export default function CourtMonitor({ activeEvent, court, mode = 'arena', monitor, stateUrl, timerStateUrl }) {
+    const [snapshot, setSnapshot] = useState(monitor);
     const refreshController = useRef(null);
-    const activeMatch = snapshot.active_match;
 
     const refreshSnapshot = useCallback(async () => {
         refreshController.current?.abort();
         const controller = new AbortController();
         refreshController.current = controller;
-        const requestStartedAt = monotonicNow();
 
         try {
             const response = await fetch(stateUrl, {
@@ -119,44 +107,49 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
             if (!response.ok) throw new Error('Monitor tidak dapat diperbarui.');
             const nextSnapshot = await response.json();
-            const receivedAt = monotonicNow();
-            const serverClock = createServerClock({
-                serverNow: nextSnapshot.server_now,
-                serverNowMs: nextSnapshot.server_now_ms,
-                receivedAt,
-                roundTripMs: receivedAt - requestStartedAt,
-            });
 
             setSnapshot((current) => {
                 const isSameMatch = nextSnapshot.active_match?.id === current.active_match?.id;
                 const isOlderState = isSameMatch
                     && timerVersion(nextSnapshot.active_match?.timer) < timerVersion(current.active_match?.timer);
 
-                if (isOlderState) {
-                    return {
-                        ...current,
-                        server_now: nextSnapshot.server_now,
-                        server_now_ms: nextSnapshot.server_now_ms,
-                        server_clock: serverClock,
-                    };
-                }
-
-                return { ...nextSnapshot, server_clock: serverClock };
+                if (isOlderState) return current;
+                return nextSnapshot;
             });
-            setHttpConnected(true);
         } catch (error) {
-            if (error.name !== 'AbortError') setHttpConnected(false);
+            // Timer synchronization has its own lightweight connection and retry.
         } finally {
             if (refreshController.current === controller) refreshController.current = null;
         }
     }, [stateUrl]);
+
+    const initialTimerState = useMemo(() => ({
+        event_id: activeEvent.id, court_id: court.id, match_id: monitor.active_match?.id ?? null,
+        match_status: monitor.active_match?.status, call_status: monitor.active_match?.call_status,
+        timer: monitor.active_match?.timer, server_now_ms: monitor.server_now_ms,
+    }), [activeEvent.id, court.id, monitor]);
+    const liveTimer = useLiveTimer({
+        initialState: initialTimerState, stateUrl: timerStateUrl,
+        channelName: `event-court.${court.id}`, eventId: activeEvent.id, courtId: court.id,
+        onChange: (next, previous) => {
+            if (next.match_id !== previous?.match_id || next.timer?.is_finished
+                || !['start', 'pause', 'reset_timer', 'configure_timer'].includes(next.action)) refreshSnapshot();
+        },
+    });
+    const { connected: realtimeConnected, httpConnected } = liveTimer;
+    const activeMatch = snapshot.active_match?.id === liveTimer.state?.match_id ? {
+        ...snapshot.active_match,
+        status: liveTimer.state.match_status,
+        call_status: liveTimer.state.call_status,
+        timer: liveTimer.state.timer,
+    } : null;
 
     useEffect(() => () => refreshController.current?.abort(), []);
 
     useEffect(() => {
         let cancelled = false;
         let timeoutId;
-        const interval = realtimeConnected ? 15000 : 2000;
+        const interval = 30000;
 
         const poll = async () => {
             await refreshSnapshot();
@@ -169,74 +162,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             cancelled = true;
             window.clearTimeout(timeoutId);
         };
-    }, [realtimeConnected, refreshSnapshot]);
-
-    useEffect(() => {
-        if (!window.Echo) {
-            setRealtimeConnected(false);
-            return undefined;
-        }
-
-        const channelName = `event-court.${court.id}`;
-        const channel = window.Echo.private(channelName);
-        const stopConnectionListener = window.Echo.connector?.onConnectionChange?.(
-            (status) => setRealtimeConnected(status === 'connected'),
-        );
-        const handleMatchState = (event) => {
-            if (event.event_id !== activeEvent.id || event.court_id !== court.id) return;
-
-            setRealtimeConnected(true);
-
-            const timerActions = ['start', 'pause', 'reset_timer', 'configure_timer', 'finish'];
-            if (event.match_id !== activeMatch?.id || !timerActions.includes(event.action)) {
-                refreshSnapshot();
-                return;
-            }
-
-            const receivedAt = monotonicNow();
-            const serverClock = createServerClock({
-                serverNow: event.server_now,
-                serverNowMs: event.server_now_ms,
-                receivedAt,
-            });
-
-            setSnapshot((current) => {
-                if (timerVersion(event.timer) < timerVersion(current.active_match?.timer)) {
-                    return current;
-                }
-
-                return {
-                    ...current,
-                    server_now: event.server_now,
-                    server_now_ms: event.server_now_ms,
-                    server_clock: serverClock,
-                    active_match: {
-                        ...current.active_match,
-                        status: event.match_status,
-                        call_status: event.call_status,
-                        timer: {
-                            ...current.active_match.timer,
-                            ...event.timer,
-                        },
-                    },
-                };
-            });
-        };
-
-        setRealtimeConnected(window.Echo.connectionStatus?.() === 'connected');
-        channel
-            .subscribed(() => {
-                setRealtimeConnected(true);
-                refreshSnapshot();
-            })
-            .error(() => setRealtimeConnected(false))
-            .listen('.panitera.match-state.updated', handleMatchState);
-
-        return () => {
-            stopConnectionListener?.();
-            window.Echo.leave(channelName);
-        };
-    }, [activeEvent.id, activeMatch?.id, court.id, refreshSnapshot]);
+    }, [refreshSnapshot]);
 
     useEffect(() => {
         const resynchronize = () => {
@@ -252,16 +178,17 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         };
     }, [refreshSnapshot]);
 
-    const elapsedMilliseconds = useSynchronizedTimer(activeMatch?.timer, snapshot.server_clock);
+    const elapsedMilliseconds = useSynchronizedTimer(activeMatch?.timer, liveTimer.serverClock, activeMatch?.id);
     const elapsedSeconds = useMemo(() => Math.floor(elapsedMilliseconds / 1000), [elapsedMilliseconds]);
 
     const timerDirection = activeMatch?.timer.direction || 'up';
     const timerDuration = Number(activeMatch?.timer.duration_seconds) || 120;
-    const displayedSeconds = timerDirection === 'down' ? Math.max(0, timerDuration - elapsedSeconds) : elapsedSeconds;
+    const displayedSeconds = displayedTimerSeconds(activeMatch?.timer, elapsedMilliseconds);
+    const timerText = activeMatch?.timer.status === 'running' && !liveTimer.synchronized ? '--:--' : formatTimer(displayedSeconds);
     const isExpired = timerDirection === 'down' && elapsedSeconds >= timerDuration;
     const resultMatch = activeMatch?.result ? activeMatch : snapshot.last_result;
     const monitorUrl = (targetMode) => `/admin/panitera/scoring/monitors/${court.id}?event_id=${encodeURIComponent(activeEvent.id)}&mode=${targetMode}`;
-    const synchronizationLabel = realtimeConnected
+    const synchronizationLabel = !liveTimer.synchronized ? 'Menyinkronkan jam server…' : realtimeConnected
         ? 'Real-time Reverb'
         : httpConnected
             ? 'Sinkronisasi cadangan'
@@ -275,7 +202,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     return (
         <>
             <Head title={`${court.name} · Monitor ${mode} | Smart Perkemi`} />
-            <main className="min-h-dvh bg-[#090807] px-3 py-3 text-white sm:px-6 sm:py-5 lg:px-8">
+            <main className="court-monitor min-h-dvh bg-[#090807] px-3 py-3 text-white sm:px-6 sm:py-5 lg:px-8">
                 <header className="mx-auto max-w-[1800px] rounded-2xl border border-white/10 bg-[#151210] p-4 shadow-2xl">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                         <div className="min-w-0">
@@ -300,6 +227,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                             <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
                                 <i className="fa-solid fa-expand" aria-hidden="true" />Layar Penuh
                             </button>
+                            <ThemeToggle className="border-white/10 bg-white/5 text-white/70 shadow-none hover:bg-white/10 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10" />
                             <a href={`/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
                                 <i className="fa-solid fa-arrow-left" aria-hidden="true" />Panitera
                             </a>
@@ -314,7 +242,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                 <section className="rounded-3xl border border-white/10 bg-[#151210] p-4 shadow-2xl sm:p-5 md:p-8">
                                     <div className="flex flex-wrap items-start justify-between gap-4">
                                         <div><p className="text-sm font-bold uppercase tracking-[.16em] text-[#d4a843]">{activeMatch.category_type} · Partai #{activeMatch.sequence}</p><h2 className="mt-2 text-2xl font-black md:text-4xl">{activeMatch.category_name}</h2><p className="mt-2 text-white/55">{activeMatch.round_label}{activeMatch.pool ? ` · Pool ${activeMatch.pool}` : ''}</p></div>
-                                        <div className="rounded-2xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-3 text-right"><p className="text-xs font-bold text-[#e8c66b]">{activeMatch.call_status_label}</p><p className="mt-1 font-mono text-3xl font-black">{formatTimer(displayedSeconds)}</p></div>
+                                        <div className="rounded-2xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-3 text-right"><p className="text-xs font-bold text-[#e8c66b]">{activeMatch.call_status_label}</p><p className="mt-1 font-mono text-3xl font-black">{timerText}</p></div>
                                     </div>
                                     <div className="mt-8"><ParticipantDisplay match={activeMatch} /></div>
                                 </section>
@@ -328,7 +256,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                     {mode === 'timer' && (
                         <section className={`flex min-h-[65vh] flex-col items-center justify-center rounded-3xl border p-4 text-center shadow-2xl sm:p-8 ${isExpired ? 'border-rose-500/50 bg-rose-950/40' : 'border-white/10 bg-[#151210]'}`}>
-                            {activeMatch ? <><p className="text-sm font-bold uppercase tracking-[.22em] text-[#d4a843]">{timerDirection === 'down' ? 'Hitung Mundur' : 'Hitung Maju'} · {activeMatch.timer.is_finished ? 'Selesai' : activeMatch.timer.status === 'running' ? 'Berjalan' : activeMatch.timer.status === 'paused' ? 'Dijeda' : 'Berhenti'}</p><p className={`mt-5 font-mono text-[22vw] font-black leading-none tracking-[-.08em] sm:text-[18vw] lg:text-[14vw] ${isExpired ? 'text-rose-400' : 'text-white'}`} aria-live="off">{formatTimer(displayedSeconds)}</p><p className="mt-6 text-xl font-bold md:text-2xl">{isExpired ? 'WAKTU HABIS' : activeMatch.category_name}</p><p className="mt-2 text-sm text-white/50">Partai #{activeMatch.sequence} · {activeMatch.round_label}</p></> : <EmptyCourt court={court} />}
+                            {activeMatch ? <><p className="text-sm font-bold uppercase tracking-[.22em] text-[#d4a843]">{timerDirection === 'down' ? 'Hitung Mundur' : 'Hitung Maju'} · {activeMatch.timer.is_finished ? 'Selesai' : activeMatch.timer.status === 'running' ? 'Berjalan' : activeMatch.timer.status === 'paused' ? 'Dijeda' : 'Berhenti'}</p><p className={`mt-5 font-mono text-[22vw] font-black leading-none tracking-[-.08em] sm:text-[18vw] lg:text-[14vw] ${isExpired ? 'text-rose-400' : 'text-white'}`} aria-live="off">{timerText}</p><p className="mt-6 text-xl font-bold md:text-2xl">{isExpired ? 'WAKTU HABIS' : activeMatch.category_name}</p><p className="mt-2 text-sm text-white/50">Partai #{activeMatch.sequence} · {activeMatch.round_label}</p></> : <EmptyCourt court={court} />}
                         </section>
                     )}
 
@@ -340,8 +268,11 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                     {mode === 'officials' && (
                         <section className="min-h-[60vh] rounded-3xl border border-white/10 bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
-                            <div className="text-center"><p className="text-sm font-bold uppercase tracking-[.18em] text-[#d4a843]">Perangkat Pertandingan</p><h2 className="mt-3 text-3xl font-black md:text-5xl">{court.name}</h2></div>
-                            <div className="mx-auto mt-10 grid max-w-6xl gap-4 md:grid-cols-2 xl:grid-cols-3">{snapshot.staff.map((member) => <article key={member.id} className="rounded-2xl border border-white/10 bg-white/5 p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#d4a843]/15 text-[#d4a843]"><i className={`fa-solid ${member.type === 'referee' ? 'fa-gavel' : member.type === 'clerk' ? 'fa-clipboard-list' : 'fa-map-location-dot'}`} aria-hidden="true" /></div>{member.type === 'referee' && <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${member.is_present ? 'border-emerald-400/30 bg-emerald-400/15 text-emerald-300' : 'border-amber-400/30 bg-amber-400/15 text-amber-200'}`}>{member.is_present ? 'Hadir Court' : 'Belum Scan'}</span>}</div><p className="mt-4 text-lg font-black">{member.name}</p><p className="mt-1 text-sm text-[#d4a843]">{member.role}</p><p className="mt-1 text-xs text-white/45">{member.type_label}</p></article>)}{snapshot.staff.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-white/45 md:col-span-2 xl:col-span-3">Perangkat pertandingan belum ditugaskan ke court ini.</p>}</div>
+                            <div className="text-center"><p className="text-sm font-bold uppercase tracking-[.18em] text-[#d4a843]">Susunan Wasit & Juri</p><h2 className="mt-3 text-3xl font-black md:text-5xl">{court.name}</h2><p className="mt-3 text-sm text-white/50">Diurutkan dari Wasit Utama hingga Juri 5</p></div>
+                            <div className="mx-auto mt-10 grid max-w-7xl gap-4 sm:grid-cols-2 xl:grid-cols-5">{snapshot.staff.map((member) => {
+                                const initials = member.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
+                                return <article key={member.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5"><div className="aspect-[4/3] overflow-hidden bg-black/20">{member.photo_url ? <img src={member.photo_url} alt={`Foto ${member.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-4xl font-black text-[#d4a843]">{initials}</div>}</div><div className="p-5"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-[#d4a843]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#d4a843]">Juri {member.judge_number || '—'}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${member.is_present ? 'border-emerald-400/30 bg-emerald-400/15 text-emerald-300' : 'border-amber-400/30 bg-amber-400/15 text-amber-200'}`}>{member.is_present ? 'Hadir' : 'Belum Scan'}</span></div><p className="mt-4 text-lg font-black leading-tight">{member.name}</p><p className="mt-2 text-sm font-bold text-[#d4a843]">{member.role}</p>{(member.certification || member.region) && <p className="mt-2 text-xs leading-5 text-white/45">{[member.certification, member.region].filter(Boolean).join(' · ')}</p>}</div></article>;
+                            })}{snapshot.staff.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-white/45 sm:col-span-2 xl:col-span-5">Wasit dan Juri belum ditugaskan ke court ini.</p>}</div>
                         </section>
                     )}
                 </div>

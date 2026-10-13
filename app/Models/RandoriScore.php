@@ -33,6 +33,7 @@ class RandoriScore extends Model
         'shiro_total',
         'winner_corner',
         'signatures',
+        'signature_names',
         'status',
         'submitted_by',
         'verified_by',
@@ -50,6 +51,7 @@ class RandoriScore extends Model
             'aka_total' => 'integer',
             'shiro_total' => 'integer',
             'signatures' => 'array',
+            'signature_names' => 'array',
             'verified_at' => 'datetime',
             'locked_at' => 'datetime',
         ];

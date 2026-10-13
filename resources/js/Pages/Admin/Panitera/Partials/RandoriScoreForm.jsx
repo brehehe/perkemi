@@ -4,8 +4,9 @@ import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import Input from '@/Components/UI/Forms/Input';
 import SignaturePad from '@/Components/UI/Forms/SignaturePad';
 import Textarea from '@/Components/UI/Forms/Textarea';
-import { useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { http } from '@inertiajs/core';
+import { router, useForm } from '@inertiajs/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const scoreKeys = [
     ['mujoken', 'Mujoken Kachi', 15],
@@ -28,7 +29,18 @@ const signatureLabels = [
 const emptyBreakdown = () => Object.fromEntries(scoreKeys.map(([key]) => [key, 0]));
 const emptySignatures = () => Object.fromEntries(signatureLabels.map(([key]) => [key, '']));
 const normalizeSignatures = (signatures = {}) => Object.fromEntries(signatureLabels.map(([key]) => [key, typeof signatures?.[key] === 'string' ? signatures[key] : '']));
+const normalizeSignatureNames = (names = {}) => Object.fromEntries(signatureLabels.map(([key]) => [key, typeof names?.[key] === 'string' ? names[key] : '']));
 const calculateTotal = (breakdown) => scoreKeys.reduce((total, [key, , weight]) => total + (Number(breakdown[key]) || 0) * weight, 0);
+const createSyncClientId = () => globalThis.crypto?.randomUUID?.() || `panitera-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const mergeDraftChanges = (current, incoming) => {
+    const merged = { ...current, ...incoming };
+
+    ['aka', 'shiro', 'signatures', 'signature_names'].forEach((key) => {
+        if (current[key] || incoming[key]) merged[key] = { ...(current[key] || {}), ...(incoming[key] || {}) };
+    });
+
+    return merged;
+};
 
 function ScoreFields({ corner, label, values, errors, onChange, disabled = false }) {
     return (
@@ -47,21 +59,34 @@ function ScoreFields({ corner, label, values, errors, onChange, disabled = false
 
 export default function RandoriScoreForm({ activeEvent, match }) {
     const existingScore = match.result || match.score;
+    const draft = match.randori_draft || {};
     const isLocked = Boolean(existingScore?.is_locked);
-    const persistedSignatures = normalizeSignatures(existingScore?.signatures);
+    const clientIdRef = useRef(createSyncClientId());
+    const persistedSignatures = normalizeSignatures(draft.signatures || existingScore?.signatures);
     const hasCompletePersistedSignatures = signatureLabels.every(([key]) => Boolean(persistedSignatures[key]));
     const form = useForm({
         event_id: activeEvent.id,
-        aka: { ...emptyBreakdown(), ...(existingScore?.aka_breakdown || {}) },
-        shiro: { ...emptyBreakdown(), ...(existingScore?.shiro_breakdown || {}) },
+        aka: { ...emptyBreakdown(), ...(draft.aka || existingScore?.aka_breakdown || {}) },
+        shiro: { ...emptyBreakdown(), ...(draft.shiro || existingScore?.shiro_breakdown || {}) },
         signatures: persistedSignatures,
-        notes: existingScore?.notes || '',
+        signature_names: normalizeSignatureNames(draft.signature_names || existingScore?.signature_names),
+        notes: draft.notes ?? existingScore?.notes ?? '',
         return_to_match: true,
+        sync_client_id: clientIdRef.current,
     });
-    const lockForm = useForm({ event_id: activeEvent.id });
+    const lockForm = useForm({ event_id: activeEvent.id, sync_client_id: clientIdRef.current });
+    const formDataRef = useRef(form.data);
+    const formSetDataRef = useRef(form.setData);
+    formSetDataRef.current = form.setData;
+    const draftTimerRef = useRef(null);
+    const draftRequestRef = useRef(null);
+    const draftQueueRef = useRef(Promise.resolve());
+    const pendingChangesRef = useRef({});
+    const lastVersionRef = useRef(Number(draft.version) || 0);
     const [requiresResignature, setRequiresResignature] = useState(Boolean(existingScore && !hasCompletePersistedSignatures));
     const [saveConfirmationOpen, setSaveConfirmationOpen] = useState(false);
     const [lockConfirmationOpen, setLockConfirmationOpen] = useState(false);
+    const [syncStatus, setSyncStatus] = useState(typeof window !== 'undefined' && window.Echo ? 'ready' : 'offline');
     const akaTotal = calculateTotal(form.data.aka);
     const shiroTotal = calculateTotal(form.data.shiro);
     const signedCount = signatureLabels.filter(([key]) => Boolean(form.data.signatures[key])).length;
@@ -73,15 +98,142 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         || form.errors.result
         || form.errors.signatures
         || signatureLabels.map(([key]) => form.errors[`signatures.${key}`]).find(Boolean)
+        || signatureLabels.map(([key]) => form.errors[`signature_names.${key}`]).find(Boolean)
         || '';
+    const syncMessage = {
+        ready: 'Reverb aktif · perubahan siap disinkronkan',
+        waiting: 'Menunggu perubahan selesai…',
+        saving: 'Menyinkronkan draft…',
+        saved: 'Draft tersimpan dan disiarkan ke perangkat lain',
+        remote: 'Perubahan dari perangkat lain diterapkan',
+        offline: 'Reverb belum terhubung · draft tetap disimpan ke server',
+        error: 'Draft belum tersinkron · periksa koneksi lalu ubah kembali nilai',
+    }[syncStatus];
+
+    const syncDraft = useCallback((changes) => {
+        if (isLocked) return;
+
+        draftQueueRef.current = draftQueueRef.current
+            .catch(() => undefined)
+            .then(async () => {
+                const controller = new AbortController();
+                draftRequestRef.current = controller;
+                setSyncStatus('saving');
+
+                try {
+                    const response = await http.getClient().request({
+                        method: 'put',
+                        url: `/admin/panitera/scoring/randori-result/${match.id}/draft`,
+                        data: JSON.stringify({
+                            event_id: activeEvent.id,
+                            client_id: clientIdRef.current,
+                            changes,
+                        }),
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                        },
+                        signal: controller.signal,
+                    });
+                    const payload = response.data ? JSON.parse(response.data) : {};
+                    lastVersionRef.current = Math.max(lastVersionRef.current, Number(payload.version) || 0);
+                    setSyncStatus('saved');
+                } catch (error) {
+                    if (!controller.signal.aborted) setSyncStatus('error');
+                }
+            });
+    }, [activeEvent.id, isLocked, match.id]);
+
+    const queueDraftSync = useCallback((changes) => {
+        if (isLocked) return;
+
+        pendingChangesRef.current = mergeDraftChanges(pendingChangesRef.current, changes);
+        window.clearTimeout(draftTimerRef.current);
+        setSyncStatus('waiting');
+        draftTimerRef.current = window.setTimeout(() => {
+            const changesToSend = pendingChangesRef.current;
+            pendingChangesRef.current = {};
+            syncDraft(changesToSend);
+        }, 350);
+    }, [isLocked, syncDraft]);
+
+    const setDataAndSync = (nextData, changes) => {
+        formDataRef.current = nextData;
+        form.setData(nextData);
+        queueDraftSync(changes);
+    };
+
+    useEffect(() => {
+        if (!window.Echo || isLocked) return undefined;
+
+        const channel = window.Echo.private(`tournament-match.${match.id}`);
+        const stopConnectionListener = window.Echo.connector?.onConnectionChange?.((status) => {
+            setSyncStatus((current) => {
+                if (status !== 'connected') return 'offline';
+
+                return current === 'offline' || current === 'error' ? 'ready' : current;
+            });
+        });
+        const handleRemoteState = (event) => {
+            if (event.event_id !== activeEvent.id || event.match_id !== match.id) return;
+            if (event.client_id === clientIdRef.current || Number(event.version) <= lastVersionRef.current) return;
+
+            lastVersionRef.current = Number(event.version) || lastVersionRef.current;
+            const changes = event.changes || {};
+            const nextData = {
+                ...formDataRef.current,
+                ...(changes.aka ? { aka: { ...formDataRef.current.aka, ...changes.aka } } : {}),
+                ...(changes.shiro ? { shiro: { ...formDataRef.current.shiro, ...changes.shiro } } : {}),
+                ...(changes.signatures ? { signatures: normalizeSignatures({ ...formDataRef.current.signatures, ...changes.signatures }) } : {}),
+                ...(changes.signature_names ? { signature_names: normalizeSignatureNames({ ...formDataRef.current.signature_names, ...changes.signature_names }) } : {}),
+                ...(Object.hasOwn(changes, 'notes') ? { notes: changes.notes || '' } : {}),
+            };
+
+            formDataRef.current = nextData;
+            formSetDataRef.current(nextData);
+            setSyncStatus('remote');
+
+            if (changes.aka || changes.shiro || Object.hasOwn(changes, 'notes')) {
+                setRequiresResignature(Boolean(existingScore) || signatureLabels.some(([key]) => Boolean(nextData.signatures[key])));
+            }
+
+            if (event.action === 'result_saved' || event.action === 'result_locked') {
+                router.reload({
+                    only: ['match'],
+                    preserveScroll: true,
+                    preserveState: true,
+                });
+            }
+        };
+
+        setSyncStatus(window.Echo.connectionStatus?.() === 'connected' ? 'ready' : 'offline');
+        channel
+            .subscribed(() => setSyncStatus((current) => current === 'offline' ? 'ready' : current))
+            .error(() => setSyncStatus('offline'))
+            .listen('.randori.score-state.updated', handleRemoteState);
+
+        return () => {
+            stopConnectionListener?.();
+            channel.stopListening('.randori.score-state.updated', handleRemoteState);
+        };
+    }, [activeEvent.id, Boolean(existingScore), isLocked, match.id]);
+
+    useEffect(() => () => {
+        window.clearTimeout(draftTimerRef.current);
+        draftRequestRef.current?.abort();
+    }, []);
 
     const changeScore = (corner, key, value) => {
         if (isLocked) return;
-        if (String(form.data[corner][key]) === String(value)) return;
+        if (String(formDataRef.current[corner][key]) === String(value)) return;
 
-        form.setData({
-            ...form.data,
-            [corner]: { ...form.data[corner], [key]: value },
+        const nextData = {
+            ...formDataRef.current,
+            [corner]: { ...formDataRef.current[corner], [key]: value },
+            signatures: emptySignatures(),
+        };
+        setDataAndSync(nextData, {
+            [corner]: { [key]: value },
             signatures: emptySignatures(),
         });
         setRequiresResignature(Boolean(existingScore) || signedCount > 0);
@@ -89,14 +241,35 @@ export default function RandoriScoreForm({ activeEvent, match }) {
 
     const changeNotes = (value) => {
         if (isLocked) return;
-        if (form.data.notes === value) return;
+        if (formDataRef.current.notes === value) return;
 
-        form.setData({
-            ...form.data,
+        const nextData = {
+            ...formDataRef.current,
             notes: value,
             signatures: emptySignatures(),
-        });
+        };
+        setDataAndSync(nextData, { notes: value, signatures: emptySignatures() });
         setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+    };
+
+    const changeSignature = (key, value) => {
+        if (isLocked) return;
+
+        const nextData = {
+            ...formDataRef.current,
+            signatures: { ...formDataRef.current.signatures, [key]: value },
+        };
+        setDataAndSync(nextData, { signatures: { [key]: value } });
+    };
+
+    const changeSignatureName = (key, value) => {
+        if (isLocked) return;
+
+        const nextData = {
+            ...formDataRef.current,
+            signature_names: { ...formDataRef.current.signature_names, [key]: value },
+        };
+        setDataAndSync(nextData, { signature_names: { [key]: value } });
     };
 
     const requestSaveConfirmation = (event) => {
@@ -107,8 +280,16 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         setSaveConfirmationOpen(true);
     };
 
-    const submitScore = () => {
+    const submitScore = async () => {
         if (isLocked) return;
+
+        window.clearTimeout(draftTimerRef.current);
+        if (Object.keys(pendingChangesRef.current).length > 0) {
+            const changesToSend = pendingChangesRef.current;
+            pendingChangesRef.current = {};
+            syncDraft(changesToSend);
+        }
+        await draftQueueRef.current;
 
         form.post(`/admin/panitera/scoring/randori-result/${match.id}`, {
             preserveScroll: true,
@@ -150,6 +331,12 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                         ? `Nilai dikunci ${existingScore.locked_at || ''} dan hanya dapat dilihat. Perubahan juga ditolak oleh server.`
                         : 'Simpan nilai terlebih dahulu agar masih dapat diperiksa. Setelah dipastikan benar, gunakan tombol Kunci Nilai untuk menutup perubahan permanen.'}
                 </div>
+                {!isLocked && (
+                    <div aria-live="polite" className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${syncStatus === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : syncStatus === 'offline' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${syncStatus === 'saving' || syncStatus === 'waiting' ? 'animate-pulse bg-amber-500' : syncStatus === 'error' ? 'bg-rose-500' : syncStatus === 'offline' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                        {syncMessage}
+                    </div>
+                )}
 
                 <div className="grid gap-4 xl:grid-cols-2">
                     <ScoreFields corner="aka" label={match.aka_label} values={form.data.aka} errors={form.errors} disabled={isLocked} onChange={(key, value) => changeScore('aka', key, value)} />
@@ -180,11 +367,22 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                                 </div>
                                 <SignaturePad
                                     value={form.data.signatures[key]}
-                                    onChange={(value) => form.setData('signatures', { ...form.data.signatures, [key]: value })}
+                                    onChange={(value) => changeSignature(key, value)}
                                     disabled={form.processing || lockForm.processing || isLocked}
                                     label={`Area tanda tangan digital ${label}`}
                                     height={140}
                                     error={form.errors[`signatures.${key}`]}
+                                />
+                                <Input
+                                    id={`signature-name-${key}`}
+                                    label="Nama penandatangan (opsional)"
+                                    value={form.data.signature_names[key]}
+                                    maxLength={120}
+                                    disabled={form.processing || lockForm.processing || isLocked}
+                                    error={form.errors[`signature_names.${key}`]}
+                                    placeholder={`Nama ${label}`}
+                                    containerClassName="mt-3 w-full"
+                                    onChange={(event) => changeSignatureName(key, event.target.value)}
                                 />
                             </div>
                         ))}

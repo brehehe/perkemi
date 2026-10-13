@@ -1,4 +1,5 @@
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
+import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -34,7 +35,7 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
         : 'WS';
 
     return (
-        <div className="min-h-screen bg-[#f7f4ef] font-dm text-[#0f0d0b] antialiased">
+        <div className="theme-shell min-h-screen bg-[#f7f4ef] font-dm text-[#0f0d0b] antialiased dark:bg-[#0f1115] dark:text-slate-100">
             <Head title={`${title} | Portal Wasit`} />
 
             <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle="Portal Wasit · 2026">
@@ -77,7 +78,7 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
             </PanelSidebar>
 
             <div className="min-h-screen lg:pl-[260px]">
-                <header className="sticky top-0 z-40 flex h-16 items-center border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-3 backdrop-blur-md sm:px-4 md:px-7">
+                <header className="sticky top-0 z-40 flex h-16 items-center border-b border-[#ede9e1] bg-[#f7f4ef]/95 px-3 backdrop-blur-md dark:border-slate-800 dark:bg-[#11151b]/95 sm:px-4 md:px-7">
                     <button type="button" className="mr-3 flex h-11 w-11 items-center justify-center rounded-xl border border-[#e4ddd3] bg-white text-[#514a43] lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Buka navigasi">
                         <i className="fa-solid fa-bars" aria-hidden="true" />
                     </button>
@@ -85,7 +86,9 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
                         <p className="truncate text-sm font-bold md:text-base">{title}</p>
                         <p className="hidden truncate text-xs text-[#888078] sm:block">{portal.event?.name}</p>
                     </div>
-                    <div ref={profileRef} className="relative ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
+                        <ThemeToggle />
+                    <div ref={profileRef} className="relative">
                         <button type="button" onClick={() => setProfileOpen((value) => !value)} className="flex min-h-11 items-center gap-2 rounded-xl px-1.5 hover:bg-[#f1ede7]" aria-expanded={profileOpen} aria-haspopup="menu">
                             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b92f24] text-xs font-bold text-white">{initials}</span>
                             <span className="hidden max-w-44 text-left md:block"><span className="block truncate text-xs font-bold">{user?.name}</span><span className="block truncate text-[10px] text-[#958d85]">Akun Wasit</span></span>
@@ -93,13 +96,14 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
                         </button>
                         {profileOpen && <div role="menu" className="absolute right-0 top-[calc(100%+10px)] z-[80] w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-[#e4ddd3] bg-white shadow-2xl shadow-black/15 sm:w-72"><div className="border-b border-[#eee8e0] px-4 py-3.5"><p className="truncate text-sm font-bold">{user?.name}</p><p className="mt-0.5 truncate text-xs text-[#8c847c]">{user?.email}</p></div><button role="menuitem" type="button" onClick={() => router.post('/logout')} className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#bc3026] hover:bg-red-50"><i className="fa-solid fa-right-from-bracket w-4" aria-hidden="true" /> Keluar Sistem</button></div>}
                     </div>
+                    </div>
                 </header>
 
                 <main className="min-w-0 px-3 py-4 sm:px-4 sm:py-5 md:px-7 md:py-7">
                     {(flash.success || flash.status || flash.error) && <div role="status" className={`mb-5 rounded-xl border px-4 py-3 text-sm ${flash.error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{flash.error || flash.success || flash.status}</div>}
                     {children}
                 </main>
-                <footer className="border-t border-[#e7e0d8] px-5 py-4 text-center text-[11px] text-[#aaa29a]">© 2026 SMART-PERKEMI · Portal Wasit Shorinji Kempo Indonesia</footer>
+                <footer className="border-t border-[#e7e0d8] px-5 py-4 text-center text-[11px] text-[#aaa29a] dark:border-slate-800 dark:text-slate-500">© 2026 SMART-PERKEMI · Portal Wasit Shorinji Kempo Indonesia</footer>
             </div>
         </div>
     );

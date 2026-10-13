@@ -2,14 +2,20 @@
 
 namespace App\Http\Controllers\Admin\Panitera;
 
+use App\Events\RandoriScoreStateUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Panitera\StoreRandoriScoreRequest;
+use App\Http\Requests\Admin\Panitera\UpdateRandoriScoreDraftRequest;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\RandoriResultService;
+use App\Services\Panitera\RandoriScoreDraftStore;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -80,21 +86,32 @@ class RandoriResultController extends Controller
         StoreRandoriScoreRequest $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
         RandoriResultService $results,
+        RandoriScoreDraftStore $drafts,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
         abort_if($tournamentMatch->metadata['placeholder'] ?? false, 422, 'Peserta pertandingan belum lengkap.');
 
         $validated = $request->validated();
-        $results->record(
+        $score = $results->record(
             $tournamentMatch,
             $validated['aka'],
             $validated['shiro'],
             $validated['signatures'],
+            $validated['signature_names'] ?? null,
             $validated['notes'] ?? null,
             $request->user()->id,
+        );
+        $state = $drafts->replaceFromScore($tournamentMatch, $score, $request->user()->id);
+        $this->broadcastState(
+            $tournamentMatch,
+            'result_saved',
+            $state,
+            $validated['sync_client_id'] ?? null,
         );
 
         $redirect = $request->boolean('return_to_match')
@@ -111,21 +128,89 @@ class RandoriResultController extends Controller
         Request $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
         RandoriResultService $results,
+        RandoriScoreDraftStore $drafts,
     ): RedirectResponse {
         $request->validate([
             'event_id' => ['required', 'uuid'],
+            'sync_client_id' => ['nullable', 'string', 'max:100'],
         ]);
 
         $event = $eventContext->eventFor($request);
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
-        $results->lock($tournamentMatch, $request->user()->id);
+        $score = $results->lock($tournamentMatch, $request->user()->id);
+        $state = $drafts->replaceFromScore($tournamentMatch, $score, $request->user()->id);
+        $this->broadcastState(
+            $tournamentMatch,
+            'result_locked',
+            $state,
+            $request->string('sync_client_id')->toString() ?: null,
+        );
 
         return redirect()->route('admin.panitera.matches.show', [
             'tournamentMatch' => $tournamentMatch,
             'event_id' => $event->id,
         ])->with('success', 'Nilai Randori berhasil dikunci dan tidak dapat diubah lagi.');
+    }
+
+    public function updateDraft(
+        UpdateRandoriScoreDraftRequest $request,
+        TournamentMatch $tournamentMatch,
+        EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
+        RandoriScoreDraftStore $drafts,
+    ): JsonResponse {
+        $event = $eventContext->eventFor($request);
+        $eventContext->ensureCanManage($request, $event);
+        abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if($tournamentMatch->metadata['placeholder'] ?? false, 422, 'Peserta pertandingan belum lengkap.');
+
+        if ($tournamentMatch->randoriScore?->locked_at) {
+            throw ValidationException::withMessages([
+                'result' => 'Nilai Randori sudah dikunci dan draft tidak dapat diubah lagi.',
+            ]);
+        }
+
+        $validated = $request->validated();
+        $state = $drafts->put($tournamentMatch, $validated['changes'], $request->user()->id);
+
+        if ($state['changes'] !== []) {
+            $this->broadcastState(
+                $tournamentMatch,
+                'draft_updated',
+                $state,
+                $validated['client_id'],
+            );
+        }
+
+        return response()->json([
+            'version' => $state['state']['version'],
+            'updated_at' => $state['state']['updated_at'],
+            'changed' => $state['changes'] !== [],
+        ]);
+    }
+
+    /** @param array{state: array<string, mixed>, changes: array<string, mixed>} $state */
+    private function broadcastState(
+        TournamentMatch $match,
+        string $action,
+        array $state,
+        ?string $clientId,
+    ): void {
+        RandoriScoreStateUpdated::dispatch(
+            eventId: $match->event_id,
+            matchId: $match->id,
+            courtId: $match->event_court_id,
+            action: $action,
+            version: $state['state']['version'],
+            changes: $state['changes'],
+            clientId: $clientId,
+            updatedAt: (string) $state['state']['updated_at'],
+        );
     }
 }

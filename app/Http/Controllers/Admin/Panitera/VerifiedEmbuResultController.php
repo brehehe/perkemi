@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TournamentMatch;
 use App\Models\User;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\VerifyEmbuResult;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,7 @@ class VerifiedEmbuResultController extends Controller
         Request $request,
         TournamentMatch $tournamentMatch,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
         VerifyEmbuResult $verifyEmbuResult,
     ): RedirectResponse {
         $request->validate([
@@ -29,6 +31,7 @@ class VerifiedEmbuResultController extends Controller
                 && $tournamentMatch->matchCategory?->type === 'embu',
             404,
         );
+        $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
         $operator = $request->user();
         abort_unless($operator instanceof User, 403);
 

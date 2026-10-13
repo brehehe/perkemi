@@ -12,9 +12,9 @@ use App\Models\RefereeAttendance;
 use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,9 +29,11 @@ class PaniteraCourtMonitorController extends Controller
         Request $request,
         EventCourt $eventCourt,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
     ): Response {
         $event = $eventContext->eventFor($request);
         abort_unless($eventCourt->event_id === $event->id, 404);
+        $courtAccess->ensureCourtIsAccessible($request, $event, $eventCourt);
 
         $requestedMode = $request->string('mode')->toString();
         $mode = in_array($requestedMode, self::Modes, true) ? $requestedMode : 'arena';
@@ -41,6 +43,7 @@ class PaniteraCourtMonitorController extends Controller
             'court' => $eventCourt->only(['id', 'name', 'location']),
             'mode' => $mode,
             'monitor' => $this->monitorData($event, $eventCourt),
+            'timerStateUrl' => route('admin.panitera.monitors.timer', ['eventCourt' => $eventCourt, 'event_id' => $event->id]),
             'stateUrl' => route('admin.panitera.monitors.state', [
                 'eventCourt' => $eventCourt,
                 'event_id' => $event->id,
@@ -52,9 +55,11 @@ class PaniteraCourtMonitorController extends Controller
         Request $request,
         EventCourt $eventCourt,
         EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
     ): JsonResponse {
         $event = $eventContext->eventFor($request);
         abort_unless($eventCourt->event_id === $event->id, 404);
+        $courtAccess->ensureCourtIsAccessible($request, $event, $eventCourt);
 
         return response()->json($this->monitorData($event, $eventCourt));
     }
@@ -203,9 +208,7 @@ class PaniteraCourtMonitorController extends Controller
     private function staffData(Event $event, EventCourt $court): array
     {
         $event->loadMissing([
-            'referees:id,name',
-            'clerks:id,name',
-            'fieldCoordinators:id,name',
+            'referees:id,name,profile_photo_path,certification_level,dan_grade,region',
         ]);
         $court->loadMissing('assignments');
         $eventPresentRefereeIds = RefereeAttendance::query()
@@ -217,28 +220,28 @@ class PaniteraCourtMonitorController extends Controller
             ->whereDate('attendance_date', now()->toDateString())
             ->whereIn('referee_id', $eventPresentRefereeIds)
             ->pluck('referee_id');
-        $staffNames = [
-            'referee' => $event->referees->pluck('name', 'id'),
-            'clerk' => $event->clerks->pluck('name', 'id'),
-            'field_coordinator' => $event->fieldCoordinators->pluck('name', 'id'),
-        ];
+        $referees = $event->referees->keyBy('id');
 
         return $court->assignments
-            ->map(fn (EventCourtAssignment $assignment): array => [
-                'id' => $assignment->id,
-                'type' => $assignment->staff_type,
-                'type_label' => match ($assignment->staff_type) {
-                    'referee' => 'Wasit / Juri',
-                    'clerk' => 'Panitera',
-                    'field_coordinator' => 'Koordinator Lapangan',
-                    default => Str::title(str_replace('_', ' ', $assignment->staff_type)),
-                },
-                'name' => $staffNames[$assignment->staff_type]?->get($assignment->staff_id, 'Perangkat tidak tersedia'),
-                'role' => $assignment->staff_type === 'referee'
-                    ? (RefereeCourtRole::tryFrom($assignment->role)?->label() ?? Str::title(str_replace('_', ' ', $assignment->role)))
-                    : Str::title(str_replace('_', ' ', $assignment->role)),
-                'is_present' => $assignment->staff_type !== 'referee' || $presentRefereeIds->contains($assignment->staff_id),
-            ])
+            ->where('staff_type', 'referee')
+            ->sortBy(fn (EventCourtAssignment $assignment): int => RefereeCourtRole::tryFrom($assignment->role)?->judgeNumber() ?? 99)
+            ->map(function (EventCourtAssignment $assignment) use ($presentRefereeIds, $referees): array {
+                $referee = $referees->get($assignment->staff_id);
+                $role = RefereeCourtRole::tryFrom($assignment->role);
+
+                return [
+                    'id' => $assignment->id,
+                    'type' => 'referee',
+                    'type_label' => 'Wasit / Juri',
+                    'judge_number' => $role?->judgeNumber(),
+                    'name' => $referee?->name ?? 'Wasit tidak tersedia',
+                    'role' => $role?->label() ?? 'Wasit / Juri',
+                    'certification' => $referee?->certification_level ?: $referee?->dan_grade,
+                    'region' => $referee?->region,
+                    'photo_url' => $referee?->profilePhotoUrl(),
+                    'is_present' => $presentRefereeIds->contains($assignment->staff_id),
+                ];
+            })
             ->values()
             ->all();
     }

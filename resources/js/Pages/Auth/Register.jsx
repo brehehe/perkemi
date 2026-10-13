@@ -1,10 +1,7 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
-import { Button, Input, Textarea } from '@/Components/UI';
+import { Button, Input, Textarea, ThemeToggle } from '@/Components/UI';
 
 export default function Register({ year = new Date().getFullYear(), event = null }) {
-    const [isDark, setIsDark] = useState(true);
-
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         email: '',
@@ -14,30 +11,6 @@ export default function Register({ year = new Date().getFullYear(), event = null
         phone: '',
         address: '',
     });
-
-    useEffect(() => {
-        const saved = localStorage.getItem('kempo-theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const activeDark = saved === 'dark' || (!saved && prefersDark);
-        setIsDark(activeDark);
-        if (activeDark) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, []);
-
-    const toggleTheme = () => {
-        const nextDark = !isDark;
-        setIsDark(nextDark);
-        if (nextDark) {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('kempo-theme', 'dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('kempo-theme', 'light');
-        }
-    };
 
     const submit = (e) => {
         e.preventDefault();
@@ -54,15 +27,7 @@ export default function Register({ year = new Date().getFullYear(), event = null
 
             <div className="auth-page font-dm min-h-screen flex flex-col items-center justify-center p-4 py-8 md:py-12 relative overflow-x-hidden overflow-y-auto">
                 {/* Theme Toggle Button */}
-                <Button variant="unstyled" size="none"
-                    id="modeToggle"
-                    onClick={toggleTheme}
-                    type="button"
-                    title={isDark ? 'Beralih ke mode terang' : 'Beralih ke mode gelap'}
-                    aria-label="Toggle Theme"
-                >
-                    <i className={`fa-solid ${isDark ? 'fa-sun' : 'fa-moon'}`} id="modeIcon"></i>
-                </Button>
+                <ThemeToggle className="fixed right-4 top-4 z-50 sm:right-6 sm:top-6" />
 
                 <div className="flex items-center justify-center w-full max-w-6xl mx-auto my-auto relative z-10 gap-6">
                     {/* ── Left Panel (Decorative) ── */}

@@ -1,6 +1,6 @@
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import MedalBarChart from '@/Components/Charts/MedalBarChart';
 import StatusDoughnutChart from '@/Components/Charts/StatusDoughnutChart';
@@ -20,6 +20,7 @@ import {
     Modal,
     DescriptionList,
     Alert,
+    Select,
 } from '@/Components/UI';
 
 export default function Dashboard({
@@ -33,32 +34,89 @@ export default function Dashboard({
     todaySchedules = [],
     latestActivities = [],
     filters = {},
+    activeEvent = null,
+    eventOptions = [],
+    canViewAllEvents = false,
+    realtime = null,
     auth = {},
 }) {
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [selectedRegistration, setSelectedRegistration] = useState(null);
+    const [liveStatus, setLiveStatus] = useState(realtime ? 'Terhubung ke pembaruan event' : 'Ringkasan global');
+    const refreshTimerRef = useRef(null);
+
+    const eventId = activeEvent?.id || (canViewAllEvents ? 'all' : '');
+    const dashboardParams = (overrides = {}) => ({
+        search: searchTerm || undefined,
+        event_id: eventId || undefined,
+        ...overrides,
+    });
 
     const handleSearch = (e) => {
         e.preventDefault();
         router.get(
             '/admin/dashboard',
-            { search: searchTerm },
+            dashboardParams(),
             { preserveState: true, replace: true }
         );
     };
 
     const handleSearchReset = () => {
         setSearchTerm('');
-        router.get('/admin/dashboard', {}, { preserveState: true, replace: true });
+        router.get('/admin/dashboard', dashboardParams({ search: undefined }), { preserveState: true, replace: true });
     };
 
     const handlePageChange = (page) => {
         router.get(
             '/admin/dashboard',
-            { search: searchTerm, page },
+            dashboardParams({ page }),
             { preserveState: true, replace: true }
         );
     };
+
+    const handleEventChange = (nextEventId) => {
+        router.get('/admin/dashboard', {
+            event_id: nextEventId || 'all',
+            search: searchTerm || undefined,
+        }, {
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
+    useEffect(() => {
+        if (!window.Echo || !realtime?.channel || !realtime?.event) {
+            setLiveStatus(realtime ? 'Reverb belum terhubung' : 'Ringkasan global');
+            return undefined;
+        }
+
+        const channel = window.Echo.channel(realtime.channel);
+        const refreshDashboard = () => {
+            window.clearTimeout(refreshTimerRef.current);
+            setLiveStatus('Menyinkronkan perubahan…');
+            refreshTimerRef.current = window.setTimeout(() => {
+                router.reload({
+                    only: [
+                        'stats', 'monthlyAthletes', 'statusBreakdown', 'latestContingents',
+                        'latestRegistrations', 'medalStats', 'medalDistribution',
+                        'todaySchedules', 'latestActivities',
+                    ],
+                    preserveScroll: true,
+                    preserveState: true,
+                    onFinish: () => setLiveStatus('Data event sudah sinkron'),
+                });
+            }, 180);
+        };
+
+        channel.listen(realtime.event, refreshDashboard);
+        setLiveStatus('Terhubung ke pembaruan event');
+
+        return () => {
+            window.clearTimeout(refreshTimerRef.current);
+            channel.stopListening(realtime.event);
+            window.Echo.leave(realtime.channel);
+        };
+    }, [realtime?.channel, realtime?.event]);
 
     const totalMedals = (medalStats.gold || 0) + (medalStats.silver || 0) + (medalStats.bronze || 0);
 
@@ -95,6 +153,40 @@ export default function Dashboard({
     return (
         <AdminLayout auth={auth} title="Dashboard Admin">
             <Head title="Admin Dashboard — Smart Perkemi" />
+
+            <section className="mb-6 overflow-hidden rounded-2xl border border-[#392b23] bg-gradient-to-r from-[#171310] via-[#241813] to-[#3a1d14] p-5 text-white shadow-lg shadow-stone-300/20 dark:shadow-none md:p-6">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,520px)] lg:items-end">
+                    <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4a843]">Ringkasan operasional real-time</p>
+                        <h1 className="mt-2 font-cinzel text-2xl font-bold md:text-3xl">{activeEvent?.name || 'Seluruh Event'}</h1>
+                        <p className="mt-2 max-w-2xl text-xs leading-5 text-white/60">
+                            Statistik registrasi, peserta, jadwal, dan hasil juara diperbarui melalui Reverb tanpa polling berkala.
+                        </p>
+                        <p role="status" aria-live="polite" className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-200">
+                            <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+                            {liveStatus}
+                        </p>
+                    </div>
+                    <div>
+                        <Select
+                            label="Event dipilih"
+                            ariaLabel="Pilih event dashboard"
+                            value={eventId}
+                            clearable={false}
+                            options={[
+                                ...(canViewAllEvents ? [{ value: 'all', label: 'Semua event', sublabel: 'Ringkasan lintas event' }] : []),
+                                ...eventOptions.map((event) => ({
+                                    value: event.id,
+                                    label: event.name,
+                                    sublabel: `${event.city || 'Lokasi belum diisi'}${event.is_active ? ' · Aktif' : ''}`,
+                                })),
+                            ]}
+                            onChange={handleEventChange}
+                            labelClassName="text-white/60"
+                        />
+                    </div>
+                </div>
+            </section>
 
             {/* ════ STAT CARDS ════ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -235,7 +327,7 @@ export default function Dashboard({
 
                             <Button variant="unstyled" size="none"
                                 type="button"
-                                onClick={() => router.get('/admin/dashboard', {}, { preserveState: true })}
+                                onClick={() => router.get('/admin/dashboard', dashboardParams(), { preserveState: true })}
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
                                 title="Perbarui Data"
                             >

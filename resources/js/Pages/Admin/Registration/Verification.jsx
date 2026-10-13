@@ -5,6 +5,7 @@ import Modal from '@/Components/UI/Overlays/Modal';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
+import Pagination from '@/Components/UI/Navigation/Pagination';
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
@@ -19,14 +20,23 @@ export default function RegistrationVerification({ athletes, contingents, stats,
     const entryForm = useForm({ event_match_category_id: '', event_id: activeEvent?.id || '' });
     useEffect(() => { entryForm.setData('event_id', activeEvent?.id || ''); }, [activeEvent?.id]);
 
+    const visit = (changes = {}, page = 1) => router.get('/admin/pendaftaran/verifikasi', {
+        event_id: activeEvent?.id,
+        search,
+        contingent_id: contingentFilter,
+        category_type: filters.category_type || '',
+        ...changes,
+        page,
+    }, { preserveState: true, preserveScroll: true, replace: true });
+
     const handleSearch = (e) => {
         e.preventDefault();
-        router.get('/admin/pendaftaran/verifikasi', { search, contingent_id: contingentFilter, event_id: activeEvent?.id }, { preserveState: true });
+        visit();
     };
 
     const handleContingentChange = (cid) => {
         setContingentFilter(cid);
-        router.get('/admin/pendaftaran/verifikasi', { search, contingent_id: cid, event_id: activeEvent?.id }, { preserveState: true });
+        visit({ contingent_id: cid });
     };
 
     const toggleApprove = (id) => {
@@ -155,18 +165,26 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                 </div>
 
                 {/* Filter and Search */}
-                <div className="bg-white rounded-xl p-4 border border-[#ede9e1] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="grid gap-4 rounded-xl border border-[#ede9e1] bg-white p-4 shadow-xs md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_13rem_minmax(16rem,1fr)] xl:items-end">
                     {eventOptions.length > 1 && <Combobox label="Event" size="sm" clearable={false}
                         value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pendaftaran/verifikasi',
-                            { event_id: value, search, contingent_id: '' }, { preserveState: false })}
+                            { event_id: value, search, contingent_id: '', category_type: filters.category_type || '' }, { preserveState: false })}
                         options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))}
-                        containerClassName="w-full md:w-64" />}
+                        containerClassName="w-full" />}
                     <Combobox label="Filter Kontingen" size="sm" value={contingentFilter}
                         onChange={handleContingentChange} placeholder="Semua Kontingen / Dojo"
                         options={contingents.map((contingent) => ({ value: contingent.id, label: contingent.name }))}
-                        containerClassName="w-full md:w-64" />
+                        containerClassName="w-full" />
 
-                    <form onSubmit={handleSearch} className="flex items-center gap-2 w-full md:w-72">
+                    <Combobox label="Jenis Pertandingan" size="sm" value={filters.category_type || ''}
+                        onChange={(value) => visit({ category_type: value || '' })} placeholder="Semua Jenis"
+                        options={[
+                            { value: 'embu', label: 'Embu' },
+                            { value: 'randori', label: 'Randori' },
+                        ]}
+                        containerClassName="w-full" />
+
+                    <form onSubmit={handleSearch} className="flex w-full items-end gap-2">
                         <Input type="search" size="sm" value={search} onChange={(event) => setSearch(event.target.value)}
                             placeholder="Cari nama kenshi / kyu..." iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
                             containerClassName="min-w-0 flex-1" />
@@ -225,27 +243,37 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                                                         <i className="fa-solid fa-file-pdf text-[9px]"></i> Sehat (RS)
                                                     </span>
                                                 </td>
-                                                <td className="py-3.5 px-4">
-                                                    <div className="flex min-w-48 flex-wrap items-center gap-1.5">
-                                                        {ath.match_categories.map((entry) => (
-                                                            <span key={entry.id} className="inline-flex items-center gap-1 rounded-full border border-[#d4a843]/30 bg-[#fff7df] px-2 py-1 text-[10px] font-medium text-[#7a5b14]">
-                                                                {entry.name}
-                                                                {canManageMatchEntries && (
-                                                                    <Button variant="unstyled" size="none" type="button" onClick={() => removeMatchCategory(ath, entry)} aria-label={`Hapus ${entry.name}`} className="ml-0.5 text-[#a47b1d] hover:text-red-600">
-                                                                        <i className="fa-solid fa-xmark"></i>
-                                                                    </Button>
-                                                                )}
-                                                            </span>
-                                                        ))}
-                                                        {ath.match_categories.length === 0 && <span className="text-[11px] text-[#9a938c]">Belum dipilih</span>}
+                                                <td className="px-4 py-3.5 whitespace-normal">
+                                                    <div className="min-w-72 space-y-2">
+                                                        {ath.match_categories.length > 0 ? (
+                                                            <ol className="space-y-1.5">
+                                                                {ath.match_categories.map((entry, entryIndex) => (
+                                                                    <li key={entry.id} className="flex items-start gap-2 rounded-xl border border-[#e7dfd3] bg-[#fcfbf9] px-2.5 py-2">
+                                                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#17120f] text-[10px] font-black text-white">{entryIndex + 1}</span>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                                                <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${entry.type === 'randori' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>{entry.type || 'Nomor'}</span>
+                                                                                {entry.type === 'embu' && entry.team_number > 1 && <span className="text-[9px] font-bold text-[#8a671b]">Tim {entry.team_number}</span>}
+                                                                            </div>
+                                                                            <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-[#3e3731]">{entry.name}</p>
+                                                                        </div>
+                                                                        {canManageMatchEntries && (
+                                                                            <Button variant="unstyled" size="none" type="button" onClick={() => removeMatchCategory(ath, entry)} aria-label={`Hapus ${entry.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#a47b1d] hover:bg-red-50 hover:text-red-600">
+                                                                                <i className="fa-solid fa-xmark" aria-hidden="true" />
+                                                                            </Button>
+                                                                        )}
+                                                                    </li>
+                                                                ))}
+                                                            </ol>
+                                                        ) : <p className="rounded-lg border border-dashed border-[#ded8cf] px-3 py-2 text-[11px] text-[#9a938c]">Belum ada nomor pertandingan.</p>}
                                                         {canManageMatchEntries && (
                                                             <Button variant="unstyled" size="none"
                                                                 type="button"
                                                                 onClick={() => openMatchCategoryModal(ath)}
                                                                 disabled={maxMatchCategoriesPerAthlete !== null && ath.match_categories.length >= maxMatchCategoriesPerAthlete}
-                                                                className="inline-flex items-center gap-1 rounded-lg border border-[#d4a843]/40 bg-white px-2 py-1 text-[10px] font-semibold text-[#8a671b] hover:bg-[#fff7df] disabled:cursor-not-allowed disabled:border-[#ded9d0] disabled:text-[#a8a29a]"
+                                                                className="inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-[#d4a843]/40 bg-white px-3 py-1.5 text-[10px] font-bold text-[#8a671b] hover:bg-[#fff7df] disabled:cursor-not-allowed disabled:border-[#ded9d0] disabled:text-[#a8a29a] sm:w-auto"
                                                             >
-                                                                <i className="fa-solid fa-plus"></i> Tambah
+                                                                <i className="fa-solid fa-plus" aria-hidden="true" /> Tambah Nomor Pertandingan
                                                             </Button>
                                                         )}
                                                     </div>
@@ -283,7 +311,9 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                                     </tr>
                                 )}
                             </tbody>
-                        </table></TableContainer>
+                        </table>
+                    </TableContainer>
+                    <Pagination pagination={athletes} label="atlet" onPageChange={(page) => visit({}, page)} />
                 </div>
 
                 <Modal

@@ -8,6 +8,7 @@ use App\Models\EventMatchCategory;
 use App\Models\Kyu;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
@@ -65,6 +66,84 @@ test('event staff can enroll an eligible athlete in a match category', function 
         'athlete_id' => $athlete->id,
         'event_match_category_id' => $category->id,
     ]);
+});
+
+test('verification can filter Randori athletes and returns numbered category details', function () {
+    config()->set('app.tenant_base_domain', 'localhost');
+
+    $eventUser = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Kejurda Filter Nomor 2026',
+        'slug' => 'kejurda-filter-nomor-2026',
+        'tenant_subdomain' => 'kejurda-filter-nomor-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'max_match_categories_per_athlete' => 3,
+    ]);
+    $event->users()->attach($eventUser, ['access_role' => 'staff']);
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $eventUser->id,
+        'name' => 'Dojo Filter Nomor',
+        'city' => 'Surabaya',
+        'manager_name' => 'Sensei Filter',
+        'phone' => '081234567890',
+    ]);
+    $randoriAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Randori',
+        'gender' => 'male',
+        'weight' => 55,
+    ]);
+    $embuAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Embu',
+        'gender' => 'male',
+        'weight' => 55,
+    ]);
+    $randoriCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 55 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'max_athletes_per_team' => 2,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $embuCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Embu Tandoku Putra',
+        'type' => 'embu',
+        'gender' => 'male',
+        'capacity' => 8,
+        'max_athletes_per_team' => 1,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $randoriAthlete->id,
+        'event_match_category_id' => $randoriCategory->id,
+    ]);
+    AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $embuAthlete->id,
+        'event_match_category_id' => $embuCategory->id,
+    ]);
+
+    $this->actingAs($eventUser)
+        ->get('http://kejurda-filter-nomor-2026.localhost/admin/pendaftaran/verifikasi?category_type=randori')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Registration/Verification')
+            ->where('filters.category_type', 'randori')
+            ->where('athletes.total', 1)
+            ->where('athletes.data.0.id', $randoriAthlete->id)
+            ->where('athletes.data.0.match_categories.0.name', 'Randori Putra 55 kg')
+            ->where('athletes.data.0.match_categories.0.type', 'randori')
+            ->where('athletes.data.0.match_categories.0.team_number', 1));
 });
 
 test('enrollment enforces the maximum categories per athlete and per contingent', function () {
