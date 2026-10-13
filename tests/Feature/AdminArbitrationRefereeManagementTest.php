@@ -22,6 +22,19 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
 });
 
+test('admin arbitration pages accept the all event option', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = arbitrationEvent('all-option');
+
+    $this->actingAs($admin)
+        ->get(route('admin.arbitrase.wasit', ['event_id' => 'all']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/Referee')
+            ->where('activeEvent.id', $event->id));
+});
+
 test('admin filters event referees using status tabs', function () {
     $admin = User::factory()->create();
     $admin->assignRole('Super Admin');

@@ -69,6 +69,21 @@ test('only a contingent account with owned data may access the portal', function
     $this->actingAs($user)->get('/kontingen/registrasi')->assertOk();
 });
 
+test('contingent portal accepts the all event option and uses its active event', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('POPDA Semua', 'popda-semua', true);
+    $contingent = portalContingent($owner, $event, 'Kontingen Semua');
+
+    $this->actingAs($owner)
+        ->get('/kontingen/hasil?event_id=all')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('portal.event.id', $event->id)
+            ->where('portal.contingent.id', $contingent->id));
+});
+
 test('contingent portal exposes six separated pages scoped to the signed in contingent', function () {
     $owner = User::factory()->create();
     $owner->assignRole('kontingen');

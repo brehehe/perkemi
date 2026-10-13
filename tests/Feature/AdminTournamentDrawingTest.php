@@ -6,11 +6,34 @@ use App\Models\Contingent;
 use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\Registration;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
+
+test('admin tournament pages accept the all event option', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Event Drawing Semua',
+        'slug' => 'event-drawing-semua',
+        'venue' => 'GOR Drawing',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('admin.pertandingan.drawing', ['event_id' => 'all']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Tournament/Drawing')
+            ->where('activeEvent.id', $event->id));
+});
 
 test('renders only the active tenant event match categories and eligible drawing contestants', function () {
     config()->set('app.tenant_base_domain', 'localhost');

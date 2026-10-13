@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -712,8 +713,8 @@ class TournamentController extends Controller
             return $tenantEvent;
         }
 
-        $requestedEventId = $request->input('event_id');
-        if (is_string($requestedEventId) && $requestedEventId !== '') {
+        $requestedEventId = $this->requestedEventId($request);
+        if ($requestedEventId !== null) {
             $event = Event::query()->findOrFail($requestedEventId);
             abort_unless($this->canAccessTournament($request, $event), 403);
 
@@ -725,6 +726,21 @@ class TournamentController extends Controller
             ->orderByDesc('start_date')
             ->orderByDesc('id')
             ->first();
+    }
+
+    private function requestedEventId(Request $request): ?string
+    {
+        $eventId = $request->input('event_id');
+        abort_unless($eventId === null || is_string($eventId), 404, 'Event tidak ditemukan.');
+
+        $eventId = trim((string) $eventId);
+        if ($eventId === '' || $eventId === 'all') {
+            return null;
+        }
+
+        abort_unless(Str::isUuid($eventId), 404, 'Event tidak ditemukan.');
+
+        return $eventId;
     }
 
     /**

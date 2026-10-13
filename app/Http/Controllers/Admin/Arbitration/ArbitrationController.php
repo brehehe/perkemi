@@ -387,19 +387,35 @@ class ArbitrationController extends Controller
     private function eventForRequest(Request $request): ?Event
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
+        $requestedEventId = $this->requestedEventId($request);
 
         if ($tenantEvent instanceof Event) {
-            $requestedEventId = $request->string('event_id')->toString();
-            abort_if($requestedEventId !== '' && $requestedEventId !== $tenantEvent->id, 404);
+            abort_if($requestedEventId !== null && $requestedEventId !== $tenantEvent->id, 404);
 
             return $tenantEvent;
         }
 
-        $eventId = $request->string('event_id')->toString();
+        if ($requestedEventId !== null) {
+            return Event::query()->findOrFail($requestedEventId);
+        }
 
-        return $eventId !== ''
-            ? Event::query()->findOrFail($eventId)
-            : Event::query()->where('is_active', true)->orderByDesc('start_date')->first();
+        return Event::query()->where('is_active', true)->orderByDesc('start_date')->orderByDesc('id')->first()
+            ?? Event::query()->orderByDesc('start_date')->orderByDesc('id')->first();
+    }
+
+    private function requestedEventId(Request $request): ?string
+    {
+        $eventId = $request->input('event_id');
+        abort_unless($eventId === null || is_string($eventId), 404, 'Event tidak ditemukan.');
+
+        $eventId = trim((string) $eventId);
+        if ($eventId === '' || $eventId === 'all') {
+            return null;
+        }
+
+        abort_unless(Str::isUuid($eventId), 404, 'Event tidak ditemukan.');
+
+        return $eventId;
     }
 
     public function exportScores(

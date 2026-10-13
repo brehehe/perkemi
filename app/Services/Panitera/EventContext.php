@@ -6,23 +6,23 @@ use App\Models\Event;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class EventContext
 {
     public function eventFor(Request $request): Event
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
+        $requestedEventId = $this->requestedEventId($request);
 
         if ($tenantEvent instanceof Event) {
-            $requestedEventId = $request->input('event_id');
-            abort_if(is_string($requestedEventId) && $requestedEventId !== '' && $requestedEventId !== $tenantEvent->id, 404);
+            abort_if($requestedEventId !== null && $requestedEventId !== $tenantEvent->id, 404);
             abort_unless($this->canAccess($request, $tenantEvent), 404);
 
             return $tenantEvent;
         }
 
-        $requestedEventId = $request->input('event_id');
-        if (is_string($requestedEventId) && $requestedEventId !== '') {
+        if ($requestedEventId !== null) {
             $event = Event::query()->findOrFail($requestedEventId);
             abort_unless($this->canAccess($request, $event), 404);
 
@@ -38,6 +38,21 @@ class EventContext
         abort_unless($event instanceof Event, 404, 'Event untuk Panitera belum tersedia.');
 
         return $event;
+    }
+
+    private function requestedEventId(Request $request): ?string
+    {
+        $eventId = $request->input('event_id');
+        abort_unless($eventId === null || is_string($eventId), 404, 'Event tidak ditemukan.');
+
+        $eventId = trim((string) $eventId);
+        if ($eventId === '' || $eventId === 'all') {
+            return null;
+        }
+
+        abort_unless(Str::isUuid($eventId), 404, 'Event tidak ditemukan.');
+
+        return $eventId;
     }
 
     public function ensureCanManage(Request $request, Event $event): void

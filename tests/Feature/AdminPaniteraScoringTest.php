@@ -116,6 +116,32 @@ test('an assigned clerk sees only the selected event dashboard', function () {
         ->assertNotFound();
 });
 
+test('an assigned Panitera can open the dashboard from the all event option', function () {
+    $event = createPaniteraEvent('Event Panitera Semua');
+    $user = createPaniteraUser($event);
+
+    $this->actingAs($user)
+        ->get('/admin/panitera/scoring?event_id=all')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/Dashboard')
+            ->where('activeEvent.id', $event->id));
+});
+
+test('a Super Admin Panitera view resolves the all event option without tenant context', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = createPaniteraEvent('Event Panitera Semua Admin');
+
+    $this->actingAs($admin)
+        ->get('/admin/panitera/scoring?event_id=all')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/Dashboard')
+            ->where('activeEvent.id', $event->id));
+});
+
 test('the Panitera dashboard combines Embu and Randori into one scheduled list', function () {
     $event = createPaniteraEvent('Event Tabel Panitera');
     $user = createPaniteraUser($event);

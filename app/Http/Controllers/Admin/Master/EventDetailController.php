@@ -53,7 +53,13 @@ class EventDetailController extends Controller
 
         // If event is not specified in route, resolve the requested, active, or latest event.
         if (! $event || ! $event->exists) {
-            $requestedEventId = $request->string('event_id')->toString();
+            $requestedEventId = $request->input('event_id');
+            abort_unless($requestedEventId === null || is_string($requestedEventId), 404, 'Event tidak ditemukan.');
+
+            $requestedEventId = trim((string) $requestedEventId);
+            $requestedEventId = $requestedEventId === 'all' ? '' : $requestedEventId;
+            abort_unless($requestedEventId === '' || Str::isUuid($requestedEventId), 404, 'Event tidak ditemukan.');
+
             $event = ($requestedEventId !== '' ? Event::query()->find($requestedEventId) : null)
                 ?? Event::where('is_active', true)->orderByDesc('start_date')->orderByDesc('id')->first()
                 ?? Event::orderByDesc('start_date')->orderByDesc('id')->first()

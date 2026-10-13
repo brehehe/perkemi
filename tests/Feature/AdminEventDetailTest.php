@@ -91,6 +91,27 @@ test('admin can access default event detail page and see active event with tabs 
     );
 });
 
+test('admin event detail accepts the all event option', function () {
+    $user = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Event Aktif Untuk Semua',
+        'slug' => 'event-aktif-untuk-semua',
+        'venue' => 'GOR Uji',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-24',
+        'end_date' => '2026-10-26',
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.master.event.detail.default', ['event_id' => 'all']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Master/Event/Detail')
+            ->where('event.id', $event->id));
+});
+
 test('admin can access specific event detail page by id', function () {
     $user = User::factory()->create();
 

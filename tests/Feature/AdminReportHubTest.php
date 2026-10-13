@@ -52,6 +52,29 @@ test('the report hub keeps the explicitly selected event', function (): void {
             ->has('events', 2));
 });
 
+test('the report hub resolves the all event option to the active event', function (): void {
+    $user = User::factory()->create();
+    reportEvent('archived');
+    $activeEvent = reportEvent('selected');
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.index', ['event_id' => 'all', 'report' => 'scoring-summary']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Index')
+            ->where('activeEvent.id', $activeEvent->id)
+            ->where('dataset.key', 'scoring-summary'));
+});
+
+test('the report hub rejects an invalid event identifier without a database error', function (): void {
+    $user = User::factory()->create();
+    reportEvent('selected');
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.index', ['event_id' => 'not-a-uuid']))
+        ->assertNotFound();
+});
+
 test('the selected report can be exported as a native Excel workbook', function (): void {
     $user = User::factory()->create();
     $event = reportEvent('export');
@@ -187,6 +210,14 @@ test('individual Embu and Randori report prints include their recorded signature
         ->assertOk()
         ->assertSee('Pengesahan 6 Pihak')
         ->assertSee($signature, false);
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.print.embu', ['embuScore' => $embuScore, 'event_id' => 'all']))
+        ->assertOk();
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.print.randori', ['randoriScore' => $randoriScore, 'event_id' => 'all']))
+        ->assertOk();
 
     $otherEvent = reportEvent('other-print-event');
 

@@ -459,6 +459,7 @@ class PortalController extends Controller
 
         $requestedEventId = $request->query('event_id');
         abort_unless($requestedEventId === null || is_string($requestedEventId), 404, 'Event kontingen tidak ditemukan.');
+        $requestedEventId = $requestedEventId === 'all' ? null : $requestedEventId;
 
         $tenantEventId = $request->session()->get('tenant_event_id');
         $requestedContingent = $requestedEventId

@@ -13,6 +13,7 @@ use App\Services\Reports\ReportWorkbook;
 use App\Services\Reports\ScoreReportFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -87,7 +88,7 @@ class ReportController extends Controller
         EmbuScore $embuScore,
         ScoreReportFormatter $scoreFormatter,
     ): View {
-        $activeEvent = $this->eventForRequest($request);
+        $activeEvent = $this->eventForRequest($request, $embuScore->event_id);
         abort_unless($activeEvent instanceof Event && $embuScore->event_id === $activeEvent->id, 404);
 
         $embuScore->load([
@@ -120,7 +121,7 @@ class ReportController extends Controller
         RandoriScore $randoriScore,
         ScoreReportFormatter $scoreFormatter,
     ): View {
-        $activeEvent = $this->eventForRequest($request);
+        $activeEvent = $this->eventForRequest($request, $randoriScore->event_id);
         abort_unless($activeEvent instanceof Event && $randoriScore->event_id === $activeEvent->id, 404);
 
         $randoriScore->load([
@@ -182,22 +183,42 @@ class ReportController extends Controller
         ]);
     }
 
-    private function eventForRequest(Request $request): ?Event
+    private function eventForRequest(Request $request, ?string $fallbackEventId = null): ?Event
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
+        $requestedEventId = $this->requestedEventId($request);
 
         if ($tenantEvent instanceof Event) {
-            $requestedEventId = $request->string('event_id')->toString();
-            abort_if($requestedEventId !== '' && $requestedEventId !== $tenantEvent->id, 404);
+            abort_if($requestedEventId !== null && $requestedEventId !== $tenantEvent->id, 404);
 
             return $tenantEvent;
         }
 
-        $eventId = $request->string('event_id')->toString();
+        if ($requestedEventId !== null) {
+            return Event::query()->findOrFail($requestedEventId);
+        }
 
-        return $eventId !== ''
-            ? Event::query()->findOrFail($eventId)
-            : Event::query()->where('is_active', true)->orderByDesc('start_date')->first();
+        if ($fallbackEventId !== null) {
+            return Event::query()->findOrFail($fallbackEventId);
+        }
+
+        return Event::query()->where('is_active', true)->orderByDesc('start_date')->orderByDesc('id')->first()
+            ?? Event::query()->orderByDesc('start_date')->orderByDesc('id')->first();
+    }
+
+    private function requestedEventId(Request $request): ?string
+    {
+        $eventId = $request->input('event_id');
+        abort_unless($eventId === null || is_string($eventId), 404, 'Event tidak ditemukan.');
+
+        $eventId = trim((string) $eventId);
+        if ($eventId === '' || $eventId === 'all') {
+            return null;
+        }
+
+        abort_unless(Str::isUuid($eventId), 404, 'Event tidak ditemukan.');
+
+        return $eventId;
     }
 
     /** @return list<array<string, mixed>> */
