@@ -2,6 +2,7 @@
 
 use App\Models\Clerk;
 use App\Models\Event;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -26,12 +27,16 @@ test('admin can manage master clerk data', function () {
 
 test('admin can assign or directly add a clerk to an event', function () {
     $user = User::factory()->create();
-    $clerk = Clerk::create(['name' => 'Rizky', 'is_active' => true]);
+    Role::findOrCreate('Panitera', 'web');
+    $clerkLogin = User::factory()->create(['email' => 'rizky.panitera@example.test']);
+    $clerkLogin->assignRole('Panitera');
+    $clerk = Clerk::create(['name' => 'Rizky', 'email' => $clerkLogin->email, 'is_active' => true]);
     $event = Event::create(['name' => 'Kejurda Panitera 2026', 'slug' => 'kejurda-panitera-2026', 'venue' => 'GOR Kertajaya', 'city' => 'Surabaya', 'start_date' => '2026-10-01', 'end_date' => '2026-10-03']);
 
     $this->actingAs($user)->post("/admin/master/event/{$event->id}/clerk", ['clerk_id' => $clerk->id, 'role' => 'timekeeper'])->assertRedirect();
 
     $this->assertDatabaseHas('clerk_event', ['clerk_id' => $clerk->id, 'event_id' => $event->id, 'role' => 'timekeeper']);
+    $this->assertDatabaseHas('event_user', ['event_id' => $event->id, 'user_id' => $clerkLogin->id, 'access_role' => Event::AccessRoleStaff]);
 
     $this->actingAs($user)->post("/admin/master/event/{$event->id}/clerk", ['create_new' => true, 'name' => 'Ayu', 'employee_number' => 'PAN-CEPAT-001', 'role' => 'operator'])->assertRedirect();
 

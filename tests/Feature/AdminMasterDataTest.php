@@ -182,6 +182,7 @@ test('admin master user index can be rendered and create user with role', functi
     $payload = [
         'name' => 'Sensei Wasit Nasional',
         'email' => 'wasit.nasional@smart-perkemi.id',
+        'phone' => '081299988877',
         'password' => 'Password123!',
         'role' => 'Wasit',
     ];
@@ -191,6 +192,7 @@ test('admin master user index can be rendered and create user with role', functi
 
     $this->assertDatabaseHas('users', [
         'email' => 'wasit.nasional@smart-perkemi.id',
+        'phone' => '6281299988877',
     ]);
 
     $newUser = User::where('email', 'wasit.nasional@smart-perkemi.id')->first();

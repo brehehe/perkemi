@@ -269,6 +269,7 @@ test('Panitera creates an event-scoped referee login account', function () {
         ->post(route('admin.pertandingan.wasit.account.store', $referee, false), [
             'event_id' => $event->id,
             'email' => 'wasit.login@example.test',
+            'phone' => '081377788899',
             'password' => 'WasitAman123!',
             'password_confirmation' => 'WasitAman123!',
         ])
@@ -278,6 +279,7 @@ test('Panitera creates an event-scoped referee login account', function () {
     $account = User::query()->where('email', 'wasit.login@example.test')->firstOrFail();
 
     expect($account->hasRole('Wasit'))->toBeTrue()
+        ->and($account->phone)->toBe('6281377788899')
         ->and(Hash::check('WasitAman123!', $account->password))->toBeTrue()
         ->and($referee->fresh()->user_id)->toBe($account->id);
 

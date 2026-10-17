@@ -2,6 +2,12 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\Clerk;
+use App\Models\Contingent;
+use App\Models\FieldCoordinator;
+use App\Models\Referee;
+use App\Models\User;
+use App\Support\PhoneNumber;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -43,12 +49,16 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        $credentials = [
-            'email' => $this->string('email')->trim()->value(),
-            'password' => $this->string('password')->value(),
-        ];
+        $identifier = $this->string('email')->trim()->value();
+        $password = $this->string('password')->value();
+        $authenticated = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+            ? Auth::attempt([
+                'email' => Str::lower($identifier),
+                'password' => $password,
+            ], $this->boolean('remember'))
+            : $this->attemptPhoneLogin($identifier, $password);
 
-        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
+        if (! $authenticated) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -87,6 +97,76 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('email')->value()).'|'.$this->ip());
+        $identifier = $this->string('email')->trim()->value();
+        $normalizedIdentifier = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+            ? Str::lower($identifier)
+            : (PhoneNumber::normalize($identifier) ?? Str::lower($identifier));
+
+        return Str::transliterate($normalizedIdentifier.'|'.$this->ip());
+    }
+
+    private function attemptPhoneLogin(string $identifier, string $password): bool
+    {
+        $phone = PhoneNumber::normalize($identifier);
+
+        if (! $phone) {
+            return false;
+        }
+
+        $user = User::query()->where('phone', $phone)->first();
+        $user ??= $this->legacyUserForPhone($phone);
+
+        if (! $user || ! Auth::attempt([
+            'id' => $user->id,
+            'password' => $password,
+        ], $this->boolean('remember'))) {
+            return false;
+        }
+
+        if (blank($user->phone) && ! User::query()->where('phone', $phone)->whereKeyNot($user->id)->exists()) {
+            $user->update(['phone' => $phone]);
+        }
+
+        return true;
+    }
+
+    private function legacyUserForPhone(string $phone): ?User
+    {
+        $referee = Referee::query()
+            ->with('user')
+            ->whereNotNull('user_id')
+            ->whereNotNull('phone')
+            ->get()
+            ->first(fn (Referee $referee): bool => PhoneNumber::normalize($referee->phone) === $phone);
+
+        if ($referee?->user) {
+            return $referee->user;
+        }
+
+        $contingent = Contingent::query()
+            ->with('user')
+            ->whereNotNull('user_id')
+            ->whereNotNull('phone')
+            ->get()
+            ->first(fn (Contingent $contingent): bool => PhoneNumber::normalize($contingent->phone) === $phone);
+
+        if ($contingent?->user) {
+            return $contingent->user;
+        }
+
+        $email = Clerk::query()
+            ->whereNotNull('email')
+            ->whereNotNull('phone')
+            ->get(['email', 'phone'])
+            ->first(fn (Clerk $clerk): bool => PhoneNumber::normalize($clerk->phone) === $phone)?->email
+            ?? FieldCoordinator::query()
+                ->whereNotNull('email')
+                ->whereNotNull('phone')
+                ->get(['email', 'phone'])
+                ->first(fn (FieldCoordinator $coordinator): bool => PhoneNumber::normalize($coordinator->phone) === $phone)?->email;
+
+        return $email
+            ? User::query()->whereRaw('LOWER(email) = ?', [Str::lower($email)])->first()
+            : null;
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin\Master;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class UpdateFieldCoordinatorRequest extends FormRequest
 {
@@ -27,7 +28,8 @@ class UpdateFieldCoordinatorRequest extends FormRequest
             'coordinator_number' => ['nullable', 'string', 'max:100', Rule::unique('field_coordinators', 'coordinator_number')->ignore($this->route('fieldCoordinator'))],
             'region' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'max:150'],
+            'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
             'notes' => ['nullable', 'string', 'max:500'],
             'is_active' => ['boolean'],
         ];

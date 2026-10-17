@@ -4,11 +4,17 @@ namespace App\Http\Requests\Admin\Tournament;
 
 use App\Models\Referee;
 use App\Models\User;
+use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class UpsertRefereeAccountRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $this->merge(['phone' => PhoneNumber::normalize($this->input('phone'))]);
+    }
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -37,6 +43,7 @@ class UpsertRefereeAccountRequest extends FormRequest
 
         return [
             'email' => ['required', 'email:rfc', 'max:255', Rule::unique('users', 'email')->ignore($linkedUserId)],
+            'phone' => ['nullable', 'string', 'max:30', Rule::unique('users', 'phone')->ignore($linkedUserId)],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ];
     }
@@ -48,6 +55,7 @@ class UpsertRefereeAccountRequest extends FormRequest
             'email.required' => 'Email login wasit wajib diisi.',
             'email.email' => 'Format email login wasit belum valid.',
             'email.unique' => 'Email tersebut sudah digunakan oleh akun lain.',
+            'phone.unique' => 'Nomor HP tersebut sudah digunakan oleh akun lain.',
             'password.required' => 'Password login wasit wajib diisi.',
             'password.min' => 'Password login wasit minimal 8 karakter.',
             'password.confirmed' => 'Konfirmasi password belum sama.',

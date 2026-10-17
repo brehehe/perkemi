@@ -6,8 +6,10 @@ use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
 use App\Models\FieldCoordinator;
 use App\Models\Referee;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
@@ -48,14 +50,63 @@ test('admin can manage master referee data', function () {
     $this->assertDatabaseHas('referees', ['id' => $referee->id, 'name' => 'Sensei Budi Santoso, M.Pd.']);
 });
 
+test('staff master forms can create login accounts with the correct roles', function () {
+    $admin = User::factory()->create();
+
+    foreach (['Wasit', 'Panitera', 'Koordinator Lapangan'] as $role) {
+        Role::findOrCreate($role, 'web');
+    }
+
+    $this->actingAs($admin)->post('/admin/master/referee', [
+        'name' => 'Wasit Login',
+        'gender' => 'male',
+        'email' => 'wasit.master@example.test',
+        'phone' => '081234567890',
+        'password' => 'WasitAman123!',
+        'password_confirmation' => 'WasitAman123!',
+        'is_active' => true,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $this->actingAs($admin)->post('/admin/master/clerk', [
+        'name' => 'Panitera Login',
+        'email' => 'panitera.master@example.test',
+        'password' => 'PaniteraAman123!',
+        'password_confirmation' => 'PaniteraAman123!',
+        'is_active' => true,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $this->actingAs($admin)->post('/admin/master/field-coordinator', [
+        'name' => 'Koordinator Login',
+        'email' => 'koordinator.master@example.test',
+        'password' => 'KoordinatorAman123!',
+        'password_confirmation' => 'KoordinatorAman123!',
+        'is_active' => true,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $refereeUser = User::query()->where('email', 'wasit.master@example.test')->firstOrFail();
+    $clerkUser = User::query()->where('email', 'panitera.master@example.test')->firstOrFail();
+    $coordinatorUser = User::query()->where('email', 'koordinator.master@example.test')->firstOrFail();
+
+    expect($refereeUser->hasRole('Wasit'))->toBeTrue()
+        ->and($refereeUser->phone)->toBe('6281234567890')
+        ->and(Hash::check('WasitAman123!', $refereeUser->password))->toBeTrue()
+        ->and(Referee::query()->where('user_id', $refereeUser->id)->exists())->toBeTrue()
+        ->and($clerkUser->hasRole('Panitera'))->toBeTrue()
+        ->and($coordinatorUser->hasRole('Koordinator Lapangan'))->toBeTrue();
+});
+
 test('admin can assign a referee to an event', function () {
     $user = User::factory()->create();
-    $referee = Referee::create(['name' => 'Sensei Ani', 'gender' => 'female', 'is_active' => true]);
+    Role::findOrCreate('Wasit', 'web');
+    $refereeLogin = User::factory()->create(['email' => 'sensei.ani@example.test']);
+    $refereeLogin->assignRole('Wasit');
+    $referee = Referee::create(['user_id' => $refereeLogin->id, 'name' => 'Sensei Ani', 'gender' => 'female', 'email' => $refereeLogin->email, 'is_active' => true]);
     $event = Event::create(['name' => 'Kejurda Wasit 2026', 'slug' => 'kejurda-wasit-2026', 'venue' => 'GOR Kertajaya', 'city' => 'Surabaya', 'start_date' => '2026-10-01', 'end_date' => '2026-10-03']);
 
     $this->actingAs($user)->post("/admin/master/event/{$event->id}/referee", ['referee_id' => $referee->id, 'role' => 'chief'])->assertRedirect();
 
     $this->assertDatabaseHas('event_referee', ['event_id' => $event->id, 'referee_id' => $referee->id, 'role' => 'chief']);
+    $this->assertDatabaseHas('event_user', ['event_id' => $event->id, 'user_id' => $refereeLogin->id, 'access_role' => Event::AccessRoleStaff]);
 
     $this->actingAs($user)->get("/admin/master/event/{$event->id}/detail")
         ->assertInertia(fn (Assert $page) => $page->where('eventReferees.0.name', 'Sensei Ani')->where('eventReferees.0.role', 'chief'));
@@ -72,12 +123,21 @@ test('admin can add a new referee directly from an event', function () {
         'license_number' => 'WASIT-CEPAT-001',
         'region' => 'Jawa Tengah',
         'phone' => '081234567890',
+        'email' => 'sensei.citra@example.test',
+        'password' => 'CitraAman123!',
+        'password_confirmation' => 'CitraAman123!',
         'role' => 'judge',
-    ])->assertRedirect();
+    ])->assertRedirect()->assertSessionHasNoErrors();
 
     $referee = Referee::query()->firstOrFail();
 
     $this->assertDatabaseHas('event_referee', ['event_id' => $event->id, 'referee_id' => $referee->id, 'role' => 'judge']);
+    $login = User::query()->where('email', 'sensei.citra@example.test')->firstOrFail();
+
+    expect($referee->user_id)->toBe($login->id)
+        ->and($login->phone)->toBe('6281234567890')
+        ->and($login->hasRole('Wasit'))->toBeTrue()
+        ->and($event->users()->whereKey($login->id)->wherePivot('access_role', Event::AccessRoleStaff)->exists())->toBeTrue();
 });
 
 test('tenant arbitration page shows only referees assigned to its event', function () {

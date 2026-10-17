@@ -4,6 +4,7 @@ import { Avatar, CommandPalette, ThemeToggle } from '@/Components/UI';
 import ContingentLayout from '@/Layouts/ContingentLayout';
 import RefereeLayout from '@/Layouts/RefereeLayout';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
+import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 
 const reportMenuItems = [
     { key: 'champions', title: 'Hasil Juara', subtitle: 'Susunan juara resmi per nomor pertandingan', icon: 'fa-trophy' },
@@ -16,10 +17,25 @@ const reportMenuItems = [
     { key: 'scoring-summary', title: 'Rekap Penilaian', subtitle: 'Ringkasan status seluruh penilaian', icon: 'fa-clipboard-check' },
 ];
 
+const masterTransferPages = {
+    '/admin/master/contingent': { type: 'contingent', label: 'Kontingen', supportsLogin: true, requiresLogin: true },
+    '/admin/master/athlete': { type: 'athlete', label: 'Atlet & Kenshi' },
+    '/admin/master/official': { type: 'official', label: 'Official' },
+    '/admin/master/kyu': { type: 'kyu', label: 'Kyu & Dan' },
+    '/admin/master/technique': { type: 'technique', label: 'Teknik' },
+    '/admin/master/weight-class': { type: 'weight-class', label: 'Berat Badan' },
+    '/admin/master/payment-method': { type: 'payment-method', label: 'Metode Pembayaran' },
+    '/admin/master/referee': { type: 'referee', label: 'Wasit', supportsLogin: true },
+    '/admin/master/clerk': { type: 'clerk', label: 'Panitera', supportsLogin: true },
+    '/admin/master/field-coordinator': { type: 'field-coordinator', label: 'Koordinator Lapangan', supportsLogin: true },
+    '/admin/master/user': { type: 'user', label: 'Pengguna & Role', supportsLogin: true, requiresLogin: true },
+};
+
 export default function AdminLayout({ children, title = 'Admin Dashboard', auth = {} }) {
     const { url, props } = usePage();
     const [currentPath, currentQuery = ''] = url.split('?');
     const currentSearchParams = new URLSearchParams(currentQuery);
+    const masterTransfer = masterTransferPages[currentPath] || null;
     const activeReport = currentSearchParams.get('report') || 'champions';
     const isDashboard = currentPath === '/admin/dashboard';
     const isRegistration = url.startsWith('/admin/pendaftaran/registrasi');
@@ -976,6 +992,12 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
 
                     {/* Main Content Body */}
                     <main className="admin-main min-w-0 p-3 sm:p-4 md:px-7 md:pb-5 md:pt-7">
+                        {masterTransfer && (
+                            <MasterDataTransfer
+                                {...masterTransfer}
+                                eventId={currentEventId}
+                            />
+                        )}
                         {children}
                     </main>
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin\Master;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class StoreClerkRequest extends FormRequest
 {
@@ -27,7 +28,8 @@ class StoreClerkRequest extends FormRequest
             'certification' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'max:150'],
+            'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
             'notes' => ['nullable', 'string', 'max:500'],
             'is_active' => ['boolean'],
         ];

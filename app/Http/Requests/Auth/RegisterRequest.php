@@ -3,11 +3,18 @@
 namespace App\Http\Requests\Auth;
 
 use App\Models\User;
+use App\Support\PhoneNumber;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $this->merge(['phone' => PhoneNumber::normalize($this->input('phone'))]);
+    }
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -29,7 +36,7 @@ class RegisterRequest extends FormRequest
             'contingent_name' => ['required', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:255'],
             'manager_name' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'max:30', Rule::unique('users', 'phone')],
             'address' => ['required', 'string', 'max:1000'],
         ];
     }

@@ -32,6 +32,7 @@ export default function UserIndex({
     } = useForm({
         name: '',
         email: '',
+        phone: '',
         password: '',
         role: rolesList[0]?.name || 'kontingen',
     });
@@ -78,6 +79,7 @@ export default function UserIndex({
         setData({
             name: user.name || '',
             email: user.email || '',
+            phone: user.phone || '',
             password: '',
             role: user.primary_role || 'kontingen',
         });
@@ -319,7 +321,7 @@ export default function UserIndex({
                     <Input
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Cari nama, email..."
+                        placeholder="Cari nama, email, nomor HP..."
                         iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
                         clearable
                         onClear={() => {
@@ -352,6 +354,7 @@ export default function UserIndex({
                                 <tr className="bg-[#faf8f5] border-b border-[#ede9e1] text-[#8c827a] uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap">
                                     <th className="py-3 px-4">Nama Pengguna</th>
                                     <th className="py-3 px-3">Alamat Email</th>
+                                    <th className="py-3 px-3">Nomor HP Login</th>
                                     <th className="py-3 px-3">Role Otorisasi</th>
                                     <th className="py-3 px-3">Entitas Terhubung</th>
                                     <th className="py-3 px-3">Tanggal Terdaftar</th>
@@ -379,6 +382,10 @@ export default function UserIndex({
                                         {/* Column 2: Email */}
                                         <td className="py-3.5 px-3 whitespace-nowrap font-mono text-xs text-[#706860]">
                                             {user.email}
+                                        </td>
+
+                                        <td className="py-3.5 px-3 whitespace-nowrap font-mono text-xs text-[#706860]">
+                                            {user.phone || '—'}
                                         </td>
 
                                         {/* Column 3: Role Otorisasi */}
@@ -488,6 +495,15 @@ export default function UserIndex({
                         onChange={(e) => setData('email', e.target.value)}
                         placeholder="nama@perkemi.org"
                         error={errors.email}
+                    />
+
+                    <Input
+                        label="Nomor HP Login (Opsional)"
+                        value={data.phone}
+                        onChange={(e) => setData('phone', e.target.value)}
+                        placeholder="Contoh: 081234567890"
+                        error={errors.phone}
+                        autoComplete="tel"
                     />
 
                     <Input

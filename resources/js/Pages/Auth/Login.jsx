@@ -128,7 +128,7 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                     Masuk ke Akun
                                 </h1>
                                 <p className="card-p dark:text-[#b5afa6] text-sm mt-1.5">
-                                    Gunakan kredensial administrator Anda untuk melanjutkan.
+                                    Gunakan email atau nomor HP akun Anda untuk melanjutkan.
                                 </p>
                             </div>
 
@@ -147,13 +147,13 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                     </div>
                                 )}
 
-                                {/* Email */}
+                                {/* Email atau nomor HP */}
                                 <Input
-                                    label="Username / Email"
+                                    label="Email atau Nomor HP"
                                     required
                                     value={data.email}
                                     onChange={(event) => setData('email', event.target.value)}
-                                    placeholder="admin@perkemi.or.id"
+                                    placeholder="admin@perkemi.or.id atau 0812..."
                                     autoComplete="username"
                                     iconLeft={<i className="fa-solid fa-user" aria-hidden="true" />}
                                     error={errors.email}

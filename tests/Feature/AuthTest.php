@@ -3,6 +3,7 @@
 use App\Mail\ContingentAccountCreatedMail;
 use App\Models\Contingent;
 use App\Models\Event;
+use App\Models\Referee;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,6 +27,38 @@ test('users can authenticate using the login screen', function () {
 
     $this->assertAuthenticated();
     $response->assertRedirect(route('home'));
+});
+
+test('users can authenticate using an Indonesian phone number', function () {
+    $user = User::factory()->create(['phone' => '6281234567890']);
+
+    $response = $this->post('/login', [
+        'email' => '0812-3456-7890',
+        'password' => 'password',
+    ]);
+
+    $this->assertAuthenticatedAs($user);
+    $response->assertRedirect(route('home'));
+});
+
+test('legacy referee phone login is linked back to the user account', function () {
+    $user = User::factory()->create(['phone' => null]);
+    Referee::create([
+        'user_id' => $user->id,
+        'name' => 'Wasit Login Nomor HP',
+        'gender' => 'male',
+        'phone' => '+62 813-5555-6677',
+        'email' => $user->email,
+        'is_active' => true,
+    ]);
+
+    $this->post('/login', [
+        'email' => '081355556677',
+        'password' => 'password',
+    ]);
+
+    $this->assertAuthenticatedAs($user);
+    expect($user->fresh()->phone)->toBe('6281355556677');
 });
 
 test('users logging in from an event tenant are returned to that tenant', function () {
@@ -155,6 +188,7 @@ test('new users can register contingent without manual password and queue their 
     $user = User::where('email', 'official@perkemi.org')->first();
     expect($user)->not->toBeNull();
     expect($user->hasRole('kontingen'))->toBeTrue();
+    expect($user->phone)->toBe('6281234567890');
 
     // Verify contingent record
     $contingent = Contingent::where('user_id', $user->id)->first();

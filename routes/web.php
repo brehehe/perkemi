@@ -9,8 +9,10 @@ use App\Http\Controllers\Admin\Master\ClerkController;
 use App\Http\Controllers\Admin\Master\ContingentController;
 use App\Http\Controllers\Admin\Master\EventController;
 use App\Http\Controllers\Admin\Master\EventDetailController;
+use App\Http\Controllers\Admin\Master\EventRefereeImportController;
 use App\Http\Controllers\Admin\Master\FieldCoordinatorController;
 use App\Http\Controllers\Admin\Master\KyuController;
+use App\Http\Controllers\Admin\Master\MasterDataTransferController;
 use App\Http\Controllers\Admin\Master\OfficialController;
 use App\Http\Controllers\Admin\Master\PaymentMethodController;
 use App\Http\Controllers\Admin\Master\RefereeController;
@@ -91,6 +93,10 @@ Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.
 Route::get('/admin/dashboard', [DashboardController::class, 'index'])->middleware('auth')->name('admin.dashboard');
 
 Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin.master.')->group(function () {
+    Route::get('data-transfer/{type}/template', [MasterDataTransferController::class, 'template'])->name('data-transfer.template');
+    Route::get('data-transfer/{type}/export', [MasterDataTransferController::class, 'export'])->name('data-transfer.export');
+    Route::post('data-transfer/{type}/import', [MasterDataTransferController::class, 'import'])->name('data-transfer.import');
+
     // Event Management
     Route::get('event', [EventController::class, 'index'])->name('event.index');
     Route::put('event/homepage-settings', [EventController::class, 'updateHomepageSettings'])->name('event.homepage-settings.update');
@@ -127,6 +133,8 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::delete('event/{event}/match-category/{matchCategory}', [EventDetailController::class, 'destroyMatchCategory'])->name('event.match-category.destroy');
 
     // Event Referees
+    Route::get('event/{event}/referee-import/template', [EventRefereeImportController::class, 'template'])->name('event.referee-import.template');
+    Route::post('event/{event}/referee-import', [EventRefereeImportController::class, 'store'])->name('event.referee-import.store');
     Route::post('event/{event}/referee', [EventDetailController::class, 'storeEventReferee'])->name('event.referee.store');
     Route::delete('event/{event}/referee/{referee}', [EventDetailController::class, 'destroyEventReferee'])->name('event.referee.destroy');
 

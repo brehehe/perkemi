@@ -2,6 +2,7 @@
 
 use App\Models\Event;
 use App\Models\FieldCoordinator;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -18,8 +19,12 @@ test('admin can manage master field coordinator data', function () {
 
 test('admin can assign a field coordinator to an event', function () {
     $user = User::factory()->create();
-    $coordinator = FieldCoordinator::create(['name' => 'Andi Pratama', 'is_active' => true]);
+    Role::findOrCreate('Koordinator Lapangan', 'web');
+    $coordinatorLogin = User::factory()->create(['email' => 'andi.koordinator@example.test']);
+    $coordinatorLogin->assignRole('Koordinator Lapangan');
+    $coordinator = FieldCoordinator::create(['name' => 'Andi Pratama', 'email' => $coordinatorLogin->email, 'is_active' => true]);
     $event = Event::create(['name' => 'Kejurda Koordinator 2026', 'slug' => 'kejurda-koordinator-2026', 'venue' => 'GOR Kertajaya', 'city' => 'Surabaya', 'start_date' => '2026-10-01', 'end_date' => '2026-10-03']);
     $this->actingAs($user)->post("/admin/master/event/{$event->id}/field-coordinator", ['field_coordinator_id' => $coordinator->id, 'assignment_area' => 'court'])->assertRedirect();
     $this->assertDatabaseHas('event_field_coordinator', ['event_id' => $event->id, 'field_coordinator_id' => $coordinator->id, 'assignment_area' => 'court']);
+    $this->assertDatabaseHas('event_user', ['event_id' => $event->id, 'user_id' => $coordinatorLogin->id, 'access_role' => Event::AccessRoleStaff]);
 });

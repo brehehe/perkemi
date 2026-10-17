@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\Tournament;
 
+use App\Actions\Admin\Master\SyncLoginAccountAction;
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Tournament\UpdateRefereeAttendanceRequest;
@@ -14,7 +15,6 @@ use App\Models\Referee;
 use App\Models\RefereeAttendance;
 use App\Models\RefereeCourtAssignmentHistory;
 use App\Models\RefereeCourtAttendance;
-use App\Models\Role;
 use App\Models\User;
 use App\Services\Panitera\EventContext;
 use Illuminate\Http\RedirectResponse;
@@ -36,7 +36,7 @@ class EventRefereeController extends Controller
         $today = now()->toDateString();
         $event->load([
             'referees' => fn ($query) => $query
-                ->with('user:id,name,email')
+                ->with('user:id,name,email,phone')
                 ->with([
                     'attendances' => fn ($query) => $query
                         ->where('event_id', $event->id)
@@ -62,7 +62,7 @@ class EventRefereeController extends Controller
 
         $legacyUsers = User::query()
             ->whereIn('email', $event->referees->whereNull('user_id')->pluck('email')->filter())
-            ->get(['id', 'name', 'email'])
+            ->get(['id', 'name', 'email', 'phone'])
             ->keyBy(fn (User $user): string => mb_strtolower($user->email));
         $courtNames = $event->courts->pluck('name', 'id');
         $assignmentsByReferee = EventCourtAssignment::query()
@@ -83,6 +83,7 @@ class EventRefereeController extends Controller
                 'id' => $referee->id,
                 'name' => $referee->name,
                 'email' => $referee->email,
+                'phone' => $referee->phone,
                 'license_number' => $referee->license_number,
                 'certification_level' => $referee->certification_level,
                 'dan_grade' => $referee->dan_grade,
@@ -113,6 +114,7 @@ class EventRefereeController extends Controller
                 'account' => $account ? [
                     'id' => $account->id,
                     'email' => $account->email,
+                    'phone' => $account->phone,
                 ] : null,
                 'assignments' => $assignmentsByReferee->get($referee->id, collect())
                     ->map(fn (EventCourtAssignment $assignment): array => [
@@ -358,34 +360,40 @@ class EventRefereeController extends Controller
         UpsertRefereeAccountRequest $request,
         Referee $referee,
         EventContext $eventContext,
+        SyncLoginAccountAction $syncLoginAccount,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
         $this->ensureCanManageEventReferees($request, $event);
         abort_unless($event->referees()->whereKey($referee->id)->exists(), 404);
         $validated = $request->validated();
 
-        DB::transaction(function () use ($event, $referee, $validated): void {
+        DB::transaction(function () use ($event, $referee, $syncLoginAccount, $validated): void {
             $user = $referee->user;
 
             if (! $user && $referee->email && mb_strtolower($referee->email) === mb_strtolower($validated['email'])) {
                 $user = User::query()->where('email', $validated['email'])->first();
             }
 
-            $user ??= new User;
-            $user->fill([
-                'name' => $referee->name,
-                'email' => $validated['email'],
-                'password' => $validated['password'],
-            ]);
-            $user->email_verified_at ??= now();
-            $user->save();
-            $user->assignRole(Role::findOrCreate('Wasit', 'web'));
+            $user = $syncLoginAccount->execute(
+                $referee->name,
+                $validated['email'],
+                $validated['password'],
+                'Wasit',
+                $user,
+                $validated['phone'] ?? $referee->phone,
+            );
+
+            if (! $user) {
+                throw ValidationException::withMessages(['email' => 'Akun login wasit tidak dapat dibuat.']);
+            }
+
             $event->users()->syncWithoutDetaching([
                 $user->id => ['access_role' => Event::AccessRoleStaff],
             ]);
             $referee->update([
                 'user_id' => $user->id,
                 'email' => $validated['email'],
+                'phone' => $validated['phone'] ?? $referee->phone,
             ]);
         });
 

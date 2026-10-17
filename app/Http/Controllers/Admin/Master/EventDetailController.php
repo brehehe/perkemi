@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Master;
 
 use App\Actions\Admin\Event\SyncEventRegistrationFeesAction;
 use App\Actions\Admin\Event\SyncEventUsersAction;
+use App\Actions\Admin\Master\SyncLoginAccountAction;
 use App\Enums\EventStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Event\UpdateEventCoverRequest;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -681,7 +683,7 @@ class EventDetailController extends Controller
     // WASIT EVENT
     // ─────────────────────────────────────────────────────────────
 
-    public function storeEventReferee(Request $request, Event $event): RedirectResponse
+    public function storeEventReferee(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
     {
         $roleRules = ['required', 'in:chief,referee,judge,reserve'];
 
@@ -693,6 +695,8 @@ class EventDetailController extends Controller
                 'license_number' => ['nullable', 'string', 'max:100', 'unique:referees,license_number'],
                 'region' => ['nullable', 'string', 'max:100'],
                 'phone' => ['nullable', 'string', 'max:50'],
+                'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+                'password' => ['nullable', 'confirmed', Password::defaults()],
                 'role' => $roleRules,
             ]);
 
@@ -703,8 +707,21 @@ class EventDetailController extends Controller
                 'license_number' => $validated['license_number'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
                 'is_active' => true,
             ]);
+
+            $user = $syncLoginAccount->execute(
+                $referee->name,
+                $referee->email,
+                $validated['password'] ?? null,
+                'Wasit',
+                phone: $referee->phone,
+            );
+
+            if ($user) {
+                $referee->update(['user_id' => $user->id]);
+            }
         } else {
             $validated = $request->validate([
                 'referee_id' => ['required', 'uuid', 'exists:referees,id'],
@@ -715,6 +732,12 @@ class EventDetailController extends Controller
         }
 
         $event->referees()->syncWithoutDetaching([$referee->id => ['role' => $validated['role']]]);
+
+        if ($referee->user) {
+            $event->users()->syncWithoutDetaching([
+                $referee->user->id => ['access_role' => Event::AccessRoleStaff],
+            ]);
+        }
 
         return back()->with('success', "Wasit '{$referee->name}' berhasil ditugaskan ke event.");
     }
@@ -730,7 +753,7 @@ class EventDetailController extends Controller
     // PANITERA EVENT
     // ─────────────────────────────────────────────────────────────
 
-    public function storeEventClerk(Request $request, Event $event): RedirectResponse
+    public function storeEventClerk(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
     {
         $roleRules = ['required', 'in:chief_secretary,scorer,timekeeper,announcer,operator'];
 
@@ -742,6 +765,8 @@ class EventDetailController extends Controller
                 'certification' => ['nullable', 'string', 'max:100'],
                 'region' => ['nullable', 'string', 'max:100'],
                 'phone' => ['nullable', 'string', 'max:50'],
+                'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+                'password' => ['nullable', 'confirmed', Password::defaults()],
                 'role' => $roleRules,
             ]);
 
@@ -751,8 +776,17 @@ class EventDetailController extends Controller
                 'certification' => $validated['certification'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
                 'is_active' => true,
             ]);
+
+            $syncLoginAccount->execute(
+                $clerk->name,
+                $clerk->email,
+                $validated['password'] ?? null,
+                'Panitera',
+                phone: $clerk->phone,
+            );
         } else {
             $validated = $request->validate([
                 'clerk_id' => ['required', 'uuid', 'exists:clerks,id'],
@@ -764,6 +798,16 @@ class EventDetailController extends Controller
 
         $event->clerks()->syncWithoutDetaching([$clerk->id => ['role' => $validated['role']]]);
 
+        $clerkUser = $clerk->email
+            ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($clerk->email)])->first()
+            : null;
+
+        if ($clerkUser) {
+            $event->users()->syncWithoutDetaching([
+                $clerkUser->id => ['access_role' => Event::AccessRoleStaff],
+            ]);
+        }
+
         return back()->with('success', "Panitera '{$clerk->name}' berhasil ditugaskan ke event.");
     }
 
@@ -774,18 +818,51 @@ class EventDetailController extends Controller
         return back()->with('success', "Panitera '{$clerk->name}' telah dihapus dari event.");
     }
 
-    public function storeEventFieldCoordinator(Request $request, Event $event): RedirectResponse
+    public function storeEventFieldCoordinator(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
     {
         $areaRules = ['required', 'in:chief,court,logistics,liaison'];
         if ($request->boolean('create_new')) {
-            $validated = $request->validate(['create_new' => ['boolean'], 'name' => ['required', 'string', 'max:150'], 'coordinator_number' => ['nullable', 'string', 'max:100', 'unique:field_coordinators,coordinator_number'], 'region' => ['nullable', 'string', 'max:100'], 'phone' => ['nullable', 'string', 'max:50'], 'assignment_area' => $areaRules]);
-            $fieldCoordinator = FieldCoordinator::create(['name' => $validated['name'], 'coordinator_number' => $validated['coordinator_number'] ?? null, 'region' => $validated['region'] ?? null, 'phone' => $validated['phone'] ?? null, 'is_active' => true]);
+            $validated = $request->validate([
+                'create_new' => ['boolean'],
+                'name' => ['required', 'string', 'max:150'],
+                'coordinator_number' => ['nullable', 'string', 'max:100', 'unique:field_coordinators,coordinator_number'],
+                'region' => ['nullable', 'string', 'max:100'],
+                'phone' => ['nullable', 'string', 'max:50'],
+                'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+                'password' => ['nullable', 'confirmed', Password::defaults()],
+                'assignment_area' => $areaRules,
+            ]);
+            $fieldCoordinator = FieldCoordinator::create([
+                'name' => $validated['name'],
+                'coordinator_number' => $validated['coordinator_number'] ?? null,
+                'region' => $validated['region'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+                'is_active' => true,
+            ]);
+            $syncLoginAccount->execute(
+                $fieldCoordinator->name,
+                $fieldCoordinator->email,
+                $validated['password'] ?? null,
+                'Koordinator Lapangan',
+                phone: $fieldCoordinator->phone,
+            );
         } else {
             $validated = $request->validate(['field_coordinator_id' => ['required', 'uuid', 'exists:field_coordinators,id'], 'assignment_area' => $areaRules]);
             $fieldCoordinator = FieldCoordinator::findOrFail($validated['field_coordinator_id']);
         }
 
         $event->fieldCoordinators()->syncWithoutDetaching([$fieldCoordinator->id => ['assignment_area' => $validated['assignment_area']]]);
+
+        $coordinatorUser = $fieldCoordinator->email
+            ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])->first()
+            : null;
+
+        if ($coordinatorUser) {
+            $event->users()->syncWithoutDetaching([
+                $coordinatorUser->id => ['access_role' => Event::AccessRoleStaff],
+            ]);
+        }
 
         return back()->with('success', "Koordinator '{$fieldCoordinator->name}' berhasil ditugaskan ke event.");
     }

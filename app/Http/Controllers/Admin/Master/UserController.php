@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Master;
 use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\PhoneNumber;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,7 @@ class UserController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
                     ->orWhere('email', 'ilike', "%{$search}%")
+                    ->orWhere('phone', 'ilike', "%{$search}%")
                     ->orWhereHas('contingent', function ($cq) use ($search) {
                         $cq->where('name', 'ilike', "%{$search}%");
                     });
@@ -51,6 +53,7 @@ class UserController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'phone' => $user->phone,
                 'roles' => $user->roles->pluck('name'),
                 'primary_role' => $user->roles->first()?->name ?? 'Pengguna',
                 'contingent' => $user->contingent ? [
@@ -87,9 +90,12 @@ class UserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $request->merge(['phone' => PhoneNumber::normalize($request->input('phone'))]);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', 'max:30', 'unique:users,phone'],
             'password' => ['required', Password::defaults()],
             'role' => ['required', 'string', 'exists:roles,name'],
         ]);
@@ -97,6 +103,7 @@ class UserController extends Controller
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'password' => Hash::make($validated['password']),
         ]);
 
@@ -110,9 +117,12 @@ class UserController extends Controller
      */
     public function update(Request $request, User $user): RedirectResponse
     {
+        $request->merge(['phone' => PhoneNumber::normalize($request->input('phone'))]);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['nullable', 'string', 'max:30', Rule::unique('users', 'phone')->ignore($user->id)],
             'password' => ['nullable', Password::defaults()],
             'role' => ['required', 'string', 'exists:roles,name'],
         ]);
@@ -120,6 +130,7 @@ class UserController extends Controller
         $user->update([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'password' => ! empty($validated['password']) ? Hash::make($validated['password']) : $user->password,
         ]);
 
