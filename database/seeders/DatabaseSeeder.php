@@ -29,6 +29,7 @@ class DatabaseSeeder extends Seeder
             TechniqueSeeder::class,
             RegistrationDemoSeeder::class,
             TournamentDrawingDummySeeder::class,
+            StagingDemoSeeder::class,
         ]);
     }
 }
