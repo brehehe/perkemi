@@ -32,6 +32,62 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
+test('event responsible user opens referee management with only their assigned event', function () {
+    [$event] = createRefereeWorkflowEvent('responsible');
+    createRefereeWorkflowEvent('unassigned');
+    Role::findOrCreate('Penanggung Jawab Event', 'web');
+    $responsibleUser = User::factory()->create();
+    $responsibleUser->assignRole('Penanggung Jawab Event');
+    $event->users()->attach($responsibleUser, ['access_role' => Event::AccessRoleResponsible]);
+
+    $this->actingAs($responsibleUser)
+        ->get(route('admin.pertandingan.wasit.index', ['event_id' => $event->id], false))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Tournament/EventReferees')
+            ->where('activeEvent.id', $event->id)
+            ->has('events', 1)
+            ->where('events.0.id', $event->id));
+});
+
+test('event responsible user without an event assignment cannot open referee management', function () {
+    [$event] = createRefereeWorkflowEvent('unassigned-responsible');
+    Role::findOrCreate('Penanggung Jawab Event', 'web');
+    $responsibleUser = User::factory()->create();
+    $responsibleUser->assignRole('Penanggung Jawab Event');
+
+    $this->actingAs($responsibleUser)
+        ->get(route('admin.pertandingan.wasit.index', ['event_id' => $event->id], false))
+        ->assertNotFound();
+});
+
+test('event responsible user records referee attendance for their assigned event', function () {
+    [$event] = createRefereeWorkflowEvent('responsible-attendance');
+    $referee = createEventReferee($event, 1);
+    Role::findOrCreate('Penanggung Jawab Event', 'web');
+    $responsibleUser = User::factory()->create();
+    $responsibleUser->assignRole('Penanggung Jawab Event');
+    $event->users()->attach($responsibleUser, ['access_role' => Event::AccessRoleResponsible]);
+
+    $this->actingAs($responsibleUser)
+        ->put(route('admin.pertandingan.wasit.attendance.update', $referee, false), [
+            'event_id' => $event->id,
+            'attendance_date' => now()->toDateString(),
+            'is_present' => true,
+            'notes' => 'Dikonfirmasi penanggung jawab event.',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $this->assertDatabaseHas('referee_attendances', [
+        'event_id' => $event->id,
+        'referee_id' => $referee->id,
+        'checked_in_by_user_id' => $responsibleUser->id,
+        'is_present' => true,
+        'notes' => 'Dikonfirmasi penanggung jawab event.',
+    ]);
+});
+
 test('Panitera assigns exactly five present referees to the event court', function () {
     [$event, $courts] = createRefereeWorkflowEvent();
     $panitera = createRefereeWorkflowUser($event, 'Panitera');

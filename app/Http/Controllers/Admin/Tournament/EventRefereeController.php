@@ -32,7 +32,7 @@ class EventRefereeController extends Controller
     public function index(Request $request, EventContext $eventContext): Response
     {
         $event = $eventContext->eventFor($request);
-        $eventContext->ensureCanManage($request, $event);
+        $this->ensureCanManageEventReferees($request, $event);
         $today = now()->toDateString();
         $event->load([
             'referees' => fn ($query) => $query
@@ -207,7 +207,7 @@ class EventRefereeController extends Controller
         EventContext $eventContext,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
-        $eventContext->ensureCanManage($request, $event);
+        $this->ensureCanManageEventReferees($request, $event);
         abort_unless($eventCourt->event_id === $event->id, 404);
 
         /** @var array<string, string> $selectedByRole */
@@ -309,7 +309,7 @@ class EventRefereeController extends Controller
         EventContext $eventContext,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
-        $eventContext->ensureCanManage($request, $event);
+        $this->ensureCanManageEventReferees($request, $event);
         abort_unless($eventCourt->event_id === $event->id, 404);
 
         $removedCount = DB::transaction(function () use ($event, $eventCourt, $request): int {
@@ -360,7 +360,7 @@ class EventRefereeController extends Controller
         EventContext $eventContext,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
-        $eventContext->ensureCanManage($request, $event);
+        $this->ensureCanManageEventReferees($request, $event);
         abort_unless($event->referees()->whereKey($referee->id)->exists(), 404);
         $validated = $request->validated();
 
@@ -398,7 +398,7 @@ class EventRefereeController extends Controller
         EventContext $eventContext,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
-        $eventContext->ensureCanManage($request, $event);
+        $this->ensureCanManageEventReferees($request, $event);
         abort_unless($event->referees()->whereKey($referee->id)->exists(), 404);
         $validated = $request->validated();
         $isPresent = (bool) $validated['is_present'];
@@ -430,6 +430,22 @@ class EventRefereeController extends Controller
         $dateLabel = ($checkedInAt ?? Carbon::parse($validated['attendance_date']))->translatedFormat('d M Y');
 
         return back()->with('success', "Kehadiran {$referee->name} pada {$dateLabel} diperbarui menjadi {$status}.");
+    }
+
+    private function ensureCanManageEventReferees(Request $request, Event $event): void
+    {
+        $user = $request->user();
+        $eventAccessRole = $user ? $event->accessRoleFor($user) : null;
+        $canManage = $user && (
+            $user->hasAnyRole(['Super Admin', 'Admin'])
+            || in_array($eventAccessRole, [
+                Event::AccessRoleResponsible,
+                Event::AccessRoleAdmin,
+            ], true)
+            || ($eventAccessRole === Event::AccessRoleStaff && $user->hasRole('Panitera'))
+        );
+
+        abort_unless($canManage, 403);
     }
 
     /**
