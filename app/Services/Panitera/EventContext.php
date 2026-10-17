@@ -98,10 +98,28 @@ class EventContext
     {
         $user = $request->user();
 
-        return (bool) ($user && (
+        if (! $user) {
+            return false;
+        }
+
+        $email = mb_strtolower((string) $user->email);
+        $refereeId = $user->referee()->value('id');
+
+        return (bool) (
             $user->hasAnyRole(['Super Admin', 'Admin'])
             || $event->users()->whereKey($user->id)->exists()
-        ));
+            || $event->clerks()->whereRaw('LOWER(clerks.email) = ?', [$email])->exists()
+            || $event->fieldCoordinators()->whereRaw('LOWER(field_coordinators.email) = ?', [$email])->exists()
+            || ($user->hasRole('Wasit') && (
+                $event->referees()->where(function (Builder $refereeQuery) use ($user, $email, $refereeId): void {
+                    $refereeQuery->where('referees.user_id', $user->id)
+                        ->orWhereRaw('LOWER(referees.email) = ?', [$email]);
+                    if (is_string($refereeId) && $refereeId !== '') {
+                        $refereeQuery->orWhere('referees.id', $refereeId);
+                    }
+                })->exists()
+            ))
+        );
     }
 
     /** @return Builder<Event> */
@@ -111,7 +129,21 @@ class EventContext
         $query = Event::query();
 
         if (! $user?->hasAnyRole(['Super Admin', 'Admin'])) {
-            $query->whereHas('users', fn (Builder $eventUsers) => $eventUsers->whereKey($user?->id));
+            $email = mb_strtolower((string) $user?->email);
+            $refereeId = $user?->referee()->value('id');
+
+            $query->where(function (Builder $eventQuery) use ($user, $email, $refereeId): void {
+                $eventQuery->whereHas('users', fn (Builder $userQuery) => $userQuery->whereKey($user?->id))
+                    ->orWhereHas('clerks', fn (Builder $clerkQuery) => $clerkQuery->whereRaw('LOWER(clerks.email) = ?', [$email]))
+                    ->orWhereHas('fieldCoordinators', fn (Builder $coordinatorQuery) => $coordinatorQuery->whereRaw('LOWER(field_coordinators.email) = ?', [$email]))
+                    ->orWhereHas('referees', function (Builder $refereeQuery) use ($user, $email, $refereeId): void {
+                        $refereeQuery->where('referees.user_id', $user?->id)
+                            ->orWhereRaw('LOWER(referees.email) = ?', [$email]);
+                        if (is_string($refereeId) && $refereeId !== '') {
+                            $refereeQuery->orWhere('referees.id', $refereeId);
+                        }
+                    });
+            });
         }
 
         return $query;
