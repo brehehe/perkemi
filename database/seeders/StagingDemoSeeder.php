@@ -231,6 +231,9 @@ class StagingDemoSeeder extends Seeder
                 $event->referees()->syncWithoutDetaching([
                     $refereeModel->id => ['role' => ($idx === 0 ? 'Wasit Utama' : 'Wasit Juri')],
                 ]);
+                $event->users()->syncWithoutDetaching([
+                    $ru->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
 
                 // Hadirkan hari ini
                 RefereeAttendance::updateOrCreate(
@@ -264,6 +267,9 @@ class StagingDemoSeeder extends Seeder
             );
             $event->clerks()->syncWithoutDetaching([
                 $clerkModel->id => ['role' => 'Panitera Gelanggang 1'],
+            ]);
+            $event->users()->syncWithoutDetaching([
+                $clerkUser->id => ['access_role' => Event::AccessRoleStaff],
             ]);
             EventCourtAssignment::updateOrCreate(
                 ['event_court_id' => $court1->id, 'staff_type' => 'clerk', 'role' => 'panitera'],
