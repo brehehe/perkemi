@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Tournament;
 
 use App\Actions\Admin\Master\SyncLoginAccountAction;
+use App\Actions\Admin\Tournament\GenerateRefereeCourtPanelsAction;
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Tournament\UpdateRefereeAttendanceRequest;
@@ -197,6 +198,7 @@ class EventRefereeController extends Controller
             'stats' => [
                 'total' => $referees->count(),
                 'present' => $referees->where('is_present', true)->count(),
+                'assignable' => $referees->where('is_present', true)->where('is_active', true)->count(),
                 'with_account' => $referees->whereNotNull('account')->count(),
                 'courts_ready' => $courts->where('panel_ready', true)->count(),
             ],
@@ -305,6 +307,20 @@ class EventRefereeController extends Controller
         return back()->with('success', "Panel lima wasit {$eventCourt->name} berhasil disimpan. Selanjutnya setiap wasit wajib scan QR court.");
     }
 
+    public function generateCourtPanels(
+        Request $request,
+        EventContext $eventContext,
+        GenerateRefereeCourtPanelsAction $generateRefereeCourtPanels,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+
+        $assignmentCount = $generateRefereeCourtPanels->execute($event, $request->user()?->id);
+        $courtCount = intdiv($assignmentCount, count(RefereeCourtRole::cases()));
+
+        return back()->with('success', "Penugasan {$assignmentCount} wasit untuk {$courtCount} court berhasil digenerate. Setiap wasit selanjutnya wajib scan QR court.");
+    }
+
     public function resetCourtPanel(
         Request $request,
         EventCourt $eventCourt,
@@ -353,7 +369,7 @@ class EventRefereeController extends Controller
             return back()->with('success', "Panel wasit {$eventCourt->name} sudah kosong.");
         }
 
-        return back()->with('success', "Panel wasit {$eventCourt->name} berhasil direset. Kelima wasit dapat dipilih kembali.");
+        return back()->with('success', "Panel wasit {$eventCourt->name} berhasil direset. Penugasan dapat digenerate kembali.");
     }
 
     public function upsertAccount(

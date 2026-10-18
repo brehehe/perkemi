@@ -50,7 +50,7 @@ class EmbuRefereeScoreService
 
     /**
      * @param  array<string, int|null>  $aspectScores
-     * @param  array<string, int>  $violationPenalties
+     * @param  array<string, int>|null  $violationPenalties
      */
     public function save(
         TournamentMatch $match,
@@ -59,7 +59,7 @@ class EmbuRefereeScoreService
         User $user,
         RefereeCourtRole $role,
         array $aspectScores,
-        array $violationPenalties,
+        ?array $violationPenalties,
         ?string $signature,
         ?string $notes,
         string $status,
@@ -85,8 +85,17 @@ class EmbuRefereeScoreService
             $techniqueSubtotal = $this->subtotal($normalizedScores, self::TechniqueKeys);
             $expressionSubtotal = $this->subtotal($normalizedScores, self::ExpressionKeys);
             $categoryName = (string) $lockedMatch->matchCategory?->name;
+            $existingChiefScore = $role === RefereeCourtRole::Chief && $violationPenalties === null
+                ? EmbuJudgeScore::query()
+                    ->whereBelongsTo($lockedMatch)
+                    ->where('tiebreak_round', 0)
+                    ->where('judge_number', RefereeCourtRole::Chief->judgeNumber())
+                    ->first()
+                : null;
             $normalizedPenalties = $role === RefereeCourtRole::Chief
-                ? $this->penaltyCatalog->normalize($violationPenalties, $categoryName)
+                ? ($violationPenalties === null
+                    ? $this->penaltyState->resolve($lockedMatch, $existingChiefScore)['values']
+                    : $this->penaltyCatalog->normalize($violationPenalties, $categoryName))
                 : [];
             $violationPenalty = $this->penaltyCatalog->points($normalizedPenalties, $categoryName);
             $resolvedStatus = $status === 'submitted' && $completedItems === count(self::AspectKeys)
@@ -120,7 +129,7 @@ class EmbuRefereeScoreService
                 ],
             );
 
-            if ($role === RefereeCourtRole::Chief) {
+            if ($role === RefereeCourtRole::Chief && $violationPenalties !== null) {
                 $this->penaltyState->store(
                     $lockedMatch,
                     $normalizedPenalties,

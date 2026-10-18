@@ -15,6 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'wasit_scoring_version' => env('IS_WASIT_SCORING_VERSION', 'old'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

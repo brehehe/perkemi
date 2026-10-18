@@ -264,6 +264,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::get('jadwal/export', [TournamentController::class, 'exportSchedule'])->name('schedule.export');
     Route::put('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'updateSchedule'])->name('schedule.matches.update');
     Route::get('wasit', [EventRefereeController::class, 'index'])->name('wasit.index');
+    Route::post('wasit/courts/generate', [EventRefereeController::class, 'generateCourtPanels'])->name('wasit.courts.generate');
     Route::put('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'updateCourtPanel'])->name('wasit.courts.panel.update');
     Route::delete('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'resetCourtPanel'])->name('wasit.courts.panel.reset');
     Route::put('wasit/{referee}/attendance', [EventRefereeController::class, 'updateAttendance'])->name('wasit.attendance.update');

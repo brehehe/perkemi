@@ -68,7 +68,7 @@ class EmbuJudgeScoreController extends Controller
             user: $user,
             role: $role,
             aspectScores: $validated['aspect_scores'],
-            violationPenalties: $validated['violation_penalties'] ?? [],
+            violationPenalties: $validated['violation_penalties'] ?? null,
             signature: $validated['signature'] ?? null,
             notes: $validated['notes'] ?? null,
             status: $validated['status'],

@@ -396,9 +396,14 @@ class ArbitrationController extends Controller
             ];
         }
 
-        return Inertia::render('Admin/Arbitration/Scoring', [
+        $scoringPage = config('app.wasit_scoring_version') === 'new'
+            ? 'Admin/Arbitration/ScoringNew'
+            : 'Admin/Arbitration/Scoring';
+
+        return Inertia::render($scoringPage, [
             'activeEvent' => $activeEvent,
             'refereeSession' => $refereeSession,
+            'refereePortalUrl' => route('wasit.portal', ['event_id' => $activeEvent?->id], false),
         ]);
     }
 

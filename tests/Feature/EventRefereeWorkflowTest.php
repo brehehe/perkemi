@@ -88,6 +88,88 @@ test('event responsible user records referee attendance for their assigned event
     ]);
 });
 
+test('event responsible user generates five unique present referees for every active court', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('generated-panels');
+    Role::findOrCreate('Penanggung Jawab Event', 'web');
+    $responsibleUser = User::factory()->create();
+    $responsibleUser->assignRole('Penanggung Jawab Event');
+    $event->users()->attach($responsibleUser, ['access_role' => Event::AccessRoleResponsible]);
+    $referees = collect(range(1, 11))->map(fn (int $number): Referee => createEventReferee($event, $number));
+    $inactiveReferee = $referees->last();
+    $inactiveReferee->update(['is_active' => false]);
+
+    $referees->each(fn (Referee $referee) => RefereeAttendance::query()->create([
+        'event_id' => $event->id,
+        'referee_id' => $referee->id,
+        'attendance_date' => now()->toDateString(),
+        'is_present' => true,
+        'checked_in_at' => now(),
+        'method' => 'qr',
+    ]));
+
+    $this->actingAs($responsibleUser)
+        ->post(route('admin.pertandingan.wasit.courts.generate', absolute: false), [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    $assignments = EventCourtAssignment::query()
+        ->whereIn('event_court_id', $courts->modelKeys())
+        ->where('staff_type', 'referee')
+        ->get();
+
+    expect($assignments)->toHaveCount(10)
+        ->and($assignments->pluck('staff_id')->unique())->toHaveCount(10)
+        ->and($assignments->pluck('staff_id'))->not->toContain($inactiveReferee->id);
+
+    foreach ($courts as $court) {
+        expect($assignments->where('event_court_id', $court->id)->pluck('role')->sort()->values()->all())
+            ->toBe(collect(RefereeCourtRole::values())->sort()->values()->all());
+    }
+
+    expect(RefereeCourtAssignmentHistory::query()
+        ->whereBelongsTo($event)
+        ->where('changed_by_user_id', $responsibleUser->id)
+        ->where('action', RefereeCourtAssignmentHistory::ActionAssigned)
+        ->count())->toBe(10);
+});
+
+test('generation keeps the current panel when present referees are insufficient', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('insufficient-generation');
+    $panitera = createRefereeWorkflowUser($event, 'Panitera');
+    $referees = collect(range(1, 5))->map(fn (int $number): Referee => createEventReferee($event, $number));
+    $existingAssignment = EventCourtAssignment::query()->create([
+        'event_court_id' => $courts->first()->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referees->first()->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+
+    $referees->each(fn (Referee $referee) => RefereeAttendance::query()->create([
+        'event_id' => $event->id,
+        'referee_id' => $referee->id,
+        'attendance_date' => now()->toDateString(),
+        'is_present' => true,
+        'checked_in_at' => now(),
+        'method' => 'qr',
+    ]));
+
+    $this->actingAs($panitera)
+        ->post(route('admin.pertandingan.wasit.courts.generate', absolute: false), [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors([
+            'generate' => 'Dibutuhkan 10 wasit aktif yang hadir untuk 2 court. Saat ini tersedia 5; tambahkan absensi 5 wasit lagi.',
+        ]);
+
+    $this->assertModelExists($existingAssignment);
+    expect(EventCourtAssignment::query()->count())->toBe(1)
+        ->and(RefereeCourtAssignmentHistory::query()->count())->toBe(0);
+});
+
 test('Panitera assigns exactly five present referees to the event court', function () {
     [$event, $courts] = createRefereeWorkflowEvent();
     $panitera = createRefereeWorkflowUser($event, 'Panitera');
@@ -1070,6 +1152,177 @@ test('event and court QR check-ins create a new attendance record on each day', 
 
     $this->travelBack();
 });
+
+test('referee scoring selects the configured version without changing the active match', function (?string $version, string $component) {
+    config(['app.wasit_scoring_version' => $version]);
+    [$event, $courts] = createRefereeWorkflowEvent('scoring-version');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component($component)
+            ->where('activeEvent.id', $event->id)
+            ->where('refereeSession.active_match.id', $match->id)
+            ->where('refereeSession.is_checked_in', true)
+            ->where('refereePortalUrl', route('wasit.portal', ['event_id' => $event->id], false)));
+})->with([
+    'old' => ['old', 'Admin/Arbitration/Scoring'],
+    'new' => ['new', 'Admin/Arbitration/ScoringNew'],
+    'invalid falls back to old' => ['invalid', 'Admin/Arbitration/Scoring'],
+    'missing falls back to old' => [null, 'Admin/Arbitration/Scoring'],
+]);
+
+test('new scoring keeps the attendance gate before showing a judge sheet', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('new-attendance');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/ScoringNew')
+            ->where('refereeSession.is_checked_in', false));
+
+    $this->actingAs($user)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores(array_fill(0, 10, 8)),
+            'signature' => refereeSignature(),
+            'status' => 'submitted',
+        ])->assertForbidden();
+
+    $this->assertDatabaseCount('embu_judge_scores', 0);
+});
+
+test('saving without a penalty field preserves shared penalties and their author', function (string $source) {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('new-preserve-penalty');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+    $match->update(['metadata' => ['panitera' => [
+        'violation_penalties' => ['composition_count' => 1],
+        'violation_penalty' => 10,
+        'violation_penalty_source' => $source,
+        'violation_penalty_updated_by' => $user->id,
+        'violation_penalty_updated_at' => '2026-10-18T10:00:00+07:00',
+    ]]]);
+    $penaltyMetadata = $match->metadata['panitera'];
+    EventFacade::fake([EmbuJudgeScoreUpdated::class]);
+
+    $this->actingAs($user)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores(array_fill(0, 10, 9)),
+            'signature' => refereeSignature(),
+            'notes' => 'Irama dan transisi teknik sudah baik.',
+            'status' => 'submitted',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas('embu_judge_scores', [
+        'tournament_match_id' => $match->id,
+        'total_score' => 90,
+        'violation_penalty' => 10,
+        'signature' => refereeSignature(),
+        'notes' => 'Irama dan transisi teknik sudah baik.',
+        'status' => 'submitted',
+    ]);
+    $this->assertDatabaseHas('embu_scores', [
+        'tournament_match_id' => $match->id,
+        'middle_score' => 90,
+        'violation_penalty' => 10,
+        'final_score' => 80,
+    ]);
+    expect($match->fresh()->metadata['panitera'])->toBe($penaltyMetadata);
+    EventFacade::assertDispatched(EmbuJudgeScoreUpdated::class, fn (EmbuJudgeScoreUpdated $updated): bool => $updated->matchId === $match->id
+        && $updated->totalScore === 90.0
+        && $updated->violationPenalty === 10.0);
+})->with(['chief_referee', 'panitera']);
+
+test('new scoring still shows the score report to administrators', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event] = createRefereeWorkflowEvent('new-admin-report');
+    $user = createRefereeWorkflowUser($event, 'Super Admin');
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/ScoreReport')
+            ->where('activeEvent.id', $event->id));
+});
+
+test('legacy chief penalties are preserved when omitted and cleared only when explicitly empty', function (array $penaltyPayload, int $expectedPenalty) {
+    [$event, $courts] = createRefereeWorkflowEvent('legacy-penalty');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+    $existingScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'violation_penalties' => ['composition_count' => 1],
+        'violation_penalty' => 10,
+    ]);
+    EventFacade::fake([EmbuJudgeScoreUpdated::class]);
+
+    $this->actingAs($user)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores(array_fill(0, 10, 8)),
+            'signature' => refereeSignature(),
+            'status' => 'submitted',
+            ...$penaltyPayload,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas('embu_judge_scores', [
+        'id' => $existingScore->id,
+        'violation_penalty' => $expectedPenalty,
+    ]);
+    $this->assertDatabaseCount('embu_judge_scores', 1);
+    EventFacade::assertDispatched(EmbuJudgeScoreUpdated::class, fn (EmbuJudgeScoreUpdated $updated): bool => $updated->matchId === $match->id
+        && $updated->violationPenalty === (float) $expectedPenalty);
+})->with([
+    'omitted keeps legacy penalty' => [[], 10],
+    'empty array clears penalty from old form' => [['violation_penalties' => []], 0],
+]);
 
 /** @return array{Event, Collection<int, EventCourt>} */
 function createRefereeWorkflowEvent(?string $identifier = null): array
