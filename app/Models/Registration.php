@@ -18,7 +18,7 @@ class Registration extends Model
 
     public static function nextVerificationCode(string $eventId): int
     {
-        $used = static::query()->where('event_id', $eventId)->whereNotNull('verification_code')
+        $used = static::withTrashed()->where('event_id', $eventId)->whereNotNull('verification_code')
             ->pluck('verification_code')->map(fn ($code) => (int) $code)->all();
         $available = array_values(array_diff(range(100, 999), $used));
         if ($available === []) {

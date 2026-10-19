@@ -98,8 +98,8 @@ class PortalController extends Controller
                 ]),
             ] : null,
             'summary' => [
-                'athletes' => $contingent->athletes()->count(),
-                'officials' => $contingent->officials()->count(),
+                'athletes' => (int) ($contingent->athletes_count ?? $contingent->athletes()->count()),
+                'officials' => (int) ($contingent->officials_count ?? $contingent->officials()->count()),
                 'match_entries' => $entryCount,
                 'is_paid' => (bool) $event->is_paid,
             ],

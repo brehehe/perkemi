@@ -115,11 +115,20 @@ class AthleteController extends Controller
             $athleteStatsQuery->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->whereBelongsTo($tenantEvent));
         }
 
+        $rawStats = (clone $athleteStatsQuery)
+            ->selectRaw("
+                COUNT(*) as total_athletes,
+                COUNT(CASE WHEN gender IN ('male', 'putra') THEN 1 END) as male_athletes,
+                COUNT(CASE WHEN gender IN ('female', 'putri') THEN 1 END) as female_athletes,
+                AVG(weight) as avg_weight
+            ")
+            ->first();
+
         $stats = [
-            'total_athletes' => (clone $athleteStatsQuery)->count(),
-            'male_athletes' => (clone $athleteStatsQuery)->whereIn('gender', ['male', 'putra'])->count(),
-            'female_athletes' => (clone $athleteStatsQuery)->whereIn('gender', ['female', 'putri'])->count(),
-            'avg_weight' => round((float) (clone $athleteStatsQuery)->avg('weight'), 1),
+            'total_athletes' => (int) ($rawStats?->total_athletes ?? 0),
+            'male_athletes' => (int) ($rawStats?->male_athletes ?? 0),
+            'female_athletes' => (int) ($rawStats?->female_athletes ?? 0),
+            'avg_weight' => round((float) ($rawStats?->avg_weight ?? 0), 1),
         ];
 
         $contingentsQuery = Contingent::select(['id', 'name', 'city'])->orderBy('name');

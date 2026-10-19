@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin\Registration;
 use App\Enums\PaymentStatus;
 use App\Enums\RegistrationStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Registration\SaveWizardOfficialRequest;
+use App\Http\Requests\Admin\Registration\UpdateWizardContingentRequest;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
@@ -25,34 +27,22 @@ class RegistrationWizardController extends Controller
 {
     public function __construct(private ParticipantEligibilityService $eligibility) {}
 
-    public function updateContingent(Request $request, Registration $registration): RedirectResponse
+    public function updateContingent(UpdateWizardContingentRequest $request, Registration $registration): RedirectResponse
     {
         $this->authorizeRegistrationMutation($request, $registration);
-        $data = $request->validate([
-            'city' => ['required', 'string', 'max:100'],
-            'name' => ['required', 'string', 'max:255'],
-            'manager_name' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:50'],
-            'email' => ['required', 'email', 'max:255'],
-            'address' => ['required', 'string', 'max:2000'],
-        ]);
+        $data = $request->validated();
         $registration->contingent->update($data);
 
         return back()->with('success', 'Data kontingen tersimpan.');
     }
 
-    public function saveOfficial(Request $request, Registration $registration, ?Official $official = null): RedirectResponse
+    public function saveOfficial(SaveWizardOfficialRequest $request, Registration $registration, ?Official $official = null): RedirectResponse
     {
         $this->authorizeRegistrationMutation($request, $registration);
         if ($official !== null) {
             abort_unless($official->contingent_id === $registration->contingent_id, 404);
         }
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'role' => ['required', 'string', 'max:100'],
-            'phone' => ['required', 'string', 'max:50'],
-            'gender' => ['nullable', Rule::in(['male', 'female', 'putra', 'putri', 'L', 'P'])],
-        ]);
+        $data = $request->validated();
         $data['gender'] ??= $official?->gender ?? 'L';
         $registration->contingent->officials()->updateOrCreate(['id' => $official?->id], $data);
 

@@ -298,15 +298,18 @@ class TournamentDrawingDummySeeder extends Seeder
                     ->where('contingent_id', $contingent->id)
                     ->first();
 
+                $verificationCode = $registration?->verification_code ?? Registration::nextVerificationCode($event->id);
+                $finalAmount = 5000000.00 + $verificationCode;
+
                 $regData = [
                     'registration_number' => $registration?->registration_number ?? $regNumber,
                     'status' => RegistrationStatus::Verified,
                     'total_amount' => 5000000.00,
-                    'final_amount' => 5000000.00 + $contingentNum,
-                    'verification_code' => 100 + $contingentNum,
+                    'final_amount' => $finalAmount,
+                    'verification_code' => $verificationCode,
                     'payment_method_id' => $paymentMethod->id,
                     'payment_status' => PaymentStatus::Verified,
-                    'payment_amount' => 5000000.00 + $contingentNum,
+                    'payment_amount' => $finalAmount,
                     'payment_submitted_at' => now()->subDays(10),
                     'payment_verified_at' => now()->subDays(9),
                     'payment_note' => 'Pembayaran lunas via transfer resmi.',

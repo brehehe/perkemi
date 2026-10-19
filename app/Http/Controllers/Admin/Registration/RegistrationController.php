@@ -7,6 +7,8 @@ use App\Enums\RegistrationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Registration\StoreAthleteMatchCategoryEntryRequest;
 use App\Http\Requests\Admin\Registration\StoreRegistrationPaymentRequest;
+use App\Http\Requests\Admin\Registration\StoreRegistrationRequest;
+use App\Http\Requests\Admin\Registration\StoreRegistrationTeamTechniqueRequest;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
@@ -24,7 +26,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -101,11 +102,24 @@ class RegistrationController extends Controller
             $registrationStatsQuery->whereRaw('1 = 0');
         }
 
+        $rawStats = (clone $registrationStatsQuery)
+            ->selectRaw('
+                COUNT(*) as total_registrations,
+                COUNT(CASE WHEN status = ? THEN 1 END) as verified_count,
+                COUNT(CASE WHEN status = ? THEN 1 END) as pending_count,
+                COALESCE(SUM(CASE WHEN payment_status = ? THEN payment_amount ELSE 0 END), 0) as total_amount
+            ', [
+                RegistrationStatus::Verified->value,
+                RegistrationStatus::Pending->value,
+                PaymentStatus::Verified->value,
+            ])
+            ->first();
+
         $stats = [
-            'total_registrations' => (clone $registrationStatsQuery)->count(),
-            'verified_count' => (clone $registrationStatsQuery)->where('status', RegistrationStatus::Verified)->count(),
-            'pending_count' => (clone $registrationStatsQuery)->where('status', RegistrationStatus::Pending)->count(),
-            'total_amount' => (float) (clone $registrationStatsQuery)->where('payment_status', PaymentStatus::Verified)->sum('payment_amount'),
+            'total_registrations' => (int) ($rawStats?->total_registrations ?? 0),
+            'verified_count' => (int) ($rawStats?->verified_count ?? 0),
+            'pending_count' => (int) ($rawStats?->pending_count ?? 0),
+            'total_amount' => (float) ($rawStats?->total_amount ?? 0),
         ];
 
         return Inertia::render('Admin/Registration/Index', [
@@ -159,19 +173,9 @@ class RegistrationController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreRegistrationRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'event_id' => ['required', 'uuid', 'exists:events,id'],
-            'contingent_id' => ['nullable', 'uuid', 'exists:contingents,id'],
-            'name' => ['required_without:contingent_id', 'nullable', 'string', 'max:255'],
-            'city' => ['required_without:contingent_id', 'nullable', 'string', 'max:100'],
-            'manager_name' => ['required_without:contingent_id', 'nullable', 'string', 'max:255'],
-            'phone' => ['required_without:contingent_id', 'nullable', 'string', 'max:50'],
-            'email' => ['required_without:contingent_id', 'nullable', 'email', 'max:255'],
-            'address' => ['required_without:contingent_id', 'nullable', 'string', 'max:2000'],
-            'notes' => ['nullable', 'string', 'max:2000'],
-        ]);
+        $validated = $request->validated();
         $event = Event::query()->findOrFail($validated['event_id']);
         $tenantEvent = $request->attributes->get('tenantEvent');
         abort_unless(! ($tenantEvent instanceof Event) || $tenantEvent->is($event), 404);
@@ -856,7 +860,7 @@ class RegistrationController extends Controller
     }
 
     public function storeRegistrationTeamTechnique(
-        Request $request,
+        StoreRegistrationTeamTechniqueRequest $request,
         Registration $registration,
         EventMatchCategory $category,
         int $teamNumber
@@ -867,10 +871,7 @@ class RegistrationController extends Controller
         abort_unless($category->event_id === $registration->event_id && $category->type === 'embu'
             && $category->is_active && $category->merged_into_id === null && $teamNumber >= 1 && $teamNumber <= 20, 404);
 
-        $validated = $request->validate([
-            'technique_id' => ['required_without:technique_name', 'nullable', 'uuid', Rule::exists('techniques', 'id')->where('is_active', true)->whereNull('deleted_at')],
-            'technique_name' => ['required_without:technique_id', 'nullable', 'string', 'max:150'],
-        ]);
+        $validated = $request->validated();
 
         $teamHasAthletes = AthleteMatchCategoryEntry::query()
             ->where('event_match_category_id', $category->id)

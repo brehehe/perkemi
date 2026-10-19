@@ -68,10 +68,7 @@ class PublicAthleteController extends Controller
 
     public function show(Athlete $athlete): Response
     {
-        $peers = $this->athleteQuery()
-            ->get()
-            ->filter(fn (Athlete $candidate): bool => $this->identityKey($candidate) === $this->identityKey($athlete))
-            ->values();
+        $peers = $this->peersQuery($athlete)->get();
 
         abort_if($peers->isEmpty(), 404);
 
@@ -82,15 +79,34 @@ class PublicAthleteController extends Controller
 
     public function photo(Athlete $athlete): mixed
     {
-        $photoOwner = $this->athleteQuery()
+        $photoOwner = $this->peersQuery($athlete)
             ->whereNotNull('profile_photo_path')
             ->get()
-            ->first(fn (Athlete $candidate): bool => $this->identityKey($candidate) === $this->identityKey($athlete)
-                && Storage::exists((string) $candidate->profile_photo_path));
+            ->first(fn (Athlete $candidate): bool => Storage::exists((string) $candidate->profile_photo_path));
 
         abort_unless($photoOwner instanceof Athlete, 404);
 
         return Storage::response($photoOwner->profile_photo_path);
+    }
+
+    private function peersQuery(Athlete $athlete): Builder
+    {
+        $query = $this->athleteQuery();
+
+        if (filled($athlete->nik)) {
+            return $query->where('nik', trim((string) $athlete->nik));
+        }
+
+        if (filled($athlete->kenshi_number)) {
+            return $query->where('kenshi_number', trim((string) $athlete->kenshi_number));
+        }
+
+        $userId = $athlete->contingent?->user_id;
+
+        return $query
+            ->where('name', $athlete->name)
+            ->when($athlete->birth_date, fn ($q) => $q->whereDate('birth_date', $athlete->birth_date))
+            ->when($userId, fn ($q) => $q->whereHas('contingent', fn ($cq) => $cq->where('user_id', $userId)));
     }
 
     /** @return Collection<int, array<string, mixed>> */

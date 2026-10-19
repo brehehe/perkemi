@@ -149,7 +149,7 @@ test('default seeding links base contingents to the primary event and adds demo 
     $this->seed(DatabaseSeeder::class);
 
     $primaryEvent = Event::where('slug', 'kejurnas-shorinji-kempo-surabaya-2026')->sole();
-    expect(Event::count())->toBe(3)
+    expect(Event::count())->toBe(4)
         ->and(Contingent::whereNull('event_id')->count())->toBe(0)
         ->and($primaryEvent->contingents()->where('name', 'Dojo Garuda Sakti Surabaya')->count())->toBe(1)
         ->and($primaryEvent->contingents()->where('name', 'like', 'Demo Dojo %')->count())->toBe(3)
