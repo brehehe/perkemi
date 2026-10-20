@@ -62,7 +62,7 @@ start_proxy() {
         echo "HTTPS lokal aktif: https://$https_host:8443"
     fi
 
-    echo "Laravel harus tetap berjalan di http://127.0.0.1:8000."
+    echo "Laravel harus tetap berjalan di http://127.0.0.1:8001."
     echo "Root CA untuk ponsel: $(mkcert -CAROOT)/rootCA.pem"
 }
 

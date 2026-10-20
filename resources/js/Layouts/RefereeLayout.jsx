@@ -12,8 +12,10 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
     const profileRef = useRef(null);
     const eventQuery = portal.event?.id ? `?event_id=${encodeURIComponent(portal.event.id)}` : '';
     const isDashboard = url === '/wasit' || url.startsWith('/wasit?');
+    const isAttendanceHistory = url.startsWith('/absensi-wasit');
     const navigation = [
-        { label: 'Dashboard & Kehadiran', href: `/wasit${eventQuery}`, icon: 'fa-id-card-clip', active: isDashboard },
+        { label: 'Dashboard Wasit', href: `/wasit${eventQuery}`, icon: 'fa-id-card-clip', active: isDashboard },
+        { label: 'History Absensi', href: `/absensi-wasit${eventQuery}`, icon: 'fa-calendar-check', active: isAttendanceHistory },
         { label: 'Papan Penilaian', href: `/admin/arbitrase/scoring${eventQuery}`, icon: 'fa-star', active: url.startsWith('/admin/arbitrase/scoring') },
         { label: 'Riwayat Penilaian', href: `/wasit/history${eventQuery}`, icon: 'fa-clock-rotate-left', active: url.startsWith('/wasit/history') },
     ];

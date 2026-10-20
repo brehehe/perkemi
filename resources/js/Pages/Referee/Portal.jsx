@@ -143,7 +143,8 @@ function QrScannerModal({ target, onClose }) {
     );
 }
 
-export default function RefereePortal({ activeEvent, events = [], referee, attendance, assignments = [], matches = [] }) {
+export default function RefereePortal({ activeEvent, events = [], referee, attendance, assignments = [], activeMatch = null, evaluatedMatches = [], matches = [] }) {
+    const listScores = evaluatedMatches.length ? evaluatedMatches : matches;
     const eventQuery = activeEvent?.id ? `?event_id=${encodeURIComponent(activeEvent.id)}` : '';
     const [scannerTarget, setScannerTarget] = useState(null);
 
@@ -151,7 +152,7 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
         if (scannerTarget) return undefined;
 
         const interval = window.setInterval(() => router.reload({
-            only: ['attendance', 'assignments', 'matches'],
+            only: ['attendance', 'assignments', 'activeMatch', 'evaluatedMatches', 'matches'],
             preserveScroll: true,
             preserveState: true,
         }), 10000);
@@ -180,7 +181,7 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
                         <div className="max-w-3xl">
                             <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-[#e1b94e]"><i className="fa-solid fa-gavel" aria-hidden="true" /> Sistem Wasit per Event</p>
                             <h1 className="mt-2 text-2xl font-bold leading-tight tracking-tight md:text-3xl">Selamat bertugas, {referee.name}</h1>
-                            <p className="mt-2.5 text-sm leading-relaxed text-white/70">Absensi event, check-in court, posisi dewan wasit, dan antrean pertandingan tersinkron dengan meja Panitera.</p>
+                            <p className="mt-2.5 text-sm leading-relaxed text-white/70">Absensi event, check-in court, posisi dewan wasit, dan penilaian tersinkron dengan meja Panitera.</p>
                             <p className="mt-3 flex w-full items-start gap-2 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-3 py-2 text-xs font-semibold leading-relaxed text-[#f0c060] sm:inline-flex sm:w-auto sm:items-center sm:rounded-full sm:py-1"><i className="fa-solid fa-trophy mt-0.5 shrink-0 sm:mt-0" aria-hidden="true" /><span className="min-w-0 break-words">{activeEvent.name} · {activeEvent.city}</span></p>
                         </div>
                         {events.length > 1 && <Combobox label="Event tugas" labelClassName="text-white/60" containerClassName="w-full xl:w-96" value={activeEvent.id} clearable={false} onChange={(value) => router.get('/wasit', { event_id: value })} options={events.map((event) => ({ value: event.id, label: event.name, sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · ') }))} />}
@@ -195,8 +196,43 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
                         {!attendance.event_present && <Button variant="dark" className="mt-4 w-full" onClick={openEventScanner} iconLeft={<i className="fa-solid fa-camera" aria-hidden="true" />}>Scan QR Absensi</Button>}
                     </article>
                     <article className="rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><i className="fa-solid fa-map-location-dot" aria-hidden="true" /></span><h2 className="mt-4 text-sm font-bold text-[#17120f]">Penugasan Court</h2><p className="mt-1 text-2xl font-black text-[#17120f]">{assignments.length}</p><p className="text-xs text-[#7a746e]">court aktif</p></article>
-                    <article className="rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-700"><i className="fa-solid fa-list-ol" aria-hidden="true" /></span><h2 className="mt-4 text-sm font-bold text-[#17120f]">Antrean Tugas</h2><p className="mt-1 text-2xl font-black text-[#17120f]">{matches.length}</p><p className="text-xs text-[#7a746e]">pertandingan berikutnya</p></article>
+                    <article className="rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><i className="fa-solid fa-circle-check" aria-hidden="true" /></span><h2 className="mt-4 text-sm font-bold text-[#17120f]">Selesai Dinilai</h2><p className="mt-1 text-2xl font-black text-[#17120f]">{listScores.length}</p><p className="text-xs text-[#7a746e]">pertandingan telah dinilai</p></article>
                 </section>
+
+                {/* Pertandingan Aktif Saat Ini yang Sedang Dinilai */}
+                {activeMatch && (
+                    <section className="relative overflow-hidden rounded-2xl border-2 border-[#b92f24] bg-gradient-to-r from-[#fff5f5] to-white p-5 shadow-md" aria-label="Pertandingan sedang aktif">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="animate-pulse rounded-full bg-[#b92f24] px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white">
+                                        <i className="fa-solid fa-play mr-1.5" aria-hidden="true" /> Sedang Berlangsung
+                                    </span>
+                                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase text-blue-800">
+                                        {activeMatch.court_name}
+                                    </span>
+                                    <span className="text-xs font-bold text-[#8a631c]">
+                                        Partai #{activeMatch.sequence} · {activeMatch.round_label}
+                                    </span>
+                                </div>
+                                <h2 className="mt-2 text-lg font-black text-[#17120f] sm:text-xl">{activeMatch.category_name}</h2>
+                                <p className="mt-1 text-sm font-semibold text-[#514a43]">
+                                    <i className="fa-solid fa-users mr-1.5 text-[#b92f24]" aria-hidden="true" />
+                                    Peserta: <strong className="text-[#17120f]">{activeMatch.participant}</strong>
+                                </p>
+                            </div>
+                            <div className="shrink-0">
+                                <Link
+                                    href={activeMatch.scoring_url}
+                                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#b92f24] px-6 text-sm font-bold text-white shadow-lg shadow-red-900/20 hover:bg-[#99251c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b92f24]"
+                                >
+                                    <i className="fa-solid fa-star" aria-hidden="true" />
+                                    Buka Papan Penilaian
+                                </Link>
+                            </div>
+                        </div>
+                    </section>
+                )}
 
                 <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby="referee-assignment-title">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="referee-assignment-title" className="text-lg font-bold text-[#17120f]">Posisi Dewan Wasit</h2><p className="mt-1 text-sm text-[#7a746e]">Posisi ditetapkan Panitera. Scan QR court sebelum membuka papan penilaian.</p></div><p className="break-words text-xs text-[#8a8179]">{referee.license_number || 'Nomor lisensi belum diisi'} · {referee.certification_level || referee.dan_grade || 'Sertifikasi belum diisi'}</p></div>
@@ -206,9 +242,61 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
                     </div>
                 </section>
 
-                <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm" aria-labelledby="referee-queue-title">
-                    <div className="border-b border-[#e9e2d8] p-4 sm:p-5"><h2 id="referee-queue-title" className="text-lg font-bold text-[#17120f]">Daftar Pertandingan Court Anda</h2><p className="mt-1 text-sm text-[#7a746e]">Urutan pertandingan aktif dan berikutnya sesuai jadwal Panitera.</p></div>
-                    {matches.length ? <TableContainer ariaLabel="Daftar pertandingan yang ditugaskan"><table className="responsive-data-table responsive-data-table--cards w-full text-left text-sm"><thead><tr className="border-b border-[#e9e2d8] bg-[#f8f5f0] text-[10px] font-bold uppercase tracking-wider text-[#817970]"><th className="px-5 py-3">Jadwal</th><th className="px-5 py-3">Court</th><th className="px-5 py-3">Nomor pertandingan</th><th className="px-5 py-3">Peserta</th><th className="px-5 py-3">Status</th></tr></thead><tbody className="divide-y divide-[#eee8e0]">{matches.map((match) => <tr key={match.id} className="hover:bg-[#fcfaf7]"><td data-label="Jadwal" className="px-5 py-4 font-semibold text-[#17120f]">{match.scheduled_at || 'Belum dijadwalkan'}</td><td data-label="Court" className="px-5 py-4 text-[#625b54]">{match.court}</td><td data-label="Nomor pertandingan" className="px-5 py-4"><span className={`mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${match.category_type === 'embu' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>{match.category_type}</span><span className="font-semibold text-[#17120f]">{match.category_name}</span><p className="mt-1 text-xs text-[#847b73]">Partai #{match.sequence} · {match.round_label}</p></td><td data-label="Peserta" className="px-5 py-4 text-[#625b54]">{match.participant || 'Menunggu hasil partai sebelumnya'}</td><td data-label="Status" className="px-5 py-4"><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass[match.status] || statusClass.pending}`}>{match.status_label}</span></td></tr>)}</tbody></table></TableContainer> : <p className="p-8 text-center text-sm text-[#7a746e]">Belum ada antrean pertandingan untuk court Anda.</p>}
+                {/* Daftar Pertandingan Yang Telah Selesai Dinilai */}
+                <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm" aria-labelledby="referee-scored-title">
+                    <div className="border-b border-[#e9e2d8] p-4 sm:p-5">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 id="referee-scored-title" className="text-lg font-bold text-[#17120f]">Daftar Pertandingan Yang Telah Selesai Dinilai</h2>
+                                <p className="mt-1 text-sm text-[#7a746e]">Hanya menampilkan data atlet/partai yang telah Anda nilai (jadwal partai berikutnya disembunyikan untuk menjaga integritas penilaian).</p>
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">Total: {listScores.length} Atlet</span>
+                        </div>
+                    </div>
+                    {listScores.length ? (
+                        <TableContainer ariaLabel="Daftar pertandingan yang telah dinilai">
+                            <table className="responsive-data-table responsive-data-table--cards w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b border-[#e9e2d8] bg-[#0d2f50] text-[10px] font-bold uppercase tracking-wider text-white">
+                                        <th className="px-4 py-3 text-center" style={{ width: '45px' }}>No.</th>
+                                        <th className="px-4 py-3">Nama Atlet</th>
+                                        <th className="px-4 py-3">Kontingen</th>
+                                        <th className="px-4 py-3">Kategori / Partai</th>
+                                        <th className="px-4 py-3 text-center">Nilai Teknik (60)</th>
+                                        <th className="px-4 py-3 text-center">Nilai Ekspresi (40)</th>
+                                        <th className="px-4 py-3 text-center">Nilai Akhir (100)</th>
+                                        <th className="px-4 py-3 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#eee8e0]">
+                                    {listScores.map((score, index) => (
+                                        <tr key={score.id || index} className="hover:bg-[#fcfaf7]">
+                                            <td data-label="No." className="px-4 py-4 text-center font-bold text-[#17120f]">{index + 1}</td>
+                                            <td data-label="Nama Atlet" className="px-4 py-4 font-bold text-[#0c203b]">{score.participant}</td>
+                                            <td data-label="Kontingen" className="px-4 py-4 text-[#514a43]">{score.contingent || '—'}</td>
+                                            <td data-label="Kategori" className="px-4 py-4">
+                                                <span className="font-semibold text-[#17120f]">{score.category_name}</span>
+                                                <p className="mt-0.5 text-xs text-[#847b73]">Partai #{score.sequence} · {score.court}</p>
+                                            </td>
+                                            <td data-label="Nilai Teknik" className="px-4 py-4 text-center font-mono font-bold text-[#17120f]">{score.technique_subtotal ?? '-'}</td>
+                                            <td data-label="Nilai Ekspresi" className="px-4 py-4 text-center font-mono font-bold text-[#17120f]">{score.expression_subtotal ?? '-'}</td>
+                                            <td data-label="Nilai Akhir" className="px-4 py-4 text-center font-mono text-base font-black text-[#0f172a]">{score.total_score ?? '-'}</td>
+                                            <td data-label="Status" className="px-4 py-4 text-center">
+                                                <span className="inline-block rounded-full bg-[#008b51] px-3 py-1 text-[11px] font-bold text-white shadow-sm">
+                                                    Selesai
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </TableContainer>
+                    ) : (
+                        <div className="p-8 text-center text-sm text-[#7a746e]">
+                            <i className="fa-solid fa-clipboard-check mb-2 block text-2xl text-slate-400" aria-hidden="true" />
+                            Belum ada pertandingan yang selesai Anda nilai pada event ini.
+                        </div>
+                    )}
                 </section>
             </div>
             <QrScannerModal target={scannerTarget} onClose={() => setScannerTarget(null)} />

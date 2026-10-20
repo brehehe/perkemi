@@ -42,6 +42,7 @@ use App\Http\Controllers\Contingent\OfficialController as ContingentOfficialCont
 use App\Http\Controllers\Contingent\PortalController as ContingentPortalController;
 use App\Http\Controllers\PublicAthleteController;
 use App\Http\Controllers\PublicEventController;
+use App\Http\Controllers\Referee\RefereeAttendanceHistoryController;
 use App\Http\Controllers\Referee\RefereeCheckInController;
 use App\Http\Controllers\Referee\RefereePortalController;
 use App\Http\Controllers\Referee\RefereeScoreHistoryController;
@@ -340,6 +341,7 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('wasit', RefereePortalController::class)->middleware('event.tenant')->name('wasit.portal');
+    Route::get('absensi-wasit', RefereeAttendanceHistoryController::class)->middleware('event.tenant')->name('wasit.absensi');
     Route::get('wasit/history', RefereeScoreHistoryController::class)->middleware('event.tenant')->name('wasit.history');
     Route::match(['get', 'post'], 'wasit/check-in/event/{event}', [RefereeCheckInController::class, 'event'])
         ->middleware(['signed', 'throttle:30,1'])

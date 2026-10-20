@@ -550,6 +550,33 @@ test('an assigned referee checks in by signed QR before the scoring panel become
             ->where('assignments.0.is_checked_in', true));
 });
 
+test('a checked-in referee can view their attendance history on absensi-wasit', function () {
+    [$event, $courts] = createRefereeWorkflowEvent();
+    $refereeUser = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $refereeUser);
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+
+    $this->actingAs($refereeUser)
+        ->get(route('wasit.absensi', ['event_id' => $event->id], false))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Referee/AttendanceHistory')
+            ->where('activeEvent.id', $event->id)
+            ->where('summary.today_present', true)
+            ->where('summary.total_event_present', 1)
+            ->where('summary.total_court_checkins', 1)
+            ->has('eventAttendances', 1)
+            ->has('courtAttendances', 1));
+});
+
 test('a checked-in referee saves their Embu judge sheet and broadcasts the update', function () {
     [$event, $courts] = createRefereeWorkflowEvent();
     $refereeUser = createRefereeWorkflowUser($event, 'Wasit');

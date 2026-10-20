@@ -151,15 +151,6 @@ function ScoreBoard({ activeEvent, session, onBusyChange }) {
 
     return (
         <form className="referee-board" onSubmit={(event) => { event.preventDefault(); save('submitted'); }}>
-            <div className="referee-kinds" aria-label="Jenis pertandingan">
-                {['Perorangan', 'Pasangan', 'Beregu'].map((kind, index) => (
-                    <div key={kind} className={categoryKind === kind ? 'is-active' : ''} aria-current={categoryKind === kind ? 'true' : undefined}>
-                        <i className={`fa-solid ${['fa-person', 'fa-user-group', 'fa-users'][index]}`} aria-hidden="true" />
-                        <span>{kind === 'Pasangan' ? 'Berpasangan' : kind}</span>
-                    </div>
-                ))}
-            </div>
-
             <section className="referee-match" aria-label="Pertandingan aktif">
                 <div><span className="referee-eyebrow">Kategori / nomor pertandingan</span><h1 title={match.category_name}>{match.category_name}</h1><p>{match.round_label || 'Pertandingan Embu'}</p></div>
                 <div className="referee-match-sequence"><span className="referee-eyebrow">Partai</span><strong>{String(match.sequence ?? '—').padStart(3, '0')}</strong></div>
@@ -236,15 +227,123 @@ function ScoreBoard({ activeEvent, session, onBusyChange }) {
     );
 }
 
-export default function ScoringNew({ activeEvent, refereeSession = null, refereePortalUrl }) {
+function JudgedAthletesTable({ scores = [] }) {
+    const [viewMode, setViewMode] = useState('auto'); // 'auto', 'card', 'table'
+
+    return (
+        <section className="judged-athletes-card" aria-label="Daftar atlet yang telah selesai dinilai">
+            <header className="judged-athletes-header">
+                <h2>DAFTAR ATLET YANG TELAH SELESAI DINILAI</h2>
+                <div className="judged-athletes-header-right">
+                    <span className="judged-athletes-total">Total: {scores.length} Atlet</span>
+                    {scores.length > 0 && (
+                        <button
+                            type="button"
+                            className="judged-view-toggle sm:hidden"
+                            onClick={() => setViewMode((prev) => (prev === 'table' ? 'card' : 'table'))}
+                            title="Ubah tampilan kartu / tabel"
+                        >
+                            <i className={`fa-solid ${viewMode === 'table' ? 'fa-id-card' : 'fa-table'}`} aria-hidden="true" />
+                            <span>{viewMode === 'table' ? 'Kartu' : 'Tabel'}</span>
+                        </button>
+                    )}
+                </div>
+            </header>
+
+            {scores.length === 0 ? (
+                <div className="judged-empty-state">
+                    <i className="fa-solid fa-clipboard-list" aria-hidden="true" />
+                    <p>Belum ada atlet yang selesai dinilai pada nomor pertandingan ini.</p>
+                </div>
+            ) : (
+                <>
+                    {/* Tampilan Tabel (Default pada Layar Desktop & Tablet) */}
+                    <div className={`judged-athletes-table-wrap ${viewMode === 'card' ? 'hidden' : viewMode === 'table' ? 'block' : 'hidden sm:block'}`}>
+                        <table className="judged-athletes-table">
+                            <thead>
+                                <tr>
+                                    <th style={{ width: '45px', textAlign: 'center' }}>No.</th>
+                                    <th>Nama Atlet</th>
+                                    <th>Kontingen</th>
+                                    <th style={{ textAlign: 'center' }}>Nilai Teknik<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(60)</span></th>
+                                    <th style={{ textAlign: 'center' }}>Nilai Ekspresi<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(40)</span></th>
+                                    <th style={{ textAlign: 'center' }}>Nilai Akhir<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(100)</span></th>
+                                    <th style={{ textAlign: 'center', width: '95px' }}>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {scores.map((item, index) => (
+                                    <tr key={item.id || index}>
+                                        <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
+                                        <td style={{ fontWeight: 'bold', color: '#0c203b' }}>{item.athlete_names}</td>
+                                        <td style={{ color: '#334155' }}>{item.contingent_name}</td>
+                                        <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }}>{item.technique_subtotal}</td>
+                                        <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }}>{item.expression_subtotal}</td>
+                                        <td style={{ textAlign: 'center', fontWeight: '900', fontSize: '18px', color: '#0c203b' }}>{item.total_score}</td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <span className="judged-status-badge">Selesai</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <div className="judged-scroll-hint sm:hidden">
+                            <i className="fa-solid fa-arrows-left-right" aria-hidden="true" />
+                            Geser ke kanan untuk melihat status & nilai lengkap
+                        </div>
+                    </div>
+
+                    {/* Tampilan Kartu Responsif (Default pada Layar Mobile Ponsel) */}
+                    <div className={`judged-athletes-mobile-list ${viewMode === 'table' ? 'hidden' : viewMode === 'card' ? 'flex' : 'flex sm:hidden'}`}>
+                        {scores.map((item, index) => (
+                            <article key={item.id || index} className="judged-athlete-card-item">
+                                <div className="judged-card-header">
+                                    <div className="judged-card-athlete">
+                                        <span className="judged-card-number">#{index + 1}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <h3 className="judged-card-name">{item.athlete_names}</h3>
+                                            <p className="judged-card-contingent">
+                                                <i className="fa-solid fa-flag mr-1 text-[#b92f24]" aria-hidden="true" />
+                                                <span>{item.contingent_name}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="judged-status-badge">Selesai</span>
+                                </div>
+
+                                <div className="judged-card-scores">
+                                    <div className="judged-score-box">
+                                        <span className="judged-score-label">Teknik (60)</span>
+                                        <strong className="judged-score-val">{item.technique_subtotal}</strong>
+                                    </div>
+                                    <div className="judged-score-box">
+                                        <span className="judged-score-label">Ekspresi (40)</span>
+                                        <strong className="judged-score-val">{item.expression_subtotal}</strong>
+                                    </div>
+                                    <div className="judged-score-box judged-score-box-total">
+                                        <span className="judged-score-label">Nilai Akhir</span>
+                                        <strong className="judged-score-val-total">{item.total_score}</strong>
+                                    </div>
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                </>
+            )}
+        </section>
+    );
+}
+
+export default function ScoringNew({ activeEvent, refereeSession = null, completedCategoryScores = [], refereePortalUrl }) {
     const [busy, setBusy] = useState(false);
     const activeMatch = refereeSession?.active_match;
     const canScore = refereeSession?.is_checked_in && activeMatch?.category_type === 'embu';
+    const judgedScores = completedCategoryScores.length ? completedCategoryScores : (refereeSession?.completed_category_scores || []);
 
     useEffect(() => {
         if (busy) return undefined;
         const refresh = () => {
-            if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession'], preserveScroll: true, preserveState: true });
+            if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession', 'completedCategoryScores'], preserveScroll: true, preserveState: true });
         };
         const interval = window.setInterval(refresh, activeMatch ? 5000 : 2500);
         const channelName = activeMatch?.id ? `tournament-match.${activeMatch.id}` : refereeSession?.court_id ? `event-court.${refereeSession.court_id}` : null;
@@ -263,19 +362,33 @@ export default function ScoringNew({ activeEvent, refereeSession = null, referee
         <main className="referee-scoring-new">
             <Head title="Penilaian Wasit Embu | Smart Perkemi" />
             <div className="referee-screen">
-                <header className="referee-brand">
-                    <img src="/logo.png" alt="PERKEMI" />
-                    <div className="referee-brand-copy"><strong>SMART-<span>PERKEMI</span></strong><p>Sistem Penilaian Wasit Embu</p><small>{activeEvent?.name || 'Shorinji Kempo Indonesia'}</small></div>
-                    <div className="referee-judge"><strong>Juri {refereeSession?.judge_number ?? '—'}</strong><span>{refereeSession?.court_name || 'Belum ada court'}</span></div>
-                    <Link href={refereePortalUrl} className="referee-portal" aria-label="Kembali ke portal wasit" title="Portal wasit"><i className="fa-solid fa-bars" aria-hidden="true" /></Link>
+                {/* Header ringkas & modern: Menggantikan header branding besar, tetap mempertahankan tombol Kembali */}
+                <header className="referee-topbar">
+                    <Link href={refereePortalUrl} className="referee-back-btn" title="Kembali ke portal wasit">
+                        <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+                        <span>Kembali</span>
+                    </Link>
+                    <div className="referee-topbar-info">
+                        <span className="referee-badge-court">{refereeSession?.court_name || 'Court'}</span>
+                        <span className="referee-badge-judge">Juri {refereeSession?.judge_number ?? '—'}</span>
+                    </div>
                 </header>
-                {canScore ? <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} /> : (
-                    <section className="referee-empty">
-                        <i className={`fa-solid ${!refereeSession?.is_checked_in ? 'fa-qrcode' : 'fa-hourglass-half'}`} aria-hidden="true" />
-                        <h1>{!refereeSession?.is_checked_in ? 'Scan QR event dan court dahulu' : activeMatch ? 'Pertandingan Randori sedang aktif' : 'Menunggu panggilan Panitera'}</h1>
-                        <p>{!refereeSession?.is_checked_in ? 'Pastikan kehadiran hari ini sudah tercatat agar lembar penilaian dapat dibuka.' : activeMatch ? 'Lembar ini digunakan untuk penilaian Embu. Nilai Randori dicatat melalui alur Panitera.' : 'Lembar penilaian akan terbuka otomatis setelah peserta Embu dipanggil di court Anda.'}</p>
-                        <Link href={refereePortalUrl}>Buka portal wasit</Link>
-                    </section>
+
+                {canScore ? (
+                    <>
+                        <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} />
+                        <JudgedAthletesTable scores={judgedScores} />
+                    </>
+                ) : (
+                    <>
+                        <section className="referee-empty">
+                            <i className={`fa-solid ${!refereeSession?.is_checked_in ? 'fa-qrcode' : 'fa-hourglass-half'}`} aria-hidden="true" />
+                            <h1>{!refereeSession?.is_checked_in ? 'Scan QR event dan court dahulu' : activeMatch ? 'Pertandingan Randori sedang aktif' : 'Menunggu panggilan Panitera'}</h1>
+                            <p>{!refereeSession?.is_checked_in ? 'Pastikan kehadiran hari ini sudah tercatat agar lembar penilaian dapat dibuka.' : activeMatch ? 'Lembar ini digunakan untuk penilaian Embu. Nilai Randori dicatat melalui alur Panitera.' : 'Lembar penilaian akan terbuka otomatis setelah peserta Embu dipanggil di court Anda.'}</p>
+                            <Link href={refereePortalUrl}>Buka portal wasit</Link>
+                        </section>
+                        {judgedScores.length > 0 && <JudgedAthletesTable scores={judgedScores} />}
+                    </>
                 )}
             </div>
         </main>
