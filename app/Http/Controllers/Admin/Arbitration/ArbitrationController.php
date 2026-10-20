@@ -379,6 +379,7 @@ class ArbitrationController extends Controller
                     'score_update_url' => route('admin.arbitrase.scoring.embu.update', $activeMatch, false),
                 ] : null,
                 'score' => $judgeScore ? [
+                    'id' => $judgeScore->id,
                     'aspect_scores' => $judgeScore->aspect_scores,
                     'completed_items' => $judgeScore->completed_items,
                     'technique_subtotal' => (float) $judgeScore->technique_subtotal,
@@ -395,41 +396,43 @@ class ArbitrationController extends Controller
                 ] : null,
             ];
 
-            $completedCategoryScores = [];
-            if ($activeMatch && $activeMatch->event_match_category_id) {
-                $completedCategoryScores = EmbuJudgeScore::query()
-                    ->whereBelongsTo($activeEvent)
-                    ->whereBelongsTo($court, 'court')
-                    ->whereBelongsTo($referee)
-                    ->where('status', 'submitted')
-                    ->whereHas('tournamentMatch', fn ($q) => $q->where('event_match_category_id', $activeMatch->event_match_category_id))
-                    ->with([
-                        'tournamentMatch:id,event_id,event_match_category_id,event_court_id,round_label,match_sequence,participant_label,metadata,participant_entry_id',
-                    ])
-                    ->get()
-                    ->sortBy(fn (EmbuJudgeScore $s) => $s->tournamentMatch?->match_sequence ?? 9999)
-                    ->values()
-                    ->map(function (EmbuJudgeScore $score) use ($activeEvent, $participantDetails): array {
-                        $match = $score->tournamentMatch;
-                        $details = $match ? $participantDetails->forMatch($activeEvent, $match) : [];
-                        $athleteNames = ! empty($details['athletes'])
-                            ? collect($details['athletes'])->pluck('name')->join(' · ')
-                            : ($match?->participant_label ?? '—');
+            $completedCategoryScores = EmbuJudgeScore::query()
+                ->whereBelongsTo($activeEvent)
+                ->whereBelongsTo($referee)
+                ->where('completed_items', '>', 0)
+                ->with([
+                    'court:id,name',
+                    'tournamentMatch.matchCategory:id,name',
+                    'tournamentMatch' => fn ($q) => $q->select([
+                        'id', 'event_id', 'event_match_category_id', 'event_court_id', 'round_label', 'match_sequence', 'participant_label', 'metadata', 'participant_entry_id',
+                    ]),
+                ])
+                ->latest('updated_at')
+                ->get()
+                ->map(function (EmbuJudgeScore $score) use ($activeEvent, $participantDetails): array {
+                    $match = $score->tournamentMatch;
+                    $details = $match ? $participantDetails->forMatch($activeEvent, $match) : [];
+                    $athleteNames = ! empty($details['athletes'])
+                        ? collect($details['athletes'])->pluck('name')->join(' · ')
+                        : ($match?->participant_label ?? '—');
 
-                        return [
-                            'id' => $score->id,
-                            'match_id' => $score->tournament_match_id,
-                            'sequence' => $match?->match_sequence,
-                            'athlete_names' => $athleteNames,
-                            'contingent_name' => $details['contingent_name'] ?? '—',
-                            'technique_subtotal' => (float) $score->technique_subtotal,
-                            'expression_subtotal' => (float) $score->expression_subtotal,
-                            'total_score' => (float) $score->total_score,
-                            'status' => 'Selesai',
-                        ];
-                    })
-                    ->all();
-            }
+                    return [
+                        'id' => $score->id,
+                        'match_id' => $score->tournament_match_id,
+                        'sequence' => $match?->match_sequence,
+                        'category_name' => $match?->matchCategory?->name ?? '—',
+                        'round_label' => $match?->round_label ?? '',
+                        'court_name' => $score->court?->name ?? $match?->court?->name ?? '—',
+                        'athlete_names' => $athleteNames,
+                        'contingent_name' => $details['contingent_name'] ?? '—',
+                        'technique_subtotal' => (float) $score->technique_subtotal,
+                        'expression_subtotal' => (float) $score->expression_subtotal,
+                        'total_score' => (float) $score->total_score,
+                        'completed_items' => $score->completed_items,
+                        'status' => $score->status,
+                    ];
+                })
+                ->all();
 
             $refereeSession['completed_category_scores'] = $completedCategoryScores;
         }

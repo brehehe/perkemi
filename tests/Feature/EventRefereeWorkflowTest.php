@@ -1241,6 +1241,73 @@ test('new scoring keeps the attendance gate before showing a judge sheet', funct
     $this->assertDatabaseCount('embu_judge_scores', 0);
 });
 
+test('new scoring lists a referee draft immediately and keeps it after the active athlete changes', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('new-draft-list');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+    $aspectScores = refereeAspectScores(array_fill(0, 10, 8));
+
+    foreach (array_slice(array_keys($aspectScores), 3) as $key) {
+        $aspectScores[$key] = null;
+    }
+
+    $draftScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'judge_number' => 1,
+        'role' => RefereeCourtRole::Chief->value,
+        'aspect_scores' => $aspectScores,
+        'completed_items' => 3,
+        'technique_subtotal' => 24,
+        'expression_subtotal' => 0,
+        'total_score' => 24,
+        'status' => 'draft',
+        'signature' => null,
+        'signed_at' => null,
+        'submitted_at' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/ScoringNew')
+            ->where('refereeSession.score.id', $draftScore->id)
+            ->has('refereeSession.completed_category_scores', 1)
+            ->where('refereeSession.completed_category_scores.0.id', $draftScore->id)
+            ->where('refereeSession.completed_category_scores.0.match_id', $match->id)
+            ->where('refereeSession.completed_category_scores.0.completed_items', 3)
+            ->where('refereeSession.completed_category_scores.0.total_score', 24)
+            ->where('refereeSession.completed_category_scores.0.status', 'draft'));
+
+    $match->update([
+        'status' => 'completed',
+        'call_status' => 'completed',
+    ]);
+    $nextMatch = createActiveEmbuMatch($event, $court);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.active_match.id', $nextMatch->id)
+            ->where('refereeSession.score', null)
+            ->has('refereeSession.completed_category_scores', 1)
+            ->where('refereeSession.completed_category_scores.0.id', $draftScore->id)
+            ->where('refereeSession.completed_category_scores.0.status', 'draft'));
+});
+
 test('saving without a penalty field preserves shared penalties and their author', function (string $source) {
     config(['app.wasit_scoring_version' => 'new']);
     [$event, $courts] = createRefereeWorkflowEvent('new-preserve-penalty');

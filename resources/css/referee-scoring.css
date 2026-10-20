@@ -333,20 +333,22 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.referee-score-choices button[aria-pressed="true"] {
-    background: var(--section-color);
-    color: #fff;
-    font-size: 24px;
-    font-weight: 900;
-    border-color: var(--section-color);
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+.referee-score-choices button[aria-pressed="true"],
+.referee-score-choices button[aria-pressed="true"]:hover,
+.referee-score-choices button[aria-pressed="true"]:focus,
+.referee-score-choices button[aria-pressed="true"]:active {
+    background: var(--section-color) !important;
+    color: #ffffff !important;
+    border-color: var(--section-color) !important;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25) !important;
     transform: scale(1.02);
 }
 
 @media (hover: hover) {
-    .referee-score-choices button:hover {
+    .referee-score-choices button:not([aria-pressed="true"]):hover {
         box-shadow: inset 0 0 0 2px var(--section-color);
         background: #f1f5f9;
+        color: #0f172a;
     }
 }
 
@@ -602,6 +604,14 @@
     font-size: 11px;
     font-weight: 700;
     white-space: nowrap;
+}
+
+.judged-status-badge.is-draft {
+    background: #1d4ed8;
+}
+
+.judged-status-badge.is-ready {
+    background: #92400e;
 }
 
 .judged-scroll-hint {
@@ -929,7 +939,13 @@
         min-height: 46px;
         border-radius: 7px;
     }
-    .referee-score-choices button[aria-pressed="true"] {
+    .referee-score-choices button[aria-pressed="true"],
+    .referee-score-choices button[aria-pressed="true"]:hover,
+    .referee-score-choices button[aria-pressed="true"]:focus,
+    .referee-score-choices button[aria-pressed="true"]:active {
+        background: var(--section-color) !important;
+        color: #ffffff !important;
+        border-color: var(--section-color) !important;
         font-size: 23px;
         font-weight: 900;
     }

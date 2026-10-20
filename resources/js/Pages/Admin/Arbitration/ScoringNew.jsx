@@ -1,6 +1,6 @@
 import SignaturePad from '@/Components/UI/Forms/SignaturePad';
 import { Head, Link, router } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../../../css/referee-scoring.css';
 
 const groups = [
@@ -28,6 +28,18 @@ const groups = [
 const criteria = groups.flatMap((group) => group.items);
 const choices = [7, 8, 9, 10];
 
+function scoreStatus(score) {
+    if (score.status === 'submitted') {
+        return { className: '', label: 'Selesai' };
+    }
+
+    const completedItems = Number(score.completed_items ?? 0);
+
+    return completedItems === criteria.length
+        ? { className: 'is-ready', label: 'Siap dikirim' }
+        : { className: 'is-draft', label: `Sedang dinilai ${completedItems}/${criteria.length}` };
+}
+
 function ScoringDialog({ title, onClose, children }) {
     const dialog = useRef(null);
 
@@ -48,7 +60,7 @@ function ScoringDialog({ title, onClose, children }) {
     );
 }
 
-function ScoreBoard({ activeEvent, session, onBusyChange }) {
+function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
     const match = session.active_match;
     const participant = match.participant ?? {};
     const [scores, setScores] = useState(() => Object.fromEntries(criteria.map(([key]) => [key, session.score?.aspect_scores?.[key] ?? null])));
@@ -104,7 +116,7 @@ function ScoreBoard({ activeEvent, session, onBusyChange }) {
         }, {
             preserveScroll: true,
             preserveState: true,
-            only: ['refereeSession', 'flash', 'errors'],
+            only: ['refereeSession', 'completedCategoryScores', 'flash', 'errors'],
             onSuccess: () => {
                 succeeded = true;
                 setSavedStatus(status);
@@ -147,6 +159,27 @@ function ScoreBoard({ activeEvent, session, onBusyChange }) {
         return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
     }, [dirty, saving]);
 
+    useEffect(() => {
+        if (completed === 0) return;
+
+        onScoreChange({
+            id: session.score?.id ?? `draft-${match.id}`,
+            event_id: activeEvent.id,
+            match_id: match.id,
+            sequence: match.sequence,
+            category_name: match.category_name,
+            round_label: match.round_label ?? '',
+            court_name: session.court_name,
+            athlete_names: athleteNames,
+            contingent_name: participant.contingent_name || '—',
+            technique_subtotal: subtotal(groups[0]),
+            expression_subtotal: subtotal(groups[1]),
+            total_score: total,
+            completed_items: completed,
+            status: dirty ? 'draft' : savedStatus,
+        });
+    }, [scores, dirty, savedStatus, onScoreChange]);
+
     const saveMessage = error || (saving ? 'Menyimpan…' : dirty ? 'Perubahan belum tersimpan' : savedStatus === 'submitted' ? 'Nilai terkirim ke Panitera' : session.score || revision.current ? 'Draf tersimpan otomatis' : 'Pilih nilai untuk setiap aspek');
 
     return (
@@ -185,7 +218,19 @@ function ScoreBoard({ activeEvent, session, onBusyChange }) {
                                     <span className="referee-criterion">{code && <strong>{code}</strong>}<span>{label}</span></span>
                                     <div className="referee-score-choices">
                                         {choices.map((value) => (
-                                            <button key={value} type="button" aria-pressed={scores[key] === value} aria-label={`${label}: ${value}`} onClick={() => { setScores((previous) => ({ ...previous, [key]: value })); changed(); }}>{value}</button>
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                aria-pressed={scores[key] === value}
+                                                aria-label={`${label}: ${value}`}
+                                                onClick={(e) => {
+                                                    setScores((previous) => ({ ...previous, [key]: value }));
+                                                    changed();
+                                                    e.currentTarget.blur();
+                                                }}
+                                            >
+                                                {value}
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
@@ -231,9 +276,9 @@ function JudgedAthletesTable({ scores = [] }) {
     const [viewMode, setViewMode] = useState('auto'); // 'auto', 'card', 'table'
 
     return (
-        <section className="judged-athletes-card" aria-label="Daftar atlet yang telah selesai dinilai">
+        <section className="judged-athletes-card" aria-label="Daftar atlet yang telah dinilai">
             <header className="judged-athletes-header">
-                <h2>DAFTAR ATLET YANG TELAH SELESAI DINILAI</h2>
+                <h2>DAFTAR ATLET YANG TELAH DINILAI</h2>
                 <div className="judged-athletes-header-right">
                     <span className="judged-athletes-total">Total: {scores.length} Atlet</span>
                     {scores.length > 0 && (
@@ -253,7 +298,7 @@ function JudgedAthletesTable({ scores = [] }) {
             {scores.length === 0 ? (
                 <div className="judged-empty-state">
                     <i className="fa-solid fa-clipboard-list" aria-hidden="true" />
-                    <p>Belum ada atlet yang selesai dinilai pada nomor pertandingan ini.</p>
+                    <p>Belum ada atlet yang mulai dinilai pada event ini.</p>
                 </div>
             ) : (
                 <>
@@ -265,6 +310,7 @@ function JudgedAthletesTable({ scores = [] }) {
                                     <th style={{ width: '45px', textAlign: 'center' }}>No.</th>
                                     <th>Nama Atlet</th>
                                     <th>Kontingen</th>
+                                    <th>Kategori / Partai</th>
                                     <th style={{ textAlign: 'center' }}>Nilai Teknik<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(60)</span></th>
                                     <th style={{ textAlign: 'center' }}>Nilai Ekspresi<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(40)</span></th>
                                     <th style={{ textAlign: 'center' }}>Nilai Akhir<br /><span style={{ fontSize: '11px', fontWeight: 'normal' }}>(100)</span></th>
@@ -273,15 +319,19 @@ function JudgedAthletesTable({ scores = [] }) {
                             </thead>
                             <tbody>
                                 {scores.map((item, index) => (
-                                    <tr key={item.id || index}>
+                                    <tr key={item.id || item.match_id || index}>
                                         <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
                                         <td style={{ fontWeight: 'bold', color: '#0c203b' }}>{item.athlete_names}</td>
                                         <td style={{ color: '#334155' }}>{item.contingent_name}</td>
+                                        <td style={{ color: '#475569', fontSize: '12px' }}>
+                                            <span style={{ fontWeight: '600', color: '#0f172a' }}>{item.category_name}</span>
+                                            {item.sequence && <span style={{ display: 'block', fontSize: '11px', color: '#64748b' }}>Partai #{item.sequence} · {item.court_name}</span>}
+                                        </td>
                                         <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }}>{item.technique_subtotal}</td>
                                         <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '16px' }}>{item.expression_subtotal}</td>
                                         <td style={{ textAlign: 'center', fontWeight: '900', fontSize: '18px', color: '#0c203b' }}>{item.total_score}</td>
                                         <td style={{ textAlign: 'center' }}>
-                                            <span className="judged-status-badge">Selesai</span>
+                                            <span className={`judged-status-badge ${scoreStatus(item).className}`}>{scoreStatus(item).label}</span>
                                         </td>
                                     </tr>
                                 ))}
@@ -296,7 +346,7 @@ function JudgedAthletesTable({ scores = [] }) {
                     {/* Tampilan Kartu Responsif (Default pada Layar Mobile Ponsel) */}
                     <div className={`judged-athletes-mobile-list ${viewMode === 'table' ? 'hidden' : viewMode === 'card' ? 'flex' : 'flex sm:hidden'}`}>
                         {scores.map((item, index) => (
-                            <article key={item.id || index} className="judged-athlete-card-item">
+                            <article key={item.id || item.match_id || index} className="judged-athlete-card-item">
                                 <div className="judged-card-header">
                                     <div className="judged-card-athlete">
                                         <span className="judged-card-number">#{index + 1}</span>
@@ -306,9 +356,15 @@ function JudgedAthletesTable({ scores = [] }) {
                                                 <i className="fa-solid fa-flag mr-1 text-[#b92f24]" aria-hidden="true" />
                                                 <span>{item.contingent_name}</span>
                                             </p>
+                                            {item.category_name && (
+                                                <p style={{ margin: '3px 0 0', fontSize: '11.5px', color: '#475569', fontWeight: '600' }}>
+                                                    <i className="fa-solid fa-trophy mr-1 text-[#d97706]" aria-hidden="true" />
+                                                    {item.category_name} {item.sequence ? `(Partai #${item.sequence})` : ''} · {item.court_name}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
-                                    <span className="judged-status-badge">Selesai</span>
+                                    <span className={`judged-status-badge ${scoreStatus(item).className}`}>{scoreStatus(item).label}</span>
                                 </div>
 
                                 <div className="judged-card-scores">
@@ -336,9 +392,19 @@ function JudgedAthletesTable({ scores = [] }) {
 
 export default function ScoringNew({ activeEvent, refereeSession = null, completedCategoryScores = [], refereePortalUrl }) {
     const [busy, setBusy] = useState(false);
+    const [liveScore, setLiveScore] = useState(null);
     const activeMatch = refereeSession?.active_match;
     const canScore = refereeSession?.is_checked_in && activeMatch?.category_type === 'embu';
-    const judgedScores = completedCategoryScores.length ? completedCategoryScores : (refereeSession?.completed_category_scores || []);
+    const storedScores = refereeSession?.completed_category_scores ?? completedCategoryScores ?? [];
+    const updateLiveScore = useCallback((score) => setLiveScore(score), []);
+    const judgedScores = useMemo(() => {
+        if (!liveScore || liveScore.event_id !== activeEvent?.id) return storedScores;
+
+        return [
+            liveScore,
+            ...storedScores.filter((score) => score.match_id !== liveScore.match_id),
+        ];
+    }, [activeEvent?.id, liveScore, storedScores]);
 
     useEffect(() => {
         if (busy) return undefined;
@@ -376,7 +442,7 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
 
                 {canScore ? (
                     <>
-                        <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} />
+                        <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} onScoreChange={updateLiveScore} />
                         <JudgedAthletesTable scores={judgedScores} />
                     </>
                 ) : (
