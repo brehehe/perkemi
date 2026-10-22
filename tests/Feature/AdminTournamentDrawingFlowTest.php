@@ -15,6 +15,7 @@ use App\Models\Rundown;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
+use App\Services\Admin\Master\EventDetailViewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -604,6 +605,7 @@ test('event tournament settings and match session window can be saved', function
             'minimum_rest_minutes' => 20,
             'minimum_entries_per_category' => 4,
             'minimum_contingents_per_category' => 3,
+            'tts_announcer_enabled' => false,
         ])
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -627,7 +629,11 @@ test('event tournament settings and match session window can be saved', function
         'minimum_rest_minutes' => 20,
         'minimum_entries_per_category' => 4,
         'minimum_contingents_per_category' => 3,
+        'tts_announcer_enabled' => false,
     ]);
+
+    $viewData = app(EventDetailViewService::class)->build(request(), $event->fresh());
+    expect($viewData['event']['tts_announcer_enabled'])->toBeFalse();
     $this->assertDatabaseHas('rundowns', [
         'event_id' => $event->id,
         'name' => 'Penyisihan Pagi',

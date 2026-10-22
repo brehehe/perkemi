@@ -278,6 +278,7 @@ class EventDetailViewService
                 'minimum_contingents_per_category' => (int) $event->minimum_contingents_per_category,
                 'status' => $event->status instanceof \BackedEnum ? $event->status->value : (string) $event->status,
                 'is_active' => (bool) $event->is_active,
+                'tts_announcer_enabled' => (bool) $event->tts_announcer_enabled,
                 'organizer' => $event->organizer,
                 'contact_person' => $event->contact_person,
                 'contact_phone' => $event->contact_phone,

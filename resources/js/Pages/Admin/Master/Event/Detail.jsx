@@ -203,6 +203,12 @@ export default function EventDetail({
         tts_announcer_enabled: event.tts_announcer_enabled ?? true,
     });
 
+    useEffect(() => {
+        if (event.tts_announcer_enabled !== undefined) {
+            tournamentForm.setData('tts_announcer_enabled', Boolean(event.tts_announcer_enabled));
+        }
+    }, [event.tts_announcer_enabled]);
+
     const coverForm = useForm({ cover_image: null });
 
     // Form: Age Category (CRUD)
