@@ -215,7 +215,9 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
 
 // Pendaftaran
 Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('admin.pendaftaran.')->group(function () {
+    Route::get('nomor-pertandingan/export', [RegistrationController::class, 'exportMatchGroups'])->name('nomor-pertandingan.export');
     Route::get('nomor-pertandingan', [RegistrationController::class, 'matchGroups'])->name('nomor-pertandingan');
+    Route::get('registrasi/export', [RegistrationController::class, 'exportRegistrasi'])->name('registrasi.export');
     Route::get('registrasi', [RegistrationController::class, 'registrasi'])->name('registrasi');
     Route::get('registrasi/create', [RegistrationController::class, 'create'])->name('registrasi.create');
     Route::post('registrasi', [RegistrationController::class, 'store'])->name('registrasi.store');
@@ -244,6 +246,7 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
     Route::post('registrasi/{registration}/payment/verify', [RegistrationController::class, 'verifyPayment'])->name('registrasi.payment.verify');
     Route::post('registrasi/{registration}/payment/reject', [RegistrationController::class, 'rejectPayment'])->name('registrasi.payment.reject');
     Route::get('registrasi/{registration}/payment-proof', [RegistrationController::class, 'downloadPaymentProof'])->name('registrasi.payment.proof');
+    Route::get('verifikasi/export', [RegistrationController::class, 'exportVerifikasi'])->name('verifikasi.export');
     Route::get('verifikasi', [RegistrationController::class, 'verifikasi'])->name('verifikasi');
     Route::post('verifikasi/{athlete}/match-category', [RegistrationController::class, 'storeAthleteMatchCategoryEntry'])->name('verifikasi.match-category.store');
     Route::delete('verifikasi/{athlete}/match-category/{entry}', [RegistrationController::class, 'destroyAthleteMatchCategoryEntry'])->name('verifikasi.match-category.destroy');
@@ -346,7 +349,7 @@ Route::middleware('auth')->group(function () {
     Route::match(['get', 'post'], 'wasit/check-in/event/{event}', [RefereeCheckInController::class, 'event'])
         ->middleware(['signed', 'throttle:30,1'])
         ->name('wasit.check-in.event');
-    Route::match(['get', 'post'], 'wasit/check-in/event/{event}/court/{eventCourt}', [RefereeCheckInController::class, 'court'])
+    Route::match(['get', 'post'], 'wasit/check-in/event/{event}/court/{eventCourt}/{role?}', [RefereeCheckInController::class, 'court'])
         ->middleware(['signed', 'throttle:30,1'])
         ->name('wasit.check-in.court');
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');

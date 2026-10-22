@@ -114,6 +114,16 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                             </p>
                             {activeEvent && <p className="mt-2 text-xs font-semibold text-[#d4a843]">Event: {activeEvent.name}</p>}
                         </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <a
+                                href={`/admin/pendaftaran/verifikasi/export?event_id=${activeEvent?.id || ''}&contingent_id=${contingentFilter}&search=${encodeURIComponent(search)}&category_type=${filters.category_type || ''}`}
+                                className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
+                                download
+                            >
+                                <i className="fa-solid fa-file-excel" aria-hidden="true" />
+                                Ekspor Excel
+                            </a>
+                        </div>
                     </div>
                 </div>
 

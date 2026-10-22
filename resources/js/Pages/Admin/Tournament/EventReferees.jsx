@@ -22,6 +22,7 @@ function QrPreview({ value, label }) {
 
 function CourtPanelCard({ court, activeEvent }) {
     const [qrOpen, setQrOpen] = useState(false);
+    const [activeRoleTab, setActiveRoleTab] = useState('chief');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
     const resetForm = useForm({ event_id: activeEvent.id });
@@ -33,41 +34,192 @@ function CourtPanelCard({ court, activeEvent }) {
         });
     };
 
+    const openRoleQr = (roleKey) => {
+        setActiveRoleTab(roleKey);
+        setQrOpen(true);
+    };
+
+    const currentMember = court.panel.find((p) => p.role === activeRoleTab) || court.panel[0];
+
     return (
         <article className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
             <div className="flex flex-col gap-4 border-b border-[#e9e2d8] bg-[#faf8f5] p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                    <div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-bold text-[#17120f]">{court.name}</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${court.panel_ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{court.panel_ready ? 'Court aktif' : court.panel_complete ? 'Menunggu scan QR' : 'Belum lengkap'}</span></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-bold text-[#17120f]">{court.name}</h3>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${court.panel_ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {court.panel_ready ? 'Court aktif' : court.panel_complete ? 'Menunggu scan QR' : 'Belum lengkap'}
+                        </span>
+                    </div>
                     <p className="mt-1 text-xs text-[#7a746e]">{court.location || 'Lokasi court belum dicatat'}</p>
                 </div>
                 <div className="grid w-full gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:justify-end">
-                    <button type="button" onClick={() => setHistoryOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs font-bold text-[#625b54] hover:bg-[#f5f1eb]"><i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />Riwayat</button>
-                    <button type="button" disabled={!court.has_panel} onClick={() => setResetOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-[#ddd7cf] disabled:bg-[#eeeae4] disabled:text-[#a79f96]"><i className="fa-solid fa-rotate-left" aria-hidden="true" />Reset Wasit</button>
-                    <button type="button" disabled={!court.panel_complete} onClick={() => setQrOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8c9ae] bg-white px-3 text-xs font-bold text-[#8a631c] hover:bg-amber-50 disabled:cursor-not-allowed disabled:bg-[#eeeae4] disabled:text-[#a79f96]"><i className="fa-solid fa-qrcode" aria-hidden="true" />Tampilkan QR Court</button>
+                    <button type="button" onClick={() => setHistoryOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs font-bold text-[#625b54] hover:bg-[#f5f1eb]">
+                        <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />Riwayat
+                    </button>
+                    <button type="button" disabled={!court.has_panel} onClick={() => setResetOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-[#ddd7cf] disabled:bg-[#eeeae4] disabled:text-[#a79f96]">
+                        <i className="fa-solid fa-rotate-left" aria-hidden="true" />Reset Wasit
+                    </button>
+                    <button type="button" disabled={!court.panel_complete} onClick={() => { setActiveRoleTab('chief'); setQrOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8c9ae] bg-white px-3 text-xs font-bold text-[#8a631c] hover:bg-amber-50 disabled:cursor-not-allowed disabled:bg-[#eeeae4] disabled:text-[#a79f96]">
+                        <i className="fa-solid fa-qrcode" aria-hidden="true" />Tampilkan QR Court
+                    </button>
                 </div>
             </div>
             <div className="space-y-4 p-5">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
                     {court.panel.map((panelMember, index) => (
-                        <div key={panelMember.role} className={`rounded-xl border p-3 ${panelMember.referee_name ? 'border-[#e8e1d8] bg-[#fbfaf8]' : 'border-dashed border-[#d9d3c9] bg-white'}`}>
-                            <div className="flex min-h-5 items-center justify-between gap-2 text-xs font-bold text-[#3d3732]"><span>{index + 1}. {panelMember.role_label}</span>{panelMember.court_present && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">Hadir Court</span>}</div>
-                            {panelMember.referee_name ? (
-                                <div className="mt-3 flex items-center gap-3">
-                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#17120f] text-xs font-black text-[#f0c060]">{panelMember.referee_name.slice(0, 1).toUpperCase()}</span>
-                                    <div className="min-w-0"><p className="truncate text-sm font-bold text-[#17120f]">{panelMember.referee_name}</p><p className="mt-0.5 text-[11px] text-[#7a746e]">{panelMember.court_checked_in_at ? `Check-in ${panelMember.court_checked_in_at}` : 'Menunggu scan QR court'}</p></div>
+                        <div key={panelMember.role} className={`flex flex-col justify-between rounded-xl border p-3.5 transition-shadow hover:shadow-xs ${panelMember.referee_name ? 'border-[#e8e1d8] bg-[#fbfaf8]' : 'border-dashed border-[#d9d3c9] bg-white'}`}>
+                            <div>
+                                <div className="flex min-h-5 items-center justify-between gap-2 text-xs font-bold text-[#3d3732]">
+                                    <span className="truncate">{index + 1}. {panelMember.role_label}</span>
+                                    {panelMember.court_present && (
+                                        <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">Hadir</span>
+                                    )}
                                 </div>
-                            ) : (
-                                <p className="mt-3 text-xs text-[#918981]">Belum digenerate</p>
+                                {panelMember.referee_name ? (
+                                    <div className="mt-3 flex items-center gap-3">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#17120f] text-xs font-black text-[#f0c060]">
+                                            {panelMember.referee_name.slice(0, 1).toUpperCase()}
+                                        </span>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-bold text-[#17120f]">{panelMember.referee_name}</p>
+                                            <p className="mt-0.5 text-[11px] text-[#7a746e]">
+                                                {panelMember.court_checked_in_at ? `Check-in ${panelMember.court_checked_in_at}` : 'Belum scan QR'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="mt-3 text-xs text-[#918981]">Belum digenerate</p>
+                                )}
+                            </div>
+
+                            {court.panel_complete && (
+                                <div className="mt-3.5 flex items-center justify-between border-t border-[#ede7df] pt-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => openRoleQr(panelMember.role)}
+                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8a631c] hover:text-[#5e410f] hover:underline"
+                                    >
+                                        <i className="fa-solid fa-qrcode" aria-hidden="true" />
+                                        <span>QR {panelMember.role_label}</span>
+                                    </button>
+                                    {panelMember.court_present ? (
+                                        <span className="text-[10px] font-semibold text-emerald-700"><i className="fa-solid fa-circle-check mr-1" />Siap</span>
+                                    ) : (
+                                        <span className="text-[10px] font-medium text-amber-700"><i className="fa-solid fa-clock mr-1" />Scan</span>
+                                    )}
+                                </div>
                             )}
                         </div>
                     ))}
                 </div>
                 <div className="flex items-start gap-2 border-t border-[#eee8e0] pt-4 text-xs leading-5 text-[#776f67]">
                     <i className="fa-solid fa-circle-info mt-0.5 text-[#b8872d]" aria-hidden="true" />
-                    <p>Panel diisi otomatis dari Wasit aktif yang sudah hadir hari ini. Setelah digenerate, kelimanya wajib scan QR court.</p>
+                    <p>Masing-masing dari kelima wasit memiliki QR check-in tersendiri sesuai posisinya (Wasit Utama, Wasit Daerah 1-2, dan Wasit Pembantu 1-2). Wasit hanya dapat check-in menggunakan QR sesuai posisi penugasannya.</p>
                 </div>
             </div>
-            <Modal isOpen={qrOpen} onClose={() => setQrOpen(false)} title={`QR Check-in ${court.name}`} footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}><div className="mx-auto max-w-sm"><QrPreview value={court.check_in_url} label={`Check-in ${court.name}`} /><p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs leading-5 text-amber-800">QR ini dipindai dari ponsel akun Wasit yang sudah ditugaskan. Admin/Panitera hanya menampilkan QR dan tidak perlu membuka tautannya.</p></div></Modal>
+
+            {/* QR Modal with Tab Switching per Role */}
+            <Modal
+                isOpen={qrOpen}
+                onClose={() => setQrOpen(false)}
+                title={`QR Absensi ${court.name}`}
+                subtitle="Pilih posisi wasit untuk menampilkan QR masing-masing."
+                size={activeRoleTab === 'all' ? 'xl' : 'md'}
+                footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}
+            >
+                <div className="space-y-4">
+                    {/* Role Tabs */}
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-[#e5ded4] bg-[#f5f1eb] p-1.5">
+                        {court.panel.map((pm, idx) => (
+                            <button
+                                key={pm.role}
+                                type="button"
+                                onClick={() => setActiveRoleTab(pm.role)}
+                                className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
+                                    activeRoleTab === pm.role
+                                        ? 'bg-white text-[#17120f] shadow-xs'
+                                        : 'text-[#625b54] hover:text-[#17120f]'
+                                }`}
+                            >
+                                {idx + 1}. {pm.role_label}
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => setActiveRoleTab('all')}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
+                                activeRoleTab === 'all'
+                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                    : 'text-[#625b54] hover:text-[#17120f]'
+                            }`}
+                        >
+                            <i className="fa-solid fa-border-all mr-1.5" />
+                            Semua 5 Posisi
+                        </button>
+                    </div>
+
+                    {activeRoleTab === 'all' ? (
+                        <div className="space-y-3">
+                            <p className="text-center text-xs text-[#7a746e]">
+                                Tampilkan atau cetak kelima QR berikut di meja juri {court.name}. Setiap wasit memindai QR sesuai posisi duduk/tugasnya.
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {court.panel.map((pm, idx) => (
+                                    <div key={pm.role} className="flex flex-col justify-between rounded-xl border border-[#e5ded4] bg-white p-3 text-center">
+                                        <div>
+                                            <span className="mb-2 inline-block rounded-full bg-[#f5f1eb] px-2.5 py-0.5 text-[11px] font-bold text-[#8a631c]">
+                                                {idx + 1}. {pm.role_label}
+                                            </span>
+                                            <QrPreview value={pm.check_in_url || court.check_in_url} label={`${court.name} - ${pm.role_label}`} />
+                                            <p className="mt-2 truncate text-xs font-semibold text-[#17120f]">{pm.referee_name || 'Belum ditugaskan'}</p>
+                                        </div>
+                                        <div className="mt-2 pt-2 border-t border-[#f0eae1]">
+                                            {pm.court_present ? (
+                                                <span className="text-[10px] font-bold text-emerald-700"><i className="fa-solid fa-check mr-1" />Hadir Court</span>
+                                            ) : (
+                                                <span className="text-[10px] font-medium text-amber-700"><i className="fa-solid fa-clock mr-1" />Menunggu scan</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mx-auto max-w-sm text-center">
+                            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#ecdab8] bg-[#faf4e9] px-3.5 py-1 text-xs font-bold text-[#8a631c]">
+                                <i className="fa-solid fa-user-shield" />
+                                <span>Posisi: {currentMember?.role_label} ({court.name})</span>
+                            </div>
+                            <QrPreview
+                                value={currentMember?.check_in_url || court.check_in_url}
+                                label={`Check-in ${court.name} · ${currentMember?.role_label}`}
+                            />
+                            <div className="mt-3 rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3 text-left">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-[#9b7125]">Wasit Yang Ditugaskan</p>
+                                <p className="mt-0.5 text-sm font-bold text-[#17120f]">{currentMember?.referee_name || 'Belum ditugaskan'}</p>
+                                <p className="mt-0.5 text-xs text-[#7a746e]">
+                                    {currentMember?.court_present ? (
+                                        <span className="font-semibold text-emerald-700">
+                                            <i className="fa-solid fa-circle-check mr-1" />
+                                            Sudah hadir di court ({currentMember.court_checked_in_at})
+                                        </span>
+                                    ) : (
+                                        <span className="text-amber-700">
+                                            <i className="fa-solid fa-clock mr-1" />
+                                            Menunggu scan QR oleh wasit bersangkutan
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs leading-5 text-amber-800">
+                                QR ini khusus dipindai oleh akun Wasit yang bertugas sebagai <strong>{currentMember?.role_label}</strong> di {court.name}.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
             <Modal isOpen={resetOpen} onClose={() => setResetOpen(false)} title={`Reset panel ${court.name}`} footer={<><Button variant="outline" onClick={() => setResetOpen(false)}>Batal</Button><Button onClick={resetPanel} loading={resetForm.processing} className="bg-red-700 text-white hover:bg-red-800">Reset 5 Wasit</Button></>}>
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800"><p className="font-bold">Semua posisi Wasit pada {court.name} akan dikosongkan.</p><p className="mt-1">Check-in Court hari ini ikut dihapus, Portal Wasit akan kembali tanpa penugasan, dan panel dapat digenerate kembali. Riwayat reset tetap disimpan.</p></div>
             </Modal>

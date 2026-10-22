@@ -38,10 +38,20 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                         <h1 className="mt-2 font-cinzel text-2xl font-bold text-[#17120f] md:text-3xl">Nomor dan Kelompok Pertandingan</h1>
                         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#706860]">Pilih kontingen untuk mengatur susunan tim Embu dan teknik yang digunakan. Nomor Randori dan berat atlet ditampilkan sebagai acuan.</p>
                     </div>
-                    {eventOptions.length > 1 && <div className="w-full sm:w-72">
-                        <Combobox label="Event" value={activeEvent.id} onChange={selectEvent} placeholder=""
-                            options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))} />
-                    </div>}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <a
+                            href={`/admin/pendaftaran/nomor-pertandingan/export?event_id=${activeEvent.id}${registration ? `&registration_id=${registration.id}` : ''}${type !== 'all' ? `&type=${type}` : ''}`}
+                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
+                            download
+                        >
+                            <i className="fa-solid fa-file-excel" aria-hidden="true" />
+                            <span>Ekspor Excel {registration ? `(${registration.contingent.name})` : '(Semua)'}</span>
+                        </a>
+                        {eventOptions.length > 1 && <div className="w-full sm:w-64">
+                            <Combobox label="Event" value={activeEvent.id} onChange={selectEvent} placeholder=""
+                                options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))} />
+                        </div>}
+                    </div>
                 </div>
                 {eventOptions.length <= 1 && <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#faf4e9] px-3 py-1.5 text-xs font-semibold text-[#74521f]">
                     <i className="fa-solid fa-trophy" aria-hidden="true" />{activeEvent.name}

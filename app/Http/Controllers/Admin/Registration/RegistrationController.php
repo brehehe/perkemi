@@ -20,8 +20,10 @@ use App\Models\Official;
 use App\Models\Registration;
 use App\Models\Technique;
 use App\Services\ParticipantEligibilityService;
+use App\Services\Registration\RegistrationWorkbookService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -135,6 +137,35 @@ class RegistrationController extends Controller
                 'status' => $status,
                 'event_id' => $activeEvent?->id,
             ],
+        ]);
+    }
+
+    /**
+     * Export contingent registrations as a native Excel XLSX workbook.
+     */
+    public function exportRegistrasi(
+        Request $request,
+        RegistrationWorkbookService $workbookService,
+    ): HttpResponse {
+        $events = $this->registrationEventsForRequest($request);
+        $activeEvent = $events->firstWhere('id', $request->attributes->get('tenantEvent')?->id ?? $request->input('event_id'))
+            ?? $events->firstWhere('is_active', true)
+            ?? $events->first();
+        abort_unless($activeEvent instanceof Event, 404, 'Event belum tersedia.');
+
+        abort_unless(
+            $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
+            || $this->canManageMatchEntries($request, $activeEvent),
+            403
+        );
+
+        $export = $workbookService->exportRegistrasi($activeEvent, $request);
+
+        return response($export['content'], 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$export['filename'].'"',
+            'Content-Length' => (string) strlen($export['content']),
+            'Cache-Control' => 'private, no-store, max-age=0',
         ]);
     }
 
@@ -426,6 +457,33 @@ class RegistrationController extends Controller
     }
 
     /**
+     * Export match groups and athlete entries as a native Excel XLSX workbook.
+     */
+    public function exportMatchGroups(
+        Request $request,
+        RegistrationWorkbookService $workbookService,
+    ): HttpResponse {
+        $events = $this->registrationEventsForRequest($request);
+        $event = $events->firstWhere('id', $request->attributes->get('tenantEvent')?->id ?? $request->query('event_id'))
+            ?? $events->firstWhere('is_active', true)
+            ?? $events->first();
+        abort_unless($event instanceof Event, 404, 'Event belum tersedia.');
+
+        $eventStaff = $this->canManageMatchEntries($request, $event);
+        $isContingentOwner = $event->contingents()->where('user_id', $request->user()?->id)->exists();
+        abort_unless($eventStaff || $isContingentOwner, 403);
+
+        $export = $workbookService->exportMatchGroups($event, $request);
+
+        return response($export['content'], 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$export['filename'].'"',
+            'Content-Length' => (string) strlen($export['content']),
+            'Cache-Control' => 'private, no-store, max-age=0',
+        ]);
+    }
+
+    /**
      * Display the athlete document verification list.
      */
     public function verifikasi(Request $request): Response
@@ -560,6 +618,35 @@ class RegistrationController extends Controller
             'matchCategories' => $matchCategories,
             'maxMatchCategoriesPerAthlete' => $activeEvent?->max_match_categories_per_athlete,
             'canManageMatchEntries' => $this->canManageMatchEntries($request, $activeEvent),
+        ]);
+    }
+
+    /**
+     * Export athlete verification list as a native Excel XLSX workbook.
+     */
+    public function exportVerifikasi(
+        Request $request,
+        RegistrationWorkbookService $workbookService,
+    ): HttpResponse {
+        $events = $this->registrationEventsForRequest($request);
+        $activeEvent = $events->firstWhere('id', $request->attributes->get('tenantEvent')?->id ?? $request->input('event_id'))
+            ?? $events->firstWhere('is_active', true)
+            ?? $events->first();
+        abort_unless($activeEvent instanceof Event, 404, 'Event belum tersedia.');
+
+        abort_unless(
+            $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
+            || $this->canManageMatchEntries($request, $activeEvent),
+            403
+        );
+
+        $export = $workbookService->exportVerification($activeEvent, $request);
+
+        return response($export['content'], 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$export['filename'].'"',
+            'Content-Length' => (string) strlen($export['content']),
+            'Cache-Control' => 'private, no-store, max-age=0',
         ]);
     }
 

@@ -149,13 +149,14 @@ class EventRefereeController extends Controller
                 'panel_complete' => $panelComplete,
                 'panel_ready' => $panelReady,
                 'has_panel' => $refereeAssignments->isNotEmpty(),
-                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames): array {
+                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames, $event, $court, $expiresAt): array {
                     $assignment = $refereeAssignments->get($role->value);
                     $refereeId = $assignment?->staff_id;
 
                     return [
                         'role' => $role->value,
                         'role_label' => $role->label(),
+                        'judge_number' => $role->judgeNumber(),
                         'referee_id' => $refereeId,
                         'referee_name' => $refereeId ? $refereeNames->get($refereeId) : null,
                         'court_present' => $refereeId
@@ -164,6 +165,11 @@ class EventRefereeController extends Controller
                         'court_checked_in_at' => $refereeId
                             ? $courtAttendances->get($refereeId)?->checked_in_at?->translatedFormat('d M Y, H:i')
                             : null,
+                        'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
+                            'event' => $event,
+                            'eventCourt' => $court,
+                            'role' => $role->value,
+                        ]),
                     ];
                 })->values(),
                 'assignment_history' => $court->refereeAssignmentHistories->map(fn (RefereeCourtAssignmentHistory $history): array => [

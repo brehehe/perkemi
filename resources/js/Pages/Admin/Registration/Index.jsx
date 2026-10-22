@@ -166,6 +166,14 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
+                        <a
+                            href={`/admin/pendaftaran/registrasi/export?event_id=${activeEvent?.id || ''}&status=${statusFilter}&search=${encodeURIComponent(search)}`}
+                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
+                            download
+                        >
+                            <i className="fa-solid fa-file-excel" aria-hidden="true"></i>
+                            Ekspor Excel
+                        </a>
                         {canCreate && <Link href={`/admin/pendaftaran/registrasi/create${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`} className="inline-flex items-center gap-2 rounded-lg bg-[#d4a843] px-3.5 py-2 text-xs font-bold text-[#17120f] hover:bg-[#edc66c]">
                             <i className="fa-solid fa-plus" aria-hidden="true"></i>
                             Buat Registrasi
