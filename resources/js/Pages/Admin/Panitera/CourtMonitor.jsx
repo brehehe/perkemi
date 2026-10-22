@@ -130,10 +130,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         match_status: monitor.active_match?.status, call_status: monitor.active_match?.call_status,
         timer: monitor.active_match?.timer, server_now_ms: monitor.server_now_ms,
     }), [activeEvent.id, court.id, monitor]);
+    const bellRef = useRef(null);
     const liveTimer = useLiveTimer({
         initialState: initialTimerState, stateUrl: timerStateUrl,
         channelName: `event-court.${court.id}`, eventId: activeEvent.id, courtId: court.id,
         onChange: (next, previous) => {
+            if (next.action === 'finish' || (next.timer?.is_finished && !previous?.timer?.is_finished)) {
+                bellRef.current?.playClosingBell?.();
+            }
             if (next.match_id !== previous?.match_id || next.timer?.is_finished
                 || !['start', 'pause', 'reset_timer', 'configure_timer'].includes(next.action)) refreshSnapshot();
         },
@@ -183,6 +187,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const timer = liveTimer.state?.timer;
     const elapsedMilliseconds = useSynchronizedTimer(timer, liveTimer.serverClock, liveTimer.state?.match_id);
     const bell = useTimerBell({ timer, elapsedMilliseconds, matchId: liveTimer.state?.match_id, synchronized: liveTimer.synchronized });
+    bellRef.current = bell;
     const elapsedSeconds = useMemo(() => Math.floor(elapsedMilliseconds / 1000), [elapsedMilliseconds]);
 
     const timerDirection = activeMatch?.timer.direction || 'up';

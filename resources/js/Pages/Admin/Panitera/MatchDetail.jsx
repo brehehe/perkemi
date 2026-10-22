@@ -10,6 +10,7 @@ import useSynchronizedTimer from './Partials/useSynchronizedTimer';
 import useLiveTimer from './Partials/useLiveTimer';
 import useTimerBell from './Partials/useTimerBell';
 import TimerBellControls from './Partials/TimerBellControls';
+import useAnnouncer from './Partials/useAnnouncer';
 import { displayedTimerSeconds } from './Partials/timerSynchronization';
 import { http } from '@inertiajs/core';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -341,14 +342,26 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const processingActionRef = useRef(processingAction);
     const elapsedMilliseconds = useSynchronizedTimer(match.timer, liveTimer.serverClock, match.id);
     const bell = useTimerBell({ timer: match.timer, elapsedMilliseconds, matchId: match.id, synchronized: liveTimer.synchronized });
+    const announcer = useAnnouncer({ match });
     const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
     const displayedSeconds = displayedTimerSeconds(match.timer, elapsedMilliseconds);
     const timerExpired = match.timer.direction === 'down' && elapsedSeconds >= Number(match.timer.duration_seconds);
     const stage = currentStage(match);
     const workflowDisabled = !canManage || !match.court || match.is_placeholder || match.status === 'completed' || match.timer.is_finished;
+    const callDisabled = !canManage || !match.court || match.is_placeholder;
     const timerWorkflowDisabled = workflowDisabled;
     const canOpenScore = canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
     const resultIndexUrl = `/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(match.category_id)}`;
+
+    const handleCallOfficials = () => {
+        announcer.callOfficials(match);
+        updateWorkflow('call_officials');
+    };
+
+    const handleCallParticipants = () => {
+        announcer.callParticipants(match);
+        updateWorkflow('call_participants');
+    };
 
     useEffect(() => {
         processingActionRef.current = processingAction;
@@ -386,6 +399,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const updateWorkflow = async (action, payload = {}, callbacks = {}) => {
         if (processingActionRef.current) return;
         if (action === 'start') bell.prepareForStart();
+        if (action === 'finish') bell.playClosingBell?.();
         processingActionRef.current = action;
         setProcessingAction(action);
         setWorkflowErrors({});
@@ -508,13 +522,50 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                         <div>
                             <p className="text-xs font-bold text-[#17120f]">Kontrol Panggilan</p>
                             <p className="mt-1 text-[11px] leading-5 text-[#7a746e]">{match.category_type === 'embu'
-                                ? 'Panggil ofisial terlebih dahulu, kemudian peserta agar lembar nilai Wasit terbuka otomatis.'
-                                : 'Panggil ofisial dan peserta sebelum Panitera mencatat hasil Randori. Randori tidak menunggu penilaian lima Wasit.'}</p>
+                                ? 'Panggil ofisial dan peserta dengan suara pengumuman otomatis (TTS). Panggilan dapat diulang kapan saja jika diperlukan.'
+                                : 'Panggil ofisial dan peserta dengan suara pengumuman otomatis (TTS) sebelum mencatat hasil Randori. Panggilan dapat diulang kapan saja.'}</p>
                         </div>
                         {match.court ? (
-                            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
-                                <Button variant="outline" iconLeft={<i className="fa-solid fa-bullhorn" aria-hidden="true" />} disabled={workflowDisabled} loading={processingAction === 'call_officials'} onClick={() => updateWorkflow('call_officials')}>Panggil Ofisial</Button>
-                                <Button variant="gold" iconLeft={<i className="fa-solid fa-users" aria-hidden="true" />} disabled={workflowDisabled || match.call_status === 'waiting'} loading={processingAction === 'call_participants'} onClick={() => updateWorkflow('call_participants')}>Panggil Peserta</Button>
+                            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                                <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
+                                    <Button
+                                        variant="outline"
+                                        iconLeft={<i className="fa-solid fa-bullhorn" aria-hidden="true" />}
+                                        disabled={callDisabled}
+                                        loading={processingAction === 'call_officials'}
+                                        onClick={handleCallOfficials}
+                                        title="Panggil ofisial dengan pengumuman suara (dapat diulang)"
+                                    >
+                                        {announcer.officialCallCount > 0 ? 'Panggil Ulang Ofisial' : 'Panggil Ofisial'}
+                                    </Button>
+                                    <Button
+                                        variant="gold"
+                                        iconLeft={<i className="fa-solid fa-users" aria-hidden="true" />}
+                                        disabled={callDisabled}
+                                        loading={processingAction === 'call_participants'}
+                                        onClick={handleCallParticipants}
+                                        title="Panggil peserta dengan pengumuman suara (dapat diulang)"
+                                    >
+                                        {announcer.participantCallCount > 0 ? 'Panggil Ulang Peserta' : 'Panggil Peserta'}
+                                    </Button>
+                                </div>
+                                {announcer.isPlaying && (
+                                    <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm animate-pulse">
+                                        <div className="flex items-center gap-2">
+                                            <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                                            <i className="fa-solid fa-volume-high text-amber-700" aria-hidden="true" />
+                                            <span className="font-semibold">Pengumuman suara sedang berjalan…</span>
+                                        </div>
+                                        <Button
+                                            variant="danger"
+                                            size="xs"
+                                            iconLeft={<i className="fa-solid fa-stop" aria-hidden="true" />}
+                                            onClick={announcer.stop}
+                                        >
+                                            Hentikan
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Atur court pertandingan terlebih dahulu dari menu Jadwal Pertandingan.</p>
@@ -678,7 +729,10 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     isLoading={processingAction === 'finish'}
                     error={Object.values(workflowErrors).flat().join(' ') || errors.action || errors.match || ''}
                     onCancel={() => setFinishConfirmationOpen(false)}
-                    onConfirm={() => updateWorkflow('finish')}
+                    onConfirm={() => {
+                        bell.playClosingBell?.();
+                        updateWorkflow('finish');
+                    }}
                 />
                 <AlertConfirm
                     isOpen={saveResultConfirmationOpen}

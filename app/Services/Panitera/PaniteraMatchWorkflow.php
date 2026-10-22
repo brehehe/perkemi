@@ -77,13 +77,15 @@ class PaniteraMatchWorkflow
                 ]);
             }
 
-            if ($lockedMatch->status === 'completed') {
+            if ($lockedMatch->status === 'completed'
+                && ! in_array($action, [self::ActionCallOfficials, self::ActionCallParticipants], true)) {
                 throw ValidationException::withMessages([
                     'match' => 'Partai yang sudah selesai tidak dapat dipanggil atau dijalankan kembali.',
                 ]);
             }
 
-            if (data_get($lockedMatch->metadata, 'panitera.finished_at')) {
+            if (data_get($lockedMatch->metadata, 'panitera.finished_at')
+                && ! in_array($action, [self::ActionCallOfficials, self::ActionCallParticipants], true)) {
                 throw ValidationException::withMessages([
                     'match' => 'Pertandingan sudah diselesaikan dan sedang menunggu verifikasi hasil.',
                 ]);
@@ -199,8 +201,12 @@ class PaniteraMatchWorkflow
     /** @return array<string, mixed> */
     private function officialCallAttributes(TournamentMatch $match): array
     {
+        $status = $match->status === 'completed'
+            ? 'completed'
+            : ($match->timer_status === 'running' || $match->status === 'in_progress' ? 'in_progress' : 'ready');
+
         return [
-            'status' => $match->timer_status === 'running' ? 'in_progress' : 'ready',
+            'status' => $status,
             'call_status' => $match->call_status === 'participants_called' ? 'participants_called' : 'officials_called',
             'called_at' => now(),
         ];
@@ -209,8 +215,12 @@ class PaniteraMatchWorkflow
     /** @return array<string, mixed> */
     private function participantCallAttributes(TournamentMatch $match): array
     {
+        $status = $match->status === 'completed'
+            ? 'completed'
+            : ($match->timer_status === 'running' || $match->status === 'in_progress' ? 'in_progress' : 'ready');
+
         return [
-            'status' => $match->timer_status === 'running' ? 'in_progress' : 'ready',
+            'status' => $status,
             'call_status' => 'participants_called',
             'called_at' => now(),
         ];

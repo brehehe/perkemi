@@ -92,6 +92,42 @@ export default function useTimerBell({ timer, elapsedMilliseconds, matchId, sync
         if (await enable()) play();
     }, [enable, play]);
 
+    const playClosingBell = useCallback(async () => {
+        try {
+            if (!mutedRef.current) {
+                await enable();
+            }
+        } catch {
+            // Audio enable failed, will fall back below
+        }
+
+        if (enabledRef.current && bufferRef.current && contextRef.current?.state === 'running') {
+            play();
+            setTimeout(() => {
+                if (contextRef.current?.state === 'running') {
+                    play();
+                } else if (typeof window !== 'undefined' && window.playBuzzer) {
+                    window.playBuzzer(TIMER_BELL_URL);
+                }
+            }, 800);
+        } else {
+            if (typeof window !== 'undefined' && window.playBuzzerDouble) {
+                window.playBuzzerDouble(TIMER_BELL_URL);
+            } else {
+                try {
+                    const audio = new Audio(TIMER_BELL_URL);
+                    audio.play().then(() => {
+                        setTimeout(() => {
+                            try {
+                                new Audio(TIMER_BELL_URL).play().catch(() => {});
+                            } catch {}
+                        }, 800);
+                    }).catch(() => {});
+                } catch {}
+            }
+        }
+    }, [enable, play]);
+
     useEffect(() => {
         const cue = trackerRef.current(timer, elapsedMilliseconds, matchId, synchronized);
         if (cue !== null) {
@@ -113,5 +149,5 @@ export default function useTimerBell({ timer, elapsedMilliseconds, matchId, sync
         enabledRef.current = false;
     }, []);
 
-    return { enabled, error, toggle, test, prepareForStart };
+    return { enabled, error, toggle, test, prepareForStart, play, playClosingBell };
 }
