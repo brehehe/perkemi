@@ -200,6 +200,7 @@ export default function EventDetail({
         minimum_rest_minutes: event.minimum_rest_minutes || 15,
         minimum_entries_per_category: event.minimum_entries_per_category || 3,
         minimum_contingents_per_category: event.minimum_contingents_per_category || 3,
+        tts_announcer_enabled: event.tts_announcer_enabled ?? true,
     });
 
     const coverForm = useForm({ cover_image: null });
@@ -1714,6 +1715,35 @@ export default function EventDetail({
                                 <Input label="Jeda Minimal Atlet (menit)" type="number" min="0" required value={tournamentForm.data.minimum_rest_minutes} onChange={(e) => tournamentForm.setData('minimum_rest_minutes', e.target.value)} error={tournamentForm.errors.minimum_rest_minutes} />
                                 <Input label="Minimal Peserta / Tim" type="number" min="1" required value={tournamentForm.data.minimum_entries_per_category} onChange={(e) => tournamentForm.setData('minimum_entries_per_category', e.target.value)} error={tournamentForm.errors.minimum_entries_per_category} />
                                 <Input label="Minimal Kontingen" type="number" min="1" required value={tournamentForm.data.minimum_contingents_per_category} onChange={(e) => tournamentForm.setData('minimum_contingents_per_category', e.target.value)} error={tournamentForm.errors.minimum_contingents_per_category} />
+                            </div>
+                            <div className="border-t border-[#ede9e1] p-5 md:p-6 bg-white">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[#ede9e1] bg-[#faf8f4] p-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700">
+                                            <i className="fa-solid fa-bullhorn text-lg" aria-hidden="true" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-[#17120f]">Suara Pemanggilan Panitera (Google TTS / PA System)</p>
+                                            <p className="mt-0.5 text-xs text-[#7a746e]">
+                                                Aktifkan atau nonaktifkan pengumuman audio otomatis (nada bel dan suara Google Bahasa Indonesia) saat Panitera memanggil ofisial dan peserta.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <span className={`text-xs font-bold ${tournamentForm.data.tts_announcer_enabled ? 'text-emerald-700' : 'text-[#7a746e]'}`}>
+                                            {tournamentForm.data.tts_announcer_enabled ? 'Suara Aktif' : 'Suara Nonaktif'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => tournamentForm.setData('tts_announcer_enabled', !tournamentForm.data.tts_announcer_enabled)}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${tournamentForm.data.tts_announcer_enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                                            role="switch"
+                                            aria-checked={Boolean(tournamentForm.data.tts_announcer_enabled)}
+                                        >
+                                            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tournamentForm.data.tts_announcer_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="grid gap-3 border-t border-[#ede9e1] bg-[#faf8f4] p-5 text-xs text-[#5f574f] md:grid-cols-4 md:px-6">
                                 {[

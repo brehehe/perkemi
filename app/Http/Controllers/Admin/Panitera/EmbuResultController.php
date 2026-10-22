@@ -80,6 +80,7 @@ class EmbuResultController extends Controller
             'hasTopFourTie' => $category ? $results->hasTopFourTie($finalRankings) : false,
             'champions' => $champions,
             'canManage' => $eventContext->canManage($request, $event),
+            'canOverrideScore' => $request->user()?->hasRole('Super Admin') ?? false,
         ]);
     }
 
@@ -100,6 +101,10 @@ class EmbuResultController extends Controller
             ->whereBelongsTo($tournamentMatch)
             ->where('tiebreak_round', $validated['tiebreak_round'])
             ->first();
+
+        if ($existingScore && ! $request->user()?->hasRole('Super Admin')) {
+            abort(403, 'Hanya Super Admin yang berwenang mengubah nilai yang sudah ada.');
+        }
         $calculated = $calculator->calculate(
             $validated['judge_scores'],
             $validated['duration_seconds'] ?? null,

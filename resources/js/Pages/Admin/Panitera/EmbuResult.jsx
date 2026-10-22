@@ -30,7 +30,7 @@ function JudgeScores({ score }) {
     );
 }
 
-function RankingTable({ rows, quota = null, onScore, canManage, final = false }) {
+function RankingTable({ rows, quota = null, onScore, canManage, canOverrideScore = false, final = false }) {
     return (
         <TableContainer ariaLabel={final ? 'Klasemen final Embu' : 'Klasemen penyisihan Embu'}>
             <table className="responsive-data-table responsive-data-table--cards min-w-full text-left text-xs">
@@ -54,7 +54,21 @@ function RankingTable({ rows, quota = null, onScore, canManage, final = false })
                                         <div><p className="text-[11px] text-[#7a746e]">P {formatScore(row.preliminary_score)} + F {formatScore(row.final_round_score)}</p><p className="mt-0.5 text-lg font-black text-[#9a6b20]">{formatScore(row.total_score)}</p></div>
                                     ) : <span className="text-lg font-black text-[#9a6b20]">{formatScore(row.score?.final_score)}</span>}
                                 </td>
-                                <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right">{canManage && <Button size="xs" variant="outline" onClick={() => onScore(row)}>{row.score ? 'Ubah Nilai' : 'Input Nilai'}</Button>}</td>
+                                <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right">
+                                    {canManage && (
+                                        row.score ? (
+                                            canOverrideScore && (
+                                                <Button size="xs" variant="outline" onClick={() => onScore(row)}>
+                                                    Ubah Nilai
+                                                </Button>
+                                            )
+                                        ) : (
+                                            <Button size="xs" variant="outline" onClick={() => onScore(row)}>
+                                                Input Nilai
+                                            </Button>
+                                        )
+                                    )}
+                                </td>
                             </tr>
                         );
                     })}
@@ -65,7 +79,7 @@ function RankingTable({ rows, quota = null, onScore, canManage, final = false })
     );
 }
 
-export default function EmbuResult({ activeEvent, events = [], courts = [], categories = [], selectedCategory, focusMatchId = null, preliminaryRankings = {}, finalRankings = [], boundaryTies = [], quotaPerPool, hasTopFourTie = false, champions = [], canManage = false }) {
+export default function EmbuResult({ activeEvent, events = [], courts = [], categories = [], selectedCategory, focusMatchId = null, preliminaryRankings = {}, finalRankings = [], boundaryTies = [], quotaPerPool, hasTopFourTie = false, champions = [], canManage = false, canOverrideScore = false }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [selectedMatch, setSelectedMatch] = useState(null);
     const focusHandled = useRef(false);
@@ -137,7 +151,7 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                         {Object.entries(preliminaryRankings).map(([pool, rows]) => (
                             <section key={pool} className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
                                 <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Penyisihan · Pool {pool}</h2><p className="mt-0.5 text-xs text-[#7a746e]">Urutan: nilai akhir, lalu nilai Juri 1.</p></div><Badge variant="blue" className="w-fit">{quotaPerPool === 999 ? 'Final langsung' : `${quotaPerPool} lolos`}</Badge></div>
-                                <RankingTable rows={rows} quota={quotaPerPool} onScore={openScore} canManage={canManage} />
+                                <RankingTable rows={rows} quota={quotaPerPool} onScore={openScore} canManage={canManage} canOverrideScore={canOverrideScore} />
                             </section>
                         ))}
 
@@ -147,7 +161,7 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
 
                         <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
                             <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Babak Final</h2><p className="mt-0.5 text-xs text-[#7a746e]">Nilai akumulasi = penyisihan + final.</p></div>{hasTopFourTie && <Badge variant="red">Ada seri 4 besar</Badge>}</div>
-                            <RankingTable rows={finalRankings} final onScore={openScore} canManage={canManage} />
+                            <RankingTable rows={finalRankings} final onScore={openScore} canManage={canManage} canOverrideScore={canOverrideScore} />
                         </section>
 
                         {canManage && finalRankings.length >= requiredChampionCount && champions.length === 0 && <div className="flex justify-end"><Button className="w-full sm:w-auto" variant="gold" onClick={confirmChampions} disabled={hasTopFourTie} iconLeft={<i className="fa-solid fa-crown" />}>Konfirmasi Hasil Juara</Button></div>}

@@ -244,6 +244,15 @@ class EventRefereeController extends Controller
             ]);
         }
 
+        if (isset($selectedByRole[RefereeCourtRole::Chief->value])) {
+            $chiefReferee = Referee::query()->find($selectedByRole[RefereeCourtRole::Chief->value]);
+            if ($chiefReferee && ! GenerateRefereeCourtPanelsAction::isChiefQualified($chiefReferee)) {
+                throw ValidationException::withMessages([
+                    'referees' => "Wasit Utama ({$chiefReferee->name}) wajib memiliki kualifikasi minimal IV DAN ke atas atau Wasit Nasional.",
+                ]);
+            }
+        }
+
         $otherCourtAssignment = EventCourtAssignment::query()
             ->whereIn('event_court_id', $event->courts()->whereKeyNot($eventCourt->id)->pluck('id'))
             ->where('staff_type', 'referee')

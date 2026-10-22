@@ -143,7 +143,7 @@ class PaniteraMatchController extends Controller
         $serverNow = now();
 
         return Inertia::render('Admin/Panitera/MatchDetail', [
-            'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
+            'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date', 'tts_announcer_enabled']),
             'events' => $eventContext->accessibleEvents($request),
             'match' => $this->matchData($tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState),
             'staff' => $staff,

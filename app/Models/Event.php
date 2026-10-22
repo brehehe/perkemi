@@ -71,6 +71,7 @@ class Event extends Model
         'rules_doc',
         'cover_image_path',
         'participant_rules',
+        'tts_announcer_enabled',
     ];
 
     /**
@@ -97,6 +98,7 @@ class Event extends Model
             'minimum_entries_per_category' => 'integer',
             'minimum_contingents_per_category' => 'integer',
             'is_active' => 'boolean',
+            'tts_announcer_enabled' => 'boolean',
             'deleted_at' => 'datetime',
         ];
     }

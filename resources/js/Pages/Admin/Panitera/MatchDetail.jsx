@@ -353,13 +353,19 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const canOpenScore = canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
     const resultIndexUrl = `/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(match.category_id)}`;
 
+    const [voiceEnabled, setVoiceEnabled] = useState(activeEvent.tts_announcer_enabled ?? true);
+
     const handleCallOfficials = () => {
-        announcer.callOfficials(match);
+        if (voiceEnabled) {
+            announcer.callOfficials(match);
+        }
         updateWorkflow('call_officials');
     };
 
     const handleCallParticipants = () => {
-        announcer.callParticipants(match);
+        if (voiceEnabled) {
+            announcer.callParticipants(match);
+        }
         updateWorkflow('call_participants');
     };
 
@@ -520,10 +526,21 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     </ol>
                     <div className="mt-5 flex flex-col gap-3 border-t border-[#eee8e0] pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                            <p className="text-xs font-bold text-[#17120f]">Kontrol Panggilan</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-xs font-bold text-[#17120f]">Kontrol Panggilan</p>
+                                <Button
+                                    variant={voiceEnabled ? 'gold' : 'secondary'}
+                                    size="xs"
+                                    onClick={() => setVoiceEnabled(!voiceEnabled)}
+                                    iconLeft={<i className={`fa-solid ${voiceEnabled ? 'fa-volume-high' : 'fa-volume-xmark'}`} aria-hidden="true" />}
+                                    title="Klik untuk mengaktifkan atau menonaktifkan suara Google TTS"
+                                >
+                                    {voiceEnabled ? 'Suara Aktif' : 'Suara Mati'}
+                                </Button>
+                            </div>
                             <p className="mt-1 text-[11px] leading-5 text-[#7a746e]">{match.category_type === 'embu'
-                                ? 'Panggil ofisial dan peserta dengan suara pengumuman otomatis (TTS). Panggilan dapat diulang kapan saja jika diperlukan.'
-                                : 'Panggil ofisial dan peserta dengan suara pengumuman otomatis (TTS) sebelum mencatat hasil Randori. Panggilan dapat diulang kapan saja.'}</p>
+                                ? 'Panggil ofisial dan peserta dengan suara pengumuman otomatis (TTS). Suara dapat diaktifkan atau dimatikan kapan saja.'
+                                : 'Panggil ofisial dan peserta sebelum Panitera mencatat hasil Randori. Suara dapat diaktifkan atau dimatikan kapan saja.'}</p>
                         </div>
                         {match.court ? (
                             <div className="flex flex-col items-stretch gap-2 sm:items-end">

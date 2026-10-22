@@ -27,6 +27,7 @@ class UpdateEventTournamentSettingsRequest extends FormRequest
             'minimum_rest_minutes' => ['required', 'integer', 'min:0', 'max:240'],
             'minimum_entries_per_category' => ['required', 'integer', 'min:2', 'max:32'],
             'minimum_contingents_per_category' => ['required', 'integer', 'min:2', 'max:32'],
+            'tts_announcer_enabled' => ['nullable', 'boolean'],
         ];
     }
 }
