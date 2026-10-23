@@ -6,6 +6,7 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import Textarea from '@/Components/UI/Forms/Textarea';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -44,7 +45,8 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
         if (!confirmation || isVerifying) return;
         setIsVerifying(true);
         setConfirmationError('');
-        router.post(confirmation.url, {}, {
+        const method = confirmation.method || 'post';
+        router[method](confirmation.url, {}, {
             preserveScroll: true,
             onError: (errors) => setConfirmationError(Object.values(errors).flat().join(' ')),
             onSuccess: () => { setConfirmation(null); setSelectedRegistration(null); },
@@ -54,6 +56,14 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
 
     const handleVerify = (id) => askConfirmation({ title: 'Setujui berkas registrasi?', message: 'Berkas kontingen akan disetujui setelah persyaratan peserta terpenuhi. Pembayaran diverifikasi terpisah.', confirmText: 'Setujui berkas', variant: 'primary', url: `/admin/pendaftaran/registrasi/${id}/verify` });
     const handleReject = (id) => askConfirmation({ title: 'Kembalikan berkas registrasi?', message: 'Berkas kontingen akan ditandai ditolak agar dapat diperbaiki.', confirmText: 'Tolak / revisi berkas', variant: 'danger', url: `/admin/pendaftaran/registrasi/${id}/reject` });
+    const handleDelete = (registration) => askConfirmation({
+        title: 'Hapus berkas registrasi?',
+        message: `Registrasi kontingen ${registration.contingent?.name || 'ini'} (${registration.registration_number}) beserta nomor tanding yang didaftarkan pada event ini akan dihapus.`,
+        confirmText: 'Ya, Hapus',
+        variant: 'danger',
+        method: 'delete',
+        url: `/admin/pendaftaran/registrasi/${registration.id}`,
+    });
 
     const openPaymentForm = (registration) => {
         if (registration.event?.is_paid === false) return;
@@ -150,8 +160,10 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
 
             <div className="w-full max-w-full space-y-6">
                 {/* Header Banner */}
-                <div className="bg-gradient-to-r from-[#0f0d0b] via-[#1a1714] to-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-xl relative overflow-hidden">
-                    <div className="absolute -top-12 -right-12 w-48 h-48 bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)] pointer-events-none" />
+                <div className="bg-gradient-to-r from-[#0f0d0b] via-[#1a1714] to-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-xl relative">
+                    <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
+                        <div className="absolute -top-12 -right-12 w-48 h-48 bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)]" />
+                    </div>
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
                             <div className="flex items-center gap-2 text-xs text-[#d4a843] font-medium tracking-wide uppercase mb-1">
@@ -166,27 +178,46 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
-                        <a
-                            href={`/admin/pendaftaran/registrasi/export?event_id=${activeEvent?.id || ''}&status=${statusFilter}&search=${encodeURIComponent(search)}`}
-                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
-                            download
-                        >
-                            <i className="fa-solid fa-file-excel" aria-hidden="true"></i>
-                            Ekspor Excel
-                        </a>
-                        {canCreate && <Link href={`/admin/pendaftaran/registrasi/create${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`} className="inline-flex items-center gap-2 rounded-lg bg-[#d4a843] px-3.5 py-2 text-xs font-bold text-[#17120f] hover:bg-[#edc66c]">
-                            <i className="fa-solid fa-plus" aria-hidden="true"></i>
-                            Buat Registrasi
-                        </Link>}
-                        {activeEvent && (
-                            <div className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-3 whitespace-nowrap">
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                <div>
-                                    <p className="text-[10px] uppercase text-[#b5afa6] tracking-wider">Event Dipilih</p>
-                                    <p className="font-medium text-white text-xs">{activeEvent.name}</p>
+                            {activeEvent && (
+                                <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-3 whitespace-nowrap">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    <div>
+                                        <p className="text-[10px] uppercase text-[#b5afa6] tracking-wider">Event Dipilih</p>
+                                        <p className="font-medium text-white text-xs">{activeEvent.name}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+
+                            <ActionMenuDropdown
+                                label="Menu Aksi"
+                                theme="gold"
+                                menuHeader="Aksi Registrasi"
+                                icon={<i className="fa-solid fa-sliders text-xs" />}
+                                items={[
+                                    ...(canCreate
+                                        ? [
+                                              {
+                                                  label: 'Buat Registrasi Baru',
+                                                  description: 'Daftarkan kontingen baru ke event ini',
+                                                  icon: <i className="fa-solid fa-plus text-[#d4a843]" />,
+                                                  href: `/admin/pendaftaran/registrasi/create${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`,
+                                                  isLink: true,
+                                                  tone: 'gold',
+                                                  badge: 'Form',
+                                              },
+                                          ]
+                                        : []),
+                                    {
+                                        label: 'Ekspor Data ke Excel',
+                                        description: 'Unduh seluruh berkas registrasi kontingen (.xlsx)',
+                                        icon: <i className="fa-solid fa-file-excel text-emerald-600" />,
+                                        href: `/admin/pendaftaran/registrasi/export?event_id=${activeEvent?.id || ''}&status=${statusFilter}&search=${encodeURIComponent(search)}`,
+                                        download: true,
+                                        tone: 'emerald',
+                                        badge: 'XLSX',
+                                    },
+                                ]}
+                            />
                         </div>
                     </div>
                 </div>
@@ -365,6 +396,14 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                                                             <i className="fa-solid fa-check mr-1"></i> Setujui Berkas
                                                         </Button>
                                                     )}
+                                                    <Button variant="unstyled" size="none"
+                                                        type="button"
+                                                        onClick={() => handleDelete(reg)}
+                                                        className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+                                                        title="Hapus Registrasi"
+                                                    >
+                                                        <i className="fa-solid fa-trash-can mr-1"></i> Hapus
+                                                    </Button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -387,10 +426,15 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                     title="Rincian Berkas Registrasi"
                     subtitle={selectedRegistration ? `No. ${selectedRegistration.registration_number}` : null}
                     footer={selectedRegistration ? (
-                        <>
-                            <Button variant="danger" onClick={() => handleReject(selectedRegistration.id)}>Tolak / Revisi</Button>
-                            <Button onClick={() => handleVerify(selectedRegistration.id)} loading={isVerifying}>Setujui Berkas</Button>
-                        </>
+                        <div className="flex w-full items-center justify-between gap-2">
+                            <Button variant="danger" size="sm" onClick={() => handleDelete(selectedRegistration)}>
+                                <i className="fa-solid fa-trash-can mr-1.5"></i> Hapus Registrasi
+                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => handleReject(selectedRegistration.id)}>Tolak / Revisi</Button>
+                                <Button size="sm" onClick={() => handleVerify(selectedRegistration.id)} loading={isVerifying}>Setujui Berkas</Button>
+                            </div>
+                        </div>
                     ) : null}
                 >
                     {selectedRegistration && (

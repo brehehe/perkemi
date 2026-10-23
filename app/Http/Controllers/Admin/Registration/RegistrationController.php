@@ -19,6 +19,7 @@ use App\Models\Kyu;
 use App\Models\Official;
 use App\Models\Registration;
 use App\Models\Technique;
+use App\Models\TournamentMatch;
 use App\Services\ParticipantEligibilityService;
 use App\Services\Registration\RegistrationWorkbookService;
 use Illuminate\Http\RedirectResponse;
@@ -292,6 +293,72 @@ class RegistrationController extends Controller
 
         return redirect()->route('admin.pendaftaran.registrasi.detail', ['registration' => $registration, 'step' => 2])
             ->with('success', 'Registrasi kontingen berhasil dibuat.');
+    }
+
+    public function destroy(Request $request, Registration $registration): RedirectResponse
+    {
+        $this->ensureTenantRegistration($request, $registration);
+        $event = $registration->event;
+        abort_unless($event instanceof Event && $this->canManageRegistration($request, $registration), 403);
+
+        $isAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
+            || $this->canManageMatchEntries($request, $event);
+
+        if ($registration->status === RegistrationStatus::Verified && ! $isAdmin) {
+            throw ValidationException::withMessages([
+                'registration' => 'Registrasi yang sudah terverifikasi hanya dapat dihapus oleh Admin atau Penyelenggara Event.',
+            ]);
+        }
+
+        $contingent = $registration->contingent;
+        $contingentName = $contingent?->name ?? 'Kontingen';
+        $regNumber = $registration->registration_number;
+
+        DB::transaction(function () use ($registration, $event, $contingent, $contingentName): void {
+            $athleteIds = $contingent ? $contingent->athletes()->pluck('id') : collect();
+
+            if ($athleteIds->isNotEmpty()) {
+                $hasActiveMatches = TournamentMatch::query()
+                    ->where('event_id', $event->id)
+                    ->where(function ($query) use ($athleteIds) {
+                        $query->whereIn('red_entry_id', function ($sub) use ($athleteIds) {
+                            $sub->select('id')->from('athlete_match_category_entries')->whereIn('athlete_id', $athleteIds);
+                        })
+                            ->orWhereIn('blue_entry_id', function ($sub) use ($athleteIds) {
+                                $sub->select('id')->from('athlete_match_category_entries')->whereIn('athlete_id', $athleteIds);
+                            })
+                            ->orWhereIn('participant_entry_id', function ($sub) use ($athleteIds) {
+                                $sub->select('id')->from('athlete_match_category_entries')->whereIn('athlete_id', $athleteIds);
+                            });
+                    })
+                    ->whereIn('status', ['in_progress', 'completed'])
+                    ->exists();
+
+                if ($hasActiveMatches) {
+                    throw ValidationException::withMessages([
+                        'registration' => "Registrasi {$contingentName} tidak dapat dihapus karena sudah memiliki pertandingan yang sedang atau telah berlangsung.",
+                    ]);
+                }
+
+                AthleteMatchCategoryEntry::query()
+                    ->where('event_id', $event->id)
+                    ->whereIn('athlete_id', $athleteIds)
+                    ->delete();
+            }
+
+            EmbuTeamTechnique::query()
+                ->where('event_id', $event->id)
+                ->where('contingent_id', $registration->contingent_id)
+                ->delete();
+
+            if ($registration->payment_proof_path && Storage::exists($registration->payment_proof_path)) {
+                Storage::delete($registration->payment_proof_path);
+            }
+
+            $registration->delete();
+        });
+
+        return back()->with('success', "Registrasi {$contingentName} ({$regNumber}) berhasil dihapus.");
     }
 
     public function detail(Request $request, Registration $registration): Response

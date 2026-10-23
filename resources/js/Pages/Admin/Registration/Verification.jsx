@@ -6,6 +6,7 @@ import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import Pagination from '@/Components/UI/Navigation/Pagination';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
@@ -98,8 +99,10 @@ export default function RegistrationVerification({ athletes, contingents, stats,
 
             <div className="space-y-6">
                 {/* Header Banner */}
-                <div className="bg-gradient-to-r from-[#0f0d0b] via-[#1a1714] to-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-xl relative overflow-hidden">
-                    <div className="absolute -top-12 -right-12 w-48 h-48 bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)] pointer-events-none" />
+                <div className="bg-gradient-to-r from-[#0f0d0b] via-[#1a1714] to-[#0f0d0b] text-[#f7f4ef] rounded-2xl p-6 border border-white/10 shadow-xl relative">
+                    <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
+                        <div className="absolute -top-12 -right-12 w-48 h-48 bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)]" />
+                    </div>
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
                             <div className="flex items-center gap-2 text-xs text-[#d4a843] font-medium tracking-wide uppercase mb-1">
@@ -115,14 +118,42 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                             {activeEvent && <p className="mt-2 text-xs font-semibold text-[#d4a843]">Event: {activeEvent.name}</p>}
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
-                            <a
-                                href={`/admin/pendaftaran/verifikasi/export?event_id=${activeEvent?.id || ''}&contingent_id=${contingentFilter}&search=${encodeURIComponent(search)}&category_type=${filters.category_type || ''}`}
-                                className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
-                                download
-                            >
-                                <i className="fa-solid fa-file-excel" aria-hidden="true" />
-                                Ekspor Excel
-                            </a>
+                            <ActionMenuDropdown
+                                label="Menu Aksi"
+                                theme="gold"
+                                menuHeader="Aksi Verifikasi"
+                                icon={<i className="fa-solid fa-sliders text-xs" />}
+                                items={[
+                                    {
+                                        label: 'Ekspor Data ke Excel',
+                                        description: 'Unduh seluruh verifikasi atlet & keabsahan berkas (.xlsx)',
+                                        icon: <i className="fa-solid fa-file-excel text-emerald-600" />,
+                                        href: `/admin/pendaftaran/verifikasi/export?event_id=${activeEvent?.id || ''}&contingent_id=${contingentFilter}&search=${encodeURIComponent(search)}&category_type=${filters.category_type || ''}`,
+                                        download: true,
+                                        tone: 'emerald',
+                                        badge: 'XLSX',
+                                    },
+                                    {
+                                        divider: true,
+                                    },
+                                    {
+                                        label: 'Registrasi Berkas Kontingen',
+                                        description: 'Buka manajemen pendaftaran & pembayaran kontingen',
+                                        icon: <i className="fa-solid fa-folder-open text-[#d4a843]" />,
+                                        href: `/admin/pendaftaran/registrasi${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`,
+                                        isLink: true,
+                                        tone: 'default',
+                                    },
+                                    {
+                                        label: 'Nomor & Kelompok Tanding',
+                                        description: 'Atur susunan tim pertandingan dan nomor tanding',
+                                        icon: <i className="fa-solid fa-trophy text-amber-600" />,
+                                        href: `/admin/pendaftaran/nomor-pertandingan${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`,
+                                        isLink: true,
+                                        tone: 'default',
+                                    },
+                                ]}
+                            />
                         </div>
                     </div>
                 </div>

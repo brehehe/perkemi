@@ -222,6 +222,8 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
     Route::get('registrasi/create', [RegistrationController::class, 'create'])->name('registrasi.create');
     Route::post('registrasi', [RegistrationController::class, 'store'])->name('registrasi.store');
     Route::get('registrasi/{registration}/detail', [RegistrationController::class, 'detail'])->name('registrasi.detail');
+    Route::delete('registrasi/{registration}', [RegistrationController::class, 'destroy'])->name('registrasi.destroy');
+    Route::post('registrasi/{registration}/delete', [RegistrationController::class, 'destroy'])->name('registrasi.delete');
     Route::patch('registrasi/{registration}/contingent', [RegistrationWizardController::class, 'updateContingent'])->name('registrasi.wizard.contingent');
     Route::post('registrasi/{registration}/officials', [RegistrationWizardController::class, 'saveOfficial'])->name('registrasi.wizard.officials.store');
     Route::post('registrasi/{registration}/officials/copy', [RegistrationWizardController::class, 'copyOfficial'])->name('registrasi.wizard.officials.copy');

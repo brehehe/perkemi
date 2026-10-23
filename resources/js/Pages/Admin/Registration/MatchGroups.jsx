@@ -2,6 +2,7 @@ import Button from "@/Components/UI/Elements/Button";
 import AdminLayout from '@/Layouts/AdminLayout';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { CategoryPanel } from './Detail';
@@ -39,14 +40,51 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#706860]">Pilih kontingen untuk mengatur susunan tim Embu dan teknik yang digunakan. Nomor Randori dan berat atlet ditampilkan sebagai acuan.</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                        <a
-                            href={`/admin/pendaftaran/nomor-pertandingan/export?event_id=${activeEvent.id}${registration ? `&registration_id=${registration.id}` : ''}${type !== 'all' ? `&type=${type}` : ''}`}
-                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 transition-colors shadow-xs"
-                            download
-                        >
-                            <i className="fa-solid fa-file-excel" aria-hidden="true" />
-                            <span>Ekspor Excel {registration ? `(${registration.contingent.name})` : '(Semua)'}</span>
-                        </a>
+                        <ActionMenuDropdown
+                            label="Menu Aksi"
+                            theme="light"
+                            menuHeader="Aksi Nomor Pertandingan"
+                            icon={<i className="fa-solid fa-sliders text-xs text-[#a93226]" />}
+                            items={[
+                                {
+                                    label: registration ? `Ekspor Excel (${registration.contingent?.name || 'Kontingen'})` : 'Ekspor Excel (Semua Kontingen)',
+                                    description: 'Unduh daftar atlet dan nomor pertandingan ke format Excel',
+                                    icon: <i className="fa-solid fa-file-excel text-emerald-600" />,
+                                    href: `/admin/pendaftaran/nomor-pertandingan/export?event_id=${activeEvent.id}${registration ? `&registration_id=${registration.id}` : ''}${type !== 'all' ? `&type=${type}` : ''}`,
+                                    download: true,
+                                    tone: 'emerald',
+                                    badge: 'XLSX',
+                                },
+                                ...(registration ? [{
+                                    label: 'Ekspor Seluruh Kontingen',
+                                    description: 'Unduh rekap nomor pertandingan seluruh kontingen',
+                                    icon: <i className="fa-solid fa-file-excel text-slate-500" />,
+                                    href: `/admin/pendaftaran/nomor-pertandingan/export?event_id=${activeEvent.id}${type !== 'all' ? `&type=${type}` : ''}`,
+                                    download: true,
+                                    tone: 'default',
+                                    badge: 'XLSX',
+                                }] : []),
+                                {
+                                    divider: true,
+                                },
+                                {
+                                    label: 'Registrasi Berkas Kontingen',
+                                    description: 'Kembali ke daftar berkas registrasi kontingen',
+                                    icon: <i className="fa-solid fa-folder-open text-[#d4a843]" />,
+                                    href: `/admin/pendaftaran/registrasi?event_id=${activeEvent.id}`,
+                                    isLink: true,
+                                    tone: 'default',
+                                },
+                                {
+                                    label: 'Verifikasi Atlet & Dokumen',
+                                    description: 'Periksa keabsahan berkas & data fisik atlet',
+                                    icon: <i className="fa-solid fa-user-check text-blue-600" />,
+                                    href: `/admin/pendaftaran/verifikasi?event_id=${activeEvent.id}`,
+                                    isLink: true,
+                                    tone: 'default',
+                                },
+                            ]}
+                        />
                         {eventOptions.length > 1 && <div className="w-full sm:w-64">
                             <Combobox label="Event" value={activeEvent.id} onChange={selectEvent} placeholder=""
                                 options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))} />
