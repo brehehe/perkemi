@@ -7,10 +7,11 @@ import Textarea from '@/Components/UI/Forms/Textarea';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function RegistrationIndex({ registrations, stats, activeEvent, eventOptions = [], filters, canCreate = false }) {
+    const { flash = {} } = usePage().props;
     const [search, setSearch] = useState(filters.search || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || 'all');
     const [selectedRegistration, setSelectedRegistration] = useState(null);
@@ -46,12 +47,21 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
         setIsVerifying(true);
         setConfirmationError('');
         const method = confirmation.method || 'post';
-        router[method](confirmation.url, {}, {
+        const options = {
             preserveScroll: true,
             onError: (errors) => setConfirmationError(Object.values(errors).flat().join(' ')),
-            onSuccess: () => { setConfirmation(null); setSelectedRegistration(null); },
+            onSuccess: () => {
+                setConfirmation(null);
+                setSelectedRegistration(null);
+            },
             onFinish: () => setIsVerifying(false),
-        });
+        };
+
+        if (method === 'delete') {
+            router.delete(confirmation.url, options);
+        } else {
+            router[method](confirmation.url, {}, options);
+        }
     };
 
     const handleVerify = (id) => askConfirmation({ title: 'Setujui berkas registrasi?', message: 'Berkas kontingen akan disetujui setelah persyaratan peserta terpenuhi. Pembayaran diverifikasi terpisah.', confirmText: 'Setujui berkas', variant: 'primary', url: `/admin/pendaftaran/registrasi/${id}/verify` });
@@ -221,6 +231,34 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                         </div>
                     </div>
                 </div>
+
+                {/* Flash Banner Alert */}
+                {flash?.success && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30 p-4 text-sm text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+                        <div className="flex items-center gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+                                <i className="fa-solid fa-check" />
+                            </span>
+                            <div>
+                                <h4 className="font-bold text-xs uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Berhasil</h4>
+                                <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">{flash.success}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {flash?.error && (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 dark:border-rose-900/60 dark:bg-rose-950/30 p-4 text-sm text-rose-900 dark:text-rose-200 flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+                        <div className="flex items-center gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-xs">
+                                <i className="fa-solid fa-triangle-exclamation" />
+                            </span>
+                            <div>
+                                <h4 className="font-bold text-xs uppercase tracking-wider text-rose-800 dark:text-rose-300">Peringatan</h4>
+                                <p className="text-xs text-rose-700 dark:text-rose-400 mt-0.5">{flash.error}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* 4 Stat Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

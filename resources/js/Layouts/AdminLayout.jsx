@@ -1,6 +1,6 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import { Avatar, CommandPalette, ThemeToggle } from '@/Components/UI';
+import { Avatar, CommandPalette, Notification, ThemeToggle } from '@/Components/UI';
 import ContingentLayout from '@/Layouts/ContingentLayout';
 import RefereeLayout from '@/Layouts/RefereeLayout';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
@@ -33,6 +33,25 @@ const masterTransferPages = {
 
 export default function AdminLayout({ children, title = 'Admin Dashboard', auth = {} }) {
     const { url, props } = usePage();
+    const flash = props.flash || {};
+    const [flashToast, setFlashToast] = useState(null);
+
+    useEffect(() => {
+        if (flash.success || flash.status) {
+            setFlashToast({
+                variant: 'success',
+                title: 'Berhasil',
+                message: flash.success || flash.status,
+            });
+        } else if (flash.error) {
+            setFlashToast({
+                variant: 'danger',
+                title: 'Perhatian',
+                message: flash.error,
+            });
+        }
+    }, [flash.success, flash.error, flash.status]);
+
     const [currentPath, currentQuery = ''] = url.split('?');
     const currentSearchParams = new URLSearchParams(currentQuery);
     const masterTransfer = masterTransferPages[currentPath] || null;
@@ -1015,6 +1034,20 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                 items={adminCommands}
                 placeholder="Ketik perintah atau navigasi menu admin..."
             />
+
+            {/* Global Flash Notification Toast */}
+            {flashToast && (
+                <div className="fixed top-5 right-5 z-[9999] max-w-sm w-full px-4 sm:px-0 pointer-events-none">
+                    <Notification
+                        show={Boolean(flashToast)}
+                        variant={flashToast.variant}
+                        title={flashToast.title}
+                        message={flashToast.message}
+                        duration={5000}
+                        onClose={() => setFlashToast(null)}
+                    />
+                </div>
+            )}
         </>
     );
 }
