@@ -39,43 +39,120 @@ function MatchTable({ matches, activeEvent }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ede9e1]">
-                    {matches.map((match) => (
-                        <tr key={match.id} className={match.status === 'in_progress' ? 'bg-purple-50/50' : ''}>
-                            <td data-label="Jadwal" className="min-w-44 px-4 py-3 align-top">
-                                <p className="font-bold text-[#17120f]">{match.scheduled_at || 'Belum dijadwalkan'}</p>
-                                <p className="mt-1 text-[#7a746e]">{match.court}</p>
-                            </td>
-                            <td data-label="Nomor pertandingan" className="min-w-64 px-4 py-3 align-top">
-                                <div className="flex items-start gap-2">
-                                    <Badge variant={match.category_type === 'embu' ? 'blue' : 'red'} size="sm">{match.category_type?.toUpperCase()}</Badge>
-                                    <div>
-                                        <p className="font-bold text-[#17120f]">{match.category_name}</p>
-                                        <p className="mt-1 text-[#7a746e]">Partai #{match.sequence} · {match.round_label}</p>
+                    {matches.map((match) => {
+                        const isCompleted = match.status === 'completed';
+                        const isInProgress = match.status === 'in_progress';
+
+                        return (
+                            <tr
+                                key={match.id}
+                                className={
+                                    isCompleted
+                                        ? '!bg-emerald-50/60 !border-emerald-200/80 hover:!bg-emerald-100/50 transition-colors'
+                                        : isInProgress
+                                        ? '!bg-purple-50/50 !border-purple-200/80 hover:!bg-purple-100/50 transition-colors'
+                                        : 'hover:bg-[#fcfbf9] transition-colors'
+                                }
+                            >
+                                <td data-label="Jadwal" className="min-w-44 px-4 py-3 align-top">
+                                    <p className="font-bold text-[#17120f]">{match.scheduled_at || 'Belum dijadwalkan'}</p>
+                                    <p className="mt-1 text-[#7a746e]">{match.court}</p>
+                                </td>
+                                <td data-label="Nomor pertandingan" className="min-w-64 px-4 py-3 align-top">
+                                    <div className="flex items-start gap-2">
+                                        <Badge variant={match.category_type === 'embu' ? 'blue' : 'red'} size="sm">{match.category_type?.toUpperCase()}</Badge>
+                                        <div>
+                                            <p className="font-bold text-[#17120f]">{match.category_name}</p>
+                                            <p className="mt-1 text-[#7a746e]">Partai #{match.sequence} · {match.round_label}</p>
+                                        </div>
                                     </div>
-                                </div>
-                            </td>
-                            <td data-label="Peserta" className="min-w-60 px-4 py-3 align-top text-[#5f574f]">{match.participant || 'Peserta belum ditentukan'}</td>
-                            <td data-label="Status" className="min-w-48 px-4 py-3 align-top">
-                                <div className="flex flex-wrap gap-1.5">
-                                    <Badge variant={statusVariants[match.status] || 'gray'}>{match.status_label}</Badge>
-                                    <Badge variant={match.call_status === 'waiting' ? 'gray' : 'gold'}>{match.call_status_label}</Badge>
-                                </div>
-                            </td>
-                            <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right align-top">
-                                {match.is_placeholder ? (
-                                    <span className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-500 sm:min-h-9">Menunggu lawan</span>
-                                ) : (
-                                    <Link
-                                        href={`/admin/panitera/scoring/matches/${match.id}?event_id=${encodeURIComponent(activeEvent.id)}`}
-                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#a82718] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] sm:min-h-9"
-                                    >
-                                        <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-                                        Buka Detail
-                                    </Link>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
+                                </td>
+                                <td data-label="Peserta" className="min-w-64 px-4 py-3 align-top text-[#5f574f]">
+                                    {match.category_type === 'randori' && match.red_label && match.blue_label ? (
+                                        <div className="space-y-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-black ${match.result?.winner_corner === 'aka' ? 'bg-rose-600 text-white shadow-2xs' : 'bg-rose-100 text-rose-800'}`}>AKA</span>
+                                                <span className={`text-xs ${match.result?.winner_corner === 'aka' ? 'font-bold text-[#17120f]' : 'text-[#7a746e]'}`}>{match.red_label}</span>
+                                                {match.result && <span className="font-mono text-xs font-bold text-rose-700">({match.result.aka_total})</span>}
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-black ${match.result?.winner_corner === 'shiro' ? 'bg-slate-700 text-white shadow-2xs' : 'bg-slate-100 text-slate-700'}`}>SHIRO</span>
+                                                <span className={`text-xs ${match.result?.winner_corner === 'shiro' ? 'font-bold text-[#17120f]' : 'text-[#7a746e]'}`}>{match.blue_label}</span>
+                                                {match.result && <span className="font-mono text-xs font-bold text-slate-700">({match.result.shiro_total})</span>}
+                                            </div>
+                                            {match.result && (
+                                                <div className="pt-1">
+                                                    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300/80 bg-emerald-100/90 px-2 py-0.5 text-[10.5px] font-bold text-emerald-900 shadow-2xs">
+                                                        <i className="fa-solid fa-trophy text-amber-500" aria-hidden="true" />
+                                                        Pemenang: {match.result.winner_corner === 'aka' ? 'AKA (Merah)' : match.result.winner_corner === 'shiro' ? 'SHIRO (Putih)' : match.result.winner_label}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <p className="font-medium text-[#17120f]">{match.participant || 'Peserta belum ditentukan'}</p>
+                                            {match.result && match.result.type === 'embu' && (
+                                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300/80 bg-emerald-100/90 px-2 py-0.5 text-[10.5px] font-bold text-emerald-900 shadow-2xs">
+                                                        <i className="fa-solid fa-star text-amber-500" aria-hidden="true" />
+                                                        Nilai Akhir: {match.result.final_score?.toFixed(2)}
+                                                    </span>
+                                                    {Number(match.result.total_penalty || 0) > 0 && (
+                                                        <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                                                            Denda -{match.result.total_penalty.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    {match.result.is_disqualified && (
+                                                        <span className="inline-flex items-center rounded-md border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                                                            Diskualifikasi
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </td>
+                                <td data-label="Status" className="min-w-48 px-4 py-3 align-top">
+                                    <div className="flex flex-wrap gap-1.5">
+                                        <Badge variant={statusVariants[match.status] || 'gray'}>{match.status_label}</Badge>
+                                        {isCompleted && match.result?.type === 'randori' ? (
+                                            <Badge variant={match.result.is_locked ? 'green' : 'yellow'}>
+                                                <i className={`fa-solid ${match.result.is_locked ? 'fa-lock' : 'fa-file-signature'} mr-1`} aria-hidden="true" />
+                                                {match.result.is_locked ? 'Terkunci' : `${match.result.signed_count}/6 TTD`}
+                                            </Badge>
+                                        ) : isCompleted && match.result?.type === 'embu' ? (
+                                            <Badge variant={match.result.status === 'verified' ? 'green' : 'yellow'}>
+                                                <i className={`fa-solid ${match.result.status === 'verified' ? 'fa-circle-check' : 'fa-hourglass-half'} mr-1`} aria-hidden="true" />
+                                                {match.result.status_label}
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant={match.call_status === 'waiting' ? 'gray' : 'gold'}>
+                                                {match.call_status_label}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </td>
+                                <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right align-top">
+                                    {match.is_placeholder ? (
+                                        <span className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-500 sm:min-h-9">Menunggu lawan</span>
+                                    ) : (
+                                        <Link
+                                            href={`/admin/panitera/scoring/matches/${match.id}?event_id=${encodeURIComponent(activeEvent.id)}`}
+                                            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-h-9 ${
+                                                isCompleted
+                                                    ? 'bg-emerald-700 hover:bg-emerald-800 focus-visible:outline-emerald-700'
+                                                    : 'bg-[#c0392b] hover:bg-[#a82718] focus-visible:outline-[#c0392b]'
+                                            }`}
+                                        >
+                                            <i className={`fa-solid ${isCompleted ? 'fa-circle-check' : 'fa-arrow-up-right-from-square'}`} aria-hidden="true" />
+                                            Buka Detail
+                                        </Link>
+                                    )}
+                                </td>
+                            </tr>
+                        );
+                    })}
                     {matches.length === 0 && (
                         <tr>
                             <td colSpan="5" className="px-4 py-12 text-center text-[#7a746e]">Tidak ada pertandingan yang sesuai filter.</td>

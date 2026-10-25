@@ -685,6 +685,7 @@ class RegistrationController extends Controller
             'matchCategories' => $matchCategories,
             'maxMatchCategoriesPerAthlete' => $activeEvent?->max_match_categories_per_athlete,
             'canManageMatchEntries' => $this->canManageMatchEntries($request, $activeEvent),
+            'canDeleteMatchCategory' => (bool) $request->user()?->hasAnyRole(['Super Admin', 'Admin']),
         ]);
     }
 
@@ -937,7 +938,11 @@ class RegistrationController extends Controller
     public function destroyAthleteMatchCategoryEntry(Request $request, Athlete $athlete, AthleteMatchCategoryEntry $entry): RedirectResponse
     {
         $activeEvent = $this->eventForRequest($request);
-        abort_unless($activeEvent instanceof Event && $this->canManageMatchEntries($request, $activeEvent), 403);
+        abort_unless(
+            $activeEvent instanceof Event && $request->user()?->hasAnyRole(['Super Admin', 'Admin']),
+            403,
+            'Hanya Admin dan Super Admin sistem yang memiliki wewenang untuk menghapus nomor pertandingan.'
+        );
         abort_unless($entry->event_id === $activeEvent->id && $entry->athlete_id === $athlete->id, 404);
 
         $entry->delete();

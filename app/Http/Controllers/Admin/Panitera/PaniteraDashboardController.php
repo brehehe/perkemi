@@ -90,7 +90,12 @@ class PaniteraDashboardController extends Controller
             ->when($assignedCourtIds !== null, fn (Builder $query) => $query->whereIn('event_court_id', $assignedCourtIds));
 
         $matches = $scopedMatches()
-            ->with(['matchCategory:id,name,type', 'court:id,name'])
+            ->with([
+                'matchCategory:id,name,type',
+                'court:id,name',
+                'embuScores',
+                'randoriScore',
+            ])
             ->when($selectedCourtId !== '', fn (Builder $query) => $query->where('event_court_id', $selectedCourtId))
             ->when($categoryType !== 'all', fn (Builder $query) => $query->whereHas(
                 'matchCategory',
@@ -157,15 +162,61 @@ class PaniteraDashboardController extends Controller
     /** @return array<string, mixed> */
     private function matchData(TournamentMatch $match): array
     {
+        $categoryType = $match->matchCategory?->type;
+        $result = null;
+
+        if ($match->status === 'completed') {
+            if ($categoryType === 'embu') {
+                $embuScore = $match->embuScores->first();
+                if ($embuScore) {
+                    $result = [
+                        'type' => 'embu',
+                        'final_score' => (float) $embuScore->final_score,
+                        'total_penalty' => $embuScore->effectiveTotalPenalty(),
+                        'is_disqualified' => (bool) $embuScore->is_disqualified,
+                        'status' => $embuScore->status,
+                        'status_label' => match ($embuScore->status) {
+                            'verified' => 'Terverifikasi',
+                            'ready_for_verification' => 'Siap Verifikasi',
+                            default => 'Draft Wasit',
+                        },
+                    ];
+                }
+            } elseif ($categoryType === 'randori') {
+                $randoriScore = $match->randoriScore;
+                if ($randoriScore) {
+                    $signatures = is_array($randoriScore->signatures) ? $randoriScore->signatures : [];
+                    $signedCount = count(array_filter($signatures, fn ($signed): bool => (bool) $signed));
+
+                    $result = [
+                        'type' => 'randori',
+                        'winner_corner' => $randoriScore->winner_corner,
+                        'winner_label' => match ($randoriScore->winner_corner) {
+                            'aka' => $match->red_label ?: 'AKA (Merah)',
+                            'shiro' => $match->blue_label ?: 'SHIRO (Putih)',
+                            default => 'Belum ditentukan',
+                        },
+                        'aka_total' => (int) $randoriScore->aka_total,
+                        'shiro_total' => (int) $randoriScore->shiro_total,
+                        'is_locked' => $randoriScore->locked_at !== null,
+                        'signed_count' => $signedCount,
+                        'status' => $randoriScore->status,
+                    ];
+                }
+            }
+        }
+
         return [
             'id' => $match->id,
             'category_name' => $match->matchCategory?->name,
-            'category_type' => $match->matchCategory?->type,
+            'category_type' => $categoryType,
             'court_id' => $match->event_court_id,
             'court' => $match->court?->name ?? 'Belum diplot',
             'round_label' => $match->round_label,
             'sequence' => $match->match_sequence,
             'participant' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+            'red_label' => $match->red_label,
+            'blue_label' => $match->blue_label,
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
             'status' => $match->status,
             'status_label' => match ($match->status) {
@@ -182,6 +233,7 @@ class PaniteraDashboardController extends Controller
                 default => 'Belum Dipanggil',
             },
             'is_placeholder' => (bool) ($match->metadata['placeholder'] ?? false),
+            'result' => $result,
         ];
     }
 }

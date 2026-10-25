@@ -2193,3 +2193,79 @@ test('embu champion confirmation uses preliminary plus final scores and records 
         ->and(TournamentResult::whereBelongsTo($event)->whereIn('rank', [3, 4])->count())->toBe(2)
         ->and(TournamentResult::whereBelongsTo($event)->where('rank', 4)->firstOrFail()->rank->label())->toBe('Perunggu Bersama (Juara 3)');
 });
+
+test('completed matches expose result summaries in the dashboard match list', function () {
+    $event = createPaniteraEvent('Event Hasil Dashboard');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Hasil',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    [$embuCategory, $embuDrawing] = createPaniteraCategory($event, 'Embu Hasil', 'embu', 'embu_direct_final');
+    [$randoriCategory, $randoriDrawing] = createPaniteraCategory($event, 'Randori Hasil', 'randori', 'single_elimination');
+
+    $embuMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'participant_label' => 'Pasangan Kenshi A & B',
+        'status' => 'completed',
+        'metadata' => ['placeholder' => false],
+    ]);
+    EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $embuMatch->id,
+        'judge_scores' => [88.0, 89.0, 90.0, 88.5, 89.5],
+        'middle_score' => 267.0,
+        'final_score' => 265.0,
+        'time_penalty' => 2.0,
+        'status' => 'verified',
+    ]);
+
+    $randoriMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'event_court_id' => $court->id,
+        'phase' => 'upper',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 2,
+        'red_label' => 'Atlet AKA',
+        'blue_label' => 'Atlet SHIRO',
+        'status' => 'completed',
+        'metadata' => ['placeholder' => false],
+    ]);
+    RandoriScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $randoriMatch->id,
+        'aka_breakdown' => [],
+        'shiro_breakdown' => [],
+        'aka_total' => 3,
+        'shiro_total' => 1,
+        'winner_corner' => 'aka',
+        'status' => 'verified',
+        'locked_at' => now(),
+        'signatures' => ['referee' => true, 'clerk' => true],
+    ]);
+
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/Dashboard')
+            ->where('matches.data.0.result.type', 'embu')
+            ->where('matches.data.0.result.final_score', 265)
+            ->where('matches.data.0.result.status', 'verified')
+            ->where('matches.data.1.result.type', 'randori')
+            ->where('matches.data.1.result.winner_corner', 'aka')
+            ->where('matches.data.1.result.aka_total', 3)
+            ->where('matches.data.1.result.shiro_total', 1)
+            ->where('matches.data.1.result.is_locked', true)
+        );
+});

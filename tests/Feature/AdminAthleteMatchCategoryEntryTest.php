@@ -6,6 +6,7 @@ use App\Models\Contingent;
 use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\Kyu;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -344,4 +345,133 @@ test('enrollment allows a different Kyu from the match number label', function (
         ->assertSessionHasNoErrors();
 
     $this->assertDatabaseCount('athlete_match_category_entries', 1);
+});
+
+test('non-admin event staff cannot delete athlete match category entry on verification', function () {
+    config()->set('app.tenant_base_domain', 'localhost');
+
+    $eventUser = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Kejurda Hapus Staff 2026',
+        'slug' => 'kejurda-hapus-staff-2026',
+        'tenant_subdomain' => 'kejurda-hapus-staff-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'max_match_categories_per_athlete' => 2,
+    ]);
+    $event->users()->attach($eventUser, ['access_role' => 'staff']);
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $eventUser->id,
+        'name' => 'Dojo Staff Test',
+        'city' => 'Surabaya',
+        'manager_name' => 'Sensei Staff',
+        'phone' => '081234567890',
+    ]);
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Staff',
+        'gender' => 'male',
+        'kyu_dan' => 'Kyu 1',
+        'weight' => 60,
+    ]);
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 60 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $entry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $athlete->id,
+        'event_match_category_id' => $category->id,
+    ]);
+
+    // Check prop canDeleteMatchCategory is false for staff
+    $this->actingAs($eventUser)
+        ->get('http://kejurda-hapus-staff-2026.localhost/admin/pendaftaran/verifikasi')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Registration/Verification')
+            ->where('canDeleteMatchCategory', false)
+            ->where('canManageMatchEntries', true));
+
+    // Attempting delete returns 403 Forbidden
+    $this->actingAs($eventUser)
+        ->delete("http://kejurda-hapus-staff-2026.localhost/admin/pendaftaran/verifikasi/{$athlete->id}/match-category/{$entry->id}")
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('athlete_match_category_entries', [
+        'id' => $entry->id,
+    ]);
+});
+
+test('admin can delete athlete match category entry on verification', function () {
+    config()->set('app.tenant_base_domain', 'localhost');
+    Role::findOrCreate('Admin', 'web');
+
+    $adminUser = User::factory()->create();
+    $adminUser->assignRole('Admin');
+
+    $event = Event::create([
+        'name' => 'Kejurda Hapus Admin 2026',
+        'slug' => 'kejurda-hapus-admin-2026',
+        'tenant_subdomain' => 'kejurda-hapus-admin-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'max_match_categories_per_athlete' => 2,
+    ]);
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $adminUser->id,
+        'name' => 'Dojo Admin Test',
+        'city' => 'Surabaya',
+        'manager_name' => 'Sensei Admin',
+        'phone' => '081234567890',
+    ]);
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Admin',
+        'gender' => 'male',
+        'kyu_dan' => 'Kyu 1',
+        'weight' => 60,
+    ]);
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 60 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $entry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $athlete->id,
+        'event_match_category_id' => $category->id,
+    ]);
+
+    // Check prop canDeleteMatchCategory is true for Admin
+    $this->actingAs($adminUser)
+        ->get('http://kejurda-hapus-admin-2026.localhost/admin/pendaftaran/verifikasi')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Registration/Verification')
+            ->where('canDeleteMatchCategory', true)
+            ->where('canManageMatchEntries', true));
+
+    // Admin can delete successfully
+    $this->actingAs($adminUser)
+        ->delete("http://kejurda-hapus-admin-2026.localhost/admin/pendaftaran/verifikasi/{$athlete->id}/match-category/{$entry->id}")
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $this->assertDatabaseMissing('athlete_match_category_entries', [
+        'id' => $entry->id,
+    ]);
 });

@@ -7,10 +7,26 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import Pagination from '@/Components/UI/Navigation/Pagination';
 import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
-export default function RegistrationVerification({ athletes, contingents, stats, filters, activeEvent, eventOptions = [], matchCategories, maxMatchCategoriesPerAthlete, canManageMatchEntries }) {
+export default function RegistrationVerification({
+    athletes,
+    contingents,
+    stats,
+    filters,
+    activeEvent,
+    eventOptions = [],
+    matchCategories,
+    maxMatchCategoriesPerAthlete,
+    canManageMatchEntries,
+    canDeleteMatchCategory = false,
+}) {
+    const { auth } = usePage().props;
+    const canDelete = Boolean(
+        canDeleteMatchCategory ||
+        auth?.user?.roles?.some((role) => ['Super Admin', 'Admin'].includes(role))
+    );
     const [search, setSearch] = useState(filters.search || '');
     const [contingentFilter, setContingentFilter] = useState(filters.contingent_id || '');
     const [verifiedIds, setVerifiedIds] = useState({});
@@ -78,11 +94,12 @@ export default function RegistrationVerification({ athletes, contingents, stats,
     };
 
     const removeMatchCategory = (athlete, entry) => {
+        if (!canDelete) return;
         setRemoveError('');
         setRemovingEntry({ athlete, entry });
     };
     const confirmRemoveMatchCategory = () => {
-        if (!removingEntry || removing) return;
+        if (!removingEntry || removing || !canDelete) return;
         setRemoving(true);
         setRemoveError('');
         router.delete(`/admin/pendaftaran/verifikasi/${removingEntry.athlete.id}/match-category/${removingEntry.entry.id}?event_id=${activeEvent?.id || ''}`, {
@@ -298,7 +315,7 @@ export default function RegistrationVerification({ athletes, contingents, stats,
                                                                             </div>
                                                                             <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-[#3e3731]">{entry.name}</p>
                                                                         </div>
-                                                                        {canManageMatchEntries && (
+                                                                        {canDelete && (
                                                                             <Button variant="unstyled" size="none" type="button" onClick={() => removeMatchCategory(ath, entry)} aria-label={`Hapus ${entry.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#a47b1d] hover:bg-red-50 hover:text-red-600">
                                                                                 <i className="fa-solid fa-xmark" aria-hidden="true" />
                                                                             </Button>
