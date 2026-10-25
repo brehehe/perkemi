@@ -60,8 +60,8 @@ function CourtPanelCard({ court, activeEvent }) {
                     <button type="button" disabled={!court.has_panel} onClick={() => setResetOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-[#ddd7cf] disabled:bg-[#eeeae4] disabled:text-[#a79f96]">
                         <i className="fa-solid fa-rotate-left" aria-hidden="true" />Reset Wasit
                     </button>
-                    <button type="button" disabled={!court.panel_complete} onClick={() => { setActiveRoleTab('chief'); setQrOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8c9ae] bg-white px-3 text-xs font-bold text-[#8a631c] hover:bg-amber-50 disabled:cursor-not-allowed disabled:bg-[#eeeae4] disabled:text-[#a79f96]">
-                        <i className="fa-solid fa-qrcode" aria-hidden="true" />Tampilkan QR Court
+                    <button type="button" disabled={!court.panel_complete} onClick={() => { setActiveRoleTab('all'); setQrOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8c9ae] bg-white px-3 text-xs font-bold text-[#8a631c] hover:bg-amber-50 disabled:cursor-not-allowed disabled:bg-[#eeeae4] disabled:text-[#a79f96]">
+                        <i className="fa-solid fa-qrcode" aria-hidden="true" />Tampilkan QR 5 Wasit
                     </button>
                 </div>
             </div>
@@ -131,6 +131,18 @@ function CourtPanelCard({ court, activeEvent }) {
                 <div className="space-y-4">
                     {/* Role Tabs */}
                     <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-[#e5ded4] bg-[#f5f1eb] p-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setActiveRoleTab('all')}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
+                                activeRoleTab === 'all'
+                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                    : 'text-[#625b54] hover:text-[#17120f]'
+                            }`}
+                        >
+                            <i className="fa-solid fa-border-all mr-1.5" />
+                            Semua 5 Posisi
+                        </button>
                         {court.panel.map((pm, idx) => (
                             <button
                                 key={pm.role}
@@ -145,18 +157,6 @@ function CourtPanelCard({ court, activeEvent }) {
                                 {idx + 1}. {pm.role_label}
                             </button>
                         ))}
-                        <button
-                            type="button"
-                            onClick={() => setActiveRoleTab('all')}
-                            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                activeRoleTab === 'all'
-                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
-                                    : 'text-[#625b54] hover:text-[#17120f]'
-                            }`}
-                        >
-                            <i className="fa-solid fa-border-all mr-1.5" />
-                            Semua 5 Posisi
-                        </button>
                     </div>
 
                     {activeRoleTab === 'all' ? (

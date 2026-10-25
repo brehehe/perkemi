@@ -12,9 +12,118 @@ const statusClass = {
     pending: 'border-slate-200 bg-slate-50 text-slate-600',
 };
 
+const ROLE_LABELS = {
+    chief: 'Wasit Utama',
+    regional_1: 'Wasit Daerah 1',
+    regional_2: 'Wasit Daerah 2',
+    assistant_1: 'Wasit Pembantu 1',
+    assistant_2: 'Wasit Pembantu 2',
+};
+
+function validateScannedQr(scannedValue, target) {
+    if (!scannedValue) return { valid: false, message: 'QR tidak terbaca.' };
+
+    let scannedUrl;
+    try {
+        scannedUrl = new URL(scannedValue, window.location.origin);
+    } catch {
+        return {
+            valid: false,
+            message: 'Format QR tidak valid. Pastikan Anda memindai QR resmi dari Panitera.',
+        };
+    }
+
+    if (scannedUrl.host !== window.location.host) {
+        return {
+            valid: false,
+            message: 'QR bukan berasal dari sistem Smart Perkemi. Silakan scan QR dari Panitera.',
+        };
+    }
+
+    if (target.type === 'event') {
+        const eventMatch = scannedUrl.pathname.match(/^\/wasit\/check-in\/event\/([^/]+)$/);
+        if (eventMatch) {
+            const [, scannedEventId] = eventMatch;
+            if (scannedEventId !== target.eventId) {
+                return {
+                    valid: false,
+                    message: 'QR absensi ini untuk event lain. Silakan scan QR absensi event ini.',
+                };
+            }
+            return { valid: true, url: scannedUrl.toString() };
+        }
+
+        if (scannedUrl.pathname.includes('/court/')) {
+            return {
+                valid: false,
+                message: 'Ini adalah QR Court. Silakan scan QR Absensi Event terlebih dahulu dari Panitera.',
+            };
+        }
+
+        return {
+            valid: false,
+            message: `QR tidak sesuai. Silakan scan ${target.label} dari Panitera.`,
+        };
+    }
+
+    if (target.type === 'court') {
+        const courtMatch = scannedUrl.pathname.match(/^\/wasit\/check-in\/event\/([^/]+)\/court\/([^/]+)(?:\/([^/]+))?$/);
+        if (courtMatch) {
+            const [, scannedEventId, scannedCourtId, scannedRole] = courtMatch;
+
+            if (scannedEventId !== target.eventId) {
+                return {
+                    valid: false,
+                    message: `QR ini untuk event lain. Silakan scan QR ${target.courtName} pada event ini.`,
+                };
+            }
+
+            if (scannedCourtId !== target.courtId) {
+                return {
+                    valid: false,
+                    message: `QR ini untuk court lain. Silakan scan QR ${target.courtName} (${target.roleLabel}) dari Panitera.`,
+                };
+            }
+
+            if (scannedRole && target.role && scannedRole !== target.role) {
+                const scannedRoleLabel = ROLE_LABELS[scannedRole] || scannedRole;
+                return {
+                    valid: false,
+                    message: `QR ini khusus untuk ${scannedRoleLabel}. Posisi Anda di ${target.courtName} adalah ${target.roleLabel}. Silakan scan QR ${target.roleLabel} dari Panitera.`,
+                };
+            }
+
+            return { valid: true, url: scannedUrl.toString() };
+        }
+
+        if (scannedUrl.pathname.match(/^\/wasit\/check-in\/event\/[^/]+$/)) {
+            return {
+                valid: false,
+                message: `Ini adalah QR Absensi Event. Silakan scan QR ${target.courtName} (${target.roleLabel}) dari Panitera.`,
+            };
+        }
+
+        return {
+            valid: false,
+            message: `QR tidak sesuai. Silakan scan QR ${target.courtName} (${target.roleLabel}) dari Panitera.`,
+        };
+    }
+
+    if (target.expectedPath && scannedUrl.pathname === target.expectedPath) {
+        return { valid: true, url: scannedUrl.toString() };
+    }
+
+    return {
+        valid: false,
+        message: `QR tidak sesuai. Silakan scan ${target.label} dari Panitera.`,
+    };
+}
+
 function QrScannerModal({ target, onClose }) {
     const videoRef = useRef(null);
     const [scannerState, setScannerState] = useState({ type: 'loading', message: 'Menyiapkan kamera belakang…' });
+    const [manualOpen, setManualOpen] = useState(false);
+    const [manualUrl, setManualUrl] = useState('');
 
     useEffect(() => {
         if (!target) return undefined;
@@ -24,10 +133,12 @@ function QrScannerModal({ target, onClose }) {
         let stream;
 
         setScannerState({ type: 'loading', message: 'Menyiapkan kamera belakang…' });
+        setManualOpen(false);
+        setManualUrl('');
 
         const startScanner = async () => {
             if (!window.isSecureContext) {
-                setScannerState({ type: 'error', message: 'Kamera hanya dapat dibuka melalui HTTPS. Gunakan alamat https:// dengan port 8443.' });
+                setScannerState({ type: 'error', message: 'Kamera hanya dapat dibuka melalui HTTPS. Gunakan alamat https://.' });
                 return;
             }
 
@@ -37,14 +148,14 @@ function QrScannerModal({ target, onClose }) {
             }
 
             if (!('BarcodeDetector' in window)) {
-                setScannerState({ type: 'error', message: 'Pemindai QR belum didukung browser ini. Gunakan Chrome terbaru atau kamera bawaan ponsel.' });
+                setScannerState({ type: 'error', message: 'Pemindai QR belum didukung browser ini. Gunakan Chrome terbaru atau tempel tautan manual di bawah.' });
                 return;
             }
 
             try {
                 const supportedFormats = await window.BarcodeDetector.getSupportedFormats?.();
                 if (supportedFormats && !supportedFormats.includes('qr_code')) {
-                    setScannerState({ type: 'error', message: 'Browser ini belum mendukung pembacaan QR. Gunakan kamera bawaan ponsel.' });
+                    setScannerState({ type: 'error', message: 'Browser ini belum mendukung pembacaan QR. Gunakan tautan manual atau kamera bawaan ponsel.' });
                     return;
                 }
 
@@ -75,16 +186,13 @@ function QrScannerModal({ target, onClose }) {
                         const scannedValue = barcodes.at(0)?.rawValue;
 
                         if (scannedValue) {
-                            const scannedUrl = new URL(scannedValue, window.location.origin);
-                            const isExpectedQr = scannedUrl.origin === window.location.origin
-                                && scannedUrl.pathname === target.expectedPath;
-
-                            if (!isExpectedQr) {
-                                setScannerState({ type: 'error', message: `QR tidak sesuai. Silakan scan ${target.label} dari Panitera.` });
+                            const result = validateScannedQr(scannedValue, target);
+                            if (!result.valid) {
+                                setScannerState({ type: 'error', message: result.message });
                             } else {
                                 active = false;
                                 setScannerState({ type: 'success', message: 'QR berhasil dibaca. Membuka konfirmasi kehadiran…' });
-                                window.location.assign(scannedUrl.toString());
+                                window.location.assign(result.url);
                                 return;
                             }
                         }
@@ -103,7 +211,7 @@ function QrScannerModal({ target, onClose }) {
                 setScannerState({
                     type: 'error',
                     message: permissionDenied
-                        ? 'Izin kamera ditolak. Izinkan kamera pada pengaturan browser lalu coba lagi.'
+                        ? 'Izin kamera ditolak. Izinkan kamera pada pengaturan browser atau tempel tautan QR di bawah.'
                         : 'Kamera tidak dapat dibuka. Pastikan kamera tidak sedang digunakan aplikasi lain.',
                 });
             }
@@ -119,16 +227,39 @@ function QrScannerModal({ target, onClose }) {
         };
     }, [target]);
 
+    const handleManualSubmit = (e) => {
+        e.preventDefault();
+        const trimmed = manualUrl.trim();
+        if (!trimmed) return;
+
+        const result = validateScannedQr(trimmed, target);
+        if (!result.valid) {
+            setScannerState({ type: 'error', message: result.message });
+        } else {
+            setScannerState({ type: 'success', message: 'Tautan valid. Membuka konfirmasi kehadiran…' });
+            window.location.assign(result.url);
+        }
+    };
+
     return (
         <Modal
             isOpen={Boolean(target)}
             onClose={onClose}
             title={target?.title || 'Scan QR Kehadiran'}
-            subtitle="Izinkan akses kamera saat browser meminta konfirmasi."
+            subtitle={target?.subtitle || 'Izinkan akses kamera saat browser meminta konfirmasi.'}
             size="md"
             footer={<Button variant="outline" onClick={onClose}>Tutup</Button>}
         >
             <div className="space-y-4">
+                {target?.roleLabel && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs leading-5 text-amber-900">
+                        <i className="fa-solid fa-user-shield mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+                        <div>
+                            <span>Posisi penugasan Anda: <strong className="font-bold text-amber-950">{target.roleLabel}</strong> ({target.courtName}).</span>
+                            <p className="mt-0.5 text-[11px] text-amber-800">Pastikan Panitera menampilkan QR khusus untuk <strong>{target.roleLabel}</strong>.</p>
+                        </div>
+                    </div>
+                )}
                 <div className="relative aspect-square overflow-hidden rounded-2xl bg-[#0f0d0b]">
                     <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
                     <div className="pointer-events-none absolute inset-[12%] rounded-2xl border-2 border-[#f0c060] shadow-[0_0_0_999px_rgba(0,0,0,.38)]" />
@@ -137,6 +268,32 @@ function QrScannerModal({ target, onClose }) {
                 <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${scannerState.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : scannerState.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
                     <i className={`fa-solid mr-2 ${scannerState.type === 'loading' ? 'fa-circle-notch animate-spin' : scannerState.type === 'success' ? 'fa-circle-check' : scannerState.type === 'error' ? 'fa-triangle-exclamation' : 'fa-camera'}`} aria-hidden="true" />
                     {scannerState.message}
+                </div>
+
+                {/* Alternatif input tautan manual jika kamera bermasalah */}
+                <div className="border-t border-[#ede7df] pt-3 text-center">
+                    <button
+                        type="button"
+                        onClick={() => setManualOpen(!manualOpen)}
+                        className="text-xs font-semibold text-[#8a631c] hover:underline"
+                    >
+                        <i className={`fa-solid ${manualOpen ? 'fa-chevron-up' : 'fa-keyboard'} mr-1.5`} aria-hidden="true" />
+                        {manualOpen ? 'Tutup input manual' : 'Kamera bermasalah? Masukkan / tempel tautan QR'}
+                    </button>
+                    {manualOpen && (
+                        <form onSubmit={handleManualSubmit} className="mt-3 flex gap-2 text-left">
+                            <input
+                                type="url"
+                                value={manualUrl}
+                                onChange={(e) => setManualUrl(e.target.value)}
+                                placeholder="Tempel tautan check-in dari Panitera…"
+                                className="min-h-10 flex-1 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs text-[#17120f] focus:border-[#d4a843] focus:outline-none"
+                            />
+                            <Button type="submit" variant="dark" size="sm" className="shrink-0 text-xs">
+                                Buka
+                            </Button>
+                        </form>
+                    )}
                 </div>
             </div>
         </Modal>
@@ -161,13 +318,23 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
     }, [scannerTarget]);
 
     const openEventScanner = () => setScannerTarget({
+        type: 'event',
         title: 'Scan QR Absensi Event',
+        subtitle: `Arahkan kamera ke QR Absensi Event ${activeEvent.name} dari Panitera.`,
+        eventId: activeEvent.id,
         label: 'QR absensi event',
         expectedPath: `/wasit/check-in/event/${activeEvent.id}`,
     });
     const openCourtScanner = (assignment) => setScannerTarget({
+        type: 'court',
         title: `Scan QR ${assignment.court_name}`,
-        label: `QR ${assignment.court_name}`,
+        subtitle: `Posisi: ${assignment.role_label}. Arahkan kamera ke QR ${assignment.role_label} di meja Panitera.`,
+        courtId: assignment.court_id,
+        courtName: assignment.court_name,
+        role: assignment.role,
+        roleLabel: assignment.role_label,
+        eventId: activeEvent.id,
+        label: `QR ${assignment.court_name} (${assignment.role_label})`,
         expectedPath: `/wasit/check-in/event/${activeEvent.id}/court/${assignment.court_id}`,
     });
 
