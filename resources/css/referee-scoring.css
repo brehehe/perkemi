@@ -153,18 +153,27 @@
 
 .referee-participant {
     display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #fff0f1;
+    border-radius: 8px;
+    border: 1px solid #ffd5d8;
+}
+
+.referee-participant-main {
+    display: flex;
     align-items: center;
     gap: 12px;
-    padding: 6px 12px;
-    background: #fff0f1;
-    border-radius: 6px;
+    width: 100%;
 }
 
 .referee-participant-icon {
     color: var(--referee-red);
-    font-size: 32px;
-    width: 42px;
+    font-size: 28px;
+    width: 36px;
     text-align: center;
+    flex-shrink: 0;
 }
 
 .referee-participant-copy {
@@ -181,17 +190,71 @@
     color: #0f172a;
 }
 
-.referee-participant p {
+.referee-participant-techniques {
+    padding-top: 6px;
+    border-top: 1px dashed #f5c2c7;
+    width: 100%;
+}
+
+.referee-techniques-heading {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #9f1239;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 5px;
+}
+
+.referee-technique-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.referee-technique-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    border: 1px solid #fecdd3;
+    border-radius: 6px;
+    padding: 3px 8px;
     font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #475569;
+    color: #1e293b;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.referee-technique-order {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffe4e6;
+    color: #be123c;
+    font-size: 10px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.referee-technique-text {
+    font-weight: 600;
+}
+
+.referee-technique-empty {
+    font-size: 12px;
+    color: #64748b;
+    font-style: italic;
+    margin: 2px 0 0;
 }
 
 .referee-detail-button {
     flex-shrink: 0;
-    min-height: 36px;
+    min-height: 34px;
     padding: 0 10px;
     border: 1px solid #edcbd0;
     border-radius: 5px;
@@ -200,13 +263,13 @@
     font-weight: 700;
 }
 
-.referee-section-switch { display: none; }
+.referee-section-switch { display: none !important; }
 
 .referee-score-tables {
     min-height: 0;
-    display: grid;
-    grid-template-rows: minmax(0, 6fr) minmax(0, 4fr);
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }
 
 .referee-score-section {
@@ -215,9 +278,11 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
     border: 1px solid var(--section-color);
-    border-radius: 6px;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .referee-expression {
@@ -230,107 +295,116 @@
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
-    min-height: 28px;
-    padding: 3px 10px;
+    min-height: 32px;
+    padding: 4px 12px;
     color: #fff;
     background: var(--section-color);
 }
 
 .referee-section-heading h2 {
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
 }
 
 .referee-section-heading h2 span {
     font-size: 12px;
-    font-weight: 400;
+    font-weight: 500;
+    opacity: 0.9;
 }
 
 .referee-scale {
     font-size: 11px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
     white-space: nowrap;
 }
 
 .referee-score-rows {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: repeat(var(--row-count), minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
 }
 
-/* Shortened description column width with maximized, large button targets */
+/* Vertical layout: Criteria name on top, choice buttons below */
 .referee-score-row {
-    display: grid;
-    grid-template-columns: 22px minmax(0, 0.75fr) minmax(0, 1.5fr);
-    align-items: center;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    padding: 4px 8px 4px 4px;
+    padding: 10px 14px;
     border-bottom: 1px solid #eef0f3;
-    min-height: 50px;
 }
 
 .referee-score-row:nth-child(even) { background: #fafbfc; }
 
-.referee-row-number {
-    align-self: center;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 800;
-    color: #475569;
-}
-
-.referee-criterion {
+.referee-criterion-header {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 3px;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     min-width: 0;
-    line-height: 1.25;
 }
 
-.referee-criterion strong {
-    display: inline-block;
-    font-size: 11.5px;
+.referee-row-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    font-size: 12px;
     font-weight: 800;
-    padding: 2px 6px;
+    color: #0f172a;
+    flex-shrink: 0;
+}
+
+.referee-criterion-code {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
     border-radius: 4px;
     background: #e2e8f0;
-    color: #0c203b;
+    color: #0f172a;
     letter-spacing: 0.4px;
-    line-height: 1.15;
+    flex-shrink: 0;
 }
 
-.referee-criterion span {
-    font-size: 13.5px;
+.referee-criterion-label {
+    font-size: 14px;
     font-weight: 700;
-    color: #0c203b;
-    white-space: normal;
-    word-break: normal;
-    overflow-wrap: break-word;
-    line-height: 1.25;
-    overflow: visible;
+    color: #0f172a;
+    line-height: 1.3;
 }
 
-/* Enlarged number buttons */
+/* 5-column number buttons: 0, 7, 8, 9, 10 */
 .referee-score-choices {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
-    min-height: 46px;
+    width: 100%;
 }
 
 .referee-score-choices button {
-    border-radius: 8px;
-    background: #eef2f6;
-    color: #0f172a;
-    font-size: 22px;
-    font-weight: 800;
-    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
     border: 1.5px solid #cbd5e1;
-    transition: all 0.12s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    background: #ffffff;
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.referee-score-choices button:hover {
+    border-color: #94a3b8;
+    background: #f8fafc;
 }
 
 .referee-score-choices button[aria-pressed="true"],
@@ -340,8 +414,9 @@
     background: var(--section-color) !important;
     color: #ffffff !important;
     border-color: var(--section-color) !important;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25) !important;
-    transform: scale(1.02);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22) !important;
+    font-size: 22px;
+    font-weight: 900;
 }
 
 @media (hover: hover) {
@@ -477,7 +552,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     padding: 10px 14px;
     background: #0d2f50;
     color: #fff;
@@ -631,7 +707,7 @@
 .judged-athletes-mobile-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     padding: 12px;
     background: #f8fafc;
 }
@@ -639,36 +715,38 @@
 .judged-athlete-card-item {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 12px 14px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 
-.judged-card-header {
+.judged-card-topbar {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f1f5f9;
 }
 
-.judged-card-athlete {
+.judged-card-meta-left {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     min-width: 0;
-    flex: 1;
 }
 
 .judged-card-number {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 26px;
-    height: 26px;
-    padding: 0 5px;
+    min-width: 28px;
+    height: 24px;
+    padding: 0 6px;
     border-radius: 6px;
     background: #0d2f50;
     color: #fff;
@@ -677,34 +755,89 @@
     flex-shrink: 0;
 }
 
-.judged-card-name {
-    margin: 0;
-    font-size: 13.5px;
-    font-weight: 800;
-    color: #0c203b;
-    line-height: 1.35;
-    word-break: break-word;
+.judged-card-meta-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
-.judged-card-contingent {
-    margin: 3px 0 0;
-    font-size: 11.5px;
-    color: #475569;
-    display: flex;
+.judged-status-badge {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-weight: 500;
+    justify-content: center;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    background: #008b51;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.judged-status-badge.is-draft {
+    background: #1d4ed8;
+}
+
+.judged-status-badge.is-ready {
+    background: #d97706;
+}
+
+.judged-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.judged-card-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #0c203b;
+    line-height: 1.4;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.judged-card-info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.judged-card-info-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12.5px;
+    color: #334155;
+    line-height: 1.35;
+    font-weight: 600;
+}
+
+.judged-card-info-item i {
+    font-size: 12px;
+    margin-top: 3px;
+    flex-shrink: 0;
 }
 
 .judged-card-scores {
     display: grid;
-    grid-template-columns: 1fr 1fr 1.25fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-top: 2px;
 }
 
 .judged-score-box {
-    background: #f1f5f9;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 8px;
     padding: 8px 6px;
     text-align: center;
@@ -716,7 +849,7 @@
 
 .judged-score-box-total {
     background: #e0f2fe;
-    border: 1px solid #bae6fd;
+    border-color: #bae6fd;
 }
 
 .judged-score-label {
@@ -733,19 +866,19 @@
 }
 
 .judged-score-val {
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 800;
     color: #0f172a;
-    margin-top: 3px;
+    margin-top: 4px;
     font-family: ui-monospace, monospace;
     line-height: 1;
 }
 
 .judged-score-val-total {
-    font-size: 20px;
+    font-size: 21px;
     font-weight: 900;
     color: #0c2f50;
-    margin-top: 2px;
+    margin-top: 3px;
     font-family: ui-monospace, monospace;
     line-height: 1;
 }
@@ -854,28 +987,28 @@
 
 @media (min-width: 1000px) {
     .referee-score-tables {
-        grid-template-columns: 1.1fr 1fr;
-        grid-template-rows: minmax(0, 1fr);
-        gap: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
     }
     .referee-board {
         padding: 10px 18px;
         gap: 9px;
     }
     .referee-score-row {
-        grid-template-columns: 26px minmax(0, 0.75fr) minmax(0, 1.45fr);
-        min-height: 52px;
-        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 16px;
     }
-    .referee-criterion strong { font-size: 12px; }
-    .referee-criterion span { font-size: 14px; }
-    .referee-section-heading { min-height: 34px; }
+    .referee-criterion-code { font-size: 12px; }
+    .referee-criterion-label { font-size: 15px; }
+    .referee-section-heading { min-height: 36px; }
     .referee-subtotal { min-height: 38px; }
-    .referee-score-choices { min-height: 48px; gap: 8px; }
-    .referee-score-choices button { font-size: 23px; min-height: 48px; }
-    .referee-score-choices button[aria-pressed="true"] { font-size: 25px; }
+    .referee-score-choices { min-height: 48px; gap: 8px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .referee-score-choices button { font-size: 21px; min-height: 48px; }
+    .referee-score-choices button[aria-pressed="true"] { font-size: 23px; }
     .referee-participant h2 { font-size: 18px; }
-    .referee-participant p { font-size: 13px; }
 }
 
 @media (max-width: 599px) {
@@ -883,61 +1016,42 @@
     .referee-back-btn { padding: 5px 10px; font-size: 12px; }
     .referee-badge-court { font-size: 10px; padding: 3px 7px; }
     .referee-badge-judge { font-size: 11px; padding: 3px 8px; }
-    .referee-board { padding: 6px; gap: 5px; }
+    .referee-board { padding: 6px; gap: 6px; }
     .referee-match { padding: 3px 8px; grid-template-columns: minmax(0, 1fr) 70px; }
     .referee-match h1 { font-size: 14px; }
     .referee-match-sequence { padding-left: 10px; }
     .referee-match-sequence strong { font-size: 20px; }
-    .referee-participant { padding: 4px 8px; gap: 7px; }
-    .referee-participant-icon { width: 25px; font-size: 24px; }
+    .referee-participant { padding: 6px 10px; gap: 6px; }
+    .referee-participant-icon { width: 25px; font-size: 22px; }
     .referee-participant h2 { font-size: 13px; }
     .referee-detail-button { padding: 0 7px; font-size: 11px; }
     .referee-score-row {
-        grid-template-columns: 18px minmax(0, 0.72fr) minmax(0, 1.55fr);
-        gap: 5px;
-        padding: 4px 6px 4px 2px;
-        min-height: 48px;
-        align-items: center;
-    }
-    .referee-criterion {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        justify-content: center;
-        gap: 2.5px;
-        min-width: 0;
-        line-height: 1.25;
+        gap: 6px;
+        padding: 8px 10px;
     }
-    .referee-criterion strong {
-        display: inline-block;
-        font-size: 11px;
-        font-weight: 800;
+    .referee-criterion-header {
+        gap: 6px;
+    }
+    .referee-criterion-code {
+        font-size: 10.5px;
         padding: 1.5px 5px;
-        border-radius: 4px;
-        background: #e2e8f0;
-        color: #0c203b;
-        letter-spacing: 0.4px;
-        line-height: 1.15;
     }
-    .referee-criterion span {
+    .referee-criterion-label {
         font-size: 13px;
-        font-weight: 700;
-        color: #0c203b;
-        white-space: normal;
-        word-break: normal;
-        overflow-wrap: break-word;
         line-height: 1.25;
-        overflow: visible;
     }
     .referee-score-choices {
-        gap: 5px;
-        min-height: 46px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 4px;
+        min-height: 44px;
     }
     .referee-score-choices button {
-        font-size: 21px;
+        font-size: 18px;
         font-weight: 800;
-        min-height: 46px;
-        border-radius: 7px;
+        min-height: 44px;
+        border-radius: 6px;
     }
     .referee-score-choices button[aria-pressed="true"],
     .referee-score-choices button[aria-pressed="true"]:hover,
@@ -946,14 +1060,14 @@
         background: var(--section-color) !important;
         color: #ffffff !important;
         border-color: var(--section-color) !important;
-        font-size: 23px;
+        font-size: 20px;
         font-weight: 900;
     }
-    .referee-section-heading { padding: 3px 7px; }
+    .referee-section-heading { padding: 3px 8px; }
     .referee-section-heading h2 { font-size: 12px; }
     .referee-section-heading h2 span { font-size: 10px; }
     .referee-scale { font-size: 9px; }
-    .referee-subtotal { font-size: 11px; padding: 3px 8px; }
+    .referee-subtotal { font-size: 11px; padding: 4px 10px; }
     .referee-subtotal > strong { font-size: 20px; }
     .referee-submit { font-size: 14px; gap: 7px; }
     .referee-actions button { gap: 7px; }
@@ -964,12 +1078,6 @@
 }
 
 @media (max-width: 999px) and (max-height: 759px) {
-    .referee-section-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .referee-section-switch button { border: 1px solid #d8dee7; border-radius: 5px; background: #f0f3f7; font-size: 11px; font-weight: 700; min-height: 32px; }
-    .referee-section-switch button[aria-pressed="true"] { color: #fff; border-color: #173c60; background: #173c60; }
-    .referee-section-switch span { margin-left: 6px; font-weight: 400; }
-    .referee-score-tables { grid-template-rows: minmax(0, 1fr); }
-    .referee-score-tables[data-visible-group="technique"] .referee-expression,
-    .referee-score-tables[data-visible-group="expression"] .referee-technique { display: none; }
-    .referee-final > strong { font-size: 30px; }
+    .referee-section-switch { display: none !important; }
+    .referee-final > strong { font-size: 26px; }
 }

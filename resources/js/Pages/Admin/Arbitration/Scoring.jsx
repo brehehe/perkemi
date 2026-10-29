@@ -4,7 +4,7 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-const scoreChoices = [7, 8, 9, 10];
+const scoreChoices = [0, 7, 8, 9, 10];
 
 const criteriaGroups = [
     {
@@ -136,7 +136,7 @@ function CriterionCard({ code, label, value, onSelect, disabled }) {
                 <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#a56f1c]">{code}</p>
                 <p className="mt-1 text-sm font-bold leading-5 text-[#17120f]">{label}</p>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-2" aria-label={`Pilih nilai untuk ${label}`}>
+            <div className="mt-3 grid grid-cols-5 gap-2" aria-label={`Pilih nilai untuk ${label}`}>
                 {scoreChoices.map((score) => {
                     const selected = value === score;
 

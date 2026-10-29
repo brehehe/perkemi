@@ -26,7 +26,7 @@ const groups = [
     },
 ];
 const criteria = groups.flatMap((group) => group.items);
-const choices = [7, 8, 9, 10];
+const choices = [0, 7, 8, 9, 10];
 
 function scoreStatus(score) {
     if (score.status === 'submitted') {
@@ -71,7 +71,6 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
     const [savedStatus, setSavedStatus] = useState(session.score?.status ?? 'draft');
     const [error, setError] = useState('');
     const [panel, setPanel] = useState(null);
-    const [visibleGroup, setVisibleGroup] = useState('technique');
     const revision = useRef(0);
     const requestInFlight = useRef(false);
     const completed = criteria.filter(([key]) => scores[key] != null).length;
@@ -93,7 +92,6 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
         if (requestInFlight.current) return;
         if (status === 'submitted' && completed !== criteria.length) {
             setError('Lengkapi seluruh 10 aspek penilaian terlebih dahulu.');
-            setVisibleGroup(groups.find((group) => group.items.some(([key]) => scores[key] == null)).id);
             return;
         }
         if (status === 'submitted' && !signature) {
@@ -190,32 +188,52 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
             </section>
 
             <section className="referee-participant" aria-label="Informasi peserta">
-                <div className="referee-participant-icon"><i className="fa-solid fa-user" aria-hidden="true" /></div>
-                <div className="referee-participant-copy">
-                    <span className="referee-eyebrow">Kontingen · {participant.contingent_name || 'Belum tercatat'}</span>
-                    <h2 title={athleteNames}>{athleteNames}</h2>
-                    <p title={techniqueNames}><strong>Teknik:</strong> {techniqueNames}</p>
+                <div className="referee-participant-main">
+                    <div className="referee-participant-icon"><i className="fa-solid fa-user" aria-hidden="true" /></div>
+                    <div className="referee-participant-copy">
+                        <span className="referee-eyebrow">Kontingen · {participant.contingent_name || 'Belum tercatat'}</span>
+                        <h2 title={athleteNames}>{athleteNames}</h2>
+                    </div>
+                    <button type="button" className="referee-detail-button" onClick={() => setPanel('participant')} aria-label="Lihat detail peserta">Detail <i className="fa-solid fa-angle-right" aria-hidden="true" /></button>
                 </div>
-                <button type="button" className="referee-detail-button" onClick={() => setPanel('participant')} aria-label="Lihat semua atlet dan teknik">Detail <i className="fa-solid fa-angle-right" aria-hidden="true" /></button>
+                <div className="referee-participant-techniques">
+                    <div className="referee-techniques-heading">
+                        <i className="fa-solid fa-list-ol mr-1" aria-hidden="true" />
+                        <span>Daftar Teknik Embu {participant.techniques?.length ? `(${participant.techniques.length} teknik)` : ''}:</span>
+                    </div>
+                    {participant.techniques?.length ? (
+                        <div className="referee-technique-tags">
+                            {participant.techniques.map((technique, index) => (
+                                <div key={`${technique.id || index}-${index}`} className="referee-technique-tag">
+                                    <span className="referee-technique-order">{technique.order || index + 1}</span>
+                                    <span className="referee-technique-text">{technique.name}</span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="referee-technique-empty">
+                            <i className="fa-solid fa-circle-info mr-1" aria-hidden="true" />
+                            Teknik belum didaftarkan
+                        </p>
+                    )}
+                </div>
             </section>
 
-            <div className="referee-section-switch" aria-label="Bagian penilaian">
-                {groups.map((group) => (
-                    <button key={group.id} type="button" aria-pressed={visibleGroup === group.id} onClick={() => setVisibleGroup(group.id)}>
-                        {group.title} <span>{group.items.filter(([key]) => scores[key] != null).length}/{group.items.length}</span>
-                    </button>
-                ))}
-            </div>
-
-            <div className="referee-score-tables" data-visible-group={visibleGroup}>
+            <div className="referee-score-tables">
                 {groups.map((group, index) => (
                     <section key={group.id} className={`referee-score-section referee-${group.id}`} aria-labelledby={`${group.id}-heading`}>
-                        <div className="referee-section-heading"><h2 id={`${group.id}-heading`}>{index + 1}. {group.title} <span>(maks. {group.maximum})</span></h2><span className="referee-scale">Skala 7–10</span></div>
-                        <div className="referee-score-rows" style={{ '--row-count': group.items.length }}>
+                        <div className="referee-section-heading">
+                            <h2 id={`${group.id}-heading`}>{index + 1}. {group.title} <span>(maks. {group.maximum})</span></h2>
+                            <span className="referee-scale">Skala 0, 7–10</span>
+                        </div>
+                        <div className="referee-score-rows">
                             {group.items.map(([key, code, label], itemIndex) => (
-                                <div key={key} className="referee-score-row" role="group" aria-label={`${code} ${label}`}>
-                                    <span className="referee-row-number">{index === 0 ? itemIndex + 1 : itemIndex + 7}</span>
-                                    <span className="referee-criterion">{code && <strong>{code}</strong>}<span>{label}</span></span>
+                                <div key={key} className="referee-score-row" role="group" aria-label={`${code ? `${code} ` : ''}${label}`}>
+                                    <div className="referee-criterion-header">
+                                        <span className="referee-row-number">{index === 0 ? itemIndex + 1 : itemIndex + 7}</span>
+                                        {code && <strong className="referee-criterion-code">{code}</strong>}
+                                        <span className="referee-criterion-label">{label}</span>
+                                    </div>
                                     <div className="referee-score-choices">
                                         {choices.map((value) => (
                                             <button
@@ -347,24 +365,38 @@ function JudgedAthletesTable({ scores = [] }) {
                     <div className={`judged-athletes-mobile-list ${viewMode === 'table' ? 'hidden' : viewMode === 'card' ? 'flex' : 'flex sm:hidden'}`}>
                         {scores.map((item, index) => (
                             <article key={item.id || item.match_id || index} className="judged-athlete-card-item">
-                                <div className="judged-card-header">
-                                    <div className="judged-card-athlete">
+                                <div className="judged-card-topbar">
+                                    <div className="judged-card-meta-left">
                                         <span className="judged-card-number">#{index + 1}</span>
-                                        <div className="min-w-0 flex-1">
-                                            <h3 className="judged-card-name">{item.athlete_names}</h3>
-                                            <p className="judged-card-contingent">
-                                                <i className="fa-solid fa-flag mr-1 text-[#b92f24]" aria-hidden="true" />
-                                                <span>{item.contingent_name}</span>
-                                            </p>
-                                            {item.category_name && (
-                                                <p style={{ margin: '3px 0 0', fontSize: '11.5px', color: '#475569', fontWeight: '600' }}>
-                                                    <i className="fa-solid fa-trophy mr-1 text-[#d97706]" aria-hidden="true" />
-                                                    {item.category_name} {item.sequence ? `(Partai #${item.sequence})` : ''} · {item.court_name}
-                                                </p>
-                                            )}
-                                        </div>
+                                        {item.sequence && (
+                                            <span className="judged-card-meta-tag">
+                                                Partai #{item.sequence}
+                                            </span>
+                                        )}
+                                        {item.court_name && (
+                                            <span className="judged-card-meta-tag">
+                                                {item.court_name}
+                                            </span>
+                                        )}
                                     </div>
                                     <span className={`judged-status-badge ${scoreStatus(item).className}`}>{scoreStatus(item).label}</span>
+                                </div>
+
+                                <div className="judged-card-body">
+                                    <h3 className="judged-card-name">{item.athlete_names}</h3>
+                                    
+                                    <div className="judged-card-info-list">
+                                        <div className="judged-card-info-item">
+                                            <i className="fa-solid fa-flag text-rose-600" aria-hidden="true" />
+                                            <span>{item.contingent_name}</span>
+                                        </div>
+                                        {item.category_name && (
+                                            <div className="judged-card-info-item">
+                                                <i className="fa-solid fa-trophy text-amber-500" aria-hidden="true" />
+                                                <span>{item.category_name}</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="judged-card-scores">

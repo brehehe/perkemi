@@ -34,7 +34,7 @@ class StoreEmbuJudgeScoreRequest extends FormRequest
         return [
             'event_id' => ['required', 'uuid', 'exists:events,id'],
             'aspect_scores' => ['required', "array:{$aspectKeys}"],
-            'aspect_scores.*' => ['nullable', 'integer', Rule::in([7, 8, 9, 10])],
+            'aspect_scores.*' => ['nullable', 'integer', Rule::in([0, 7, 8, 9, 10])],
             'violation_penalties' => ['sometimes', "array:{$penaltyKeys}"],
             'violation_penalties.composition_count' => ['nullable', 'integer', Rule::in([0, 1])],
             'violation_penalties.rank_mismatch' => ['nullable', 'integer', 'min:0', 'max:6'],
@@ -58,7 +58,7 @@ class StoreEmbuJudgeScoreRequest extends FormRequest
 
                 $scores = $this->input('aspect_scores', []);
                 $isComplete = collect(EmbuRefereeScoreService::AspectKeys)
-                    ->every(fn (string $key): bool => isset($scores[$key]));
+                    ->every(fn (string $key): bool => array_key_exists($key, $scores) && $scores[$key] !== null && $scores[$key] !== '');
 
                 if (! $isComplete) {
                     $validator->errors()->add('aspect_scores', 'Lengkapi seluruh 10 aspek penilaian sebelum mengirim nilai.');
@@ -75,7 +75,7 @@ class StoreEmbuJudgeScoreRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'aspect_scores.*.in' => 'Nilai setiap aspek hanya boleh 7, 8, 9, atau 10.',
+            'aspect_scores.*.in' => 'Nilai setiap aspek hanya boleh 0, 7, 8, 9, atau 10.',
             'aspect_scores.*.integer' => 'Nilai setiap aspek harus berupa angka bulat.',
             'violation_penalties.array' => 'Pilihan pelanggaran Embu tidak valid.',
             'violation_penalties.*.integer' => 'Jumlah pelanggaran harus berupa angka bulat.',

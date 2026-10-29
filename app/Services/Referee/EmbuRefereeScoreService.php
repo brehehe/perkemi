@@ -78,7 +78,7 @@ class EmbuRefereeScoreService
             $lockedMatch->loadMissing('matchCategory:id,name,type');
             $normalizedScores = collect(self::AspectKeys)
                 ->mapWithKeys(fn (string $key): array => [
-                    $key => isset($aspectScores[$key]) ? (int) $aspectScores[$key] : null,
+                    $key => array_key_exists($key, $aspectScores) && $aspectScores[$key] !== null && $aspectScores[$key] !== '' ? (int) $aspectScores[$key] : null,
                 ])
                 ->all();
             $completedItems = collect($normalizedScores)->filter(fn (?int $value): bool => $value !== null)->count();

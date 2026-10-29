@@ -62,6 +62,7 @@ class PaniteraMatchWorkflowController extends Controller
             PaniteraMatchWorkflow::ActionFinish => 'Pertandingan selesai. Durasi resmi dan denda waktu Embu berhasil dihitung otomatis.',
             PaniteraMatchWorkflow::ActionResetTimer => 'Timer pertandingan berhasil diatur ulang.',
             PaniteraMatchWorkflow::ActionConfigureTimer => 'Mode dan durasi timer berhasil disimpan.',
+            PaniteraMatchWorkflow::ActionRestart => 'Pertandingan berhasil diatur ulang untuk dimulai kembali.',
             default => 'Alur pertandingan berhasil diperbarui.',
         };
     }

@@ -1085,6 +1085,71 @@ test('finishing an Embu match over three minutes marks its result as disqualifie
         ->and(data_get($match->fresh()->metadata, 'panitera.is_disqualified'))->toBeTrue();
 });
 
+test('a clerk can restart a finished match back to ready state', function () {
+    $this->travelTo(Carbon::parse('2026-11-07 09:03:01'));
+
+    $event = createPaniteraEvent('Event Ulang Pertandingan');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Ulang',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Beregu Putra Ulang', 'embu', 'embu_direct_final');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Ulang',
+        'status' => 'in_progress',
+        'call_status' => 'participants_called',
+        'timer_status' => 'stopped',
+        'timer_elapsed_seconds' => 125,
+        'metadata' => [
+            'panitera' => [
+                'finished_at' => now()->toIso8601String(),
+                'duration_seconds' => 125,
+                'time_penalty' => 5,
+            ],
+        ],
+    ]);
+    $embuScore = EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'tiebreak_round' => 0,
+        'judge_scores' => [80, 81, 82, 83, 84],
+        'time_penalty' => 5,
+        'middle_score' => 246,
+        'final_score' => 241,
+        'duration_seconds' => 125,
+        'status' => 'ready_for_verification',
+    ]);
+
+    $this->actingAs($user)
+        ->put("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+            'event_id' => $event->id,
+            'action' => 'restart',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success', 'Pertandingan berhasil diatur ulang untuk dimulai kembali.');
+
+    $freshMatch = $match->fresh();
+    expect($freshMatch->status)->toBe('ready')
+        ->and($freshMatch->timer_status)->toBe('stopped')
+        ->and($freshMatch->timer_elapsed_seconds)->toBe(0)
+        ->and(data_get($freshMatch->metadata, 'panitera.finished_at'))->toBeNull()
+        ->and(data_get($freshMatch->metadata, 'panitera.duration_seconds'))->toBeNull();
+
+    $freshScore = $embuScore->fresh();
+    expect($freshScore->duration_seconds)->toBeNull()
+        ->and((float) $freshScore->time_penalty)->toBe(0.0);
+});
+
 test('a clerk saves five submitted judge scores and sees the verified Embu result', function () {
     $this->travelTo(Carbon::parse('2026-11-07 09:03:00'));
 

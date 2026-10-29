@@ -339,6 +339,8 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
     const [saveResultConfirmationOpen, setSaveResultConfirmationOpen] = useState(false);
     const [reopenResultConfirmationOpen, setReopenResultConfirmationOpen] = useState(false);
+    const [resetTimerConfirmationOpen, setResetTimerConfirmationOpen] = useState(false);
+    const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false);
     const timerDirection = match.timer.direction || (match.category_type === 'randori' ? 'down' : 'up');
     const [timerDurationSeconds, setTimerDurationSeconds] = useState(match.timer.duration_seconds || 120);
     const processingActionRef = useRef(processingAction);
@@ -423,6 +425,8 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
             });
             liveTimer.acceptState({ ...JSON.parse(response.data), action });
             if (action === 'finish') setFinishConfirmationOpen(false);
+            if (action === 'reset_timer') setResetTimerConfirmationOpen(false);
+            if (action === 'restart') setRestartConfirmationOpen(false);
             callbacks.onSuccess?.();
         } catch (error) {
             let responseErrors = { timer: 'Perintah belum dapat dikonfirmasi. Memuat status resmi terbaru…' };
@@ -688,20 +692,41 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                             ) : (
                                 <Button iconLeft={<i className="fa-solid fa-play" aria-hidden="true" />} disabled={timerWorkflowDisabled || match.call_status !== 'participants_called'} loading={processingAction === 'start'} onClick={() => updateWorkflow('start')}>{timerExpired ? `Mulai Lagi · ${formatTimer(match.timer.duration_seconds)}` : match.timer.status === 'paused' ? 'Lanjutkan Waktu' : 'Mulai Pertandingan'}</Button>
                             )}
-                            <Button variant="outline" iconLeft={<i className="fa-solid fa-rotate-left" aria-hidden="true" />} disabled={timerWorkflowDisabled || elapsedSeconds === 0} loading={processingAction === 'reset_timer'} onClick={() => updateWorkflow('reset_timer')}>Reset Waktu</Button>
+                            <Button
+                                variant="outline"
+                                iconLeft={<i className="fa-solid fa-rotate-left" aria-hidden="true" />}
+                                disabled={timerWorkflowDisabled || elapsedSeconds === 0}
+                                loading={processingAction === 'reset_timer'}
+                                onClick={() => setResetTimerConfirmationOpen(true)}
+                            >
+                                Reset Waktu
+                            </Button>
                             {match.category_type === 'embu' && (
-                                <Button
-                                    variant="gold"
-                                    iconLeft={<i className="fa-solid fa-flag-checkered" aria-hidden="true" />}
-                                    disabled={timerWorkflowDisabled || elapsedSeconds < 1 || !['running', 'paused'].includes(match.timer.status)}
-                                    loading={processingAction === 'finish'}
-                                    onClick={() => {
-                                        bell.playClosingBell?.();
-                                        updateWorkflow('finish');
-                                    }}
-                                >
-                                    Selesai Pertandingan
-                                </Button>
+                                match.timer.is_finished ? (
+                                    <Button
+                                        variant="outline"
+                                        className="border-amber-500 text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400"
+                                        iconLeft={<i className="fa-solid fa-rotate-left" aria-hidden="true" />}
+                                        disabled={!canManage || match.status === 'completed' || processingAction !== null || match.result?.status === 'verified'}
+                                        loading={processingAction === 'restart'}
+                                        onClick={() => setRestartConfirmationOpen(true)}
+                                    >
+                                        Ulang Pertandingan
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="gold"
+                                        iconLeft={<i className="fa-solid fa-flag-checkered" aria-hidden="true" />}
+                                        disabled={timerWorkflowDisabled || elapsedSeconds < 1 || !['running', 'paused'].includes(match.timer.status)}
+                                        loading={processingAction === 'finish'}
+                                        onClick={() => {
+                                            bell.playClosingBell?.();
+                                            updateWorkflow('finish');
+                                        }}
+                                    >
+                                        Selesai Pertandingan
+                                    </Button>
+                                )
                             )}
                         </div>
                     </div>
@@ -823,7 +848,43 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     </section>
                 )}
 
-                {/* finishConfirmationOpen AlertConfirm removed as per user request (no popup when timer finishes) */}
+                <AlertConfirm
+                    isOpen={resetTimerConfirmationOpen}
+                    title="Reset Waktu Pertandingan?"
+                    message="Timer pertandingan akan dikembalikan ke 00:00 dan durasi waktu yang berjalan akan diatur ulang. Apakah Anda yakin ingin mereset waktu?"
+                    confirmText="Reset Waktu"
+                    cancelText="Batal"
+                    variant="warning"
+                    isLoading={processingAction === 'reset_timer'}
+                    error={workflowErrors.timer || ''}
+                    onCancel={() => setResetTimerConfirmationOpen(false)}
+                    onConfirm={() => {
+                        updateWorkflow('reset_timer', {}, {
+                            onSuccess: () => setResetTimerConfirmationOpen(false),
+                        });
+                    }}
+                />
+
+                <AlertConfirm
+                    isOpen={restartConfirmationOpen}
+                    title="Ulang Pertandingan Ini?"
+                    message="Durasi resmi, denda waktu, dan status selesai pertandingan akan diatur ulang ke kondisi awal agar partai ini dapat dijalankan kembali. Apakah Anda yakin ingin mengulang pertandingan?"
+                    confirmText="Ulang Pertandingan"
+                    cancelText="Batal"
+                    variant="warning"
+                    isLoading={processingAction === 'restart'}
+                    error={workflowErrors.match || workflowErrors.timer || ''}
+                    onCancel={() => setRestartConfirmationOpen(false)}
+                    onConfirm={() => {
+                        updateWorkflow('restart', {}, {
+                            onSuccess: () => {
+                                setRestartConfirmationOpen(false);
+                                refreshLiveData();
+                            },
+                        });
+                    }}
+                />
+
                 <AlertConfirm
                     isOpen={saveResultConfirmationOpen}
                     title="Simpan nilai Embu?"

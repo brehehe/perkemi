@@ -991,6 +991,42 @@ test('the Embu sheet rejects a score outside the four permitted choices', functi
     expect(EmbuJudgeScore::query()->count())->toBe(0);
 });
 
+test('a referee can submit aspect scores with a score of zero', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('score-zero');
+    $refereeUser = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $refereeUser);
+    $court = $courts->first();
+    $match = createActiveEmbuMatch($event, $court);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::RegionalOne->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+    $scores = refereeAspectScores(array_fill(0, 10, 8));
+    $scores['goho_attack'] = 0;
+
+    $this->actingAs($refereeUser)
+        ->put(route('admin.arbitrase.scoring.embu.update', $match, false), [
+            'event_id' => $event->id,
+            'aspect_scores' => $scores,
+            'signature' => refereeSignature(),
+            'status' => 'submitted',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('embu_judge_scores', [
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'status' => 'submitted',
+    ]);
+
+    $savedScore = EmbuJudgeScore::query()->whereBelongsTo($match)->firstOrFail();
+    expect($savedScore->aspect_scores['goho_attack'])->toBe(0);
+});
+
 test('a referee receives 404 when trying to score a match from another event', function () {
     [$authorizedEvent] = createRefereeWorkflowEvent();
     [$otherEvent, $otherCourts] = createRefereeWorkflowEvent('lain');

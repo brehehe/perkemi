@@ -31,6 +31,8 @@ class PaniteraMatchWorkflow
 
     public const ActionConfigureTimer = 'configure_timer';
 
+    public const ActionRestart = 'restart';
+
     /** @var list<string> */
     public const Actions = [
         self::ActionCallOfficials,
@@ -40,6 +42,7 @@ class PaniteraMatchWorkflow
         self::ActionFinish,
         self::ActionResetTimer,
         self::ActionConfigureTimer,
+        self::ActionRestart,
     ];
 
     /** @param array{expected_timer_version?: int|null, timer_direction?: string, timer_duration_seconds?: int} $options */
@@ -85,7 +88,7 @@ class PaniteraMatchWorkflow
             }
 
             if (data_get($lockedMatch->metadata, 'panitera.finished_at')
-                && ! in_array($action, [self::ActionCallOfficials, self::ActionCallParticipants], true)) {
+                && ! in_array($action, [self::ActionCallOfficials, self::ActionCallParticipants, self::ActionResetTimer, self::ActionRestart], true)) {
                 throw ValidationException::withMessages([
                     'match' => 'Pertandingan sudah diselesaikan dan sedang menunggu verifikasi hasil.',
                 ]);
@@ -153,6 +156,7 @@ class PaniteraMatchWorkflow
             self::ActionFinish => $this->finishAttributes($match),
             self::ActionResetTimer => $this->resetTimerAttributes($match),
             self::ActionConfigureTimer => $this->configureTimerAttributes($match),
+            self::ActionRestart => $this->restartAttributes($match),
             default => throw ValidationException::withMessages(['action' => 'Aksi alur Panitera tidak dikenal.']),
         };
 
@@ -187,6 +191,16 @@ class PaniteraMatchWorkflow
             'updated_at' => now()->toIso8601String(),
         ];
 
+        if (in_array($action, [self::ActionResetTimer, self::ActionRestart], true)) {
+            unset(
+                $metadata['panitera']['finished_at'],
+                $metadata['panitera']['duration_seconds'],
+                $metadata['panitera']['time_penalty'],
+                $metadata['panitera']['is_disqualified'],
+                $metadata['panitera']['disqualification_reason'],
+            );
+        }
+
         $match->update([
             ...$attributes,
             'timer_version' => max(0, (int) $match->timer_version) + 1,
@@ -195,6 +209,10 @@ class PaniteraMatchWorkflow
 
         if ($action === self::ActionFinish && $finishDuration !== null && $timePenalty !== null) {
             $this->updateExistingEmbuScore($match, $finishDuration);
+        }
+
+        if (in_array($action, [self::ActionResetTimer, self::ActionRestart], true)) {
+            $this->resetExistingEmbuScore($match);
         }
     }
 
@@ -328,6 +346,19 @@ class PaniteraMatchWorkflow
     }
 
     /** @return array<string, mixed> */
+    private function restartAttributes(TournamentMatch $match): array
+    {
+        return [
+            'status' => $match->call_status === 'waiting' ? 'pending' : 'ready',
+            'timer_status' => 'stopped',
+            'timer_started_at' => null,
+            'timer_started_at_ms' => null,
+            'timer_elapsed_seconds' => 0,
+            'timer_elapsed_ms' => 0,
+        ];
+    }
+
+    /** @return array<string, mixed> */
     private function configureTimerAttributes(TournamentMatch $match): array
     {
         if ($match->timer_status === 'running') {
@@ -376,6 +407,28 @@ class PaniteraMatchWorkflow
         $score->update([
             'duration_seconds' => $durationSeconds,
             ...$calculation,
+        ]);
+    }
+
+    private function resetExistingEmbuScore(TournamentMatch $match): void
+    {
+        $score = EmbuScore::query()
+            ->whereBelongsTo($match)
+            ->where('tiebreak_round', 0)
+            ->first();
+
+        if (! $score || $score->status === 'verified') {
+            return;
+        }
+
+        $score->update([
+            'duration_seconds' => null,
+            'time_penalty' => 0.0,
+            'is_disqualified' => false,
+            'disqualification_reason' => null,
+            'total_penalty' => (float) $score->violation_penalty,
+            'final_score' => max(0, (float) $score->middle_score - (float) $score->violation_penalty),
+            'status' => 'draft',
         ]);
     }
 

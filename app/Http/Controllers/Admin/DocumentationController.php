@@ -996,7 +996,7 @@ class DocumentationController extends Controller
                         'status' => 'ready',
                         'menu' => 'Portal Wasit · Formulir Penilaian Embu (10 Aspek Penilaian)',
                         'url' => '/wasit',
-                        'notes' => '10 komponen (K1-K6 Kihon & P1-P4 Performance) divalidasi ketat oleh StoreEmbuJudgeScoreRequest dengan nilai 7, 8, 9, 10 sesuai buku pedoman resmi PB Perkemi.',
+                        'notes' => '10 komponen (K1-K6 Kihon & P1-P4 Performance) divalidasi ketat oleh StoreEmbuJudgeScoreRequest dengan nilai 0, 7, 8, 9, 10 sesuai buku pedoman resmi PB Perkemi.',
                     ],
                     [
                         'no' => 5,
