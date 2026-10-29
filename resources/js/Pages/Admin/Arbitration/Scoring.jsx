@@ -472,7 +472,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
                                 ? (match.participant?.techniques?.find((t) => Number(t.order) === itemIndex + 1) || match.participant?.techniques?.[itemIndex])
                                 : null;
                             const hasCustomTechnique = Boolean(registeredTechnique?.name);
-                            const displayCode = hasCustomTechnique ? `TEKNIK ${itemIndex + 1}` : code;
+                            const displayCode = hasCustomTechnique ? '' : code;
                             const displayLabel = hasCustomTechnique ? registeredTechnique.name.toUpperCase() : label;
 
                             return (

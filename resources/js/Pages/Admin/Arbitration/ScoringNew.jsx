@@ -5,23 +5,23 @@ import '../../../../css/referee-scoring.css';
 
 const groups = [
     {
-        id: 'technique', title: 'Penguasaan Teknik', maximum: 60,
+        id: 'technique', title: 'PENGUASAAN TEKNIK', maximum: 60,
         items: [
-            ['goho_attack', 'GOHO', 'Serangan (Kougeki)'],
-            ['goho_defense', 'GOHO', 'Bertahan (Bougyo)'],
-            ['goho_counter', 'GOHO', 'Serangan balasan & 5 unsur serangan'],
-            ['juho_escape', 'JUHO', 'Shuha & Nukiwaza'],
-            ['juho_lock_throw', 'JUHO', 'Gyakuwaza & Nagewaza'],
-            ['juho_ground', 'JUHO', 'Katamewaza'],
+            ['goho_attack', 'GOHO', 'SERANGAN (KOUGEKI)'],
+            ['goho_defense', 'GOHO', 'BERTAHAN (BOUGYO)'],
+            ['goho_counter', 'GOHO', 'SERANGAN BALASAN & 5 UNSUR SERANGAN'],
+            ['juho_escape', 'JUHO', 'SHUHA & NUKIWAZA'],
+            ['juho_lock_throw', 'JUHO', 'GYAKUWAZA & NAGEWAZA'],
+            ['juho_ground', 'JUHO', 'KATAMEWAZA'],
         ],
     },
     {
-        id: 'expression', title: 'Ekspresi', maximum: 40,
+        id: 'expression', title: 'EKSPRESI', maximum: 40,
         items: [
-            ['expression_sequence', '', 'Rangkaian, irama, dan harmoni'],
-            ['expression_stance', '', 'Tai Gamae, kuda-kuda, dan keindahan'],
-            ['expression_spirit', '', 'Semangat dan disiplin'],
-            ['expression_breath_zanshin', '', 'Nafas, pandangan mata, dan Zanshin'],
+            ['expression_sequence', '', 'RANGKAIAN, IRAMA, DAN HARMONI'],
+            ['expression_stance', '', 'TAI GAMAЕ, KUDA-KUDA, DAN KEINDAHAN'],
+            ['expression_spirit', '', 'SEMANGAT DAN DISIPLIN'],
+            ['expression_breath_zanshin', '', 'NAFAS, PANDANGAN MATA, DAN ZANSHIN'],
         ],
     },
 ];
@@ -211,7 +211,7 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
                                     ? (participant.techniques?.find((t) => Number(t.order) === itemIndex + 1) || participant.techniques?.[itemIndex])
                                     : null;
                                 const hasCustomTechnique = Boolean(registeredTechnique?.name);
-                                const displayCode = hasCustomTechnique ? `TEKNIK ${itemIndex + 1}` : code;
+                                const displayCode = hasCustomTechnique ? '' : code;
                                 const displayLabel = hasCustomTechnique ? registeredTechnique.name.toUpperCase() : label;
 
                                 return (
@@ -224,7 +224,7 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
                                         <div className="referee-criterion-header">
                                             <span className="referee-row-number">{index === 0 ? itemIndex + 1 : itemIndex + 7}</span>
                                             {displayCode && (
-                                                <strong className={`referee-criterion-code ${hasCustomTechnique ? 'is-technique' : ''}`}>
+                                                <strong className="referee-criterion-code">
                                                     {displayCode}
                                                 </strong>
                                             )}
@@ -383,7 +383,7 @@ function JudgedAthletesTable({ scores = [] }) {
 
                                 <div className="judged-card-body">
                                     <h3 className="judged-card-name">{item.athlete_names}</h3>
-                                    
+
                                     <div className="judged-card-info-list">
                                         <div className="judged-card-info-item">
                                             <i className="fa-solid fa-flag text-rose-600" aria-hidden="true" />
