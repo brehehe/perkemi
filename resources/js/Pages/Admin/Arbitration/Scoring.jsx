@@ -466,16 +466,26 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
                         <p className="mt-1 text-xs text-[#7a746e]">{group.subtitle}</p>
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {group.items.map(([key, code, label]) => (
-                            <CriterionCard
-                                key={key}
-                                code={code}
-                                label={label}
-                                value={scores[key]}
-                                disabled={isSaving}
-                                onSelect={(value) => selectScore(key, value)}
-                            />
-                        ))}
+                        {group.items.map(([key, code, label], itemIndex) => {
+                            const isTechniqueGroup = group.id === 'technique';
+                            const registeredTechnique = isTechniqueGroup
+                                ? (match.participant?.techniques?.find((t) => Number(t.order) === itemIndex + 1) || match.participant?.techniques?.[itemIndex])
+                                : null;
+                            const hasCustomTechnique = Boolean(registeredTechnique?.name);
+                            const displayCode = hasCustomTechnique ? `TEKNIK ${itemIndex + 1}` : code;
+                            const displayLabel = hasCustomTechnique ? registeredTechnique.name.toUpperCase() : label;
+
+                            return (
+                                <CriterionCard
+                                    key={key}
+                                    code={displayCode}
+                                    label={displayLabel}
+                                    value={scores[key]}
+                                    disabled={isSaving}
+                                    onSelect={(value) => selectScore(key, value)}
+                                />
+                            );
+                        })}
                     </div>
                 </section>
             ))}

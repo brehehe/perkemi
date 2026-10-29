@@ -194,28 +194,6 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
                         <span className="referee-eyebrow">Kontingen · {participant.contingent_name || 'Belum tercatat'}</span>
                         <h2 title={athleteNames}>{athleteNames}</h2>
                     </div>
-                    <button type="button" className="referee-detail-button" onClick={() => setPanel('participant')} aria-label="Lihat detail peserta">Detail <i className="fa-solid fa-angle-right" aria-hidden="true" /></button>
-                </div>
-                <div className="referee-participant-techniques">
-                    <div className="referee-techniques-heading">
-                        <i className="fa-solid fa-list-ol mr-1" aria-hidden="true" />
-                        <span>Daftar Teknik Embu {participant.techniques?.length ? `(${participant.techniques.length} teknik)` : ''}:</span>
-                    </div>
-                    {participant.techniques?.length ? (
-                        <div className="referee-technique-tags">
-                            {participant.techniques.map((technique, index) => (
-                                <div key={`${technique.id || index}-${index}`} className="referee-technique-tag">
-                                    <span className="referee-technique-order">{technique.order || index + 1}</span>
-                                    <span className="referee-technique-text">{technique.name}</span>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="referee-technique-empty">
-                            <i className="fa-solid fa-circle-info mr-1" aria-hidden="true" />
-                            Teknik belum didaftarkan
-                        </p>
-                    )}
                 </div>
             </section>
 
@@ -227,32 +205,53 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
                             <span className="referee-scale">Skala 0, 7–10</span>
                         </div>
                         <div className="referee-score-rows">
-                            {group.items.map(([key, code, label], itemIndex) => (
-                                <div key={key} className="referee-score-row" role="group" aria-label={`${code ? `${code} ` : ''}${label}`}>
-                                    <div className="referee-criterion-header">
-                                        <span className="referee-row-number">{index === 0 ? itemIndex + 1 : itemIndex + 7}</span>
-                                        {code && <strong className="referee-criterion-code">{code}</strong>}
-                                        <span className="referee-criterion-label">{label}</span>
+                            {group.items.map(([key, code, label], itemIndex) => {
+                                const isTechniqueGroup = group.id === 'technique';
+                                const registeredTechnique = isTechniqueGroup
+                                    ? (participant.techniques?.find((t) => Number(t.order) === itemIndex + 1) || participant.techniques?.[itemIndex])
+                                    : null;
+                                const hasCustomTechnique = Boolean(registeredTechnique?.name);
+                                const displayCode = hasCustomTechnique ? `TEKNIK ${itemIndex + 1}` : code;
+                                const displayLabel = hasCustomTechnique ? registeredTechnique.name.toUpperCase() : label;
+
+                                return (
+                                    <div
+                                        key={key}
+                                        className="referee-score-row"
+                                        role="group"
+                                        aria-label={`${displayCode ? `${displayCode} ` : ''}${displayLabel}`}
+                                    >
+                                        <div className="referee-criterion-header">
+                                            <span className="referee-row-number">{index === 0 ? itemIndex + 1 : itemIndex + 7}</span>
+                                            {displayCode && (
+                                                <strong className={`referee-criterion-code ${hasCustomTechnique ? 'is-technique' : ''}`}>
+                                                    {displayCode}
+                                                </strong>
+                                            )}
+                                            <span className={`referee-criterion-label ${hasCustomTechnique ? 'is-technique' : ''}`}>
+                                                {displayLabel}
+                                            </span>
+                                        </div>
+                                        <div className="referee-score-choices">
+                                            {choices.map((value) => (
+                                                <button
+                                                    key={value}
+                                                    type="button"
+                                                    aria-pressed={scores[key] === value}
+                                                    aria-label={`${displayLabel}: ${value}`}
+                                                    onClick={(e) => {
+                                                        setScores((previous) => ({ ...previous, [key]: value }));
+                                                        changed();
+                                                        e.currentTarget.blur();
+                                                    }}
+                                                >
+                                                    {value}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="referee-score-choices">
-                                        {choices.map((value) => (
-                                            <button
-                                                key={value}
-                                                type="button"
-                                                aria-pressed={scores[key] === value}
-                                                aria-label={`${label}: ${value}`}
-                                                onClick={(e) => {
-                                                    setScores((previous) => ({ ...previous, [key]: value }));
-                                                    changed();
-                                                    e.currentTarget.blur();
-                                                }}
-                                            >
-                                                {value}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                         <div className="referee-subtotal"><span>Subtotal {group.title}</span><strong>{subtotal(group)} <span>/ {group.maximum}</span></strong></div>
                     </section>

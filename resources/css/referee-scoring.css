@@ -153,8 +153,7 @@
 
 .referee-participant {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
     padding: 8px 12px;
     background: #fff0f1;
     border-radius: 8px;
@@ -170,8 +169,8 @@
 
 .referee-participant-icon {
     color: var(--referee-red);
-    font-size: 28px;
-    width: 36px;
+    font-size: 26px;
+    width: 32px;
     text-align: center;
     flex-shrink: 0;
 }
@@ -182,12 +181,11 @@
 }
 
 .referee-participant h2 {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 800;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.35;
     color: #0f172a;
+    word-break: break-word;
 }
 
 .referee-participant-techniques {
@@ -372,11 +370,25 @@
     flex-shrink: 0;
 }
 
+.referee-criterion-code.is-technique {
+    background: #ffe4e6;
+    color: #be123c;
+    border: 1px solid #fecdd3;
+}
+
 .referee-criterion-label {
     font-size: 14px;
     font-weight: 700;
     color: #0f172a;
     line-height: 1.3;
+}
+
+.referee-criterion-label.is-technique {
+    font-size: 15px;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #091322;
 }
 
 /* 5-column number buttons: 0, 7, 8, 9, 10 */
@@ -1021,10 +1033,9 @@
     .referee-match h1 { font-size: 14px; }
     .referee-match-sequence { padding-left: 10px; }
     .referee-match-sequence strong { font-size: 20px; }
-    .referee-participant { padding: 6px 10px; gap: 6px; }
-    .referee-participant-icon { width: 25px; font-size: 22px; }
-    .referee-participant h2 { font-size: 13px; }
-    .referee-detail-button { padding: 0 7px; font-size: 11px; }
+    .referee-participant { padding: 6px 10px; }
+    .referee-participant-icon { width: 24px; font-size: 20px; }
+    .referee-participant h2 { font-size: 13.5px; }
     .referee-score-row {
         display: flex;
         flex-direction: column;
@@ -1038,9 +1049,17 @@
         font-size: 10.5px;
         padding: 1.5px 5px;
     }
+    .referee-criterion-code.is-technique {
+        font-size: 10.5px;
+    }
     .referee-criterion-label {
         font-size: 13px;
         line-height: 1.25;
+    }
+    .referee-criterion-label.is-technique {
+        font-size: 13.5px;
+        font-weight: 850;
+        letter-spacing: 0.25px;
     }
     .referee-score-choices {
         grid-template-columns: repeat(5, minmax(0, 1fr));
