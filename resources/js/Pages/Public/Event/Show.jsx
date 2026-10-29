@@ -2,7 +2,7 @@ import Button from '@/Components/UI/Elements/Button';
 import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import Select from '@/Components/UI/Forms/Select';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const eventStatuses = {
@@ -205,6 +205,7 @@ export default function EventShow({
     event,
     ageCategories = [],
     courts = [],
+    contingents = [],
     matchCategories = [],
     rundowns = [],
     paymentMethods = [],
@@ -223,7 +224,34 @@ export default function EventShow({
     const [randoriBracketFilter, setRandoriBracketFilter] = useState(() => initialPublicFilter('randori_bracket'));
     const [copiedAccount, setCopiedAccount] = useState(null);
     const [copyMessage, setCopyMessage] = useState('');
+    const [selectedQrCourt, setSelectedQrCourt] = useState(null);
+    const [copiedCourtUrl, setCopiedCourtUrl] = useState(null);
     const copyTimer = useRef(null);
+
+    const handleCopyCourtUrl = async (url, courtId) => {
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopiedCourtUrl(courtId);
+            setTimeout(() => setCopiedCourtUrl(null), 2500);
+        } catch {
+            // fallback
+        }
+    };
+
+    useEffect(() => {
+        const hasActive = courts.some((c) => c.active_match && c.active_match.status === 'in_progress');
+        if (!hasActive) return;
+
+        const interval = setInterval(() => {
+            router.reload({
+                only: ['courts', 'embuScores', 'championGroups'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }, 15000);
+
+        return () => clearInterval(interval);
+    }, [courts]);
     const status = eventStatuses[event.status] || { label: 'Dalam persiapan', tone: 'preparation' };
     const isAuthenticated = Boolean(auth?.user);
     const hasDashboard = canAccessDashboard;
@@ -349,6 +377,52 @@ export default function EventShow({
                 </div>
             </header>
 
+            {event.is_training_mode && (
+                <div role="alert" className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 text-amber-950 font-bold px-4 py-3 text-center text-xs sm:text-sm border-b border-amber-600/30 shadow-inner flex items-center justify-center gap-2.5">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-950/15 text-amber-950">
+                        <i className="fa-solid fa-flask" aria-hidden="true" />
+                    </span>
+                    <span>
+                        <strong>MODE GLADI BERSIH / SIMULASI:</strong> Seluruh jadwal, bagan, dan perolehan skor pada event ini adalah data simulasi uji coba dan bukan hasil resmi kejuaraan.
+                    </span>
+                </div>
+            )}
+
+            {courts.some((c) => Boolean(c.active_match)) && (
+                <aside aria-label="Ticker Pertandingan Tatami Terbuka" className="sticky top-0 z-30 bg-[#120f0d]/95 backdrop-blur-md border-b border-[#d4a843]/30 px-4 py-2.5 shadow-md">
+                    <div className="event-container flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2 shrink-0">
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                            </span>
+                            <span className="text-[11px] font-black uppercase tracking-wider text-red-500 flex items-center gap-1.5">
+                                <span>LIVE TATAMI</span>
+                            </span>
+                        </div>
+                        <div className="flex-1 overflow-x-auto no-scrollbar flex items-center gap-3 py-0.5">
+                            {courts.filter((c) => Boolean(c.active_match)).map((court) => (
+                                <a
+                                    key={`ticker-${court.id}`}
+                                    href={`#court-${court.id}`}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#d4a843]/60 px-3 py-1 text-xs text-white transition whitespace-nowrap shadow-xs"
+                                >
+                                    <span className="font-bold text-[#d4a843]">{court.name}:</span>
+                                    <span className="text-white/80 font-medium">Partai #{court.active_match.sequence} · {court.active_match.category}</span>
+                                    <span className="rounded bg-black/40 border border-white/10 px-2 py-0.5 font-mono font-bold text-amber-300">
+                                        {court.active_match.score_display}
+                                    </span>
+                                </a>
+                            ))}
+                        </div>
+                        <a href="#courts" className="shrink-0 text-xs text-[#d4a843] hover:underline hidden lg:inline-flex items-center gap-1.5 font-bold">
+                            <span>Layar Arena</span>
+                            <Icon name="fa-arrow-down" className="text-[10px]" />
+                        </a>
+                    </div>
+                </aside>
+            )}
+
             <main id="event-content">
                 <section className="event-hero" aria-labelledby="event-title">
                     <div className="event-container">
@@ -359,9 +433,19 @@ export default function EventShow({
                         </div>
                         <div className="grid items-center gap-10 py-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)] lg:gap-16 lg:pb-14 lg:pt-10">
                             <div className="min-w-0">
-                                <div className={`event-status event-status-${status.tone}`}>
-                                    <span aria-hidden="true" />{status.label}
-                                </div>
+                                {event.status === 'ongoing' ? (
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-red-500/40 bg-red-500/15 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-red-600 dark:text-red-400 shadow-sm animate-pulse mb-3">
+                                        <span className="relative flex h-2.5 w-2.5">
+                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                                        </span>
+                                        LIVE · Sedang Berlangsung
+                                    </div>
+                                ) : (
+                                    <div className={`event-status event-status-${status.tone}`}>
+                                        <span aria-hidden="true" />{status.label}
+                                    </div>
+                                )}
                                 <h1 id="event-title" className="event-title">{event.name}</h1>
                                 {event.description && <p className="event-intro">{event.description}</p>}
                                 <dl className="event-hero-details grid gap-5 sm:grid-cols-2">
@@ -370,8 +454,23 @@ export default function EventShow({
                                         <div><dt>Pelaksanaan</dt><dd>{event.dates_formatted}</dd></div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Icon name="fa-location-dot" className="event-detail-icon" />
-                                        <div><dt>Lokasi kejuaraan</dt><dd>{event.venue}{event.city && <span className="event-muted mt-1 block font-normal">{event.city}{event.province ? `, ${event.province}` : ''}</span>}</dd></div>
+                                        <Icon name="fa-location-dot" className="event-detail-icon text-red-500" />
+                                        <div>
+                                            <dt>Lokasi kejuaraan</dt>
+                                            <dd>
+                                                <a
+                                                    href={event.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue, event.city, event.province].filter(Boolean).join(', '))}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="hover:underline inline-flex items-center gap-1.5 font-medium text-inherit"
+                                                    title="Buka petunjuk arah di Google Maps"
+                                                >
+                                                    {event.venue}
+                                                    <Icon name="fa-arrow-up-right-from-square" className="text-[10px] opacity-70" />
+                                                </a>
+                                                {event.city && <span className="event-muted mt-1 block font-normal">{event.city}{event.province ? `, ${event.province}` : ''}</span>}
+                                            </dd>
+                                        </div>
                                     </div>
                                 </dl>
                                 <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -420,12 +519,13 @@ export default function EventShow({
                 <div className="event-section-nav">
                     <nav className="event-container flex gap-7 overflow-x-auto sm:gap-10" aria-label="Navigasi informasi event">
                         <a href="#categories">Kategori pertandingan <span>{matchCategories.length}</span></a>
+                        {contingents.length > 0 && <a href="#contingents">Kontingen <span>{contingents.length}</span></a>}
+                        {courts.length > 0 && <a href="#courts" className="text-red-500 font-bold"><Icon name="fa-tv" className="mr-1 text-xs" />LIVE Gelanggang <span>{courts.length}</span></a>}
                         <a href="#referees">Wasit <span>{referees.length}</span></a>
                         <a href="#schedule">Jadwal <span>{matchSchedule.length}</span></a>
                         <a href="#champions">Hasil Juara <span>{championGroups.length}</span></a>
                         <a href="#embu-scores">Skor Embu <span>{embuScores.length}</span></a>
                         <a href="#randori-bracket">Randori <span>{randoriBrackets.length}</span></a>
-                        <a href="#courts">Lokasi & gelanggang</a>
                         <a href="#payment">Biaya & kontak</a>
                     </nav>
                 </div>
@@ -610,22 +710,252 @@ export default function EventShow({
                             : <p className="event-empty">Bagan Randori belum dipublikasikan.</p>}
                     </section>
 
+                    {contingents.length > 0 && (
+                        <section id="contingents" className="event-section">
+                            <SectionHeading
+                                title="Kontingen terdaftar"
+                                description={`${contingents.length} kontingen dari berbagai daerah telah terdaftar untuk mengikuti kejuaraan.`}
+                            />
+                            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {contingents.map((contingent) => (
+                                    <div key={contingent.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-[#d4a843]/40">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <h3 className="font-bold text-base">{contingent.name}</h3>
+                                            <span className="shrink-0 rounded-full bg-[#d4a843]/15 px-2.5 py-0.5 text-xs font-semibold text-[#d4a843]">
+                                                {contingent.athletes_count} atlet
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-xs text-white/50">
+                                            {[contingent.city, contingent.province].filter(Boolean).join(', ') || 'Daerah belum disetel'}
+                                        </p>
+                                        {contingent.manager_name && (
+                                            <p className="mt-2 text-xs text-white/70">
+                                                <span className="text-white/40">Manajer:</span> {contingent.manager_name}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
                     <section id="courts" className="event-section">
-                        <SectionHeading title="Lokasi & gelanggang" description="Informasi tempat pelaksanaan pertandingan." />
+                        <SectionHeading
+                            title="Lokasi & layar monitor gelanggang"
+                            description="Pantau langsung skor, antrean partai, dan waktu pertandingan per gelanggang secara publik (tanpa login)."
+                        />
                         <div className="grid gap-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14">
                             <div className="event-venue">
                                 <Icon name="fa-location-dot" className="event-accent mb-5 text-xl" />
                                 <h3>{event.venue || 'Lokasi akan diumumkan'}</h3>
                                 <p className="event-muted mt-3 text-sm leading-6">{[event.city, event.province].filter(Boolean).join(', ')}</p>
+                                <div className="mt-5">
+                                    <a
+                                        href={event.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue, event.city, event.province].filter(Boolean).join(', '))}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="event-button event-button-secondary inline-flex items-center gap-2 text-xs"
+                                        title="Buka petunjuk arah di Google Maps"
+                                    >
+                                        <Icon name="fa-map-location-dot" className="text-red-500" />
+                                        Buka Google Maps
+                                    </a>
+                                </div>
                                 {event.dates_formatted && <p className="event-muted mt-6 border-t pt-5 text-sm" style={{ borderColor: 'var(--event-border)' }}>{event.dates_formatted}</p>}
                             </div>
-                            <div className="event-courts">
+                            <div className="event-courts grid gap-6">
                                 {courts.length > 0 ? courts.map((court) => (
-                                    <div key={court.id} className="event-court">
-                                        <h3>{court.name}</h3>
-                                        {court.location && <p className="event-accent mt-2 text-sm">{court.location}</p>}
-                                        {court.description && <p className="event-muted mt-3 text-sm leading-7">{court.description}</p>}
-                                    </div>
+                                    <article key={court.id} className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-5 shadow-lg backdrop-blur-sm transition-all hover:border-[#d4a843]/50">
+                                        {/* Card Top: Tatami Title & Status */}
+                                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#d4a843]/20 text-[#d4a843] border border-[#d4a843]/30">
+                                                    <Icon name="fa-tv" className="text-base" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-xl font-black text-white">{court.name}</h3>
+                                                    {court.location && <p className="text-xs text-[#d4a843] font-medium">{court.location}</p>}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                {court.active_match ? (
+                                                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider ${
+                                                        court.active_match.status === 'in_progress'
+                                                            ? 'border border-red-500/50 bg-red-500/20 text-red-400 animate-pulse'
+                                                            : 'border border-amber-500/50 bg-amber-500/20 text-amber-300'
+                                                    }`}>
+                                                        <span className={`h-2 w-2 rounded-full ${court.active_match.status === 'in_progress' ? 'bg-red-500' : 'bg-amber-400'}`} />
+                                                        {court.active_match.status_label}
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white/60">
+                                                        <span className="h-2 w-2 rounded-full bg-white/40" />
+                                                        Gelanggang Siaga
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Active Match Arena Display */}
+                                        {court.active_match ? (
+                                            <div className="mt-4 space-y-4">
+                                                {/* Match Header Bar */}
+                                                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/40 px-3.5 py-2 text-xs border border-white/10">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="rounded bg-[#d4a843] px-2 py-0.5 text-[11px] font-black text-slate-950">
+                                                            Partai #{court.active_match.sequence}
+                                                        </span>
+                                                        <span className="font-bold text-white">{court.active_match.category}</span>
+                                                    </div>
+                                                    <span className="text-white/60 font-medium">{court.active_match.round}</span>
+                                                </div>
+
+                                                {/* Split Battle Display for Randori or Score for Embu */}
+                                                {court.active_match.type === 'randori' || court.active_match.aka_score !== null ? (
+                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                        {/* AKA Side */}
+                                                        <div className="relative overflow-hidden rounded-xl border-2 border-red-500/40 bg-gradient-to-br from-red-950/40 via-red-900/20 to-black/30 p-4 shadow-inner">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <span className="rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                                                                    AKA (MERAH)
+                                                                </span>
+                                                                {Boolean(court.active_match.aka_waza_ari) && (
+                                                                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30">
+                                                                        Waza-ari: {court.active_match.aka_waza_ari}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="mt-2 text-sm font-bold text-white line-clamp-2 min-h-[2.5rem]">
+                                                                {court.active_match.aka_label || 'Sudut Merah'}
+                                                            </p>
+                                                            <div className="mt-2 flex items-baseline justify-end">
+                                                                <span className="text-4xl font-black tabular-nums text-red-400">
+                                                                    {court.active_match.aka_score ?? 0}
+                                                                </span>
+                                                                <span className="ml-1 text-[11px] font-semibold text-red-300/70">poin</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* SHIRO Side */}
+                                                        <div className="relative overflow-hidden rounded-xl border-2 border-sky-500/40 bg-gradient-to-br from-sky-950/40 via-sky-900/20 to-black/30 p-4 shadow-inner">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <span className="rounded-md bg-sky-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                                                                    SHIRO (PUTIH)
+                                                                </span>
+                                                                {Boolean(court.active_match.shiro_waza_ari) && (
+                                                                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30">
+                                                                        Waza-ari: {court.active_match.shiro_waza_ari}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="mt-2 text-sm font-bold text-white line-clamp-2 min-h-[2.5rem]">
+                                                                {court.active_match.shiro_label || 'Sudut Putih'}
+                                                            </p>
+                                                            <div className="mt-2 flex items-baseline justify-end">
+                                                                <span className="text-4xl font-black tabular-nums text-sky-400">
+                                                                    {court.active_match.shiro_score ?? 0}
+                                                                </span>
+                                                                <span className="ml-1 text-[11px] font-semibold text-sky-300/70">poin</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    /* Embu Performance Display */
+                                                    <div className="rounded-xl border border-[#d4a843]/30 bg-gradient-to-r from-black/60 via-[#d4a843]/10 to-black/60 p-4">
+                                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                            <div>
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-[#d4a843]">Penampilan Embu</span>
+                                                                <p className="text-base font-bold text-white mt-0.5">{court.active_match.participant || 'Menunggu peserta'}</p>
+                                                            </div>
+                                                            <div className="text-left sm:text-right">
+                                                                <span className="text-[10px] font-medium text-white/60 block">Nilai Terbuka Arena</span>
+                                                                <span className="text-3xl font-black tabular-nums text-[#d4a843]">
+                                                                    {court.active_match.score_display}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            /* Standby Idle State */
+                                            <div className="my-6 rounded-xl border border-white/5 bg-black/20 p-6 text-center">
+                                                <Icon name="fa-hourglass-half" className="text-2xl text-white/30" />
+                                                <p className="mt-2 text-sm font-semibold text-white/70">Menunggu Partai Berikutnya</p>
+                                                <p className="mt-1 text-xs text-white/40">Pertandingan pada gelanggang ini akan segera dimulai sesuai jadwal pengundian.</p>
+                                            </div>
+                                        )}
+
+                                        {/* On-Deck / Next Match Queue */}
+                                        {court.next_match && (
+                                            <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs border border-white/5">
+                                                <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                                                    Partai Selanjutnya
+                                                </span>
+                                                <span className="font-bold text-[#d4a843]">#{court.next_match.sequence}</span>
+                                                <span className="truncate text-white/75">{court.next_match.participant}</span>
+                                                <span className="hidden sm:inline text-white/40 font-medium">({court.next_match.category} - {court.next_match.round})</span>
+                                            </div>
+                                        )}
+
+                                        {/* Actions Bar & QR Code Access */}
+                                        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-white/10 pt-4">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <a
+                                                    href={court.monitor_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="event-button event-button-primary inline-flex items-center gap-2 text-xs font-bold"
+                                                    title={`Buka monitor layar penuh ${court.name}`}
+                                                >
+                                                    <Icon name="fa-tv" /> Buka Layar Penuh
+                                                </a>
+                                                <Button
+                                                    type="button"
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    onClick={() => setSelectedQrCourt(court)}
+                                                    className="event-button event-button-secondary inline-flex items-center gap-2 text-xs font-semibold"
+                                                    title="Tampilkan QR code untuk scan dari HP tribun"
+                                                >
+                                                    <Icon name="fa-qrcode" className="text-sm" /> QR Code Penonton
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    onClick={() => handleCopyCourtUrl(court.monitor_full_url, court.id)}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition"
+                                                    title="Salin tautan monitor gelanggang"
+                                                >
+                                                    <Icon name={copiedCourtUrl === court.id ? 'fa-check text-emerald-400' : 'fa-copy'} />
+                                                    <span>{copiedCourtUrl === court.id ? 'Tersalin!' : 'Salin Link'}</span>
+                                                </Button>
+                                            </div>
+
+                                            {court.qr_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedQrCourt(court)}
+                                                    className="group flex items-center gap-2.5 rounded-xl bg-white p-1.5 pr-3 text-left shadow transition hover:ring-2 hover:ring-[#d4a843]"
+                                                    title="Klik untuk memperbesar QR Code"
+                                                >
+                                                    <img
+                                                        src={court.qr_url}
+                                                        alt={`QR Code ${court.name}`}
+                                                        width="48"
+                                                        height="48"
+                                                        className="h-12 w-12 rounded object-contain"
+                                                        loading="lazy"
+                                                    />
+                                                    <div className="text-[11px] leading-tight text-slate-800">
+                                                        <span className="font-bold block">Scan HP</span>
+                                                        <span className="text-[9px] text-slate-500">Buka di tribun</span>
+                                                    </div>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </article>
                                 )) : <p className="event-empty">Pembagian gelanggang akan diumumkan panitia.</p>}
                             </div>
                         </div>
@@ -681,12 +1011,119 @@ export default function EventShow({
                 </div>
             </main>
 
-            <footer className="event-footer">
-                <div className="event-container flex flex-col justify-between gap-6 py-9 sm:flex-row sm:items-center">
-                    <div><p className="event-brand-name">SMART PERKEMI</p><p className="event-muted mt-2 text-xs leading-6">&copy; {new Date().getFullYear()} Persaudaraan Shorinji Kempo Indonesia</p></div>
-                    <div className="flex items-center gap-6 text-sm"><Link href="/" className="event-text-link">Beranda</Link><a href="#event-top" className="event-text-link">Kembali ke atas <Icon name="fa-arrow-up" className="ml-2 text-xs" /></a></div>
+            <footer className="event-footer border-t border-white/10 mt-16 py-12">
+                <div className="event-container flex flex-col justify-between gap-7 md:flex-row md:items-center">
+                    <div>
+                        <p className="event-brand-name font-black tracking-wider">SMART PERKEMI</p>
+                        <p className="event-muted mt-2 text-xs leading-6">
+                            Pengurus Besar Persaudaraan Shorinji Kempo Indonesia<br />
+                            Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak: sekretariat@perkemi.org<br />
+                            &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta dilindungi.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-6 text-sm">
+                        <Link href="/" className="event-text-link">Beranda</Link>
+                        <Link href="/login" className="font-semibold text-[#d4a843] hover:underline inline-flex items-center gap-1.5">
+                            <Icon name="fa-user-shield" className="text-xs" />Login Panitera / Ofisial
+                        </Link>
+                        <Link href="/login" className="font-semibold hover:underline inline-flex items-center gap-1.5">
+                            <Icon name="fa-users" className="text-xs" />Login Koordinator
+                        </Link>
+                        <a href="#event-top" className="event-text-link inline-flex items-center gap-1">
+                            Kembali ke atas <Icon name="fa-arrow-up" className="text-xs" />
+                        </a>
+                    </div>
                 </div>
             </footer>
+
+            {selectedQrCourt && (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="qr-modal-title"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                    onClick={() => setSelectedQrCourt(null)}
+                >
+                    <div
+                        className="relative w-full max-w-sm rounded-3xl border border-white/20 bg-[#161d26] p-6 text-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#d4a843]">
+                                    <Icon name="fa-qrcode" className="text-sm" />
+                                </span>
+                                <div>
+                                    <h4 id="qr-modal-title" className="text-sm font-bold text-white">QR Monitor Arena</h4>
+                                    <p className="text-[11px] text-[#d4a843]">{selectedQrCourt.name}</p>
+                                </div>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="unstyled"
+                                size="none"
+                                onClick={() => setSelectedQrCourt(null)}
+                                className="h-8 w-8 rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white flex items-center justify-center transition"
+                                aria-label="Tutup modal QR"
+                            >
+                                <Icon name="fa-xmark" />
+                            </Button>
+                        </div>
+
+                        <div className="my-5 flex flex-col items-center">
+                            <div className="rounded-2xl bg-white p-4 shadow-xl">
+                                <img
+                                    src={selectedQrCourt.qr_url}
+                                    alt={`QR Code ${selectedQrCourt.name}`}
+                                    width="220"
+                                    height="220"
+                                    className="h-56 w-56 rounded-lg object-contain"
+                                />
+                            </div>
+                            <p className="mt-4 text-center text-xs leading-relaxed text-white/70">
+                                Arahkan kamera smartphone penonton di tribun atau ofisial di area pemanasan untuk membuka layar gelanggang ini langsung tanpa login.
+                            </p>
+                        </div>
+
+                        <div className="rounded-xl bg-black/40 p-2.5 border border-white/10">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="truncate text-[11px] text-white/60 select-all font-mono">
+                                    {selectedQrCourt.monitor_full_url}
+                                </span>
+                                <Button
+                                    type="button"
+                                    variant="unstyled"
+                                    size="none"
+                                    onClick={() => handleCopyCourtUrl(selectedQrCourt.monitor_full_url, selectedQrCourt.id)}
+                                    className="shrink-0 rounded bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-white/20 transition"
+                                >
+                                    {copiedCourtUrl === selectedQrCourt.id ? 'Tersalin!' : 'Salin'}
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 flex gap-2">
+                            <a
+                                href={selectedQrCourt.monitor_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="event-button event-button-primary flex-1 text-xs font-bold text-center"
+                            >
+                                <Icon name="fa-arrow-up-right-from-square" /> Buka Layar Penuh
+                            </a>
+                            <Button
+                                type="button"
+                                variant="unstyled"
+                                size="none"
+                                onClick={() => setSelectedQrCourt(null)}
+                                className="event-button event-button-secondary text-xs"
+                            >
+                                Tutup
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

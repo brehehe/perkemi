@@ -8,6 +8,7 @@ use App\Models\EventMatchCategory;
 use App\Models\PaymentMethod;
 use App\Models\Registration;
 use App\Models\Rundown;
+use App\Models\TournamentResult;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -331,6 +332,7 @@ test('admin can create, update, and delete match categories with age relation an
         'max_weight' => 50.0,
         'order' => 1,
         'is_active' => true,
+        'is_exhibition' => true,
     ])->assertRedirect();
 
     $this->assertDatabaseHas('event_match_categories', [
@@ -341,9 +343,19 @@ test('admin can create, update, and delete match categories with age relation an
         'gender' => 'male',
         'capacity' => 32,
         'max_athletes_per_team' => 4,
+        'is_exhibition' => true,
     ]);
 
     $matchCat = EventMatchCategory::where('event_id', $event->id)->first();
+
+    // Toggle Exhibition
+    $this->actingAs($user)->patch("/admin/master/event/{$event->id}/match-category/{$matchCat->id}/toggle-exhibition")
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('event_match_categories', [
+        'id' => $matchCat->id,
+        'is_exhibition' => false,
+    ]);
 
     // Update Match Category
     $this->actingAs($user)->put("/admin/master/event/{$event->id}/match-category/{$matchCat->id}", [
@@ -357,6 +369,7 @@ test('admin can create, update, and delete match categories with age relation an
         'max_weight' => 55.0,
         'order' => 1,
         'is_active' => true,
+        'is_exhibition' => true,
     ])->assertRedirect();
 
     $this->assertDatabaseHas('event_match_categories', [
@@ -364,6 +377,7 @@ test('admin can create, update, and delete match categories with age relation an
         'name' => 'Randori Putra Remaja A -55kg',
         'max_weight' => 55.0,
         'max_athletes_per_team' => 2,
+        'is_exhibition' => true,
     ]);
 
     // Delete Match Category
@@ -495,4 +509,57 @@ test('admin can update general info, dates, and fees of event', function () {
     $event->refresh();
     expect((float) $event->fee_per_contingent)->toBe(750000.0);
     expect((float) $event->fee_per_athlete)->toBe(250000.0);
+});
+
+test('updating or toggling match category exhibition automatically syncs associated tournament results', function () {
+    $user = User::factory()->create();
+
+    $event = Event::create([
+        'name' => 'Kejurda Sync Test 2026',
+        'slug' => 'kejurda-sync-test-2026',
+        'venue' => 'GOR Pancasila',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    $matchCat = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa -60kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 16,
+        'is_exhibition' => false,
+    ]);
+
+    // Create an existing tournament result linked to this category
+    $result = TournamentResult::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $matchCat->id,
+        'participant_key' => 'athlete-1',
+        'contingent_name' => 'Kota Surabaya',
+        'rank' => 1,
+        'match_category' => $matchCat->name,
+        'is_exhibition' => false,
+    ]);
+
+    // 1. Toggle exhibition
+    $this->actingAs($user)->patch("/admin/master/event/{$event->id}/match-category/{$matchCat->id}/toggle-exhibition")
+        ->assertRedirect();
+
+    expect($result->refresh()->is_exhibition)->toBeTrue();
+
+    // 2. Update category name and is_exhibition
+    $this->actingAs($user)->put("/admin/master/event/{$event->id}/match-category/{$matchCat->id}", [
+        'name' => 'Randori Dewasa -65kg (Updated)',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 16,
+        'is_exhibition' => false,
+    ])->assertRedirect();
+
+    $result->refresh();
+    expect($result->is_exhibition)->toBeFalse();
+    expect($result->match_category)->toBe('Randori Dewasa -65kg (Updated)');
 });

@@ -248,22 +248,37 @@ class TournamentController extends Controller
             ->whereIn('status', ['published', 'in_progress', 'completed'])
             ->exists() ?? false;
 
+        $unscheduledMatchesList = $activeEvent?->tournamentMatches()
+            ->where('is_bye', false)
+            ->whereNull('scheduled_start_at')
+            ->with(['matchCategory:id,name,type'])
+            ->orderBy('match_sequence')
+            ->get()
+            ->map(fn (TournamentMatch $match): array => [
+                'id' => $match->id,
+                'category_id' => $match->event_match_category_id,
+                'category_name' => $match->matchCategory?->name,
+                'category_type' => $match->matchCategory?->type,
+                'round_label' => $match->round_label,
+                'sequence' => $match->match_sequence,
+                'participant' => $match->participant_label
+                    ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+            ])->values() ?? collect();
+
         return Inertia::render('Admin/Tournament/Schedule', [
             'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
             'events' => $this->accessibleEvents($request),
             'courts' => $courts,
             'sessions' => $sessions,
             'matches' => $matches,
+            'unscheduledMatches' => $unscheduledMatchesList,
             'settings' => $activeEvent ? [
                 'match_duration_minutes' => (int) $activeEvent->match_duration_minutes,
                 'minimum_rest_minutes' => (int) $activeEvent->minimum_rest_minutes,
             ] : null,
             'summary' => [
                 'scheduled_matches' => $matches->count(),
-                'unscheduled_matches' => $activeEvent?->tournamentMatches()
-                    ->where('is_bye', false)
-                    ->whereNull('scheduled_start_at')
-                    ->count() ?? 0,
+                'unscheduled_matches' => $unscheduledMatchesList->count(),
                 'categories' => $scheduledMatches->pluck('event_match_category_id')->unique()->count(),
                 'courts' => $courts->count(),
             ],
@@ -307,9 +322,33 @@ class TournamentController extends Controller
             ]);
         }
 
+        if ($request->filled('bracket_type')) {
+            $matchCategory->update(['preferred_bracket_type' => $request->input('bracket_type')]);
+        }
+
         $generator->generate($activeEvent, $matchCategory);
 
         return back()->with('success', "Drawing '{$matchCategory->name}' berhasil dibuat ulang.");
+    }
+
+    public function updateCategoryFormat(Request $request, EventMatchCategory $matchCategory, TournamentDrawingGenerator $generator): RedirectResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
+        abort_unless($matchCategory->event_id === $activeEvent->id && $matchCategory->is_active, 404);
+
+        $validated = $request->validate([
+            'bracket_type' => ['required', 'string', 'in:single_elimination,double_elimination,round_robin'],
+        ]);
+
+        $matchCategory->update(['preferred_bracket_type' => $validated['bracket_type']]);
+
+        $drawing = $matchCategory->tournamentDrawing;
+        if ($drawing && $drawing->status !== 'published') {
+            $generator->generate($activeEvent, $matchCategory);
+        }
+
+        return back()->with('success', "Format pertandingan '{$matchCategory->name}' berhasil diperbarui.");
     }
 
     public function publish(Request $request): RedirectResponse
@@ -379,6 +418,29 @@ class TournamentController extends Controller
         }
 
         return back()->with('success', 'Partai berhasil dipindahkan. Partai lainnya tidak berubah.');
+    }
+
+    public function unscheduleMatch(Request $request, TournamentMatch $tournamentMatch): RedirectResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
+        abort_unless($tournamentMatch->event_id === $activeEvent->id, 404);
+
+        $tournamentMatch->loadMissing('drawing');
+        if ($tournamentMatch->drawing?->status !== 'generated') {
+            throw ValidationException::withMessages([
+                'schedule' => 'Kembalikan publikasi ke tahap penyusunan sebelum melepaskan partai dari jadwal.',
+            ]);
+        }
+
+        $tournamentMatch->update([
+            'scheduled_start_at' => null,
+            'scheduled_end_at' => null,
+            'event_court_id' => null,
+            'rundown_id' => null,
+        ]);
+
+        return back()->with('success', "Partai #{$tournamentMatch->match_sequence} ({$tournamentMatch->round_label}) berhasil dilepas dari jadwal dan dikembalikan ke antrean.");
     }
 
     public function start(Request $request): RedirectResponse

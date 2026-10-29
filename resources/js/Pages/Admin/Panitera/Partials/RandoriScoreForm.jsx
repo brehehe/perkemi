@@ -39,6 +39,10 @@ const mergeDraftChanges = (current, incoming) => {
         if (current[key] || incoming[key]) merged[key] = { ...(current[key] || {}), ...(incoming[key] || {}) };
     });
 
+    if (Object.hasOwn(incoming, 'decision_override')) {
+        merged.decision_override = incoming.decision_override;
+    }
+
     return merged;
 };
 
@@ -64,6 +68,7 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     const clientIdRef = useRef(createSyncClientId());
     const persistedSignatures = normalizeSignatures(draft.signatures || existingScore?.signatures);
     const hasCompletePersistedSignatures = signatureLabels.every(([key]) => Boolean(persistedSignatures[key]));
+    const initialDecisionOverride = draft.decision_override || existingScore?.decision_override || match.metadata?.result?.decision_override || null;
     const form = useForm({
         event_id: activeEvent.id,
         aka: { ...emptyBreakdown(), ...(draft.aka || existingScore?.aka_breakdown || {}) },
@@ -71,6 +76,12 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         signatures: persistedSignatures,
         signature_names: normalizeSignatureNames(draft.signature_names || existingScore?.signature_names),
         notes: draft.notes ?? existingScore?.notes ?? '',
+        decision_override: initialDecisionOverride ? {
+            type: initialDecisionOverride.type || '',
+            affected_corner: initialDecisionOverride.affected_corner || '',
+            disqualification_scope: initialDecisionOverride.disqualification_scope || 'match',
+            reason: initialDecisionOverride.reason || '',
+        } : null,
         return_to_match: true,
         sync_client_id: clientIdRef.current,
     });
@@ -89,11 +100,59 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     const [syncStatus, setSyncStatus] = useState(typeof window !== 'undefined' && window.Echo ? 'ready' : 'offline');
     const akaTotal = calculateTotal(form.data.aka);
     const shiroTotal = calculateTotal(form.data.shiro);
+    const akaWazaAri = Number(form.data.aka?.waza_ari) || 0;
+    const shiroWazaAri = Number(form.data.shiro?.waza_ari) || 0;
+    const akaIppon = Number(form.data.aka?.ippon) || 0;
+    const shiroIppon = Number(form.data.shiro?.ippon) || 0;
+    const akaMujoken = Number(form.data.aka?.mujoken) || 0;
+    const shiroMujoken = Number(form.data.shiro?.mujoken) || 0;
+
+    const akaAutoIppon = akaWazaAri >= 2;
+    const shiroAutoIppon = shiroWazaAri >= 2;
+    const akaAbsoluteWin = akaMujoken >= 1 || akaIppon >= 1 || akaAutoIppon;
+    const shiroAbsoluteWin = shiroMujoken >= 1 || shiroIppon >= 1 || shiroAutoIppon;
+
+    const override = form.data.decision_override;
+    const hasOverride = Boolean(override && override.type && override.affected_corner);
+
+    let autoWinnerCorner = null;
+    let autoWinReason = '';
+    if (hasOverride) {
+        if (override.type === 'medical_stop') {
+            autoWinnerCorner = override.affected_corner === 'aka' ? 'shiro' : 'aka';
+            autoWinReason = `Doctor Stop / Kiken Gachi (${override.affected_corner === 'aka' ? 'AKA Cedera Medis' : 'SHIRO Cedera Medis'})`;
+        } else if (override.type === 'disqualification') {
+            autoWinnerCorner = override.affected_corner === 'aka' ? 'shiro' : 'aka';
+            const isGlobal = override.disqualification_scope === 'global';
+            autoWinReason = isGlobal
+                ? `Shikkaku Turnamen / Hansoku Gachi (${override.affected_corner === 'aka' ? 'AKA Diskualifikasi Global' : 'SHIRO Diskualifikasi Global'})`
+                : `Hansoku Make / Hansoku Gachi (${override.affected_corner === 'aka' ? 'AKA Diskualifikasi Partai' : 'SHIRO Diskualifikasi Partai'})`;
+        }
+    } else if (akaAbsoluteWin && !shiroAbsoluteWin) {
+        autoWinnerCorner = 'aka';
+        autoWinReason = akaMujoken >= 1
+            ? 'Mujoken Kachi'
+            : akaIppon >= 1
+                ? 'Ippon Kachi'
+                : 'Waza-ari Awasete Ippon (2x Waza-ari)';
+    } else if (shiroAbsoluteWin && !akaAbsoluteWin) {
+        autoWinnerCorner = 'shiro';
+        autoWinReason = shiroMujoken >= 1
+            ? 'Mujoken Kachi'
+            : shiroIppon >= 1
+                ? 'Ippon Kachi'
+                : 'Waza-ari Awasete Ippon (2x Waza-ari)';
+    }
+
     const signedCount = signatureLabels.filter(([key]) => Boolean(form.data.signatures[key])).length;
     const signaturesComplete = signedCount === signatureLabels.length;
-    const winnerLabel = akaTotal > shiroTotal
-        ? `AKA · ${match.aka_label}`
-        : `SHIRO · ${match.shiro_label}`;
+    const winnerLabel = autoWinnerCorner === 'aka'
+        ? `AKA · ${match.aka_label} (${autoWinReason})`
+        : autoWinnerCorner === 'shiro'
+            ? `SHIRO · ${match.shiro_label} (${autoWinReason})`
+            : akaTotal > shiroTotal
+                ? `AKA · ${match.aka_label}`
+                : `SHIRO · ${match.shiro_label}`;
     const confirmationError = form.errors.score
         || form.errors.result
         || form.errors.signatures
@@ -187,13 +246,14 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                 ...(changes.signatures ? { signatures: normalizeSignatures({ ...formDataRef.current.signatures, ...changes.signatures }) } : {}),
                 ...(changes.signature_names ? { signature_names: normalizeSignatureNames({ ...formDataRef.current.signature_names, ...changes.signature_names }) } : {}),
                 ...(Object.hasOwn(changes, 'notes') ? { notes: changes.notes || '' } : {}),
+                ...(Object.hasOwn(changes, 'decision_override') ? { decision_override: changes.decision_override } : {}),
             };
 
             formDataRef.current = nextData;
             formSetDataRef.current(nextData);
             setSyncStatus('remote');
 
-            if (changes.aka || changes.shiro || Object.hasOwn(changes, 'notes')) {
+            if (changes.aka || changes.shiro || Object.hasOwn(changes, 'notes') || Object.hasOwn(changes, 'decision_override')) {
                 setRequiresResignature(Boolean(existingScore) || signatureLabels.some(([key]) => Boolean(nextData.signatures[key])));
             }
 
@@ -272,10 +332,49 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         setDataAndSync(nextData, { signature_names: { [key]: value } });
     };
 
+    const toggleOverride = (enable) => {
+        if (isLocked) return;
+        const nextOverride = enable ? {
+            type: 'medical_stop',
+            affected_corner: 'aka',
+            disqualification_scope: 'match',
+            reason: '',
+        } : null;
+
+        const nextData = {
+            ...formDataRef.current,
+            decision_override: nextOverride,
+            signatures: emptySignatures(),
+        };
+        setDataAndSync(nextData, { decision_override: nextOverride, signatures: emptySignatures() });
+        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+    };
+
+    const changeOverrideField = (field, value) => {
+        if (isLocked) return;
+        const currentOverride = formDataRef.current.decision_override || {
+            type: 'medical_stop',
+            affected_corner: 'aka',
+            disqualification_scope: 'match',
+            reason: '',
+        };
+        const nextOverride = {
+            ...currentOverride,
+            [field]: value,
+        };
+        const nextData = {
+            ...formDataRef.current,
+            decision_override: nextOverride,
+            signatures: emptySignatures(),
+        };
+        setDataAndSync(nextData, { decision_override: nextOverride, signatures: emptySignatures() });
+        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+    };
+
     const requestSaveConfirmation = (event) => {
         event.preventDefault();
 
-        if (isLocked || akaTotal === shiroTotal || !signaturesComplete || form.processing) return;
+        if (isLocked || (akaTotal === shiroTotal && !autoWinnerCorner) || !signaturesComplete || form.processing) return;
 
         setSaveConfirmationOpen(true);
     };
@@ -343,7 +442,143 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                     <ScoreFields corner="shiro" label={match.shiro_label} values={form.data.shiro} errors={form.errors} disabled={isLocked} onChange={(key, value) => changeScore('shiro', key, value)} />
                 </div>
 
-                {akaTotal === shiroTotal && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Skor masih sama. Tambahkan Yusei Kachi atau Mujoken Kachi kepada pemenang sebelum menyimpan.</div>}
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 className="flex items-center gap-2 text-sm font-black text-rose-950">
+                                <i className="fa-solid fa-triangle-exclamation text-rose-600" aria-hidden="true" />
+                                Keputusan Khusus Wasit & Tim Medis (Stop Medis / Diskualifikasi)
+                            </h3>
+                            <p className="mt-0.5 text-xs text-rose-800/80">
+                                Gunakan saat terjadi cedera fisik yang diputuskan dokter pertandingan (Doctor Stop) atau pelanggaran wasit (Hansoku Make / Shikkaku).
+                            </p>
+                        </div>
+                        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-bold text-rose-900 shadow-xs hover:bg-rose-50">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(form.data.decision_override)}
+                                disabled={isLocked}
+                                onChange={(e) => toggleOverride(e.target.checked)}
+                                className="h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            <span>Aktifkan Keputusan Khusus</span>
+                        </label>
+                    </div>
+
+                    {form.data.decision_override && (
+                        <div className="mt-4 space-y-4 rounded-xl border border-rose-200 bg-white p-4 shadow-xs">
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div>
+                                    <label className="mb-1.5 block text-xs font-black text-slate-800">
+                                        Jenis Keputusan
+                                    </label>
+                                    <select
+                                        value={form.data.decision_override.type}
+                                        disabled={isLocked}
+                                        onChange={(e) => changeOverrideField('type', e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                                    >
+                                        <option value="medical_stop">Stop Medis (Doctor Stop / Kiken Gachi)</option>
+                                        <option value="disqualification">Diskualifikasi Wasit (Hansoku Make / Shikkaku)</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="mb-1.5 block text-xs font-black text-slate-800">
+                                        Sudut yang Mengalami Cedera / Melanggar
+                                    </label>
+                                    <select
+                                        value={form.data.decision_override.affected_corner}
+                                        disabled={isLocked}
+                                        onChange={(e) => changeOverrideField('affected_corner', e.target.value)}
+                                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                                    >
+                                        <option value="aka">AKA (Merah) · {match.aka_label}</option>
+                                        <option value="shiro">SHIRO (Putih) · {match.shiro_label}</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {form.data.decision_override.type === 'disqualification' && (
+                                <div>
+                                    <label className="mb-1.5 block text-xs font-black text-slate-800">
+                                        Cakupan Sanksi Diskualifikasi
+                                    </label>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <label className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-xs ${form.data.decision_override.disqualification_scope === 'match' ? 'border-rose-500 bg-rose-50 text-rose-950 font-bold' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                                            <input
+                                                type="radio"
+                                                name="disqualification_scope"
+                                                value="match"
+                                                checked={form.data.decision_override.disqualification_scope === 'match'}
+                                                disabled={isLocked}
+                                                onChange={(e) => changeOverrideField('disqualification_scope', e.target.value)}
+                                                className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                                            />
+                                            <div>
+                                                <span className="block font-black">Hansoku Make (Partai Ini Saja)</span>
+                                                <span className="text-[11px] font-normal text-slate-600">Diskualifikasi hanya berlaku untuk partai randori saat ini.</span>
+                                            </div>
+                                        </label>
+                                        <label className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-xs ${form.data.decision_override.disqualification_scope === 'global' ? 'border-rose-500 bg-rose-50 text-rose-950 font-bold' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                                            <input
+                                                type="radio"
+                                                name="disqualification_scope"
+                                                value="global"
+                                                checked={form.data.decision_override.disqualification_scope === 'global'}
+                                                disabled={isLocked}
+                                                onChange={(e) => changeOverrideField('disqualification_scope', e.target.value)}
+                                                className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                                            />
+                                            <div>
+                                                <span className="block font-black text-rose-700">Shikkaku (Global Turnamen)</span>
+                                                <span className="text-[11px] font-normal text-slate-600">Pelanggaran berat disiplin. Atlet otomatis diblokir di seluruh nomor pertandingan turnamen ini.</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <Input
+                                    label="Alasan Medis / Catatan Pelanggaran Wasit"
+                                    value={form.data.decision_override.reason || ''}
+                                    disabled={isLocked}
+                                    placeholder={form.data.decision_override.type === 'medical_stop' ? 'Misal: Cedera dislokasi bahu kanan / rekomendasi dokter pertandingan tidak layak tanding' : 'Misal: Serangan terlarang berulang / tindakan tidak sportif kepada wasit'}
+                                    onChange={(e) => changeOverrideField('reason', e.target.value)}
+                                    error={form.errors['decision_override.reason']}
+                                />
+                            </div>
+
+                            <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs leading-5 text-rose-900">
+                                <i className="fa-solid fa-circle-info mr-1.5 text-rose-600" aria-hidden="true" />
+                                {form.data.decision_override.type === 'medical_stop' ? (
+                                    <>
+                                        <strong>Doctor Stop / Kiken Gachi:</strong> Sudut lawan otomatis memenangkan partai. Atlet sudut {form.data.decision_override.affected_corner === 'aka' ? 'AKA' : 'SHIRO'} akan ditandai dengan status kompetisi <span className="font-mono font-bold text-rose-700">[stopped]</span> dan dicegah melaju ke babak berikutnya / lower bracket.
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>Hansoku Gachi:</strong> Sudut lawan otomatis memenangkan partai. Atlet sudut {form.data.decision_override.affected_corner === 'aka' ? 'AKA' : 'SHIRO'} didiskualifikasi {form.data.decision_override.disqualification_scope === 'global' ? 'dari seluruh nomor turnamen (Shikkaku)' : 'dari partai ini (Hansoku Make)'}.
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {autoWinnerCorner && (
+                    <div role="status" className="flex items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs font-bold text-emerald-900 shadow-xs">
+                        <i className="fa-solid fa-trophy text-amber-500 text-base" aria-hidden="true" />
+                        <div>
+                            <p className="text-[10px] uppercase tracking-wide text-emerald-700">Kemenangan Mutlak Terdeteksi</p>
+                            <p className="mt-0.5 text-sm font-black text-emerald-950">
+                                {autoWinReason}: Sudut {autoWinnerCorner === 'aka' ? 'AKA (Merah)' : 'SHIRO (Putih)'} otomatis dinyatakan sebagai pemenang!
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {akaTotal === shiroTotal && !autoWinnerCorner && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Skor masih sama. Tambahkan Yusei Kachi atau Mujoken Kachi kepada pemenang sebelum menyimpan.</div>}
                 {form.errors.score && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{form.errors.score}</div>}
 
                 <fieldset className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5">
@@ -402,7 +637,7 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                         </div>
                     ) : (
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                            <Button type="submit" variant={existingScore ? 'outline' : 'primary'} className="w-full sm:w-auto" loading={form.processing} disabled={lockForm.processing || akaTotal === shiroTotal || !signaturesComplete} iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}>{existingScore ? 'Simpan Perubahan Nilai' : 'Simpan Hasil Nilai'}</Button>
+                            <Button type="submit" variant={existingScore ? 'outline' : 'primary'} className="w-full sm:w-auto" loading={form.processing} disabled={lockForm.processing || (akaTotal === shiroTotal && !autoWinnerCorner) || !signaturesComplete} iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}>{existingScore ? 'Simpan Perubahan Nilai' : 'Simpan Hasil Nilai'}</Button>
                             {existingScore && (
                                 <Button type="button" className="w-full sm:w-auto" disabled={form.isDirty || form.processing || !signaturesComplete} loading={lockForm.processing} iconLeft={<i className="fa-solid fa-lock" aria-hidden="true" />} onClick={() => setLockConfirmationOpen(true)}>Kunci Nilai Permanen</Button>
                             )}

@@ -395,3 +395,141 @@ test('admin can update event slug', function () {
         'slug' => 'kejurda-slug-baru-2026',
     ]);
 });
+
+test('guest can access public court monitor without login', function () {
+    $event = Event::create([
+        'name' => 'Kejurda Shorinji Kempo Jatim 2026',
+        'slug' => 'kejurda-shorinji-kempo-jatim-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'status' => EventStatus::Ongoing,
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1 - Tatami A',
+        'location' => 'Lantai 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $this->get("/event/{$event->slug}/court/{$court->id}/monitor")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/CourtMonitor')
+            ->where('activeEvent.name', $event->name)
+            ->where('court.name', 'Court 1 - Tatami A')
+            ->has('monitor')
+        );
+
+    $this->getJson("/event/{$event->slug}/court/{$court->id}/monitor/state")
+        ->assertOk()
+        ->assertJsonStructure(['server_now', 'court_status', 'progress']);
+
+    $this->getJson("/event/{$event->slug}/court/{$court->id}/monitor/timer")
+        ->assertOk();
+});
+
+test('public event page provides live tatami court active score, on deck next match, and qr code monitor url for spectators', function () {
+    $event = Event::create([
+        'name' => 'Kejurda Shorinji Kempo Live Arena 2026',
+        'slug' => 'kejurda-live-arena-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'status' => EventStatus::Ongoing,
+        'is_active' => true,
+    ]);
+
+    $ageCat = EventAgeCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Dewasa',
+        'min_age' => 18,
+        'fee' => 200000,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Tatami 1 - Utama',
+        'location' => 'Arena Tengah',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $cat = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'age_category_id' => $ageCat->id,
+        'name' => 'Randori Putra Dewasa 65kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $drawing = TournamentDrawing::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat->id,
+        'bracket_type' => 'single_elimination',
+        'status' => 'completed',
+    ]);
+
+    $match1 = TournamentMatch::create([
+        'event_id' => $event->id,
+        'tournament_drawing_id' => $drawing->id,
+        'event_match_category_id' => $cat->id,
+        'event_court_id' => $court->id,
+        'phase' => 'elimination',
+        'match_sequence' => 1,
+        'round_label' => 'Babak 1',
+        'red_label' => 'Budi (Kota Surabaya)',
+        'blue_label' => 'Andi (Kota Malang)',
+        'status' => 'in_progress',
+        'is_bye' => false,
+    ]);
+
+    RandoriScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match1->id,
+        'aka_total' => 5,
+        'shiro_total' => 2,
+        'winner_corner' => 'aka',
+        'aka_breakdown' => ['waza_ari' => 1, 'ippon' => 0],
+        'shiro_breakdown' => ['waza_ari' => 0, 'ippon' => 0],
+    ]);
+
+    TournamentMatch::create([
+        'event_id' => $event->id,
+        'tournament_drawing_id' => $drawing->id,
+        'event_match_category_id' => $cat->id,
+        'event_court_id' => $court->id,
+        'phase' => 'elimination',
+        'match_sequence' => 2,
+        'round_label' => 'Babak 1',
+        'red_label' => 'Citra (Kab Sidoarjo)',
+        'blue_label' => 'Dewi (Kab Gresik)',
+        'status' => 'ready',
+        'is_bye' => false,
+    ]);
+
+    $this->get('/event/kejurda-live-arena-2026')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Public/Event/Show')
+            ->has('courts', 1)
+            ->where('courts.0.name', 'Tatami 1 - Utama')
+            ->where('courts.0.active_match.status', 'in_progress')
+            ->where('courts.0.active_match.aka_score', 5)
+            ->where('courts.0.active_match.shiro_score', 2)
+            ->where('courts.0.active_match.aka_waza_ari', 1)
+            ->where('courts.0.active_match.score_display', '5 - 2')
+            ->where('courts.0.next_match.sequence', 2)
+            ->where('courts.0.next_match.round', 'Babak 1')
+            ->where('courts.0.qr_url', fn ($url) => str_contains($url, 'quickchart.io'))
+        );
+});

@@ -50,7 +50,8 @@ class ResolveEventTenant
                 || $isResponsibleUser
                 || $eventAccessRole !== null
                 || $hasOperationalAssignment
-                || $isContingentOwner);
+                || $isContingentOwner
+                || ($user->hasRole('Panitera') && $tenantEvent->is_active));
 
         abort_unless($hasTenantAccess, 403);
 
@@ -149,6 +150,11 @@ class ResolveEventTenant
         $user = $request->user();
         if ($user && ! $user->hasAnyRole(['Super Admin', 'Admin']) && $this->dashboardEventAccess->requiresEventScope($user)) {
             $assignedEvent = $this->dashboardEventAccess->eventsFor($user)->first();
+
+            if (! $assignedEvent && $user->hasRole('Panitera')) {
+                $assignedEvent = Event::query()->where('is_active', true)->first()
+                    ?? Event::query()->orderByDesc('start_date')->first();
+            }
 
             if ($assignedEvent) {
                 if ($request->hasSession()) {

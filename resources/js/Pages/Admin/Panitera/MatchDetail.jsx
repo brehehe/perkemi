@@ -11,6 +11,7 @@ import useLiveTimer from './Partials/useLiveTimer';
 import useTimerBell from './Partials/useTimerBell';
 import TimerBellControls from './Partials/TimerBellControls';
 import useAnnouncer from './Partials/useAnnouncer';
+import VarReviewModal from './Partials/VarReviewModal';
 import { displayedTimerSeconds } from './Partials/timerSynchronization';
 import { http } from '@inertiajs/core';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -334,6 +335,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
         };
     }, [initialMatch, liveTimer.state]);
     const [processingAction, setProcessingAction] = useState(null);
+    const [varModalOpen, setVarModalOpen] = useState(false);
     const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
     const [saveResultConfirmationOpen, setSaveResultConfirmationOpen] = useState(false);
     const [reopenResultConfirmationOpen, setReopenResultConfirmationOpen] = useState(false);
@@ -386,9 +388,13 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
             channel.listen('.embu.judge-score.updated', refreshLiveData);
             channel.listen('.embu.penalties.updated', refreshLiveData);
         }
+        channel.listen('.var.updated', refreshLiveData);
         return () => {
-            channel.stopListening('.embu.judge-score.updated', refreshLiveData);
-            channel.stopListening('.embu.penalties.updated', refreshLiveData);
+            if (match.category_type === 'embu') {
+                channel.stopListening('.embu.judge-score.updated', refreshLiveData);
+                channel.stopListening('.embu.penalties.updated', refreshLiveData);
+            }
+            channel.stopListening('.var.updated', refreshLiveData);
         };
     }, [activeEvent.id, match.category_type, match.id, refreshLiveData]);
 
@@ -601,6 +607,70 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     )}
                 </section>
 
+                {/* Video Assistant Review (VAR) Section - Di-hide sementara sesuai permintaan */}
+                {false && (
+                    <section className={`rounded-2xl border p-4 shadow-sm sm:p-5 transition-all ${
+                        match.var_review?.active_review
+                            ? 'border-amber-400 bg-amber-50/80'
+                            : 'border-[#e5ded4] bg-white'
+                    }`} aria-labelledby="var-module-title">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-start gap-3">
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-base ${
+                                    match.var_review?.active_review
+                                        ? 'bg-amber-500 text-black animate-pulse'
+                                        : 'bg-[#f4efe8] text-[#8c5b17]'
+                                }`}>
+                                    <i className="fa-solid fa-video" aria-hidden="true" />
+                                </span>
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h2 id="var-module-title" className="text-sm font-bold text-[#17120f] sm:text-base">
+                                            Modul Video Assistant Review (VAR)
+                                        </h2>
+                                        {match.var_review?.active_review ? (
+                                            <Badge variant="yellow" className="animate-pulse">
+                                                <i className="fa-solid fa-circle text-[8px] mr-1" />
+                                                Sedang Diperiksa
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="gray">Siap Digunakan</Badge>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 text-xs text-[#7a746e]">
+                                        {match.var_review?.active_review
+                                            ? `Tantangan oleh ${match.var_review.active_review.requested_by_label}: "${match.var_review.active_review.reason}". Waktu pertandingan dijeda otomatis.`
+                                            : 'Tantangan video multi-kamera oleh ofisial sudut atau inisiatif Wasit. Memulai review otomatis menjeda waktu.'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5">
+                                {/* Card Badges */}
+                                <div className="flex items-center gap-2 rounded-xl border border-[#e5ded4] bg-[#fbfaf8] px-3 py-1.5 text-xs">
+                                    <span className="font-bold text-rose-700">Kartu AKA:</span>
+                                    <span className={`font-black ${match.var_review?.cards_remaining?.aka > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                        {match.var_review?.cards_remaining?.aka ?? 1}/1
+                                    </span>
+                                    <span className="mx-1 text-slate-300">|</span>
+                                    <span className="font-bold text-slate-700">SHIRO:</span>
+                                    <span className={`font-black ${match.var_review?.cards_remaining?.shiro > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                        {match.var_review?.cards_remaining?.shiro ?? 1}/1
+                                    </span>
+                                </div>
+
+                                <Button
+                                    variant={match.var_review?.active_review ? 'gold' : 'secondary'}
+                                    iconLeft={<i className="fa-solid fa-video" aria-hidden="true" />}
+                                    onClick={() => setVarModalOpen(true)}
+                                >
+                                    {match.var_review?.active_review ? 'Buka Putusan VAR' : 'Buka Panel VAR'}
+                                </Button>
+                            </div>
+                        </div>
+                    </section>
+                )}
+
                 <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby="match-timer-title">
                     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.8fr)] lg:items-center">
                         <div>
@@ -620,7 +690,18 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                             )}
                             <Button variant="outline" iconLeft={<i className="fa-solid fa-rotate-left" aria-hidden="true" />} disabled={timerWorkflowDisabled || elapsedSeconds === 0} loading={processingAction === 'reset_timer'} onClick={() => updateWorkflow('reset_timer')}>Reset Waktu</Button>
                             {match.category_type === 'embu' && (
-                                <Button variant="gold" iconLeft={<i className="fa-solid fa-flag-checkered" aria-hidden="true" />} disabled={timerWorkflowDisabled || elapsedSeconds < 1 || !['running', 'paused'].includes(match.timer.status)} loading={processingAction === 'finish'} onClick={() => setFinishConfirmationOpen(true)}>Selesai Pertandingan</Button>
+                                <Button
+                                    variant="gold"
+                                    iconLeft={<i className="fa-solid fa-flag-checkered" aria-hidden="true" />}
+                                    disabled={timerWorkflowDisabled || elapsedSeconds < 1 || !['running', 'paused'].includes(match.timer.status)}
+                                    loading={processingAction === 'finish'}
+                                    onClick={() => {
+                                        bell.playClosingBell?.();
+                                        updateWorkflow('finish');
+                                    }}
+                                >
+                                    Selesai Pertandingan
+                                </Button>
                             )}
                         </div>
                     </div>
@@ -645,7 +726,13 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     <div className="mt-5 grid gap-4 border-t border-[#eee8e0] pt-4 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
                         <div>
                             <p className="text-xs font-bold text-[#17120f]">{match.category_type === 'embu' ? 'Embu · Otomatis Maju' : 'Randori · Otomatis Mundur'}</p>
-                            <p className="mt-2 text-xs leading-5 text-[#7a746e]">{match.category_type === 'embu' ? 'Bel saat mulai, 01:30, dan 02:00. Waktu terus berjalan hingga Selesai Pertandingan.' : 'Bel saat mulai dan 00:00. Setelah waktu habis, tekan Mulai Lagi untuk mengulang durasi.'}</p>
+                            <p className="mt-2 text-xs leading-5 text-[#7a746e]">
+                                {match.category_type === 'embu'
+                                    ? (match.timer.is_tandoku
+                                        ? 'Bel saat mulai, 01:00, dan 01:30. Waktu terus berjalan hingga Selesai Pertandingan.'
+                                        : 'Bel saat mulai dan 01:30. Waktu terus berjalan hingga Selesai Pertandingan.')
+                                    : 'Bel saat mulai dan 00:00. Setelah waktu habis, tekan Mulai Lagi untuk mengulang durasi.'}
+                            </p>
                         </div>
                         <label htmlFor="timer-duration" className="block">
                             <span className="text-xs font-bold text-[#17120f]">Durasi acuan (detik)</span>
@@ -736,21 +823,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     </section>
                 )}
 
-                <AlertConfirm
-                    isOpen={finishConfirmationOpen}
-                    title="Selesaikan pertandingan Embu?"
-                    message={`Durasi ${formatTimer(elapsedSeconds)} akan dikunci sebagai waktu resmi. Sistem langsung menghitung denda Tandoku atau Pasangan/Beregu dan memperbarui nilai akhir dari lima Wasit.`}
-                    confirmText="Selesai & Hitung Denda"
-                    cancelText="Kembali"
-                    variant="warning"
-                    isLoading={processingAction === 'finish'}
-                    error={Object.values(workflowErrors).flat().join(' ') || errors.action || errors.match || ''}
-                    onCancel={() => setFinishConfirmationOpen(false)}
-                    onConfirm={() => {
-                        bell.playClosingBell?.();
-                        updateWorkflow('finish');
-                    }}
-                />
+                {/* finishConfirmationOpen AlertConfirm removed as per user request (no popup when timer finishes) */}
                 <AlertConfirm
                     isOpen={saveResultConfirmationOpen}
                     title="Simpan nilai Embu?"
@@ -774,6 +847,14 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     error={errors.result || ''}
                     onCancel={() => setReopenResultConfirmationOpen(false)}
                     onConfirm={reopenEmbuResult}
+                />
+
+                <VarReviewModal
+                    isOpen={varModalOpen}
+                    onClose={() => setVarModalOpen(false)}
+                    match={match}
+                    activeEvent={activeEvent}
+                    onReviewUpdated={refreshLiveData}
                 />
             </div>
         </AdminLayout>

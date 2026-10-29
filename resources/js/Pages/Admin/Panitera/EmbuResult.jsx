@@ -30,13 +30,19 @@ function JudgeScores({ score }) {
     );
 }
 
-function RankingTable({ rows, quota = null, onScore, canManage, canOverrideScore = false, final = false }) {
+function RankingTable({ rows, quota = null, onScore, canManage, canInputScore = false, canOverrideScore = false, final = false }) {
     return (
         <TableContainer ariaLabel={final ? 'Klasemen final Embu' : 'Klasemen penyisihan Embu'}>
             <table className="responsive-data-table responsive-data-table--cards min-w-full text-left text-xs">
                 <thead className="bg-[#f7f4ef] text-[10px] uppercase tracking-wide text-[#7a746e]">
                     <tr>
-                        <th className="px-4 py-3">Peringkat</th><th className="px-4 py-3">Peserta / Kontingen</th><th className="px-4 py-3">Court & Jadwal</th><th className="px-4 py-3">Nilai Wasit</th><th className="px-4 py-3">Denda</th><th className="px-4 py-3">{final ? 'Akumulasi' : 'Nilai Akhir'}</th><th className="px-4 py-3 text-right">Aksi</th>
+                        <th className="px-4 py-3">Peringkat</th>
+                        <th className="px-4 py-3">Peserta / Kontingen</th>
+                        <th className="px-4 py-3">Court & Jadwal</th>
+                        <th className="px-4 py-3">Nilai Wasit</th>
+                        <th className="px-4 py-3">Denda</th>
+                        <th className="px-4 py-3">{final ? 'Akumulasi' : 'Nilai Akhir'}</th>
+                        {canInputScore && <th className="px-4 py-3 text-right">Aksi</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ede9e1]">
@@ -44,7 +50,11 @@ function RankingTable({ rows, quota = null, onScore, canManage, canOverrideScore
                         const qualified = quota && quota !== 999 && index < quota;
                         return (
                             <tr key={row.match_id} className={qualified ? 'bg-emerald-50/40' : ''}>
-                                <td data-label="Peringkat" className="whitespace-nowrap px-4 py-3"><span className="text-base font-black">#{index + 1}</span>{qualified && <Badge variant="green" size="sm" className="ml-2">Tiket Final</Badge>}</td>
+                                <td data-label="Peringkat" className="whitespace-nowrap px-4 py-3">
+                                    <span className="text-base font-black">#{index + 1}</span>
+                                    {qualified && <Badge variant="green" size="sm" className="ml-2">Tiket Final</Badge>}
+                                    {row.manual_tiebreak_winner && <Badge variant="gold" size="sm" className="ml-2">Unggul Skenario E</Badge>}
+                                </td>
                                 <td data-label="Peserta / Kontingen" className="min-w-64 px-4 py-3"><p className="font-bold text-[#17120f]">{row.participant_label}</p><p className="mt-0.5 text-[#7a746e]">{row.metadata?.members?.join(', ') || row.metadata?.contingent_name || 'Data peserta'}</p></td>
                                 <td data-label="Court & Jadwal" className="min-w-40 px-4 py-3"><p className="font-semibold text-[#17120f]">{row.court || 'Belum diplot'}</p><p className="mt-0.5 text-[#7a746e]">{row.scheduled_at || 'Belum dijadwalkan'}</p></td>
                                 <td data-label="Nilai Wasit" className="min-w-80 px-4 py-3"><JudgeScores score={row.score} /></td>
@@ -54,32 +64,43 @@ function RankingTable({ rows, quota = null, onScore, canManage, canOverrideScore
                                         <div><p className="text-[11px] text-[#7a746e]">P {formatScore(row.preliminary_score)} + F {formatScore(row.final_round_score)}</p><p className="mt-0.5 text-lg font-black text-[#9a6b20]">{formatScore(row.total_score)}</p></div>
                                     ) : <span className="text-lg font-black text-[#9a6b20]">{formatScore(row.score?.final_score)}</span>}
                                 </td>
-                                <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right">
-                                    {canManage && (
-                                        row.score ? (
+                                {canInputScore && (
+                                    <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right">
+                                        {row.score ? (
                                             canOverrideScore && (
-                                                <Button size="xs" variant="outline" onClick={() => onScore(row)}>
+                                                <Button
+                                                    size="xs"
+                                                    variant="outline"
+                                                    onClick={() => onScore(row)}
+                                                    className="border-amber-300 bg-amber-50/50 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
+                                                    iconLeft={<i className="fa-solid fa-pen-to-square text-amber-600" />}
+                                                >
                                                     Ubah Nilai
                                                 </Button>
                                             )
                                         ) : (
-                                            <Button size="xs" variant="outline" onClick={() => onScore(row)}>
+                                            <Button
+                                                size="xs"
+                                                variant="primary"
+                                                onClick={() => onScore(row)}
+                                                iconLeft={<i className="fa-solid fa-plus" />}
+                                            >
                                                 Input Nilai
                                             </Button>
-                                        )
-                                    )}
-                                </td>
+                                        )}
+                                    </td>
+                                )}
                             </tr>
                         );
                     })}
-                    {rows.length === 0 && <tr><td colSpan="7" className="px-4 py-10 text-center text-[#7a746e]">Belum ada peserta pada babak ini.</td></tr>}
+                    {rows.length === 0 && <tr><td colSpan={canInputScore ? 7 : 6} className="px-4 py-10 text-center text-[#7a746e]">Belum ada peserta pada babak ini.</td></tr>}
                 </tbody>
             </table>
         </TableContainer>
     );
 }
 
-export default function EmbuResult({ activeEvent, events = [], courts = [], categories = [], selectedCategory, focusMatchId = null, preliminaryRankings = {}, finalRankings = [], boundaryTies = [], quotaPerPool, hasTopFourTie = false, champions = [], canManage = false, canOverrideScore = false }) {
+export default function EmbuResult({ activeEvent, events = [], courts = [], categories = [], selectedCategory, focusMatchId = null, preliminaryRankings = {}, finalRankings = [], boundaryTies = [], quotaPerPool, hasTopFourTie = false, champions = [], canManage = false, canInputScore = false, canOverrideScore = false }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [selectedMatch, setSelectedMatch] = useState(null);
     const focusHandled = useRef(false);
@@ -101,8 +122,14 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
         });
     };
     const submitScore = (event) => {
-        event.preventDefault();
-        form.post(`/admin/panitera/scoring/embu-result/${selectedMatch.match_id}`, { preserveScroll: true, onSuccess: () => setSelectedMatch(null) });
+        if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+        }
+        if (!selectedMatch) return;
+        form.post(`/admin/panitera/scoring/embu-result/${selectedMatch.match_id}`, {
+            preserveScroll: true,
+            onSuccess: () => setSelectedMatch(null),
+        });
     };
 
     useEffect(() => {
@@ -118,6 +145,12 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
     }, [finalRankings, focusMatchId, preliminaryRankings]);
     const advanceFinalists = () => router.post(`/admin/panitera/scoring/embu-result/${selectedCategory}/advance-finalists`, { event_id: activeEvent.id }, { preserveScroll: true });
     const confirmChampions = () => router.post(`/admin/panitera/scoring/embu-result/${selectedCategory}/confirm-champions`, { event_id: activeEvent.id }, { preserveScroll: true });
+    const resolveManualTiebreak = (winnerMatchId, tiedMatchId) => {
+        router.post(`/admin/panitera/scoring/embu-result/${winnerMatchId}/manual-tiebreak`, {
+            event_id: activeEvent.id,
+            tied_match_id: tiedMatchId,
+        }, { preserveScroll: true });
+    };
     const selectedCategoryData = categories.find((category) => category.id === selectedCategory);
     const requiredChampionCount = Math.min(4, selectedCategoryData?.participant_count || 4);
 
@@ -145,13 +178,55 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                 {selectedCategory ? (
                     <>
                         {boundaryTies.length > 0 && (
-                            <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-bold"><i className="fa-solid fa-triangle-exclamation mr-2" />Final belum dapat dibuat</p><p className="mt-1">Nilai dan Juri 1 sama di batas kuota {boundaryTies.map((tie) => `Pool ${tie.pool} peringkat ${tie.rank}/${tie.next_rank}`).join(', ')}. Input nilai tanding ulang pada peserta terkait.</p></div>
+                            <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+                                <div>
+                                    <p className="font-bold flex items-center gap-2">
+                                        <i className="fa-solid fa-triangle-exclamation text-rose-600" />
+                                        Tie-Break Batas Kuota (Skenario E: Seri Mutlak)
+                                    </p>
+                                    <p className="mt-1 text-xs">
+                                        Seluruh kriteria Skenario A–D identik pada batas kuota{' '}
+                                        {boundaryTies.map((tie) => `Pool ${tie.pool} peringkat ${tie.rank}/${tie.next_rank}`).join(', ')}.
+                                        Gunakan tombol keputusan manual Panitera di bawah ini atau input nilai tanding ulang.
+                                    </p>
+                                </div>
+                                {canManage && (
+                                    <div className="mt-3 space-y-2 border-t border-rose-200/80 pt-3">
+                                        <p className="text-xs font-bold text-rose-950">Panel Keputusan Manual Panitera (Skenario E):</p>
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            {boundaryTies.map((tie, idx) => (
+                                                <div key={idx} className="flex flex-col gap-2 rounded-lg border border-rose-200 bg-white p-3 shadow-xs">
+                                                    <p className="text-xs font-semibold text-rose-800">Pool {tie.pool} · Batas Kuota #{tie.rank}</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <Button
+                                                            size="xs"
+                                                            variant="primary"
+                                                            onClick={() => resolveManualTiebreak(tie.match_id_a, tie.match_id_b)}
+                                                            iconLeft={<i className="fa-solid fa-check" />}
+                                                        >
+                                                            Pilih {tie.label_a}
+                                                        </Button>
+                                                        <Button
+                                                            size="xs"
+                                                            variant="outline"
+                                                            onClick={() => resolveManualTiebreak(tie.match_id_b, tie.match_id_a)}
+                                                            iconLeft={<i className="fa-solid fa-check" />}
+                                                        >
+                                                            Pilih {tie.label_b}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {Object.entries(preliminaryRankings).map(([pool, rows]) => (
                             <section key={pool} className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
-                                <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Penyisihan · Pool {pool}</h2><p className="mt-0.5 text-xs text-[#7a746e]">Urutan: nilai akhir, lalu nilai Juri 1.</p></div><Badge variant="blue" className="w-fit">{quotaPerPool === 999 ? 'Final langsung' : `${quotaPerPool} lolos`}</Badge></div>
-                                <RankingTable rows={rows} quota={quotaPerPool} onScore={openScore} canManage={canManage} canOverrideScore={canOverrideScore} />
+                                <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Penyisihan · Pool {pool}</h2><p className="mt-0.5 text-xs text-[#7a746e]">Urutan tie-break PB Perkemi: Nilai Akhir (A), Wasit 1 (B), Total Juri (C), Wasit 2 (D), Keputusan Manual (E).</p></div><Badge variant="blue" className="w-fit">{quotaPerPool === 999 ? 'Final langsung' : `${quotaPerPool} lolos`}</Badge></div>
+                                <RankingTable rows={rows} quota={quotaPerPool} onScore={openScore} canManage={canManage} canInputScore={canInputScore} canOverrideScore={canOverrideScore} />
                             </section>
                         ))}
 
@@ -160,8 +235,8 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                         )}
 
                         <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
-                            <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Babak Final</h2><p className="mt-0.5 text-xs text-[#7a746e]">Nilai akumulasi = penyisihan + final.</p></div>{hasTopFourTie && <Badge variant="red">Ada seri 4 besar</Badge>}</div>
-                            <RankingTable rows={finalRankings} final onScore={openScore} canManage={canManage} canOverrideScore={canOverrideScore} />
+                            <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Babak Final</h2><p className="mt-0.5 text-xs text-[#7a746e]">Nilai akumulasi = penyisihan + final. Tie-break PB Perkemi: Skenario A–E.</p></div>{hasTopFourTie && <Badge variant="red">Ada seri 4 besar</Badge>}</div>
+                            <RankingTable rows={finalRankings} final onScore={openScore} canManage={canManage} canInputScore={canInputScore} canOverrideScore={canOverrideScore} />
                         </section>
 
                         {canManage && finalRankings.length >= requiredChampionCount && champions.length === 0 && <div className="flex justify-end"><Button className="w-full sm:w-auto" variant="gold" onClick={confirmChampions} disabled={hasTopFourTie} iconLeft={<i className="fa-solid fa-crown" />}>Konfirmasi Hasil Juara</Button></div>}
@@ -169,17 +244,123 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                 ) : <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-8 text-center text-sm text-[#7a746e] sm:p-12">Belum ada drawing kategori Embu untuk event ini.</div>}
             </div>
 
-            <Modal isOpen={Boolean(selectedMatch)} onClose={() => !form.processing && setSelectedMatch(null)} title="Input Nilai Embu" subtitle={selectedMatch?.participant_label} size="2xl" footer={<><Button variant="outline" onClick={() => setSelectedMatch(null)}>Batal</Button><Button type="submit" form="embu-score-form" loading={form.processing}>Verifikasi & Simpan</Button></>}>
+            <Modal
+                isOpen={Boolean(selectedMatch)}
+                onClose={() => !form.processing && setSelectedMatch(null)}
+                title={selectedMatch?.score ? 'Ubah / Koreksi Nilai Embu' : 'Input Nilai Embu'}
+                subtitle={selectedMatch ? `${selectedMatch.participant_label} · ${selectedMatch.court || 'Court belum diplot'}` : null}
+                size="2xl"
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => setSelectedMatch(null)}
+                            disabled={form.processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="submit"
+                            form="embu-score-form"
+                            onClick={submitScore}
+                            loading={form.processing}
+                            iconLeft={<i className="fa-solid fa-check" />}
+                        >
+                            Verifikasi & Simpan
+                        </Button>
+                    </>
+                }
+            >
                 <form id="embu-score-form" onSubmit={submitScore} className="space-y-5">
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                        {form.data.judge_scores.map((value, index) => <Input key={index} label={`Juri ${index + 1}`} type="number" min="0" max="100" step="0.01" required value={value} error={form.errors[`judge_scores.${index}`]} onChange={(event) => { const scores = [...form.data.judge_scores]; scores[index] = event.target.value; form.setData('judge_scores', scores); }} />)}
+                    {Object.keys(form.errors).length > 0 && (
+                        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                            <p className="font-bold mb-1 flex items-center gap-1.5">
+                                <i className="fa-solid fa-circle-exclamation" /> Terjadi kesalahan pengisian nilai:
+                            </p>
+                            <ul className="list-inside list-disc space-y-0.5">
+                                {Object.values(form.errors).map((err, idx) => (
+                                    <li key={idx}>{err}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    <div className="rounded-xl border border-[#e8e2d8] bg-[#fbf9f6] p-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <span className="font-bold text-[#17120f]">{selectedMatch?.participant_label}</span>
+                                <span className="ml-2 text-[#7a746e]">({selectedMatch?.metadata?.contingent_name || 'Kontingen'})</span>
+                            </div>
+                            <Badge variant={selectedMatch?.phase === 'final' ? 'gold' : 'blue'}>
+                                {selectedMatch?.phase === 'final' ? 'Babak Final' : `Penyisihan · Pool ${selectedMatch?.pool || 'A'}`}
+                            </Badge>
+                        </div>
+                    </div>
+                    <div>
+                        <p className="mb-2 text-xs font-bold text-[#17120f]">Nilai Juri (W1 – W5) <span className="text-rose-600">*</span></p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                            {form.data.judge_scores.map((value, index) => (
+                                <Input
+                                    key={index}
+                                    label={`Juri ${index + 1}`}
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    required
+                                    value={value}
+                                    placeholder="0 - 100"
+                                    error={form.errors[`judge_scores.${index}`]}
+                                    onChange={(event) => {
+                                        const scores = [...form.data.judge_scores];
+                                        scores[index] = event.target.value;
+                                        form.setData('judge_scores', scores);
+                                    }}
+                                />
+                            ))}
+                        </div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3">
-                        <Input label="Durasi (detik)" type="number" min="0" max="600" value={form.data.duration_seconds} error={form.errors.duration_seconds} onChange={(event) => form.setData('duration_seconds', event.target.value)} hint="Denda otomatis mengikuti Tandoku atau Pasangan/Beregu." />
-                        <Input label="Override denda" type="number" min="0" max="100" step="0.01" value={form.data.penalty_override} error={form.errors.penalty_override} onChange={(event) => form.setData('penalty_override', event.target.value)} hint="Kosongkan agar dihitung otomatis." />
-                        <Input label="Putaran tie-break" type="number" min="0" max="20" value={form.data.tiebreak_round} error={form.errors.tiebreak_round} onChange={(event) => form.setData('tiebreak_round', event.target.value)} hint="0 untuk pertandingan normal; 1+ untuk tanding ulang." />
+                        <Input
+                            label="Durasi (detik)"
+                            type="number"
+                            min="0"
+                            max="600"
+                            value={form.data.duration_seconds}
+                            error={form.errors.duration_seconds}
+                            placeholder="Contoh: 120"
+                            onChange={(event) => form.setData('duration_seconds', event.target.value)}
+                            hint="Denda otomatis mengikuti nomor Embu."
+                        />
+                        <Input
+                            label="Override denda"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={form.data.penalty_override}
+                            error={form.errors.penalty_override}
+                            placeholder="Kosongkan jika otomatis"
+                            onChange={(event) => form.setData('penalty_override', event.target.value)}
+                            hint="Kosongkan agar dihitung otomatis."
+                        />
+                        <Input
+                            label="Putaran tie-break"
+                            type="number"
+                            min="0"
+                            max="20"
+                            value={form.data.tiebreak_round}
+                            error={form.errors.tiebreak_round}
+                            onChange={(event) => form.setData('tiebreak_round', event.target.value)}
+                            hint="0 untuk normal, 1+ untuk tanding ulang."
+                        />
                     </div>
-                    <Input label="Catatan Panitera" value={form.data.notes} error={form.errors.notes} onChange={(event) => form.setData('notes', event.target.value)} />
+                    <Input
+                        label="Catatan Panitera"
+                        value={form.data.notes}
+                        error={form.errors.notes}
+                        placeholder="Catatan tambahan (opsional)"
+                        onChange={(event) => form.setData('notes', event.target.value)}
+                    />
                 </form>
             </Modal>
         </AdminLayout>

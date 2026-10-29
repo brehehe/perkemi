@@ -468,7 +468,7 @@ export default function Dashboard({
                 <Card>
                     <CardHeading
                         title="Top Kontingen"
-                        subtitle="Peringkat klasemen berdasarkan perolehan medali"
+                        subtitle={medalDistribution.ranking_label ? `Peringkat: ${medalDistribution.ranking_label}` : 'Peringkat klasemen berdasarkan perolehan medali'}
                         icon={<i className="fa-solid fa-trophy"></i>}
                     />
 
@@ -519,7 +519,7 @@ export default function Dashboard({
                                         </p>
                                     </div>
                                     <div className="font-cinzel font-bold text-sm text-slate-900 dark:text-white">
-                                        {con.total_score} Poin
+                                        {con.total_points ?? con.total_score} Poin
                                     </div>
                                 </div>
                             ))

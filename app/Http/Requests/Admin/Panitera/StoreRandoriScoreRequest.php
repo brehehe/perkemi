@@ -44,6 +44,11 @@ class StoreRandoriScoreRequest extends FormRequest
             'notes' => ['nullable', 'string', 'max:1000'],
             'return_to_match' => ['nullable', 'boolean'],
             'sync_client_id' => ['nullable', 'string', 'max:100'],
+            'decision_override' => ['nullable', 'array'],
+            'decision_override.type' => ['nullable', 'string', 'in:medical_stop,disqualification'],
+            'decision_override.affected_corner' => ['nullable', 'string', 'in:aka,shiro'],
+            'decision_override.disqualification_scope' => ['nullable', 'string', 'in:match,global'],
+            'decision_override.reason' => ['nullable', 'string', 'max:255'],
         ];
 
         foreach (RandoriScore::SignatureKeys as $signatureKey) {

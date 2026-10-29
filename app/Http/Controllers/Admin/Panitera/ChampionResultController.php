@@ -58,9 +58,9 @@ class ChampionResultController extends Controller
                 'drawing_status' => $drawing?->status,
                 'has_drawing' => $drawing !== null,
                 'participant_count' => $participantCount,
-                'is_exhibition' => $drawing ? $participantCount <= 3 : null,
+                'is_exhibition' => $drawing ? ((bool) $category->is_exhibition || $participantCount <= 3) : null,
                 'classification_label' => $drawing
-                    ? ($participantCount <= 3 ? 'Ekshibisi' : 'Non-ekshibisi')
+                    ? (((bool) $category->is_exhibition || $participantCount <= 3) ? 'Ekshibisi' : 'Non-ekshibisi')
                     : 'Drawing belum dibuat',
                 'required_champion_count' => $requiredChampionCount,
                 'result_count' => $resultCount,

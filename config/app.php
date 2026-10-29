@@ -17,6 +17,8 @@ return [
 
     'wasit_scoring_version' => env('IS_WASIT_SCORING_VERSION', 'old'),
 
+    'force_https' => (bool) env('FORCE_HTTPS', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

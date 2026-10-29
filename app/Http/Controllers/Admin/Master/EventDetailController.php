@@ -25,6 +25,7 @@ use App\Models\EventMatchCategory;
 use App\Models\FieldCoordinator;
 use App\Models\Referee;
 use App\Models\Rundown;
+use App\Models\TournamentResult;
 use App\Models\User;
 use App\Services\Admin\Master\EventDetailViewService;
 use Illuminate\Http\RedirectResponse;
@@ -262,6 +263,7 @@ class EventDetailController extends Controller
             ...$validated,
             'order' => $validated['order'] ?? ($event->matchCategories()->max('order') + 1),
             'is_active' => $validated['is_active'] ?? true,
+            'is_exhibition' => $validated['is_exhibition'] ?? false,
         ]);
 
         return back()->with('success', "Nomer pertandingan '{$validated['name']}' berhasil ditambahkan.");
@@ -275,7 +277,31 @@ class EventDetailController extends Controller
 
         $matchCategory->update($validated);
 
+        // Pastikan hasil juara yang sudah tercatat tetap sinkron jika kategori diubah
+        TournamentResult::where('event_match_category_id', $matchCategory->id)->update([
+            'is_exhibition' => (bool) $matchCategory->is_exhibition,
+            'match_category' => $matchCategory->name,
+        ]);
+
         return back()->with('success', "Nomer pertandingan '{$matchCategory->name}' berhasil diperbarui.");
+    }
+
+    public function toggleMatchCategoryExhibition(Event $event, EventMatchCategory $matchCategory): RedirectResponse
+    {
+        abort_unless($matchCategory->event_id === $event->id, 404);
+
+        $matchCategory->update([
+            'is_exhibition' => ! $matchCategory->is_exhibition,
+        ]);
+
+        // Sinkronisasi status ekshibisi pada hasil juara terkait
+        TournamentResult::where('event_match_category_id', $matchCategory->id)->update([
+            'is_exhibition' => (bool) $matchCategory->is_exhibition,
+        ]);
+
+        $status = $matchCategory->is_exhibition ? 'Ekshibisi' : 'Dipertandingkan (Resmi)';
+
+        return back()->with('success', "Status nomer pertandingan '{$matchCategory->name}' diubah menjadi {$status}.");
     }
 
     public function destroyMatchCategory(Event $event, EventMatchCategory $matchCategory): RedirectResponse

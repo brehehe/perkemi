@@ -31,6 +31,10 @@ class DashboardController extends Controller
             return redirect()->route('wasit.portal');
         }
 
+        if ($user?->hasRole('Panitera') && ! $user->hasAnyRole(['Super Admin', 'Admin'])) {
+            return redirect()->route('admin.panitera.scoring.index');
+        }
+
         $search = (string) $request->input('search', '');
         $events = $user ? $eventAccess->eventsFor($user) : collect();
         $event = $user ? $eventAccess->resolve($request, $user, $events) : null;
@@ -39,7 +43,7 @@ class DashboardController extends Controller
             abort_unless($event instanceof Event, 403, 'Akun ini belum ditugaskan pada event mana pun.');
         }
 
-        if ($event instanceof Event) {
+        if ($event && $event instanceof Event) {
             $request->session()->put('tenant_event_id', $event->id);
             $request->session()->put('tenant_event_slug', $event->slug);
             $request->attributes->set('tenantEvent', $event);

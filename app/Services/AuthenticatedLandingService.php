@@ -36,6 +36,11 @@ class AuthenticatedLandingService
                 ->first();
 
             $event ??= $user->contingent()->with('event')->first()?->event;
+
+            if (! $event && $user->hasRole('Panitera')) {
+                $event = Event::query()->where('is_active', true)->first()
+                    ?? Event::query()->orderByDesc('start_date')->first();
+            }
         }
 
         if (! $event) {

@@ -62,6 +62,7 @@ class PaniteraDashboardController extends Controller
                     'name' => $court->name,
                     'location' => $court->location,
                     'is_active' => (bool) $court->is_active,
+                    'access_code' => $court->access_code,
                     'clerks' => $clerks,
                     'total_matches' => (int) $court->total_matches_count,
                     'completed_matches' => (int) $court->completed_matches_count,

@@ -28,6 +28,10 @@ class UpdateEventTournamentSettingsRequest extends FormRequest
             'minimum_entries_per_category' => ['required', 'integer', 'min:2', 'max:32'],
             'minimum_contingents_per_category' => ['required', 'integer', 'min:2', 'max:32'],
             'tts_announcer_enabled' => ['nullable', 'boolean'],
+            'champion_ranking_system' => ['nullable', 'string', 'in:medals,points'],
+            'champion_gold_points' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'champion_silver_points' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'champion_bronze_points' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];
     }
 }

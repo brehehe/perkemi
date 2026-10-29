@@ -3,6 +3,7 @@
 namespace App\Services\Panitera;
 
 use App\Events\PaniteraMatchStateUpdated;
+use App\Models\AthleteMatchCategoryEntry;
 use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ class RandoriResultService
      * @param  array<string, int|string>  $shiroBreakdown
      * @param  array<string, string>|null  $signatures
      * @param  array<string, string|null>|null  $signatureNames
+     * @param  array<string, mixed>|null  $decisionOverride
      */
     public function record(
         TournamentMatch $match,
@@ -29,18 +31,61 @@ class RandoriResultService
         ?array $signatureNames,
         ?string $notes,
         string $userId,
+        ?array $decisionOverride = null,
     ): RandoriScore {
         $akaTotal = $this->calculator->total($akaBreakdown);
         $shiroTotal = $this->calculator->total($shiroBreakdown);
 
-        if ($akaTotal === $shiroTotal) {
-            throw ValidationException::withMessages([
-                'score' => 'Poin sama (Hikiwake). Tentukan pemenang melalui Yusei Kachi atau Mujoken Kachi.',
-            ]);
+        $overrideType = $decisionOverride['type'] ?? null;
+        $affectedCorner = $decisionOverride['affected_corner'] ?? null;
+        $overrideReason = $decisionOverride['reason'] ?? null;
+        $disqualificationScope = $decisionOverride['disqualification_scope'] ?? 'match';
+
+        if ($overrideType === 'medical_stop' && in_array($affectedCorner, ['aka', 'shiro'], true)) {
+            $winnerCorner = $affectedCorner === 'aka' ? 'shiro' : 'aka';
+            $winMethod = 'kiken';
+        } elseif ($overrideType === 'disqualification' && in_array($affectedCorner, ['aka', 'shiro'], true)) {
+            $winnerCorner = $affectedCorner === 'aka' ? 'shiro' : 'aka';
+            $winMethod = 'hansoku_gachi';
+        } else {
+            $akaIpponWin = $this->calculator->hasIpponWin($akaBreakdown);
+            $shiroIpponWin = $this->calculator->hasIpponWin($shiroBreakdown);
+            $akaMethod = $this->calculator->winMethod($akaBreakdown);
+            $shiroMethod = $this->calculator->winMethod($shiroBreakdown);
+
+            if ($akaIpponWin && ! $shiroIpponWin) {
+                $winnerCorner = 'aka';
+                $winMethod = $akaMethod;
+            } elseif ($shiroIpponWin && ! $akaIpponWin) {
+                $winnerCorner = 'shiro';
+                $winMethod = $shiroMethod;
+            } elseif ($akaTotal === $shiroTotal) {
+                throw ValidationException::withMessages([
+                    'score' => 'Poin sama (Hikiwake). Tentukan pemenang melalui Yusei Kachi, Mujoken Kachi, atau opsi Stop Medis / Diskualifikasi.',
+                ]);
+            } else {
+                $winnerCorner = $akaTotal > $shiroTotal ? 'aka' : 'shiro';
+                $winMethod = 'point';
+            }
         }
 
-        return DB::transaction(function () use ($match, $akaBreakdown, $shiroBreakdown, $akaTotal, $shiroTotal, $signatures, $signatureNames, $notes, $userId): RandoriScore {
-            $winnerCorner = $akaTotal > $shiroTotal ? 'aka' : 'shiro';
+        return DB::transaction(function () use (
+            $match,
+            $akaBreakdown,
+            $shiroBreakdown,
+            $akaTotal,
+            $shiroTotal,
+            $winnerCorner,
+            $winMethod,
+            $overrideType,
+            $affectedCorner,
+            $overrideReason,
+            $disqualificationScope,
+            $signatures,
+            $signatureNames,
+            $notes,
+            $userId
+        ): RandoriScore {
             $score = RandoriScore::query()
                 ->where('tournament_match_id', $match->id)
                 ->lockForUpdate()
@@ -78,7 +123,52 @@ class RandoriResultService
                 'aka_total' => $akaTotal,
                 'shiro_total' => $shiroTotal,
                 'winner_corner' => $winnerCorner,
+                'win_method' => $winMethod,
+                'is_auto_ippon' => $winMethod === 'waza_ari_awasete_ippon',
             ];
+
+            if ($overrideType) {
+                $metadata['result']['decision_override'] = [
+                    'type' => $overrideType,
+                    'affected_corner' => $affectedCorner,
+                    'reason' => $overrideReason,
+                    'disqualification_scope' => $disqualificationScope,
+                ];
+
+                $affectedEntryId = $affectedCorner === 'aka'
+                    ? ($match->red_entry_id ?? $metadata['red']['entry_id'] ?? null)
+                    : ($match->blue_entry_id ?? $metadata['blue']['entry_id'] ?? null);
+
+                if ($affectedEntryId) {
+                    $entry = AthleteMatchCategoryEntry::find($affectedEntryId);
+                    if ($entry) {
+                        if ($overrideType === 'medical_stop') {
+                            $entry->update([
+                                'competition_status' => 'stopped',
+                                'status_notes' => 'Doctor / Medical Stop: '.($overrideReason ?: 'Cedera fisik saat bertanding'),
+                            ]);
+                        } elseif ($overrideType === 'disqualification') {
+                            $statusNote = ($disqualificationScope === 'global' ? 'Shikkaku (Global Turnamen): ' : 'Hansoku Make (Partai Ini): ').($overrideReason ?: 'Pelanggaran disiplin/peraturan');
+
+                            if ($disqualificationScope === 'global' && $entry->athlete_id) {
+                                AthleteMatchCategoryEntry::query()
+                                    ->where('athlete_id', $entry->athlete_id)
+                                    ->where('event_id', $match->event_id)
+                                    ->update([
+                                        'competition_status' => 'disqualified',
+                                        'status_notes' => $statusNote,
+                                    ]);
+                            } else {
+                                $entry->update([
+                                    'competition_status' => 'disqualified',
+                                    'status_notes' => $statusNote,
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+
             $elapsedMilliseconds = $this->timerState->elapsedMilliseconds($match);
             $match->update([
                 'status' => 'completed',
@@ -93,7 +183,7 @@ class RandoriResultService
             ]);
 
             $winner = $metadata[$winnerCorner === 'aka' ? 'red' : 'blue'] ?? null;
-            $loser = $metadata[$winnerCorner === 'aka' ? 'blue' : 'red'] ?? null;
+            $loser = $overrideType ? null : ($metadata[$winnerCorner === 'aka' ? 'blue' : 'red'] ?? null);
             $this->routeResult($match->fresh(['drawing', 'nextMatch']), $winner, $loser);
 
             if ($match->event_court_id) {
@@ -202,6 +292,49 @@ class RandoriResultService
 
         if ($match->round_label === 'Final Lower Bracket') {
             $this->placeParticipant($matches->get('Grand Final'), 'blue', $winner);
+
+            return;
+        }
+
+        if ($match->round_label === 'Grand Final') {
+            /** @var TournamentMatch|null $gf2 */
+            $gf2 = $matches->get('Grand Final Ulang (GF2)');
+            if ($gf2) {
+                // Red corner is the Upper Bracket finalist (WB)
+                // Blue corner is the Lower Bracket finalist (LB)
+                $winnerCorner = ($match->red_entry_id && $winner['entry_id'] === $match->red_entry_id) ? 'red' : 'blue';
+                $gf2Metadata = $gf2->metadata ?? [];
+
+                if ($winnerCorner === 'red') {
+                    // Pemenang berasal dari Upper Bracket (WB). Slot GF2 dilewati otomatis ketika tidak diperlukan!
+                    $gf2Metadata['notes'] = 'Slot GF2 dilewati otomatis karena pemenang Grand Final berasal dari Upper Bracket (WB).';
+                    $gf2Metadata['gf2_status'] = 'skipped';
+                    $gf2->update([
+                        'status' => 'completed',
+                        'is_bye' => true,
+                        'winner_corner' => null,
+                        'scheduled_start_at' => null,
+                        'scheduled_end_at' => null,
+                        'event_court_id' => null,
+                        'rundown_id' => null,
+                        'metadata' => $gf2Metadata,
+                    ]);
+                } else {
+                    // Pemenang berasal dari Lower Bracket (LB). GF2 berjalan dan diaktifkan sesuai aturan resmi!
+                    $redParticipant = $match->metadata['red'] ?? null;
+                    $blueParticipant = $match->metadata['blue'] ?? null;
+                    $this->placeParticipant($gf2, 'red', $redParticipant);
+                    $this->placeParticipant($gf2, 'blue', $blueParticipant);
+                    $gf2Metadata = $gf2->fresh()->metadata ?? [];
+                    $gf2Metadata['notes'] = 'GF2 diaktifkan karena pemenang Grand Final berasal dari jalur Lower Bracket (LB).';
+                    $gf2Metadata['gf2_status'] = 'active';
+                    $gf2->update([
+                        'status' => 'pending',
+                        'is_bye' => false,
+                        'metadata' => $gf2Metadata,
+                    ]);
+                }
+            }
         }
     }
 

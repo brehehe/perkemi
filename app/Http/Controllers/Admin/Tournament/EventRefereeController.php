@@ -142,6 +142,7 @@ class EventRefereeController extends Controller
                 'id' => $court->id,
                 'name' => $court->name,
                 'location' => $court->location,
+                'access_code' => $court->access_code,
                 'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
                     'event' => $event,
                     'eventCourt' => $court,

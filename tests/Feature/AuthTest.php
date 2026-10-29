@@ -3,11 +3,13 @@
 use App\Mail\ContingentAccountCreatedMail;
 use App\Models\Contingent;
 use App\Models\Event;
+use App\Models\EventCourt;
 use App\Models\Referee;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 
 uses(RefreshDatabase::class);
 
@@ -207,4 +209,119 @@ test('email preview screen can be rendered', function () {
     $response->assertStatus(200);
     $response->assertSee('SMART-PERKEMI');
     $response->assertSee('Kredensial Login Anda');
+});
+
+test('registration rejects duplicate nik perkemi', function () {
+    User::factory()->create([
+        'nik_perkemi' => 'PERKEMI-123456',
+    ]);
+
+    $response = $this->from('/register')->post('/register', [
+        'name' => 'Kenshi Baru',
+        'nik_perkemi' => 'PERKEMI-123456',
+        'email' => 'kenshi.baru@perkemi.org',
+        'contingent_name' => 'Dojo Baru',
+        'city' => 'Kota Surabaya',
+        'manager_name' => 'Sensei Baru',
+        'phone' => '081234567891',
+        'address' => 'Jl. Pemuda No 2',
+    ]);
+
+    $response->assertRedirect('/register');
+    $response->assertSessionHasErrors(['nik_perkemi' => 'NIK PERKEMI sudah terdaftar dalam sistem.']);
+});
+
+test('panitera can authenticate using 6 digit court access code token', function () {
+    $event = Event::create([
+        'name' => 'Kejuaraan Token Panitera 2026',
+        'slug' => 'kejuaraan-token-panitera-2026',
+        'venue' => 'GOR Pancasila',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Tatami 1',
+        'location' => 'Arena Utama',
+        'is_active' => true,
+        'access_code' => '654321',
+    ]);
+
+    $response = $this->post('/login/panitera-token', [
+        'token' => '654321',
+    ]);
+
+    $this->assertAuthenticated();
+    $user = auth()->user();
+    expect($user->hasRole('Panitera'))->toBeTrue();
+    $response->assertRedirect(route('admin.panitera.scoring.index', [
+        'event_id' => $event->id,
+        'court_id' => $court->id,
+    ]));
+});
+
+test('panitera login rejects invalid token', function () {
+    $response = $this->from('/login')->post('/login/panitera-token', [
+        'token' => '000000',
+    ]);
+
+    $this->assertGuest();
+    $response->assertRedirect('/login');
+    $response->assertSessionHasErrors('token');
+});
+
+test('referee can access court check-in without existing user account via signed qr', function () {
+    $event = Event::create([
+        'name' => 'Event Guest Wasit 2026',
+        'slug' => 'event-guest-wasit-2026',
+        'venue' => 'GOR Pancasila',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Tatami 1',
+        'location' => 'Arena Utama',
+        'is_active' => true,
+    ]);
+
+    $signedUrl = URL::temporarySignedRoute('wasit.check-in.court', now()->addHour(), [
+        'event' => $event,
+        'eventCourt' => $court,
+        'role' => 'corner_1',
+    ]);
+
+    $response = $this->get($signedUrl);
+
+    $response->assertOk();
+    $this->assertAuthenticated();
+    $user = auth()->user();
+    expect($user->hasRole('Wasit'))->toBeTrue();
+});
+
+test('panitera user can access dashboard and is redirected to scoring without 404', function () {
+    $role = Role::firstOrCreate(['name' => 'Panitera']);
+    $user = User::factory()->create();
+    $user->roles()->syncWithoutDetaching([$role->id]);
+
+    $event = Event::create([
+        'name' => 'Kejurda Panitera Access 2026',
+        'slug' => 'kejurda-panitera-access-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->get('/admin/dashboard');
+
+    $response->assertRedirect(route('admin.panitera.scoring.index'));
+
+    $scoringResponse = $this->actingAs($user)->get(route('admin.panitera.scoring.index'));
+    $scoringResponse->assertOk();
 });

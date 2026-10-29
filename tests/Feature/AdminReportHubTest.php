@@ -26,7 +26,7 @@ test('the report hub exposes every requested report for the selected event', fun
             ->component('Admin/Report/Index')
             ->where('activeEvent.id', $event->id)
             ->where('dataset.key', $report)
-            ->has('reportOptions', 8)
+            ->has('reportOptions', 10)
             ->has('dataset.columns')
             ->has('dataset.summary'));
 })->with([
@@ -38,6 +38,8 @@ test('the report hub exposes every requested report for the selected event', fun
     'analisis per wasit' => 'referee-analysis',
     'rekapitulasi embu' => 'embu-summary',
     'rekap penilaian' => 'scoring-summary',
+    'klasemen medali' => 'medal-standings',
+    'rekap per nomor pertandingan' => 'category-recap',
 ]);
 
 test('the report hub keeps the explicitly selected event', function (): void {
@@ -90,6 +92,22 @@ test('the selected report can be exported as a native Excel workbook', function 
 
     expect($response->headers->get('cache-control'))->toContain('no-store')
         ->and(substr($response->getContent(), 0, 2))->toBe('PK');
+});
+
+test('the category recap report can be exported as Excel workbook', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('export-category-recap');
+
+    $response = $this->actingAs($user)
+        ->get(route('admin.laporan.export', [
+            'event_id' => $event->id,
+            'report' => 'category-recap',
+        ]));
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    expect(substr($response->getContent(), 0, 2))->toBe('PK');
 });
 
 test('the all scores report only shows verified results with a detail print action', function (): void {
@@ -224,6 +242,43 @@ test('individual Embu and Randori report prints include their recorded signature
     $this->actingAs($user)
         ->get(route('admin.laporan.print.embu', ['embuScore' => $embuScore, 'event_id' => $otherEvent->id]))
         ->assertNotFound();
+});
+
+test('official berita acara report renders successfully with signature areas and standings', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('berita-acara-test');
+
+    $response = $this->actingAs($user)
+        ->get(route('admin.laporan.berita-acara', ['event_id' => $event->id, 'ranking_method' => 'points']));
+
+    $response->assertOk()
+        ->assertSee('BERITA ACARA RESMI PENYELENGGARAAN PERTANDINGAN')
+        ->assertSee('PERSAUDARAAN SHORINJI KEMPO INDONESIA')
+        ->assertSee($event->name)
+        ->assertSee('Technical Delegate')
+        ->assertSee('Ketua Dewan Wasit')
+        ->assertSee('Ketua Panitia Pelaksana');
+});
+
+test('the medal standings page allows switching between medal standard and weighted points ranking', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('medal-rank-test');
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.hasil', ['event_id' => $event->id, 'system' => 'points']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Medals')
+            ->where('activeEvent.id', $event->id)
+            ->where('rankingSystem', 'points'));
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.hasil', ['event_id' => $event->id, 'system' => 'medals']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Medals')
+            ->where('activeEvent.id', $event->id)
+            ->where('rankingSystem', 'medals'));
 });
 
 function reportEvent(string $suffix): Event

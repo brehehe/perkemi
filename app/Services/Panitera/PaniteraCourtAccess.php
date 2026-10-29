@@ -21,6 +21,11 @@ class PaniteraCourtAccess
             return null;
         }
 
+        $sessionCourtId = $request->session()->get('panitera_court_id');
+        if ($sessionCourtId && $event->courts()->whereKey($sessionCourtId)->exists()) {
+            return collect([$sessionCourtId]);
+        }
+
         $clerkIds = Clerk::query()
             ->where('email', $user->email)
             ->whereHas('events', fn ($events) => $events->whereKey($event->id))
@@ -38,6 +43,10 @@ class PaniteraCourtAccess
             ->unique()
             ->values();
 
+        if ($courtIds->isEmpty()) {
+            return null;
+        }
+
         return $courtIds;
     }
 
@@ -45,7 +54,12 @@ class PaniteraCourtAccess
     {
         $courtIds = $this->assignedCourtIds($request, $event);
 
-        abort_if($courtIds !== null && ! $courtIds->contains($match->event_court_id), 404);
+        abort_if(
+            $courtIds !== null
+                && $match->event_court_id !== null
+                && ! $courtIds->contains($match->event_court_id),
+            404,
+        );
     }
 
     public function ensureCourtIsAccessible(Request $request, Event $event, EventCourt $court): void

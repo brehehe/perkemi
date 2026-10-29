@@ -1,11 +1,12 @@
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import AdminLayout from '@/Layouts/AdminLayout';
 import Button from '@/Components/UI/Elements/Button';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const statusMeta = {
     draft: { label: 'Draft', classes: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -17,6 +18,7 @@ const statusMeta = {
 };
 
 const formatLabels = {
+    round_robin: 'Setengah Kompetisi (Round Robin)',
     single_elimination: 'Sistem gugur tunggal',
     double_elimination: 'Sistem gugur ganda',
     embu_direct_final: 'Embu satu pool + final',
@@ -74,17 +76,55 @@ function MatchCard({ match }) {
         );
     }
 
+    const redDisqualified = Boolean(match.metadata?.red_weigh_in_disqualified);
+    const blueDisqualified = Boolean(match.metadata?.blue_weigh_in_disqualified);
+    const isWO = match.metadata?.result?.is_walkover || match.metadata?.result?.win_method === 'walkover_weigh_in';
+
     return (
         <article className="overflow-hidden rounded-xl border border-[#e8e1d8] bg-white shadow-sm">
             <div className="flex items-center justify-between bg-[#f7f4ef] px-3 py-2 text-xs font-bold uppercase tracking-wide text-[#746b63]">
                 <span>{match.is_bye ? 'Slot' : 'Partai'} #{match.sequence} · {match.round_label}</span>
-                {match.is_bye && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">BYE</span>}
+                <div className="flex items-center gap-1.5">
+                    {isWO && <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold text-white">SELESAI (WO)</span>}
+                    {match.is_bye && (
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${match.notes?.includes('dilewati') ? 'bg-slate-100 text-slate-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {match.notes?.includes('dilewati') ? 'DILEWATI (WB MENANG GF)' : 'BYE'}
+                        </span>
+                    )}
+                </div>
             </div>
             <div className="divide-y divide-[#eee8e0]">
-                <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold"><span className="h-3 w-3 rounded-full bg-red-600" />{match.red_label || 'Menunggu hasil'}</div>
-                <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold"><span className="h-3 w-3 rounded-full border border-slate-300 bg-white" />{match.blue_label || 'Menunggu hasil'}</div>
+                <div className={`flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold ${redDisqualified ? 'bg-red-50/60 text-slate-400' : ''}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-3 w-3 shrink-0 rounded-full bg-red-600" />
+                        <span className={`truncate ${redDisqualified ? 'line-through text-slate-400' : ''}`}>
+                            {match.red_label || 'Menunggu hasil'}
+                        </span>
+                    </div>
+                    {redDisqualified && (
+                        <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                            Gagal Timbang (WO)
+                        </span>
+                    )}
+                </div>
+                <div className={`flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold ${blueDisqualified ? 'bg-blue-50/60 text-slate-400' : ''}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-3 w-3 shrink-0 rounded-full border border-slate-300 bg-white" />
+                        <span className={`truncate ${blueDisqualified ? 'line-through text-slate-400' : ''}`}>
+                            {match.blue_label || 'Menunggu hasil'}
+                        </span>
+                    </div>
+                    {blueDisqualified && (
+                        <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                            Gagal Timbang (WO)
+                        </span>
+                    )}
+                </div>
             </div>
-            <p className="border-t border-[#eee8e0] px-3 py-2 text-xs leading-relaxed text-[#746b63]">{match.is_bye ? schedule : `${schedule} · ${match.court || 'Lapangan belum ditentukan'}`}</p>
+            <p className="border-t border-[#eee8e0] px-3 py-2 text-xs leading-relaxed text-[#746b63]">
+                {match.is_bye ? schedule : `${schedule} · ${match.court || 'Lapangan belum ditentukan'}`}
+                {isWO && match.metadata?.result?.walkover_reason && ` · ${match.metadata.result.walkover_reason}`}
+            </p>
         </article>
     );
 }
@@ -269,6 +309,29 @@ function BracketView({ category, drawing, matches }) {
 
     const rounds = groupBy(matches, (match) => match.round_label);
 
+    if (drawing.format === 'round_robin') {
+        return (
+            <div className="space-y-4">
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
+                    <i className="fa-solid fa-arrows-rotate mt-0.5 text-amber-600" />
+                    <div>
+                        <p className="text-sm font-bold">Format Setengah Kompetisi (Round Robin)</p>
+                        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                            Setiap kenshi saling berhadapan dalam beberapa putaran pertandingan. Peringkat juara dan perolehan medali dihitung dari akumulasi kemenangan seluruh partai.
+                        </p>
+                    </div>
+                </div>
+                <BracketSection
+                    title="Jadwal Putaran Setengah Kompetisi"
+                    description="Seluruh partai per putaran pertandingan antar-atlet nomor ini."
+                    icon="fa-arrows-rotate"
+                    rounds={rounds}
+                    tone="upper"
+                />
+            </div>
+        );
+    }
+
     if (drawing.format === 'double_elimination') {
         const upperRounds = groupBy(
             matches.filter((match) => match.round_label.includes('Upper Bracket')),
@@ -279,7 +342,7 @@ function BracketView({ category, drawing, matches }) {
             (match) => match.round_label,
         );
         const grandFinalRounds = groupBy(
-            matches.filter((match) => match.round_label === 'Grand Final'),
+            matches.filter((match) => match.round_label.includes('Grand Final')),
             (match) => match.round_label,
         );
 
@@ -468,6 +531,12 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
     const [scheduleDraft, setScheduleDraft] = useState({ event_court_id: '', rundown_id: '', start_time: '' });
     const [scheduleErrors, setScheduleErrors] = useState({});
     const category = categories.find((item) => item.id === selectedCategory);
+    const [selectedFormat, setSelectedFormat] = useState(drawing?.format || category?.format || '');
+
+    useEffect(() => {
+        setSelectedFormat(drawing?.format || category?.format || '');
+    }, [category?.id, drawing?.format, category?.format]);
+
     const isPublished = workflow?.status === 'published';
     const isInProgress = workflow?.status === 'in_progress';
     const isCompleted = workflow?.status === 'completed';
@@ -533,6 +602,117 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
         { title: 'Publikasi', caption: isCompleted ? 'Event selesai' : isInProgress ? 'Pertandingan berlangsung' : isPublished ? 'Terkunci dan siap digunakan' : 'Menunggu pemeriksaan admin', active: isPublished || isInProgress, complete: isCompleted },
     ];
 
+    const drawingMenuItems = activeEvent ? [
+        {
+            label: 'Pengaturan Event',
+            description: 'Konfigurasi durasi, matras & persyaratan',
+            icon: <i className="fa-solid fa-gear text-slate-600" />,
+            href: `/admin/master/event/${activeEvent.id}/detail`,
+            isLink: true,
+            tone: 'default',
+        },
+        {
+            label: 'Merge Kategori',
+            description: 'Gabungkan kelas pertandingan yang kurang kuota',
+            icon: <i className="fa-solid fa-object-group text-amber-600" />,
+            href: `/admin/pertandingan/merge${eventQuery}`,
+            isLink: true,
+            tone: 'gold',
+        },
+        {
+            label: 'Kelola Jadwal',
+            description: 'Buka kalender dan manajemen jadwal lengkap',
+            icon: <i className="fa-solid fa-calendar-days text-blue-600" />,
+            href: `/admin/pertandingan/jadwal${eventQuery}`,
+            isLink: true,
+            tone: 'blue',
+        },
+        {
+            divider: true,
+        },
+        {
+            label: 'Download Excel Jadwal',
+            description: 'Unduh jadwal pertandingan format .xlsx',
+            icon: <i className="fa-solid fa-file-excel text-emerald-600" />,
+            href: `/admin/pertandingan/jadwal/export${eventQuery}`,
+            download: true,
+            tone: 'emerald',
+            badge: 'XLSX',
+        },
+        {
+            label: 'Cetak Dokumen / Bagan',
+            description: 'Cetak tampilan bagan ke printer atau PDF',
+            icon: <i className="fa-solid fa-print text-slate-600" />,
+            onClick: () => window.print(),
+            tone: 'default',
+            badge: 'Print',
+        },
+        ...(canManageDrawing && workflow.generated_categories > 0 && !isLocked
+            ? [
+                  {
+                      divider: true,
+                  },
+                  {
+                      label: scheduleEditMode ? 'Selesai Edit Jadwal' : 'Edit Jadwal Papan',
+                      description: scheduleEditMode
+                          ? 'Keluar dari mode penyuntingan jadwal langsung'
+                          : 'Aktifkan pengubahan waktu/matras langsung di papan jadwal',
+                      icon: <i className={`fa-solid ${scheduleEditMode ? 'fa-check text-rose-600' : 'fa-calendar-pen text-slate-600'}`} />,
+                      onClick: () => setScheduleEditMode((active) => !active),
+                      tone: scheduleEditMode ? 'rose' : 'default',
+                      badge: scheduleEditMode ? 'Aktif' : undefined,
+                  },
+              ]
+            : []),
+        ...(canManageDrawing && isPublished
+            ? [
+                  {
+                      divider: true,
+                  },
+                  {
+                      label: processing === 'unpublish' ? 'Mengembalikan...' : 'Kembalikan ke Penyusunan',
+                      description: 'Buka kembali status publikasi agar bagan dapat diedit',
+                      icon: <i className={`fa-solid ${processing === 'unpublish' ? 'fa-spinner animate-spin text-amber-600' : 'fa-lock-open text-amber-600'}`} />,
+                      onClick: () => post('/admin/pertandingan/drawing/unpublish', {}, 'unpublish'),
+                      disabled: !!processing,
+                      tone: 'gold',
+                  },
+              ]
+            : []),
+        ...(canManageDrawing && workflow.generated_categories > 0 && !isInProgress && !isCompleted
+            ? [
+                  {
+                      divider: true,
+                  },
+                  {
+                      label: processing === 'reset' ? 'Mereset Draft...' : 'Reset Draft Bagan',
+                      description: 'Hapus seluruh susunan bagan dan jadwal draft',
+                      icon: <i className="fa-solid fa-rotate-left text-rose-600" />,
+                      onClick: reset,
+                      disabled: !!processing,
+                      tone: 'rose',
+                      badge: 'Reset',
+                  },
+              ]
+            : []),
+        ...(canManageDrawing && (isInProgress || isCompleted)
+            ? [
+                  {
+                      divider: true,
+                  },
+                  {
+                      label: processing === 'reset-competition' ? 'Mereset...' : 'Reset Pertandingan',
+                      description: 'Reset status turnamen dan hasil kembali ke awal',
+                      icon: <i className={`fa-solid ${processing === 'reset-competition' ? 'fa-spinner animate-spin text-rose-600' : 'fa-arrow-rotate-left text-rose-600'}`} />,
+                      onClick: resetCompetition,
+                      disabled: !!processing,
+                      tone: 'rose',
+                      badge: 'Reset',
+                  },
+              ]
+            : []),
+    ] : [];
+
     return (
         <AdminLayout title="Drawing & Bagan Pertandingan">
             <Head title="Drawing Pertandingan | Smart Perkemi" />
@@ -569,20 +749,82 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                             <p className="text-sm font-bold uppercase tracking-wide text-[#9a6b20]">{activeEvent.name}</p>
                             <p className="mt-1.5 text-sm leading-relaxed text-[#746b63]">Durasi {settings.match_duration_minutes} menit · istirahat minimal {settings.minimum_rest_minutes} menit · syarat {settings.minimum_entries_per_category} peserta/tim dari {settings.minimum_contingents_per_category} kontingen.</p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            <Link href={`/admin/master/event/${activeEvent.id}/detail`} className="rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef]"><i className="fa-solid fa-gear mr-1.5" />Pengaturan Event</Link>
-                            <Link href={`/admin/pertandingan/merge${eventQuery}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"><i className="fa-solid fa-object-group mr-1.5" />Merge Kategori</Link>
-                            <Link href={`/admin/pertandingan/jadwal${eventQuery}`} className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-sm font-semibold text-blue-800 hover:bg-blue-100"><i className="fa-solid fa-calendar-days mr-1.5" />Kelola Jadwal</Link>
-                            <a href={`/admin/pertandingan/jadwal/export${eventQuery}`} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"><i className="fa-solid fa-file-excel mr-1.5" />Download Excel</a>
-                            {canManageDrawing && workflow.generated_categories > 0 && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => setScheduleEditMode((active) => !active)} className={`rounded-lg border px-3.5 py-2.5 text-sm font-semibold ${scheduleEditMode ? 'border-[#c0392b] bg-[#fff2ef] text-[#a93226]' : 'border-[#ded5ca] text-[#5f574f] hover:bg-[#f7f4ef]'}`}><i className="fa-solid fa-calendar-pen mr-1.5" />{scheduleEditMode ? 'Selesai Edit Jadwal' : 'Edit Jadwal'}</Button>}
-                            {canManageDrawing && workflow.generated_categories > 0 && !isInProgress && !isCompleted && <Button variant="unstyled" size="none" type="button" onClick={reset} disabled={!!processing} className="rounded-lg border border-rose-200 px-3.5 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"><i className="fa-solid fa-rotate-left mr-1.5" />{processing === 'reset' ? 'Mereset...' : 'Reset Draft'}</Button>}
-                            {canManageDrawing && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/generate', {}, 'generate')} disabled={!!processing} className="rounded-lg bg-[#17120f] px-4 py-2.5 text-sm font-bold text-[#f0c060] hover:bg-black disabled:opacity-50"><i className={`fa-solid ${processing === 'generate' ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'} mr-1.5`} />{processing === 'generate' ? 'Membentuk bagan...' : 'Generate Semua'}</Button>}
-                            {canManageDrawing && workflow.generated_categories > 0 && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/publish', {}, 'publish')} disabled={!!processing} className="rounded-lg bg-[#a93226] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8e281e] disabled:opacity-50"><i className="fa-solid fa-lock mr-1.5" />{processing === 'publish' ? 'Menyimpan...' : 'Publikasikan'}</Button>}
-                            {canManageDrawing && isPublished && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/unpublish', {}, 'unpublish')} disabled={!!processing} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"><i className={`fa-solid ${processing === 'unpublish' ? 'fa-spinner animate-spin' : 'fa-lock-open'} mr-1.5`} />{processing === 'unpublish' ? 'Mengembalikan...' : 'Kembalikan ke Penyusunan'}</Button>}
-                            {canManageDrawing && isPublished && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/start', {}, 'start')} disabled={!!processing} className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-800 disabled:opacity-50"><i className="fa-solid fa-play mr-1.5" />Mulai Pertandingan</Button>}
-                            {canManageDrawing && isInProgress && <Button variant="unstyled" size="none" type="button" onClick={() => post('/admin/pertandingan/drawing/complete', {}, 'complete')} disabled={!!processing} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50"><i className="fa-solid fa-flag-checkered mr-1.5" />Selesaikan Event</Button>}
-                            {canManageDrawing && (isInProgress || isCompleted) && <Button variant="unstyled" size="none" type="button" onClick={resetCompetition} disabled={!!processing} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"><i className={`fa-solid ${processing === 'reset-competition' ? 'fa-spinner animate-spin' : 'fa-arrow-rotate-left'} mr-1.5`} />{processing === 'reset-competition' ? 'Mereset...' : 'Reset Pertandingan'}</Button>}
-                            <Button variant="unstyled" size="none" type="button" onClick={() => window.print()} className="rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef]"><i className="fa-solid fa-print mr-1.5" />Cetak</Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {scheduleEditMode && (
+                                <button
+                                    type="button"
+                                    onClick={() => setScheduleEditMode(false)}
+                                    className="rounded-lg border border-[#c0392b] bg-[#fff2ef] px-3.5 py-2 text-xs font-semibold text-[#a93226] hover:bg-[#ffe6e1] transition"
+                                >
+                                    <i className="fa-solid fa-check mr-1.5" />
+                                    Selesai Edit Jadwal
+                                </button>
+                            )}
+
+                            {canManageDrawing && !isLocked && (
+                                <Button
+                                    variant="unstyled"
+                                    size="none"
+                                    type="button"
+                                    onClick={() => post('/admin/pertandingan/drawing/generate', {}, 'generate')}
+                                    disabled={!!processing}
+                                    className="rounded-lg bg-[#17120f] px-4 py-2.5 text-sm font-bold text-[#f0c060] hover:bg-black disabled:opacity-50 transition shadow-sm"
+                                >
+                                    <i className={`fa-solid ${processing === 'generate' ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'} mr-1.5`} />
+                                    {processing === 'generate' ? 'Membentuk bagan...' : 'Generate Semua'}
+                                </Button>
+                            )}
+
+                            {canManageDrawing && workflow.generated_categories > 0 && !isLocked && (
+                                <Button
+                                    variant="unstyled"
+                                    size="none"
+                                    type="button"
+                                    onClick={() => post('/admin/pertandingan/drawing/publish', {}, 'publish')}
+                                    disabled={!!processing}
+                                    className="rounded-lg bg-[#a93226] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#8e281e] disabled:opacity-50 transition shadow-sm"
+                                >
+                                    <i className="fa-solid fa-lock mr-1.5" />
+                                    {processing === 'publish' ? 'Menyimpan...' : 'Publikasikan'}
+                                </Button>
+                            )}
+
+                            {canManageDrawing && isPublished && (
+                                <Button
+                                    variant="unstyled"
+                                    size="none"
+                                    type="button"
+                                    onClick={() => post('/admin/pertandingan/drawing/start', {}, 'start')}
+                                    disabled={!!processing}
+                                    className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-800 disabled:opacity-50 transition shadow-sm"
+                                >
+                                    <i className="fa-solid fa-play mr-1.5" />
+                                    Mulai Pertandingan
+                                </Button>
+                            )}
+
+                            {canManageDrawing && isInProgress && (
+                                <Button
+                                    variant="unstyled"
+                                    size="none"
+                                    type="button"
+                                    onClick={() => post('/admin/pertandingan/drawing/complete', {}, 'complete')}
+                                    disabled={!!processing}
+                                    className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50 transition shadow-sm"
+                                >
+                                    <i className="fa-solid fa-flag-checkered mr-1.5" />
+                                    Selesaikan Event
+                                </Button>
+                            )}
+
+                            <ActionMenuDropdown
+                                label="Menu Aksi"
+                                theme="light"
+                                menuHeader="Opsi & Aksi Pertandingan"
+                                maxHeight="max-h-[300px]"
+                                icon={<i className="fa-solid fa-sliders text-xs text-[#a93226]" />}
+                                items={drawingMenuItems}
+                            />
                         </div>
                     </section>
 
@@ -597,8 +839,53 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                         <main className="min-w-0 rounded-2xl border border-[#e8e1d8] bg-white p-4 shadow-sm md:p-5">
                             {category ? <>
                                 <div className="mb-5 flex flex-col gap-3 border-b border-[#eee8e0] pb-4 md:flex-row md:items-start md:justify-between">
-                                    <div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase ${category.type === 'embu' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>{category.type_label}</span><StatusBadge status={drawing?.status || category.drawing_status} /></div><h2 className="mt-2.5 text-xl font-bold leading-snug tracking-tight text-[#17120f]">{category.name}</h2><p className="mt-1.5 text-sm leading-relaxed text-[#746b63]">{formatLabels[drawing?.format || category.format] || 'Format ditentukan saat generate'} · {category.participant_count} {category.participant_label.toLowerCase()} dari {category.contingent_count} kontingen.</p></div>
-                                    {canManageDrawing && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post(`/admin/pertandingan/drawing/category/${category.id}/generate`, {}, 'category')} disabled={!!processing || !category.is_eligible} className="shrink-0 rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef] disabled:cursor-not-allowed disabled:opacity-45"><i className={`fa-solid ${processing === 'category' ? 'fa-spinner animate-spin' : 'fa-shuffle'} mr-1.5`} />Drawing Ulang Kategori</Button>}
+                                    <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase ${category.type === 'embu' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>{category.type_label}</span>
+                                            <StatusBadge status={drawing?.status || category.drawing_status} />
+                                            {category.is_round_robin_eligible && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                                                    <i className="fa-solid fa-arrows-rotate text-emerald-600" />
+                                                    Kondisional Entry {category.participant_count} Atlet · Mendukung Round Robin
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h2 className="mt-2.5 text-xl font-bold leading-snug tracking-tight text-[#17120f]">{category.name}</h2>
+                                        <p className="mt-1.5 text-sm leading-relaxed text-[#746b63]">{formatLabels[drawing?.format || category.format] || 'Format ditentukan saat generate'} · {category.participant_count} {category.participant_label.toLowerCase()} dari {category.contingent_count} kontingen.</p>
+
+                                        {canManageDrawing && !isLocked && category.available_formats && Object.keys(category.available_formats).length > 1 && (
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2.5">
+                                                <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                                    <i className="fa-solid fa-sliders text-amber-600" />
+                                                    Pilihan Sistem Tanding:
+                                                </span>
+                                                <select
+                                                    value={selectedFormat}
+                                                    onChange={(e) => setSelectedFormat(e.target.value)}
+                                                    disabled={!!processing}
+                                                    className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-[#17120f] shadow-xs focus:border-[#d4a843] focus:outline-none"
+                                                >
+                                                    {Object.entries(category.available_formats).map(([val, label]) => (
+                                                        <option key={val} value={val}>{label}</option>
+                                                    ))}
+                                                </select>
+                                                {selectedFormat !== (drawing?.format || category.format) && (
+                                                    <Button
+                                                        variant="unstyled"
+                                                        size="none"
+                                                        type="button"
+                                                        onClick={() => post(`/admin/pertandingan/drawing/category/${category.id}/generate`, { bracket_type: selectedFormat }, 'category')}
+                                                        disabled={!!processing}
+                                                        className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-700 shadow-xs"
+                                                    >
+                                                        <i className={`fa-solid ${processing === 'category' ? 'fa-spinner animate-spin' : 'fa-check'} mr-1`} />
+                                                        Terapkan & Generate Format Baru
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {canManageDrawing && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post(`/admin/pertandingan/drawing/category/${category.id}/generate`, { bracket_type: selectedFormat || undefined }, 'category')} disabled={!!processing || !category.is_eligible} className="shrink-0 rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef] disabled:cursor-not-allowed disabled:opacity-45"><i className={`fa-solid ${processing === 'category' ? 'fa-spinner animate-spin' : 'fa-shuffle'} mr-1.5`} />Drawing Ulang Kategori</Button>}
                                 </div>
                                 <BracketView category={category} drawing={drawing} matches={matches} />
                             </> : <EmptyState icon="fa-list-check" title="Nomor pertandingan belum tersedia" description="Aktifkan nomor pertandingan di Detail Event terlebih dahulu." />}

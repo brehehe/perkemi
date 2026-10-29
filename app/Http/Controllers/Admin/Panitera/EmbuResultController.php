@@ -80,7 +80,8 @@ class EmbuResultController extends Controller
             'hasTopFourTie' => $category ? $results->hasTopFourTie($finalRankings) : false,
             'champions' => $champions,
             'canManage' => $eventContext->canManage($request, $event),
-            'canOverrideScore' => $request->user()?->hasRole('Super Admin') ?? false,
+            'canInputScore' => $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false,
+            'canOverrideScore' => $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false,
         ]);
     }
 
@@ -96,14 +97,19 @@ class EmbuResultController extends Controller
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'embu', 404);
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false;
+        if (! $isFullAdmin && ! $request->boolean('return_to_match')) {
+            abort(403, 'Hanya Admin atau Super Admin yang berwenang menginput atau mengubah nilai pada rekapitulasi Embu.');
+        }
+
         $validated = $request->validated();
         $existingScore = EmbuScore::query()
             ->whereBelongsTo($tournamentMatch)
             ->where('tiebreak_round', $validated['tiebreak_round'])
             ->first();
 
-        if ($existingScore && ! $request->user()?->hasRole('Super Admin')) {
-            abort(403, 'Hanya Super Admin yang berwenang mengubah nilai yang sudah ada.');
+        if ($existingScore && ! $isFullAdmin) {
+            abort(403, 'Hanya Super Admin dan Admin yang berwenang mengubah nilai yang sudah ada.');
         }
         $calculated = $calculator->calculate(
             $validated['judge_scores'],
@@ -195,5 +201,23 @@ class EmbuResultController extends Controller
         $results->confirmChampions($event, $matchCategory);
 
         return back()->with('success', 'Juara Embu berhasil dikunci: emas, perak, dan dua perunggu bersama.');
+    }
+
+    public function resolveManualTiebreak(
+        Request $request,
+        TournamentMatch $tournamentMatch,
+        EventContext $eventContext,
+        EmbuResultService $results,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $eventContext->ensureCanManage($request, $event);
+        abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'embu', 404);
+
+        $tiedMatchId = $request->string('tied_match_id')->toString();
+        $tiedMatch = $tiedMatchId ? TournamentMatch::find($tiedMatchId) : null;
+
+        $results->setManualTiebreakWinner($tournamentMatch, $tiedMatch);
+
+        return back()->with('success', "Keputusan manual panitera (Skenario E) berhasil ditetapkan: {$tournamentMatch->participant_label} diputuskan unggul.");
     }
 }

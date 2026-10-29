@@ -41,6 +41,9 @@ class TournamentDrawingGenerator
                     $reasons->push("Minimal {$minimumContingents} kontingen; tersedia {$contingentCount}.");
                 }
 
+                $availableFormats = $this->availableFormatsFor($category, $participantCount);
+                $isRoundRobinEligible = $category->type === 'randori' && $participantCount >= 3 && $participantCount <= 5;
+
                 return [
                     'id' => $category->id,
                     'name' => $category->name,
@@ -53,7 +56,10 @@ class TournamentDrawingGenerator
                     'minimum_contingents' => $minimumContingents,
                     'is_eligible' => $reasons->isEmpty(),
                     'reason' => $reasons->join(' '),
+                    'preferred_bracket_type' => $category->preferred_bracket_type,
                     'format' => $this->formatFor($category, $participantCount),
+                    'available_formats' => $availableFormats,
+                    'is_round_robin_eligible' => $isRoundRobinEligible,
                     'participants' => $participants->values(),
                 ];
             })
@@ -133,6 +139,10 @@ class TournamentDrawingGenerator
             ->whereBelongsTo($event)
             ->whereIn('event_match_category_id', $categoryIds)
             ->whereHas('athlete.contingent', fn ($query) => $query->whereIn('id', $eligibleContingentIds))
+            ->where(function ($query) {
+                $query->whereNull('weigh_in_status')
+                    ->orWhereNotIn('weigh_in_status', ['overweight', 'underweight', 'failed', 'disqualified']);
+            })
             ->with('athlete.contingent:id,name,city')
             ->get();
 
@@ -210,8 +220,52 @@ class TournamentDrawingGenerator
         return $ordered;
     }
 
+    /**
+     * Get conditionally available tournament formats based on current entries count.
+     *
+     * @return array<string, string>
+     */
+    public function availableFormatsFor(EventMatchCategory $category, int $participantCount): array
+    {
+        if ($category->type === 'embu') {
+            return match (true) {
+                $participantCount <= 9 => ['embu_direct_final' => 'Embu 1 Pool + Babak Final'],
+                $participantCount <= 11 => ['embu_2_pools' => 'Embu 2 Pool (4 terbaik/pool ke final)'],
+                $participantCount <= 17 => ['embu_3_pools' => 'Embu 3 Pool (3 terbaik/pool ke final)'],
+                default => ['embu_4_pools' => 'Embu 4 Pool (2 terbaik/pool ke final)'],
+            };
+        }
+
+        // Conditional Entry logic for Randori:
+        // Round Robin (Setengah Kompetisi) becomes available conditionally when entries are 3 to 5.
+        if ($participantCount >= 3 && $participantCount <= 5) {
+            return [
+                'round_robin' => 'Setengah Kompetisi (Round Robin) · Setiap atlet saling bertanding',
+                'double_elimination' => 'Sistem Gugur Ganda (Double Elimination)',
+                'single_elimination' => 'Sistem Gugur Tunggal',
+            ];
+        }
+
+        if ($participantCount <= 4) {
+            return [
+                'double_elimination' => 'Sistem Gugur Ganda (Double Elimination)',
+                'single_elimination' => 'Sistem Gugur Tunggal',
+            ];
+        }
+
+        return [
+            'single_elimination' => 'Sistem Gugur Tunggal',
+        ];
+    }
+
     private function formatFor(EventMatchCategory $category, int $participantCount): string
     {
+        $available = array_keys($this->availableFormatsFor($category, $participantCount));
+
+        if ($category->preferred_bracket_type && in_array($category->preferred_bracket_type, $available, true)) {
+            return $category->preferred_bracket_type;
+        }
+
         if ($category->type === 'randori') {
             return $participantCount <= 4 ? 'double_elimination' : 'single_elimination';
         }
@@ -299,7 +353,13 @@ class TournamentDrawingGenerator
     /** @param Collection<int, array<string, mixed>> $participants */
     private function createRandoriNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
     {
-        if ($participants->count() <= 4) {
+        if ($drawing->bracket_type === 'round_robin') {
+            $this->createRoundRobinNodes($event, $category, $drawing, $participants);
+
+            return;
+        }
+
+        if ($drawing->bracket_type === 'double_elimination' || ($drawing->bracket_type === null && $participants->count() <= 4)) {
             $this->createDoubleEliminationNodes($event, $category, $drawing, $participants);
 
             return;
@@ -485,7 +545,7 @@ class TournamentDrawingGenerator
         $grandFinal = $this->createNode($event, $category, $drawing, [
             'phase' => 'final',
             'round_label' => 'Grand Final',
-            'match_sequence' => $sequence,
+            'match_sequence' => $sequence++,
             'bracket_position' => 1,
             'red_label' => 'Pemenang Partai #'.$upperFinal->match_sequence,
             'blue_label' => 'Pemenang Partai #'.$lowerFinal->match_sequence,
@@ -493,6 +553,100 @@ class TournamentDrawingGenerator
         ]);
         $upperFinal->update(['next_match_id' => $grandFinal->id]);
         $lowerFinal->update(['next_match_id' => $grandFinal->id]);
+
+        $grandFinal2 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'final',
+            'round_label' => 'Grand Final Ulang (GF2)',
+            'match_sequence' => $sequence,
+            'bracket_position' => 2,
+            'red_label' => 'Pemenang Upper Bracket (Bila Perlu)',
+            'blue_label' => 'Pemenang Lower Bracket (Bila Perlu)',
+            'is_bye' => false,
+            'status' => 'pending',
+            'metadata' => [
+                'placeholder' => true,
+                'is_gf2' => true,
+                'athlete_ids' => $athleteIds,
+            ],
+        ]);
+        $grandFinal->update(['next_match_id' => $grandFinal2->id]);
+    }
+
+    /** @param Collection<int, array<string, mixed>> $participants */
+    private function createRoundRobinNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
+    {
+        $list = $participants->values()->all();
+        $rounds = $this->generateRoundRobinRounds($list);
+        $sequence = 1;
+        $totalRounds = count($rounds);
+
+        foreach ($rounds as $roundIndex => $pairs) {
+            $roundNumber = $roundIndex + 1;
+            $roundLabel = "Putaran {$roundNumber}";
+
+            foreach ($pairs as $pos => $pair) {
+                [$red, $blue] = $pair;
+
+                $this->createNode($event, $category, $drawing, [
+                    'phase' => $roundNumber === $totalRounds ? 'final' : 'preliminary',
+                    'round_label' => $roundLabel,
+                    'match_sequence' => $sequence++,
+                    'bracket_position' => $pos + 1,
+                    'red_entry_id' => $red['entry_id'] ?? null,
+                    'blue_entry_id' => $blue['entry_id'] ?? null,
+                    'red_label' => $red['label'] ?? 'Sudut Merah',
+                    'blue_label' => $blue['label'] ?? 'Sudut Putih',
+                    'is_bye' => false,
+                    'metadata' => $this->pairMetadata($red, $blue),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Generate balanced round-robin pairings using the standard circle/polygon rotation.
+     *
+     * @param  list<array<string, mixed>>  $participants
+     * @return list<list<array{0: array<string, mixed>, 1: array<string, mixed>}>>
+     */
+    private function generateRoundRobinRounds(array $participants): array
+    {
+        $items = $participants;
+        $count = count($items);
+
+        if ($count % 2 !== 0) {
+            $items[] = null; // Dummy for bye
+            $count++;
+        }
+
+        $rounds = [];
+        $totalRounds = $count - 1;
+        $half = intdiv($count, 2);
+
+        for ($r = 0; $r < $totalRounds; $r++) {
+            $pairs = [];
+
+            for ($i = 0; $i < $half; $i++) {
+                $p1 = $items[$i];
+                $p2 = $items[$count - 1 - $i];
+
+                if ($p1 !== null && $p2 !== null) {
+                    $pairs[] = [$p1, $p2];
+                }
+            }
+
+            if (! empty($pairs)) {
+                $rounds[] = $pairs;
+            }
+
+            // Rotate array keeping the very first element fixed
+            $fixed = array_shift($items);
+            $last = array_pop($items);
+            array_unshift($items, $last);
+            array_unshift($items, $fixed);
+        }
+
+        return $rounds;
     }
 
     /** @param array<string, mixed> $attributes */

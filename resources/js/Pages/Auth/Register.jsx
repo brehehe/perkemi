@@ -5,6 +5,7 @@ export default function Register({ year = new Date().getFullYear(), event = null
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         email: '',
+        nik_perkemi: '',
         contingent_name: '',
         city: '',
         manager_name: '',
@@ -234,6 +235,19 @@ export default function Register({ year = new Date().getFullYear(), event = null
                                         className="kempo-input font-dm"
                                     />
                                 </div>
+
+                                {/* NIK PERKEMI / KTA */}
+                                <Input
+                                    label="NIK / Nomor Induk Kenshi PERKEMI (Opsional)"
+                                    value={data.nik_perkemi}
+                                    onChange={(event) => setData('nik_perkemi', event.target.value)}
+                                    placeholder="Contoh: 3578012345670001 / ID-PERKEMI"
+                                    iconLeft={<i className="fa-solid fa-id-card text-[#d4a843]" aria-hidden="true" />}
+                                    error={errors.nik_perkemi}
+                                    containerClassName="w-full animate-fade-up-2"
+                                    labelClassName="label-text dark:text-[#b5afa6] tracking-widest"
+                                    className="kempo-input font-dm"
+                                />
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {/* 3. Nama Kontingen */}

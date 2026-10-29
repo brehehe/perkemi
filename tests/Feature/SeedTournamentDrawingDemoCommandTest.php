@@ -60,7 +60,7 @@ test('command creates isolated drawing demo data with double and single eliminat
         ->and($event->registrations()->where('status', RegistrationStatus::Verified)->where('payment_status', PaymentStatus::Verified)->count())->toBe(6)
         ->and($doubleDrawing->bracket_type)->toBe('double_elimination')
         ->and($doubleDrawing->participant_count)->toBe(4)
-        ->and($doubleDrawing->matches()->count())->toBe(6)
+        ->and($doubleDrawing->matches()->count())->toBe(7)
         ->and($singleDrawing->bracket_type)->toBe('single_elimination')
         ->and($singleDrawing->participant_count)->toBe(14)
         ->and($singleDrawing->matches()->count())->toBeGreaterThan(0)

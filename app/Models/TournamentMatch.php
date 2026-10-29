@@ -116,4 +116,31 @@ class TournamentMatch extends Model
     {
         return $this->hasOne(RandoriScore::class);
     }
+
+    public function redEntry(): BelongsTo
+    {
+        return $this->belongsTo(AthleteMatchCategoryEntry::class, 'red_entry_id');
+    }
+
+    public function blueEntry(): BelongsTo
+    {
+        return $this->belongsTo(AthleteMatchCategoryEntry::class, 'blue_entry_id');
+    }
+
+    public function participantEntry(): BelongsTo
+    {
+        return $this->belongsTo(AthleteMatchCategoryEntry::class, 'participant_entry_id');
+    }
+
+    public function varReviews(): HasMany
+    {
+        return $this->hasMany(TournamentMatchVarReview::class, 'tournament_match_id')
+            ->orderByDesc('created_at');
+    }
+
+    public function activeVarReview(): HasOne
+    {
+        return $this->hasOne(TournamentMatchVarReview::class, 'tournament_match_id')
+            ->where('status', 'reviewing');
+    }
 }

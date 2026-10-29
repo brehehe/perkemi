@@ -206,16 +206,16 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                                 items={[
                                     ...(canCreate
                                         ? [
-                                              {
-                                                  label: 'Buat Registrasi Baru',
-                                                  description: 'Daftarkan kontingen baru ke event ini',
-                                                  icon: <i className="fa-solid fa-plus text-[#d4a843]" />,
-                                                  href: `/admin/pendaftaran/registrasi/create${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`,
-                                                  isLink: true,
-                                                  tone: 'gold',
-                                                  badge: 'Form',
-                                              },
-                                          ]
+                                            {
+                                                label: 'Buat Registrasi Baru',
+                                                description: 'Daftarkan kontingen baru ke event ini',
+                                                icon: <i className="fa-solid fa-plus text-[#d4a843]" />,
+                                                href: `/admin/pendaftaran/registrasi/create${activeEvent?.id ? `?event_id=${activeEvent.id}` : ''}`,
+                                                isLink: true,
+                                                tone: 'gold',
+                                                badge: 'Form',
+                                            },
+                                        ]
                                         : []),
                                     {
                                         label: 'Ekspor Data ke Excel',
@@ -323,33 +323,30 @@ export default function RegistrationIndex({ registrations, stats, activeEvent, e
                         <Button variant="unstyled" size="none"
                             type="button"
                             onClick={() => handleStatusTab('all')}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
-                                statusFilter === 'all'
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${statusFilter === 'all'
                                     ? 'bg-white text-[#0f0d0b] shadow-xs'
                                     : 'text-[#7a746e] hover:text-[#0f0d0b]'
-                            }`}
+                                }`}
                         >
                             Semua
                         </Button>
                         <Button variant="unstyled" size="none"
                             type="button"
                             onClick={() => handleStatusTab('verified')}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
-                                statusFilter === 'verified'
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${statusFilter === 'verified'
                                     ? 'bg-white text-emerald-700 shadow-xs'
                                     : 'text-[#7a746e] hover:text-emerald-700'
-                            }`}
+                                }`}
                         >
                             Terverifikasi
                         </Button>
                         <Button variant="unstyled" size="none"
                             type="button"
                             onClick={() => handleStatusTab('pending')}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${
-                                statusFilter === 'pending'
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${statusFilter === 'pending'
                                     ? 'bg-white text-amber-700 shadow-xs'
                                     : 'text-[#7a746e] hover:text-amber-700'
-                            }`}
+                                }`}
                         >
                             Menunggu
                         </Button>

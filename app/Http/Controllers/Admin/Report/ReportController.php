@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\RandoriScore;
+use App\Models\TournamentMatchVarReview;
 use App\Models\TournamentResult;
 use App\Services\Admin\DashboardMetricsService;
 use App\Services\Reports\ReportDatasetBuilder;
@@ -34,14 +35,16 @@ class ReportController extends Controller
 
         $report = $request->string('report')->toString();
         $report = array_key_exists($report, ReportDatasetBuilder::Reports) ? $report : 'champions';
+        $rankingMethod = $request->string('ranking_method', 'medals')->toString();
 
         return Inertia::render('Admin/Report/Index', [
             'activeEvent' => $activeEvent->only(['id', 'name', 'city', 'start_date', 'end_date', 'status']),
             'events' => $this->eventOptions($request),
+            'rankingMethod' => $rankingMethod,
             'reportOptions' => collect(ReportDatasetBuilder::Reports)
                 ->map(fn (array $definition, string $key): array => ['value' => $key, ...$definition])
                 ->values(),
-            'dataset' => $datasetBuilder->build($activeEvent, $report),
+            'dataset' => $datasetBuilder->build($activeEvent, $report, $rankingMethod),
         ]);
     }
 
@@ -58,7 +61,8 @@ class ReportController extends Controller
 
         $report = $request->string('report')->toString();
         $report = array_key_exists($report, ReportDatasetBuilder::Reports) ? $report : 'champions';
-        $dataset = $datasetBuilder->build($activeEvent, $report);
+        $rankingMethod = $request->string('ranking_method', 'medals')->toString();
+        $dataset = $datasetBuilder->build($activeEvent, $report, $rankingMethod);
         $columns = collect($dataset['columns']);
         $rows = collect($dataset['rows'])
             ->map(fn (array $row): array => $columns
@@ -77,6 +81,81 @@ class ReportController extends Controller
             'Content-Disposition' => 'attachment; filename="'.$workbook->filename($dataset['title'], $activeEvent->name).'"',
             'Content-Length' => (string) strlen($contents),
             'Cache-Control' => 'private, no-store, max-age=0',
+        ]);
+    }
+
+    /**
+     * Display the official Berita Acara Pertandingan for A4 printing and PDF archival.
+     */
+    public function printBeritaAcara(
+        Request $request,
+        ReportDatasetBuilder $datasetBuilder,
+    ): View {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event, 404, 'Event belum tersedia.');
+
+        $standings = $datasetBuilder->medalStandings($activeEvent, 'medal-standings', 'medals')['rows'];
+
+        $totalCourts = $activeEvent->courts()->count();
+        $totalContingents = $activeEvent->contingents()->count();
+        $athletes = $activeEvent->athletes();
+        $totalAthletes = $athletes->count();
+        $athletesMale = (clone $athletes)->where('gender', 'male')->count();
+        $athletesFemale = (clone $athletes)->where('gender', 'female')->count();
+
+        $categories = $activeEvent->matchCategories();
+        $totalCategories = $categories->count();
+        $embuCategories = (clone $categories)->where('type', 'embu')->count();
+        $randoriCategories = (clone $categories)->where('type', 'randori')->count();
+
+        $totalMatches = $activeEvent->tournamentMatches()->where('is_bye', false)->count();
+        $completedMatches = $activeEvent->tournamentMatches()->where('status', 'completed')->count();
+
+        $varReviewsCount = TournamentMatchVarReview::query()->whereBelongsTo($activeEvent)->count();
+
+        return view('reports.berita-acara', [
+            'event' => $activeEvent,
+            'standings' => $standings,
+            'stats' => [
+                'total_courts' => $totalCourts ?: 1,
+                'total_contingents' => $totalContingents,
+                'total_athletes' => $totalAthletes,
+                'athletes_male' => $athletesMale,
+                'athletes_female' => $athletesFemale,
+                'total_categories' => $totalCategories,
+                'embu_categories' => $embuCategories,
+                'randori_categories' => $randoriCategories,
+                'total_matches' => $totalMatches,
+                'completed_matches' => $completedMatches,
+                'var_reviews_count' => $varReviewsCount,
+            ],
+            'documentNumber' => 'BA/PERKEMI/'.now()->year.'/'.strtoupper(substr($activeEvent->id, 0, 8)),
+            'printedAt' => now()->translatedFormat('d F Y, H:i'),
+        ]);
+    }
+
+    /**
+     * Display medal tally and tournament standings.
+     */
+    public function medals(Request $request): Response
+    {
+        $activeEvent = $this->eventForRequest($request);
+        $systemParam = $request->string('system')->toString();
+        if ($activeEvent instanceof Event && in_array($systemParam, ['medals', 'points'], true)) {
+            $activeEvent->champion_ranking_system = $systemParam;
+        }
+
+        $medalStats = $this->metricsService->getMedalStats($activeEvent);
+        $distribution = $this->metricsService->getMedalDistribution($activeEvent);
+
+        return Inertia::render('Admin/Report/Medals', [
+            'activeEvent' => $activeEvent,
+            'events' => $this->eventOptions($request),
+            'medalStats' => $medalStats,
+            'standings' => $distribution['contingents'],
+            'rankingSystem' => $distribution['ranking_system'] ?? ($activeEvent?->champion_ranking_system ?? 'medals'),
+            'rankingLabel' => $distribution['ranking_label'] ?? (($activeEvent?->champion_ranking_system ?? 'medals') === 'points' ? 'Sistem Poin Berbobot' : 'Standar Medali'),
+            'pointsWeights' => $distribution['points_weights'] ?? null,
         ]);
     }
 
@@ -136,23 +215,6 @@ class ReportController extends Controller
             'event' => $activeEvent,
             'type' => 'randori',
             'score' => $scoreFormatter->randori($randoriScore, $activeEvent),
-        ]);
-    }
-
-    /**
-     * Display medal tally and tournament standings.
-     */
-    public function medals(Request $request): Response
-    {
-        $activeEvent = $this->eventForRequest($request);
-        $medalStats = $this->metricsService->getMedalStats($activeEvent);
-        $distribution = $this->metricsService->getMedalDistribution($activeEvent);
-
-        return Inertia::render('Admin/Report/Medals', [
-            'activeEvent' => $activeEvent,
-            'events' => $this->eventOptions($request),
-            'medalStats' => $medalStats,
-            'standings' => $distribution['contingents'],
         ]);
     }
 

@@ -10,6 +10,7 @@ export default function ActionMenuDropdown({
     theme = 'dark', // 'dark', 'gold', 'light', 'glass'
     align = 'right',
     width = 'w-64 sm:w-72',
+    maxHeight = 'max-h-[340px]',
     menuHeader = 'Pilihan Aksi',
     badge = null,
     className = '',
@@ -121,7 +122,10 @@ export default function ActionMenuDropdown({
                     </div>
                 )}
 
-                <div className="p-1.5 space-y-0.5 max-h-[80vh] overflow-y-auto" onClick={() => setOpen(false)}>
+                <div
+                    className={`p-1.5 space-y-0.5 ${maxHeight} overflow-y-auto overscroll-contain [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-white/20`}
+                    onClick={() => setOpen(false)}
+                >
                     {children ||
                         items.map((item, index) => {
                             if (item.divider) {

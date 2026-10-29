@@ -41,8 +41,12 @@ class EventMatchCategory extends Model
         'max_kyu',
         'merged_into_id',
         'is_combined',
+        'preferred_bracket_type',
         'order',
         'is_active',
+        'is_exhibition',
+        'weigh_in_locked_at',
+        'weigh_in_locked_by',
     ];
 
     /**
@@ -60,6 +64,8 @@ class EventMatchCategory extends Model
             'is_combined' => 'boolean',
             'order' => 'integer',
             'is_active' => 'boolean',
+            'is_exhibition' => 'boolean',
+            'weigh_in_locked_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
     }
@@ -117,8 +123,18 @@ class EventMatchCategory extends Model
         return $this->hasOne(TournamentDrawing::class);
     }
 
+    public function tournamentMatches(): HasMany
+    {
+        return $this->hasMany(TournamentMatch::class);
+    }
+
     public function tournamentResults(): HasMany
     {
         return $this->hasMany(TournamentResult::class);
+    }
+
+    public function weighInLockedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'weigh_in_locked_by');
     }
 }

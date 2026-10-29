@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\RandoriScore;
 use App\Models\TournamentResult;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class ReportDatasetBuilder
 {
@@ -21,12 +22,14 @@ class ReportDatasetBuilder
         'referee-analysis' => ['title' => 'Analisis Per Wasit', 'description' => 'Jumlah penilaian, rata-rata, rentang nilai, dan kelengkapan tanda tangan.', 'icon' => 'fa-chart-column'],
         'embu-summary' => ['title' => 'Rekapitulasi Embu', 'description' => 'Matriks lima nilai Juri, nilai tengah, denda waktu, dan nilai akhir.', 'icon' => 'fa-table-list'],
         'scoring-summary' => ['title' => 'Rekap Penilaian', 'description' => 'Ringkasan kelengkapan dan status seluruh sumber penilaian.', 'icon' => 'fa-clipboard-check'],
+        'medal-standings' => ['title' => 'Klasemen Medali & Juara Umum', 'description' => 'Rekapitulasi perolehan medali dan penentuan peringkat Juara Umum (Sistem Medali / Sistem Poin).', 'icon' => 'fa-medal'],
+        'category-recap' => ['title' => 'Rekap Per Nomor Pertandingan', 'description' => 'Rekapitulasi status bagan, jumlah peserta/tim, dan pemenang per nomor pertandingan.', 'icon' => 'fa-layer-group'],
     ];
 
     public function __construct(private ScoreReportFormatter $scoreFormatter) {}
 
     /** @return array<string, mixed> */
-    public function build(Event $event, string $report): array
+    public function build(Event $event, string $report, string $rankingMethod = 'medals'): array
     {
         $report = array_key_exists($report, self::Reports) ? $report : 'champions';
 
@@ -38,6 +41,8 @@ class ReportDatasetBuilder
             'referee-analysis' => $this->refereeAnalysis($event, $report),
             'embu-summary' => $this->embuSummary($event, $report),
             'scoring-summary' => $this->scoringSummary($event, $report),
+            'medal-standings' => $this->medalStandings($event, $report, $rankingMethod),
+            'category-recap' => $this->categoryRecap($event, $report),
             default => $this->champions($event, $report),
         };
     }
@@ -222,5 +227,208 @@ class ReportDatasetBuilder
             'randoriScore' => $score->id,
             'event_id' => $event->id,
         ], false);
+    }
+
+    /** @return array<string, mixed> */
+    public function medalStandings(Event $event, string $report, string $rankingMethod = 'medals'): array
+    {
+        $results = TournamentResult::query()
+            ->whereBelongsTo($event)
+            ->where('is_exhibition', false)
+            ->get();
+
+        $contingentStats = [];
+
+        foreach ($results as $res) {
+            $name = $res->contingent_name ?: ($res->contingent?->name ?? 'Independen');
+            if (! isset($contingentStats[$name])) {
+                $contingentStats[$name] = [
+                    'contingent' => $name,
+                    'gold' => 0,
+                    'silver' => 0,
+                    'bronze' => 0,
+                    'total_medals' => 0,
+                    'total_points' => 0,
+                ];
+            }
+
+            $rankVal = $res->rank instanceof \BackedEnum ? (int) $res->rank->value : (int) $res->rank;
+            if ($rankVal === 1) {
+                $contingentStats[$name]['gold']++;
+            } elseif ($rankVal === 2) {
+                $contingentStats[$name]['silver']++;
+            } elseif ($rankVal === 3 || $rankVal === 4) {
+                $contingentStats[$name]['bronze']++;
+            }
+        }
+
+        foreach ($contingentStats as &$item) {
+            $item['total_medals'] = $item['gold'] + $item['silver'] + $item['bronze'];
+            $item['total_points'] = ($item['gold'] * 5) + ($item['silver'] * 3) + ($item['bronze'] * 1);
+        }
+        unset($item);
+
+        $collection = collect(array_values($contingentStats));
+
+        if ($rankingMethod === 'points') {
+            $sorted = $collection->sort(function ($a, $b) {
+                if ($a['total_points'] !== $b['total_points']) {
+                    return $b['total_points'] <=> $a['total_points'];
+                }
+                if ($a['gold'] !== $b['gold']) {
+                    return $b['gold'] <=> $a['gold'];
+                }
+                if ($a['silver'] !== $b['silver']) {
+                    return $b['silver'] <=> $a['silver'];
+                }
+
+                return $b['bronze'] <=> $a['bronze'];
+            })->values();
+        } else {
+            $sorted = $collection->sort(function ($a, $b) {
+                if ($a['gold'] !== $b['gold']) {
+                    return $b['gold'] <=> $a['gold'];
+                }
+                if ($a['silver'] !== $b['silver']) {
+                    return $b['silver'] <=> $a['silver'];
+                }
+                if ($a['bronze'] !== $b['bronze']) {
+                    return $b['bronze'] <=> $a['bronze'];
+                }
+
+                return $b['total_points'] <=> $a['total_points'];
+            })->values();
+        }
+
+        $rows = $sorted->map(function (array $item, int $index): array {
+            $rank = $index + 1;
+            $status = match ($rank) {
+                1 => 'Juara Umum I (Piala Bergilir)',
+                2 => 'Juara Umum II',
+                3 => 'Juara Umum III',
+                default => '-',
+            };
+
+            return [
+                'rank' => $rank,
+                'contingent' => $item['contingent'],
+                'gold' => $item['gold'],
+                'silver' => $item['silver'],
+                'bronze' => $item['bronze'],
+                'total_medals' => $item['total_medals'],
+                'total_points' => $item['total_points'],
+                'status' => $status,
+            ];
+        });
+
+        $methodLabel = $rankingMethod === 'points'
+            ? 'Metode Pembobotan Poin (Emas=5, Perak=3, Perunggu=1)'
+            : 'Standar PB Perkemi (Prioritas Emas > Perak > Perunggu)';
+
+        return $this->dataset($report, [
+            ['key' => 'rank', 'label' => 'Peringkat'],
+            ['key' => 'contingent', 'label' => 'Kontingen / Daerah'],
+            ['key' => 'gold', 'label' => 'Emas (1)'],
+            ['key' => 'silver', 'label' => 'Perak (2)'],
+            ['key' => 'bronze', 'label' => 'Perunggu (3)'],
+            ['key' => 'total_medals', 'label' => 'Total Medali'],
+            ['key' => 'total_points', 'label' => 'Total Poin'],
+            ['key' => 'status', 'label' => 'Status Juara Umum'],
+        ], $rows, [
+            ['label' => 'Metode Peringkat', 'value' => $methodLabel],
+            ['label' => 'Total Kontingen Berperingkat', 'value' => $rows->count()],
+            ['label' => 'Juara Umum Terpilih', 'value' => $rows->first()['contingent'] ?? 'Belum ada'],
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function categoryRecap(Event $event, string $report): array
+    {
+        $categories = $event->matchCategories()
+            ->with([
+                'ageCategory:id,name',
+                'tournamentDrawing',
+                'tournamentMatches' => fn ($q) => $q->whereBelongsTo($event),
+                'tournamentResults' => fn ($q) => $q->whereBelongsTo($event)->with('athlete:id,name', 'contingent:id,name')->orderBy('rank'),
+            ])
+            ->withCount(['athleteEntries'])
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
+
+        $rows = $categories->map(function ($category): array {
+            $drawing = $category->tournamentDrawing;
+            $formatLabel = match ($drawing?->bracket_type) {
+                'single_elimination' => 'Sistem Gugur',
+                'double_elimination' => 'Double Elimination',
+                'round_robin' => 'Setengah Kompetisi',
+                'embu_direct_final' => '1 Pool + Final',
+                'embu_2_pools' => '2 Pool (4 Finalis/Pool)',
+                'embu_3_pools' => '3 Pool (3 Finalis/Pool)',
+                'embu_4_pools' => '4 Pool (2 Finalis/Pool)',
+                null => ($category->type === 'embu' ? 'Embu Penilaian' : 'Belum Diatur'),
+                default => Str::headline($drawing->bracket_type),
+            };
+
+            $nonByeMatches = $category->tournamentMatches->where('is_bye', false);
+            $totalMatches = $nonByeMatches->count();
+            $completedMatches = $nonByeMatches->where('status', 'completed')->count();
+
+            $statusLabel = match (true) {
+                $drawing === null => 'Belum Diundi',
+                $totalMatches === 0 => 'Bagan Siap',
+                $completedMatches === $totalMatches && $totalMatches > 0 => 'Selesai',
+                $completedMatches > 0 || $nonByeMatches->contains('status', 'in_progress') => "Sedang Berjalan ({$completedMatches}/{$totalMatches})",
+                default => 'Belum Dimulai',
+            };
+
+            $gold = $category->tournamentResults->firstWhere('rank.value', 1);
+            $silver = $category->tournamentResults->firstWhere('rank.value', 2);
+            $bronzeList = $category->tournamentResults->filter(fn ($r) => in_array($r->rank?->value, [3, 4], true));
+
+            $goldLabel = $gold
+                ? ($gold->athlete?->name ?? $gold->participant_key ?? '-').' ('.($gold->contingent?->name ?? '-').')'
+                : '-';
+            $silverLabel = $silver
+                ? ($silver->athlete?->name ?? $silver->participant_key ?? '-').' ('.($silver->contingent?->name ?? '-').')'
+                : '-';
+            $bronzeLabel = $bronzeList->isNotEmpty()
+                ? $bronzeList->map(fn ($b) => ($b->athlete?->name ?? $b->participant_key ?? '-').' ('.($b->contingent?->name ?? '-').')')->implode(' / ')
+                : '-';
+
+            return [
+                'code' => $category->code ?? '-',
+                'category' => $category->name,
+                'type' => ucfirst((string) $category->type),
+                'age_category' => $category->ageCategory?->name ?? '-',
+                'format' => $formatLabel,
+                'entries_count' => $category->athlete_entries_count.($category->type === 'embu' ? ' tim/atlet' : ' atlet'),
+                'matches_count' => $totalMatches.' partai',
+                'status' => $statusLabel,
+                'gold_winner' => $goldLabel,
+                'silver_winner' => $silverLabel,
+                'bronze_winner' => $bronzeLabel,
+                'classification' => $category->is_exhibition ? 'Ekshibisi' : 'Resmi',
+            ];
+        });
+
+        return $this->dataset($report, [
+            ['key' => 'code', 'label' => 'Kode'],
+            ['key' => 'category', 'label' => 'Nomor Pertandingan'],
+            ['key' => 'type', 'label' => 'Jenis'],
+            ['key' => 'age_category', 'label' => 'Kategori Usia'],
+            ['key' => 'format', 'label' => 'Sistem / Format'],
+            ['key' => 'entries_count', 'label' => 'Jumlah Peserta'],
+            ['key' => 'matches_count', 'label' => 'Partai'],
+            ['key' => 'status', 'label' => 'Status Pertandingan'],
+            ['key' => 'gold_winner', 'label' => 'Juara 1 (Emas)'],
+            ['key' => 'silver_winner', 'label' => 'Juara 2 (Perak)'],
+            ['key' => 'bronze_winner', 'label' => 'Juara 3 (Perunggu)'],
+            ['key' => 'classification', 'label' => 'Klasifikasi'],
+        ], $rows, [
+            ['label' => 'Total nomor pertandingan', 'value' => $rows->count()],
+            ['label' => 'Nomor selesai', 'value' => $rows->where('status', 'Selesai')->count()],
+            ['label' => 'Total peserta terdaftar', 'value' => $categories->sum('athlete_entries_count')],
+        ]);
     }
 }

@@ -66,15 +66,35 @@ function ParticipantDisplay({ match }) {
         );
     }
 
+    const winner = match.result?.winner_corner;
+
     return (
         <div className="grid overflow-hidden rounded-3xl border border-white/10 md:grid-cols-[1fr_auto_1fr]">
-            <div className="bg-rose-600/20 p-6 md:p-10">
-                <p className="text-xs font-bold uppercase tracking-[.18em] text-rose-300">AKA · Merah</p>
+            <div className={`p-6 transition-all md:p-10 ${
+                winner === 'aka'
+                    ? 'border-2 border-emerald-400 bg-emerald-600/20 shadow-lg'
+                    : winner === 'shiro'
+                        ? 'border border-black bg-black/90 opacity-40 grayscale'
+                        : 'bg-rose-600/20'
+            }`}>
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[.18em] text-rose-300">AKA · Merah</p>
+                    {winner === 'aka' && <span className="rounded-full bg-emerald-500 px-2.5 py-0.5 text-[10px] font-black uppercase text-black">Pemenang</span>}
+                </div>
                 <p className="mt-4 text-2xl font-black leading-tight md:text-4xl">{match.aka_label || 'Menunggu pemenang'}</p>
             </div>
             <div className="flex items-center justify-center border-y border-white/10 bg-black/20 px-6 py-3 text-xl font-black text-white/40 md:border-x md:border-y-0">VS</div>
-            <div className="bg-white/5 p-6 text-right md:p-10">
-                <p className="text-xs font-bold uppercase tracking-[.18em] text-slate-300">SHIRO · Putih</p>
+            <div className={`p-6 text-right transition-all md:p-10 ${
+                winner === 'shiro'
+                    ? 'border-2 border-emerald-400 bg-emerald-600/20 shadow-lg'
+                    : winner === 'aka'
+                        ? 'border border-black bg-black/90 opacity-40 grayscale'
+                        : 'bg-white/5'
+            }`}>
+                <div className="flex items-center justify-end gap-2">
+                    {winner === 'shiro' && <span className="rounded-full bg-emerald-500 px-2.5 py-0.5 text-[10px] font-black uppercase text-black">Pemenang</span>}
+                    <p className="text-xs font-bold uppercase tracking-[.18em] text-slate-300">SHIRO · Putih</p>
+                </div>
                 <p className="mt-4 text-2xl font-black leading-tight md:text-4xl">{match.shiro_label || 'Menunggu pemenang'}</p>
             </div>
         </div>
@@ -91,7 +111,7 @@ function EmptyCourt({ court }) {
     );
 }
 
-export default function CourtMonitor({ activeEvent, court, mode = 'arena', monitor, stateUrl, timerStateUrl }) {
+export default function CourtMonitor({ activeEvent, court, mode = 'arena', monitor, stateUrl, timerStateUrl, backUrl, backLabel }) {
     const [snapshot, setSnapshot] = useState(monitor);
     const refreshController = useRef(null);
 
@@ -184,6 +204,17 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         };
     }, [refreshSnapshot]);
 
+    useEffect(() => {
+        if (!window.Echo) return undefined;
+        const channel = window.Echo.private(`event-court.${court.id}`);
+        channel.listen('.var.updated', () => {
+            refreshSnapshot();
+        });
+        return () => {
+            channel.stopListening('.var.updated');
+        };
+    }, [court.id, refreshSnapshot]);
+
     const timer = liveTimer.state?.timer;
     const elapsedMilliseconds = useSynchronizedTimer(timer, liveTimer.serverClock, liveTimer.state?.match_id);
     const bell = useTimerBell({ timer, elapsedMilliseconds, matchId: liveTimer.state?.match_id, synchronized: liveTimer.synchronized });
@@ -238,14 +269,47 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                             </button>
                             <ThemeToggle className="border-white/10 bg-white/5 text-white/70 shadow-none hover:bg-white/10 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10" />
                             <TimerBellControls bell={bell} />
-                            <a href={`/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
-                                <i className="fa-solid fa-arrow-left" aria-hidden="true" />Panitera
+                            <a href={backUrl || `/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
+                                <i className="fa-solid fa-arrow-left" aria-hidden="true" />{backLabel || (backUrl ? 'Kembali' : 'Panitera')}
                             </a>
                         </div>
                     </div>
                 </header>
 
                 <div className="mx-auto mt-5 max-w-[1800px]">
+                    {/* VAR Review Overlay on Court Monitor */}
+                    {activeMatch?.var_review?.is_under_review && (
+                        <div className="mb-5 overflow-hidden rounded-3xl border-2 border-amber-500 bg-amber-500/20 p-5 shadow-2xl backdrop-blur-md animate-pulse">
+                            <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-2xl font-black text-black shadow-lg">
+                                        <i className="fa-solid fa-video" aria-hidden="true" />
+                                    </span>
+                                    <div>
+                                        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                                            <span className="rounded-full bg-rose-600 px-3 py-0.5 text-xs font-black uppercase tracking-wider text-white">
+                                                VAR REVIEW IN PROGRESS
+                                            </span>
+                                            <span className="font-mono text-xs font-bold text-amber-300">
+                                                WAKTU PERTANDINGAN DIJEDA
+                                            </span>
+                                        </div>
+                                        <h2 className="mt-1 text-xl font-black uppercase text-white sm:text-2xl">
+                                            Pemeriksaan Video Assistant Review
+                                        </h2>
+                                        <p className="text-sm font-semibold text-amber-200">
+                                            Alasan: {activeMatch.var_review.reason || 'Tantangan Video Replay'} · Pengaju: {activeMatch.var_review.corner?.toUpperCase()}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="rounded-2xl border border-amber-500/40 bg-black/60 px-5 py-3 text-center sm:text-right">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Status Putusan</p>
+                                    <p className="mt-1 font-mono text-sm font-black text-white">DALAM PENILAIAN WASIT</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {mode === 'arena' && (
                         activeMatch ? (
                             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -272,7 +336,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                     {mode === 'result' && (
                         <section className="min-h-[60vh] rounded-3xl border border-white/10 bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
-                            {resultMatch?.result ? <><div className="text-center"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#d4a843] sm:text-sm sm:tracking-[.18em]">Hasil Terverifikasi · Partai #{resultMatch.sequence}</p><h2 className="mt-3 text-2xl font-black sm:text-3xl md:text-5xl">{resultMatch.category_name}</h2><p className="mt-2 text-white/50">{resultMatch.round_label}</p></div>{resultMatch.category_type === 'embu' ? <div className="mx-auto mt-7 max-w-5xl sm:mt-10"><div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{resultMatch.result.judge_scores.map((score, index) => <div key={`${index}-${score}`} className="rounded-2xl border border-blue-400/20 bg-blue-400/10 p-3 text-center sm:p-4"><p className="text-xs text-blue-300">Juri {index + 1}</p><p className="mt-2 text-2xl font-black sm:text-3xl">{Number(score).toFixed(2)}</p></div>)}</div>{resultMatch.result.is_disqualified && <div className="mt-5 rounded-2xl border border-rose-400/40 bg-rose-500/15 p-4 text-center font-black text-rose-200">DISKUALIFIKASI · {resultMatch.result.disqualification_reason}</div>}<div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white/5 p-5 text-center"><p className="text-xs text-white/45">Durasi</p><p className="mt-2 text-3xl font-black">{resultMatch.result.duration_seconds ?? 0}s</p></div><div className="rounded-2xl bg-rose-500/10 p-5 text-center"><p className="text-xs text-rose-300">Total Denda</p><p className="mt-2 text-3xl font-black text-rose-300">-{Number(resultMatch.result.total_penalty ?? resultMatch.result.time_penalty).toFixed(2)}</p></div><div className="rounded-2xl bg-emerald-500/10 p-5 text-center"><p className="text-xs text-emerald-300">Nilai Akhir</p><p className="mt-2 text-4xl font-black text-emerald-300">{Number(resultMatch.result.final_score).toFixed(2)}</p></div></div></div> : <div className="mx-auto mt-7 grid max-w-5xl overflow-hidden rounded-3xl border border-white/10 sm:mt-10 md:grid-cols-[1fr_auto_1fr]"><div className={resultMatch.result.winner_corner === 'aka' ? 'bg-emerald-500/15 p-5 sm:p-8' : 'bg-rose-500/10 p-5 sm:p-8'}><p className="text-xs font-bold text-rose-300">AKA · MERAH</p><p className="mt-3 text-xl font-black sm:text-2xl">{resultMatch.aka_label}</p><p className="mt-6 text-6xl font-black sm:text-7xl">{resultMatch.result.aka_total}</p></div><div className="flex items-center justify-center border-y border-white/10 px-6 py-4 text-2xl font-black text-white/35 md:border-x md:border-y-0">VS</div><div className={`${resultMatch.result.winner_corner === 'shiro' ? 'bg-emerald-500/15' : 'bg-white/5'} p-5 text-right sm:p-8`}><p className="text-xs font-bold text-slate-300">SHIRO · PUTIH</p><p className="mt-3 text-xl font-black sm:text-2xl">{resultMatch.shiro_label}</p><p className="mt-6 text-6xl font-black sm:text-7xl">{resultMatch.result.shiro_total}</p></div></div>}</> : <div className="flex min-h-[50vh] flex-col items-center justify-center text-center"><i className="fa-solid fa-ranking-star text-5xl text-white/20" aria-hidden="true" /><h2 className="mt-5 text-2xl font-black">Belum Ada Hasil</h2><p className="mt-2 text-white/50">Hasil terbaru pada court ini akan tampil otomatis setelah diverifikasi.</p></div>}
+                            {resultMatch?.result ? <><div className="text-center"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#d4a843] sm:text-sm sm:tracking-[.18em]">Hasil Terverifikasi · Partai #{resultMatch.sequence}</p><h2 className="mt-3 text-2xl font-black sm:text-3xl md:text-5xl">{resultMatch.category_name}</h2><p className="mt-2 text-white/50">{resultMatch.round_label}</p></div>{resultMatch.category_type === 'embu' ? <div className="mx-auto mt-7 max-w-5xl sm:mt-10"><div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{resultMatch.result.judge_scores.map((score, index) => <div key={`${index}-${score}`} className="rounded-2xl border border-blue-400/20 bg-blue-400/10 p-3 text-center sm:p-4"><p className="text-xs text-blue-300">Juri {index + 1}</p><p className="mt-2 text-2xl font-black sm:text-3xl">{Number(score).toFixed(2)}</p></div>)}</div>{resultMatch.result.is_disqualified && <div className="mt-5 rounded-2xl border border-rose-400/40 bg-rose-500/15 p-4 text-center font-black text-rose-200">DISKUALIFIKASI · {resultMatch.result.disqualification_reason}</div>}<div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white/5 p-5 text-center"><p className="text-xs text-white/45">Durasi</p><p className="mt-2 text-3xl font-black">{resultMatch.result.duration_seconds ?? 0}s</p></div><div className="rounded-2xl bg-rose-500/10 p-5 text-center"><p className="text-xs text-rose-300">Total Denda</p><p className="mt-2 text-3xl font-black text-rose-300">-{Number(resultMatch.result.total_penalty ?? resultMatch.result.time_penalty).toFixed(2)}</p></div><div className="rounded-2xl bg-emerald-500/10 p-5 text-center"><p className="text-xs text-emerald-300">Nilai Akhir</p><p className="mt-2 text-4xl font-black text-emerald-300">{Number(resultMatch.result.final_score).toFixed(2)}</p></div></div></div> : <div className="mx-auto mt-7 grid max-w-5xl overflow-hidden rounded-3xl border border-white/10 sm:mt-10 md:grid-cols-[1fr_auto_1fr]"><div className={resultMatch.result.winner_corner === 'aka' ? 'bg-emerald-500/20 border-2 border-emerald-400 p-5 sm:p-8' : 'bg-black/90 opacity-40 grayscale border border-black p-5 sm:p-8'}><p className="text-xs font-bold text-rose-300">AKA · MERAH {resultMatch.result.winner_corner === 'aka' && '· PEMENANG'}</p><p className="mt-3 text-xl font-black sm:text-2xl">{resultMatch.aka_label}</p><p className="mt-6 text-6xl font-black sm:text-7xl">{resultMatch.result.aka_total}</p></div><div className="flex items-center justify-center border-y border-white/10 px-6 py-4 text-2xl font-black text-white/35 md:border-x md:border-y-0">VS</div><div className={`${resultMatch.result.winner_corner === 'shiro' ? 'bg-emerald-500/20 border-2 border-emerald-400' : 'bg-black/90 opacity-40 grayscale border border-black'} p-5 text-right sm:p-8`}><p className="text-xs font-bold text-slate-300">SHIRO · PUTIH {resultMatch.result.winner_corner === 'shiro' && '· PEMENANG'}</p><p className="mt-3 text-xl font-black sm:text-2xl">{resultMatch.shiro_label}</p><p className="mt-6 text-6xl font-black sm:text-7xl">{resultMatch.result.shiro_total}</p></div></div>}</> : <div className="flex min-h-[50vh] flex-col items-center justify-center text-center"><i className="fa-solid fa-ranking-star text-5xl text-white/20" aria-hidden="true" /><h2 className="mt-5 text-2xl font-black">Belum Ada Hasil</h2><p className="mt-2 text-white/50">Hasil terbaru pada court ini akan tampil otomatis setelah diverifikasi.</p></div>}
                         </section>
                     )}
 

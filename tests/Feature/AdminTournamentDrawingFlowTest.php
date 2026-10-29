@@ -428,7 +428,7 @@ test('randori with four participants uses double elimination on one court', func
         ->assertSessionHasNoErrors();
 
     expect($category->tournamentDrawing()->value('bracket_type'))->toBe('double_elimination')
-        ->and($category->tournamentDrawing()->firstOrFail()->matches()->count())->toBe(6)
+        ->and($category->tournamentDrawing()->firstOrFail()->matches()->count())->toBe(7)
         ->and($category->tournamentDrawing()->firstOrFail()->matches()->pluck('event_court_id')->filter()->unique()->count())->toBe(1);
 });
 

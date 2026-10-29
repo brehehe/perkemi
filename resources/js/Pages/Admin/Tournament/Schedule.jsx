@@ -84,15 +84,28 @@ function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onDra
                 <span>{match.court}</span>
             </div>
             {canManage && (
-                <button
-                    type="button"
-                    onClick={() => onSelect(match.id)}
-                    disabled={isProcessing}
-                    aria-pressed={isSelected}
-                    className="mt-2 min-h-11 w-full rounded-lg border border-black/10 bg-white/80 px-2.5 py-1.5 text-xs font-bold text-[#5f574f] transition hover:border-[#c0392b]/40 hover:text-[#a93226] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-wait sm:min-h-10"
-                >
-                    {isSelected ? 'Batalkan pilihan' : 'Pilih partai'}
-                </button>
+                <div className="mt-2 flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => onSelect(match.id)}
+                        disabled={isProcessing}
+                        aria-pressed={isSelected}
+                        className="min-h-9 flex-1 rounded-lg border border-black/10 bg-white/80 px-2 py-1.5 text-xs font-bold text-[#5f574f] transition hover:border-[#c0392b]/40 hover:text-[#a93226] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-wait"
+                    >
+                        {isSelected ? 'Batalkan' : 'Pilih partai'}
+                    </button>
+                    {onUnschedule && (
+                        <button
+                            type="button"
+                            onClick={() => onUnschedule(match.id)}
+                            disabled={isProcessing}
+                            title="Lepas dari jadwal (kembalikan ke antrean belum terjadwal)"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50/80 text-rose-700 transition hover:bg-rose-100 hover:text-rose-900"
+                        >
+                            <i className="fa-solid fa-arrow-rotate-left text-xs" />
+                        </button>
+                    )}
+                </div>
             )}
         </article>
     );
@@ -104,6 +117,7 @@ export default function Schedule({
     courts = [],
     sessions = [],
     matches = [],
+    unscheduledMatches = [],
     settings = null,
     summary = {},
     scheduleIsLocked = false,
@@ -115,16 +129,38 @@ export default function Schedule({
     const [dropTarget, setDropTarget] = useState(null);
     const [processingMatchId, setProcessingMatchId] = useState(null);
     const [clientErrors, setClientErrors] = useState([]);
+    const [showUnscheduledPanel, setShowUnscheduledPanel] = useState(false);
     const duration = Math.max(1, Number(settings?.match_duration_minutes || 10));
     const eventQuery = activeEvent?.id ? `?event_id=${encodeURIComponent(activeEvent.id)}` : '';
     const matchesBySlot = useMemo(() => new Map(matches.map((match) => [
         slotKey(match.session_id, match.scheduled_start, match.court_id),
         match,
     ])), [matches]);
-    const matchesById = useMemo(() => new Map(matches.map((match) => [match.id, match])), [matches]);
+    const matchesById = useMemo(() => {
+        const map = new Map(matches.map((match) => [match.id, match]));
+        unscheduledMatches.forEach((m) => map.set(m.id, m));
+        return map;
+    }, [matches, unscheduledMatches]);
     const selectedMatch = selectedMatchId ? matchesById.get(selectedMatchId) : null;
     const processingMatch = processingMatchId ? matchesById.get(processingMatchId) : null;
     const gridTemplateColumns = `90px repeat(${Math.max(courts.length, 1)}, minmax(260px, 1fr))`;
+
+    const unscheduleMatch = (matchId) => {
+        if (!canManageSchedule || processingMatchId) return;
+        setClientErrors([]);
+        router.delete(`/admin/pertandingan/jadwal/matches/${matchId}`, {
+            data: { event_id: activeEvent.id },
+            preserveScroll: true,
+            onStart: () => setProcessingMatchId(matchId),
+            onSuccess: () => {
+                setSelectedMatchId(null);
+                setDraggedMatchId(null);
+                setDropTarget(null);
+            },
+            onError: (errors) => setClientErrors(normalizeErrors(errors)),
+            onFinish: () => setProcessingMatchId(null),
+        });
+    };
 
     const moveMatch = (matchId, session, court, startTime, swapWithMatchId = null) => {
         const match = matchesById.get(matchId);
@@ -287,6 +323,105 @@ export default function Schedule({
                             </div>
                         </section>
 
+                        {selectedMatch && canManageSchedule && (
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-rose-300 bg-rose-50/80 p-4 shadow-sm">
+                                <div className="flex items-start gap-2.5">
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-500/20 text-rose-700 font-bold">
+                                        <i className="fa-solid fa-hand-pointer text-sm" />
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-bold text-rose-950">
+                                            Partai Terpilih: #{selectedMatch.sequence} {selectedMatch.category_name} ({selectedMatch.round_label})
+                                        </p>
+                                        <p className="mt-0.5 text-[11px] text-rose-800">
+                                            Klik slot kosong pada tabel untuk memindahkan, klik partai lain untuk menukar, atau klik tombol di sebelah kanan untuk melepas dari jadwal.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {selectedMatch.scheduled_start && (
+                                        <button
+                                            type="button"
+                                            onClick={() => unscheduleMatch(selectedMatch.id)}
+                                            disabled={Boolean(processingMatchId)}
+                                            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400 bg-rose-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-rose-700 disabled:opacity-50"
+                                        >
+                                            <i className="fa-solid fa-arrow-rotate-left text-[11px]" />
+                                            <span>Lepas dari Jadwal (Unschedule)</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedMatchId(null)}
+                                        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Batal
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {unscheduledMatches.length > 0 && (
+                            <section className="rounded-2xl border border-amber-300 bg-amber-50/60 p-4 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-800 font-bold">
+                                            <i className="fa-solid fa-calendar-xmark text-sm" />
+                                        </span>
+                                        <div>
+                                            <h3 className="text-xs sm:text-sm font-bold text-amber-950">
+                                                Antrean Belum Terjadwal ({unscheduledMatches.length} Partai)
+                                            </h3>
+                                            <p className="text-[11px] text-amber-800">
+                                                Partai yang dilepas atau belum memiliki slot. Pilih partai di bawah, lalu klik slot kosong pada tabel.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowUnscheduledPanel(!showUnscheduledPanel)}
+                                        className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 shadow-2xs"
+                                    >
+                                        <span>{showUnscheduledPanel ? 'Tutup Antrean' : 'Buka Antrean (' + unscheduledMatches.length + ')'}</span>
+                                        <i className={`fa-solid fa-chevron-down text-[10px] transition-transform ${showUnscheduledPanel ? 'rotate-180' : ''}`} />
+                                    </button>
+                                </div>
+
+                                {showUnscheduledPanel && (
+                                    <div className="mt-4 grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 max-h-72 overflow-y-auto p-1">
+                                        {unscheduledMatches.map((m) => {
+                                            const isSel = selectedMatchId === m.id;
+                                            return (
+                                                <div
+                                                    key={m.id}
+                                                    className={`flex flex-col justify-between rounded-xl border p-3 transition ${isSel ? 'border-[#c0392b] bg-[#fff5f2] ring-2 ring-[#c0392b]/20 shadow-xs' : 'border-amber-200 bg-white hover:border-amber-300'}`}
+                                                >
+                                                    <div>
+                                                        <div className="flex items-center justify-between text-[10px] font-bold">
+                                                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Partai #{m.sequence}</span>
+                                                            <span className="uppercase text-gray-500">{m.category_type}</span>
+                                                        </div>
+                                                        <p className="mt-1 font-bold text-xs text-[#17120f]">{m.category_name}</p>
+                                                        <p className="text-[11px] text-gray-600">{m.round_label}</p>
+                                                        <p className="mt-1 text-[11px] text-gray-700 italic truncate">{m.participant || 'Menunggu kenshi'}</p>
+                                                    </div>
+                                                    {canManageSchedule && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedMatchId(isSel ? null : m.id)}
+                                                            className={`mt-2.5 w-full rounded-lg py-1.5 text-xs font-bold transition ${isSel ? 'bg-[#c0392b] text-white' : 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'}`}
+                                                        >
+                                                            {isSel ? 'Batalkan Pilihan' : 'Pilih untuk Dijadwalkan'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
                         {courts.length === 0 || sessions.length === 0 ? (
                             <EmptyState
                                 icon="fa-calendar-plus"
@@ -371,6 +506,7 @@ export default function Schedule({
                                                                                 isSelected={selectedMatch?.id === match.id}
                                                                                 isProcessing={processingMatch?.id === match.id}
                                                                                 onSelect={(matchId) => setSelectedMatchId((current) => current === matchId ? null : matchId)}
+                                                                                onUnschedule={unscheduleMatch}
                                                                                 onDragStart={handleDragStart}
                                                                                 onDragEnd={() => {
                                                                                     setDraggedMatchId(null);

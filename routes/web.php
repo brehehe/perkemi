@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\Admin\Arbitration\ArbitrationController;
+use App\Http\Controllers\Admin\Arbitration\ArbitrationEvaluationController;
 use App\Http\Controllers\Admin\Arbitration\ArbitrationScorePrintController;
 use App\Http\Controllers\Admin\Arbitration\EmbuJudgeScoreController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\DocumentationController;
 use App\Http\Controllers\Admin\Master\AthleteController;
 use App\Http\Controllers\Admin\Master\ClerkController;
 use App\Http\Controllers\Admin\Master\ContingentController;
@@ -29,18 +31,23 @@ use App\Http\Controllers\Admin\Panitera\PaniteraMatchController;
 use App\Http\Controllers\Admin\Panitera\PaniteraMatchWorkflowController;
 use App\Http\Controllers\Admin\Panitera\PaniteraTimerController;
 use App\Http\Controllers\Admin\Panitera\RandoriResultController;
+use App\Http\Controllers\Admin\Panitera\VarReviewController;
 use App\Http\Controllers\Admin\Panitera\VerifiedEmbuResultController;
 use App\Http\Controllers\Admin\Registration\RegistrationController;
 use App\Http\Controllers\Admin\Registration\RegistrationWizardController;
 use App\Http\Controllers\Admin\Report\ReportController;
+use App\Http\Controllers\Admin\Simulation\TrainingModeController;
 use App\Http\Controllers\Admin\Tournament\EventRefereeController;
 use App\Http\Controllers\Admin\Tournament\TournamentController;
+use App\Http\Controllers\Admin\Tournament\WeighInController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\PaniteraTokenLoginController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Contingent\AthleteController as ContingentAthleteController;
 use App\Http\Controllers\Contingent\OfficialController as ContingentOfficialController;
 use App\Http\Controllers\Contingent\PortalController as ContingentPortalController;
 use App\Http\Controllers\PublicAthleteController;
+use App\Http\Controllers\PublicCourtMonitorController;
 use App\Http\Controllers\PublicEventController;
 use App\Http\Controllers\Referee\RefereeAttendanceHistoryController;
 use App\Http\Controllers\Referee\RefereeCheckInController;
@@ -63,6 +70,9 @@ Route::redirect('/athlete', '/athelete');
 Route::get('/event/{slug}', [PublicEventController::class, 'show'])->name('event.public.show');
 Route::get('/event/{slug}/register', [PublicEventController::class, 'register'])->name('event.public.register');
 Route::post('/event/{slug}/register', [PublicEventController::class, 'storeRegistration'])->name('event.public.register.store');
+Route::get('/event/{slug}/court/{eventCourt}/monitor', [PublicCourtMonitorController::class, 'show'])->name('event.public.court.monitor');
+Route::get('/event/{slug}/court/{eventCourt}/monitor/state', [PublicCourtMonitorController::class, 'state'])->name('event.public.court.monitor.state');
+Route::get('/event/{slug}/court/{eventCourt}/monitor/timer', [PublicCourtMonitorController::class, 'timer'])->name('event.public.court.monitor.timer');
 
 // Tenant Admin Entry & Exit (Slug-based)
 Route::get('/event/{slug}/admin', [TenantAccessController::class, 'enter'])->name('event.tenant.enter');
@@ -91,7 +101,10 @@ Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.
     Route::get('riwayat-pendaftaran', [ContingentPortalController::class, 'history'])->name('riwayat-pendaftaran');
 });
 
+Route::redirect('/admin', '/admin/dashboard');
 Route::get('/admin/dashboard', [DashboardController::class, 'index'])->middleware('auth')->name('admin.dashboard');
+Route::get('/admin/checklist-uji', [DocumentationController::class, 'checklist'])->middleware('auth')->name('admin.checklist');
+Route::get('/admin/checklist-uji/download', [DocumentationController::class, 'download'])->middleware('auth')->name('admin.checklist.download');
 
 Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin.master.')->group(function () {
     Route::get('data-transfer/{type}/template', [MasterDataTransferController::class, 'template'])->name('data-transfer.template');
@@ -131,6 +144,7 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     // Event Match Categories (Nomer Pertandingan)
     Route::post('event/{event}/match-category', [EventDetailController::class, 'storeMatchCategory'])->name('event.match-category.store');
     Route::put('event/{event}/match-category/{matchCategory}', [EventDetailController::class, 'updateMatchCategory'])->name('event.match-category.update');
+    Route::patch('event/{event}/match-category/{matchCategory}/toggle-exhibition', [EventDetailController::class, 'toggleMatchCategoryExhibition'])->name('event.match-category.toggle-exhibition');
     Route::delete('event/{event}/match-category/{matchCategory}', [EventDetailController::class, 'destroyMatchCategory'])->name('event.match-category.destroy');
 
     // Event Referees
@@ -237,6 +251,7 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
     Route::post('registrasi/{registration}/athletes/{athlete}', [RegistrationWizardController::class, 'saveAthlete'])->name('registrasi.wizard.athletes.update');
     Route::patch('registrasi/{registration}/entries/{entry}/team', [RegistrationWizardController::class, 'updateTeam'])->name('registrasi.wizard.team');
     Route::post('registrasi/{registration}/recalculate', [RegistrationWizardController::class, 'recalculate'])->name('registrasi.wizard.recalculate');
+    Route::post('registrasi/{registration}/entry-by-number', [RegistrationController::class, 'storeEntryByNumber'])->name('registrasi.entry-by-number');
     Route::post('registrasi/{registration}/athletes/{athlete}/match-category', [RegistrationController::class, 'storeRegistrationAthleteMatchCategoryEntry'])->name('registrasi.match-category.store');
     Route::delete('registrasi/{registration}/athletes/{athlete}/match-category/{entry}', [RegistrationController::class, 'destroyRegistrationAthleteMatchCategoryEntry'])->name('registrasi.match-category.destroy');
     Route::patch('registrasi/{registration}/athletes/{athlete}/match-category/{entry}/team', [RegistrationController::class, 'updateRegistrationAthleteTeam'])->name('registrasi.match-category.team');
@@ -259,6 +274,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::get('drawing', [TournamentController::class, 'drawing'])->name('drawing');
     Route::post('drawing/generate', [TournamentController::class, 'generate'])->name('drawing.generate');
     Route::post('drawing/category/{matchCategory}/generate', [TournamentController::class, 'redrawCategory'])->name('drawing.category.generate');
+    Route::put('drawing/category/{matchCategory}/format', [TournamentController::class, 'updateCategoryFormat'])->name('drawing.category.format');
     Route::post('drawing/publish', [TournamentController::class, 'publish'])->name('drawing.publish');
     Route::post('drawing/unpublish', [TournamentController::class, 'unpublish'])->name('drawing.unpublish');
     Route::put('drawing/matches/{tournamentMatch}/schedule', [TournamentController::class, 'updateSchedule'])->name('drawing.matches.schedule');
@@ -269,6 +285,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::get('jadwal', [TournamentController::class, 'schedule'])->name('schedule');
     Route::get('jadwal/export', [TournamentController::class, 'exportSchedule'])->name('schedule.export');
     Route::put('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'updateSchedule'])->name('schedule.matches.update');
+    Route::delete('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'unscheduleMatch'])->name('schedule.matches.destroy');
     Route::get('wasit', [EventRefereeController::class, 'index'])->name('wasit.index');
     Route::post('wasit/courts/generate', [EventRefereeController::class, 'generateCourtPanels'])->name('wasit.courts.generate');
     Route::put('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'updateCourtPanel'])->name('wasit.courts.panel.update');
@@ -279,6 +296,14 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::post('merge/combine', [TournamentController::class, 'storeCombinedMerge'])->name('merge.combine');
     Route::delete('merge/combine/{matchCategory}', [TournamentController::class, 'destroyCombinedMerge'])->name('merge.combine.destroy');
     Route::post('merge/{matchCategory}', [TournamentController::class, 'storeMerge'])->name('merge.store');
+
+    // Penimbangan Badan Hari-H (Weigh-In Station)
+    Route::get('timbang-badan', [WeighInController::class, 'index'])->name('weigh-in.index');
+    Route::post('timbang-badan/entry/{entry}', [WeighInController::class, 'update'])->name('weigh-in.update');
+    Route::post('timbang-badan/category/{matchCategory}/lock', [WeighInController::class, 'lock'])->name('weigh-in.lock');
+    Route::post('timbang-badan/category/{matchCategory}/unlock', [WeighInController::class, 'unlock'])->name('weigh-in.unlock');
+    Route::post('timbang-badan/matches/{tournamentMatch}/walkover', [WeighInController::class, 'walkover'])->name('weigh-in.walkover');
+    Route::get('timbang-badan/export', [WeighInController::class, 'export'])->name('weigh-in.export');
 });
 
 // Arbitrase & Wasit
@@ -295,6 +320,8 @@ Route::prefix('admin/arbitrase')->middleware(['auth', 'event.tenant'])->name('ad
     Route::get('scoring/print/embu/{embuJudgeScore}', [ArbitrationScorePrintController::class, 'embu'])->name('scoring.print.embu');
     Route::get('scoring/print/randori/{randoriScore}', [ArbitrationScorePrintController::class, 'randori'])->name('scoring.print.randori');
     Route::put('scoring/embu/{tournamentMatch}', [EmbuJudgeScoreController::class, 'update'])->name('scoring.embu.update');
+    Route::get('evaluasi', [ArbitrationEvaluationController::class, 'index'])->name('evaluation');
+    Route::get('evaluasi/export', [ArbitrationEvaluationController::class, 'export'])->name('evaluation.export');
 });
 
 // Panitera
@@ -316,6 +343,7 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::post('scoring/embu-result/{tournamentMatch}', [EmbuResultController::class, 'store'])->name('embu-result.store');
     Route::post('scoring/embu-result/{matchCategory}/advance-finalists', [EmbuResultController::class, 'advanceFinalists'])->name('embu-result.advance-finalists');
     Route::post('scoring/embu-result/{matchCategory}/confirm-champions', [EmbuResultController::class, 'confirmChampions'])->name('embu-result.confirm-champions');
+    Route::post('scoring/embu-result/{tournamentMatch}/manual-tiebreak', [EmbuResultController::class, 'resolveManualTiebreak'])->name('embu-result.manual-tiebreak');
     Route::get('scoring/randori-result', [RandoriResultController::class, 'index'])->name('randori-result.index');
     Route::put('scoring/randori-result/{tournamentMatch}/draft', [RandoriResultController::class, 'updateDraft'])->name('randori-result.draft.update');
     Route::post('scoring/randori-result/{tournamentMatch}', [RandoriResultController::class, 'store'])->name('randori-result.store');
@@ -323,12 +351,25 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::get('scoring/champions', [ChampionResultController::class, 'index'])->name('champions.index');
     Route::post('scoring/champions/{matchCategory}/generate', [ChampionResultController::class, 'generate'])->name('champions.generate');
     Route::put('scoring/champions/{matchCategory}', [ChampionResultController::class, 'update'])->name('champions.update');
+
+    // VAR (Video Assistant Review)
+    Route::post('scoring/matches/{tournamentMatch}/var-review', [VarReviewController::class, 'store'])->name('matches.var.store');
+    Route::post('scoring/var-review/{review}/resolve', [VarReviewController::class, 'resolve'])->name('var.resolve');
+    Route::get('scoring/matches/{tournamentMatch}/var-history', [VarReviewController::class, 'history'])->name('matches.var.history');
+});
+
+// Mode Pelatihan / Simulasi Sandbox
+Route::prefix('admin/simulation')->middleware(['auth', 'event.tenant'])->name('admin.simulation.')->group(function () {
+    Route::post('toggle', [TrainingModeController::class, 'toggle'])->name('toggle');
+    Route::post('reset', [TrainingModeController::class, 'reset'])->name('reset');
+    Route::post('seed', [TrainingModeController::class, 'seed'])->name('seed');
 });
 
 // Laporan & Hasil
 Route::prefix('admin/laporan')->middleware(['auth', 'event.tenant'])->name('admin.laporan.')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('index');
     Route::get('export', [ReportController::class, 'export'])->name('export');
+    Route::get('berita-acara', [ReportController::class, 'printBeritaAcara'])->name('berita-acara');
     Route::get('cetak/embu/{embuScore}', [ReportController::class, 'printEmbu'])->name('print.embu');
     Route::get('cetak/randori/{randoriScore}', [ReportController::class, 'printRandori'])->name('print.randori');
     Route::get('hasil', [ReportController::class, 'medals'])->name('hasil');
@@ -339,21 +380,27 @@ Route::middleware('guest')->group(function () {
     Route::get('login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::get('wasit/login', [AuthenticatedSessionController::class, 'create'])->name('wasit.login');
     Route::post('login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('login/panitera-token', PaniteraTokenLoginController::class)
+        ->middleware('throttle:10,1')
+        ->name('login.panitera-token');
 
     Route::get('register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('register', [RegisteredUserController::class, 'store']);
+    Route::post('register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:30,1');
 });
+
+// Wasit signed check-in (accessible with or without login via signed HMAC URL)
+Route::match(['get', 'post'], 'wasit/check-in/event/{event}', [RefereeCheckInController::class, 'event'])
+    ->middleware(['signed', 'throttle:30,1'])
+    ->name('wasit.check-in.event');
+Route::match(['get', 'post'], 'wasit/check-in/event/{event}/court/{eventCourt}/{role?}', [RefereeCheckInController::class, 'court'])
+    ->middleware(['signed', 'throttle:30,1'])
+    ->name('wasit.check-in.court');
 
 Route::middleware('auth')->group(function () {
     Route::get('wasit', RefereePortalController::class)->middleware('event.tenant')->name('wasit.portal');
     Route::get('absensi-wasit', RefereeAttendanceHistoryController::class)->middleware('event.tenant')->name('wasit.absensi');
     Route::get('wasit/history', RefereeScoreHistoryController::class)->middleware('event.tenant')->name('wasit.history');
-    Route::match(['get', 'post'], 'wasit/check-in/event/{event}', [RefereeCheckInController::class, 'event'])
-        ->middleware(['signed', 'throttle:30,1'])
-        ->name('wasit.check-in.event');
-    Route::match(['get', 'post'], 'wasit/check-in/event/{event}/court/{eventCourt}/{role?}', [RefereeCheckInController::class, 'court'])
-        ->middleware(['signed', 'throttle:30,1'])
-        ->name('wasit.check-in.court');
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 });
 

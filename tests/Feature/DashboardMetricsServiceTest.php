@@ -114,3 +114,92 @@ test('dashboard metrics service calculates core stats accurately', function () {
     $activities = $service->getLatestActivities();
     expect(count($activities))->toBeGreaterThanOrEqual(1);
 });
+
+test('medal distribution respects event champion ranking system between medals and weighted points', function () {
+    $user = User::factory()->create();
+
+    $event = Event::create([
+        'name' => 'Kejuaraan Ranking Test',
+        'slug' => 'kejuaraan-ranking-test',
+        'venue' => 'GOR Ranking',
+        'city' => 'Jakarta',
+        'start_date' => now()->toDateString(),
+        'end_date' => now()->addDays(2)->toDateString(),
+        'champion_ranking_system' => 'medals',
+        'champion_gold_points' => 5,
+        'champion_silver_points' => 3,
+        'champion_bronze_points' => 1,
+        'is_active' => true,
+    ]);
+
+    // Contingent 1: 1 Gold, 0 Silver, 0 Bronze (Total Medals = 1, Pts = 5)
+    $con1 = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $user->id,
+        'name' => 'Kontingen Emas Sedikit',
+        'city' => 'Jakarta',
+        'manager_name' => 'Manager 1',
+        'phone' => '08123456781',
+        'status' => 'verified',
+    ]);
+    TournamentResult::create([
+        'event_id' => $event->id,
+        'contingent_id' => $con1->id,
+        'contingent_name' => $con1->name,
+        'rank' => TournamentRank::Gold,
+        'match_category' => 'Randori',
+    ]);
+
+    // Contingent 2: 0 Gold, 3 Silver, 2 Bronze (Total Medals = 5, Pts = 3*3 + 2*1 = 11)
+    $con2 = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $user->id,
+        'name' => 'Kontingen Perak Banyak',
+        'city' => 'Bandung',
+        'manager_name' => 'Manager 2',
+        'phone' => '08123456782',
+        'status' => 'verified',
+    ]);
+    for ($i = 0; $i < 3; $i++) {
+        TournamentResult::create([
+            'event_id' => $event->id,
+            'contingent_id' => $con2->id,
+            'contingent_name' => $con2->name,
+            'rank' => TournamentRank::Silver,
+            'match_category' => 'Randori',
+        ]);
+    }
+    for ($i = 0; $i < 2; $i++) {
+        TournamentResult::create([
+            'event_id' => $event->id,
+            'contingent_id' => $con2->id,
+            'contingent_name' => $con2->name,
+            'rank' => TournamentRank::Bronze,
+            'match_category' => 'Randori',
+        ]);
+    }
+
+    $service = app(DashboardMetricsService::class);
+
+    // 1. Under 'medals' standard, Kontingen 1 is rank 1 because 1 Gold > 0 Gold
+    $distMedals = $service->getMedalDistribution($event);
+    expect($distMedals['ranking_system'])->toBe('medals');
+    expect($distMedals['contingents'][0]['id'])->toBe($con1->id);
+    expect($distMedals['contingents'][1]['id'])->toBe($con2->id);
+
+    // 2. Switch to 'points' weighted system at any time
+    $event->update([
+        'champion_ranking_system' => 'points',
+        'champion_gold_points' => 5,
+        'champion_silver_points' => 3,
+        'champion_bronze_points' => 1,
+    ]);
+
+    // Immediately adjusts: Kontingen 2 has 11 pts vs Kontingen 1 with 5 pts!
+    $distPoints = $service->getMedalDistribution($event);
+    expect($distPoints['ranking_system'])->toBe('points');
+    expect($distPoints['contingents'][0]['id'])->toBe($con2->id);
+    expect($distPoints['contingents'][0]['total_points'])->toBe(11);
+    expect($distPoints['contingents'][1]['id'])->toBe($con1->id);
+    expect($distPoints['contingents'][1]['total_points'])->toBe(5);
+});

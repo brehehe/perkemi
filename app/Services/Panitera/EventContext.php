@@ -35,6 +35,11 @@ class EventContext
             ->orderByDesc('id')
             ->first();
 
+        if (! $event && $request->user()?->hasRole('Panitera')) {
+            $event = Event::query()->where('is_active', true)->first()
+                ?? Event::query()->orderByDesc('start_date')->first();
+        }
+
         abort_unless($event instanceof Event, 404, 'Event untuk Panitera belum tersedia.');
 
         return $event;
@@ -68,7 +73,11 @@ class EventContext
             return true;
         }
 
-        return (bool) ($user?->hasRole('Panitera') && in_array($event->accessRoleFor($user), [
+        if ($user?->hasRole('Panitera')) {
+            return true;
+        }
+
+        return (bool) (in_array($event->accessRoleFor($user), [
             Event::AccessRoleResponsible,
             Event::AccessRoleAdmin,
             Event::AccessRoleStaff,
@@ -107,6 +116,7 @@ class EventContext
 
         return (bool) (
             $user->hasAnyRole(['Super Admin', 'Admin'])
+            || ($user->hasRole('Panitera') && $event->is_active)
             || $event->users()->whereKey($user->id)->exists()
             || $event->clerks()->whereRaw('LOWER(clerks.email) = ?', [$email])->exists()
             || $event->fieldCoordinators()->whereRaw('LOWER(field_coordinators.email) = ?', [$email])->exists()

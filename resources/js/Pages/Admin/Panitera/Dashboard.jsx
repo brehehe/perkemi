@@ -317,7 +317,18 @@ export default function PaniteraDashboard({ activeEvent, events = [], stats = {}
                         <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                             {courts.map((court) => (
                                 <article key={court.id} className="rounded-xl border border-[#ede9e1] bg-[#fbfaf8] p-4">
-                                    <div className="flex items-center justify-between gap-3"><h3 className="font-bold">{court.name}</h3><Badge variant={court.is_active ? 'green' : 'gray'}>{court.is_active ? 'Aktif' : 'Nonaktif'}</Badge></div>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <h3 className="font-bold">{court.name}</h3>
+                                        <div className="flex items-center gap-2">
+                                            {court.access_code && (
+                                                <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-900" title="Token Meja Panitera (6 Digit)">
+                                                    <i className="fa-solid fa-key text-[10px] text-amber-600" aria-hidden="true" />
+                                                    {court.access_code}
+                                                </span>
+                                            )}
+                                            <Badge variant={court.is_active ? 'green' : 'gray'}>{court.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
+                                        </div>
+                                    </div>
                                     <p className="mt-1 text-xs text-[#7a746e]">{court.location || 'Lokasi belum dicatat'}</p>
                                     <div className="mt-3 grid grid-cols-2 gap-2">
                                         <div className="rounded-lg bg-white px-3 py-2"><p className="text-[10px] font-bold uppercase text-[#8c827a]">Progres</p><p className="mt-0.5 text-sm font-black text-[#17120f]">{court.completed_matches}/{court.total_matches}</p></div>

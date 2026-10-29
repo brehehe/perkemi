@@ -8,6 +8,7 @@ use App\Models\EventMatchCategory;
 use App\Models\Registration;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -159,4 +160,84 @@ test('renders only the active tenant event match categories and eligible drawing
             ->where('contestants.0.id', $eligibleAthlete->id)
             ->where('contestants.0.name', 'Kenshi Layak Drawing')
         );
+});
+
+test('randori category conditionally enables round robin format for 3 to 5 entries and generates all pairing matches', function () {
+    $admin = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Event Round Robin',
+        'slug' => 'event-round-robin',
+        'venue' => 'GOR Bulungan',
+        'city' => 'Jakarta Selatan',
+        'start_date' => '2026-10-10',
+        'end_date' => '2026-10-12',
+        'minimum_entries_per_category' => 2,
+        'minimum_contingents_per_category' => 2,
+        'is_active' => true,
+    ]);
+    $event->users()->attach($admin, ['access_role' => 'admin']);
+
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa 60kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'is_active' => true,
+    ]);
+
+    // Create 3 contingents and 3 athletes
+    $athletes = [];
+    for ($i = 1; $i <= 3; $i++) {
+        $contingent = Contingent::create([
+            'event_id' => $event->id,
+            'user_id' => $admin->id,
+            'name' => "Dojo {$i}",
+            'city' => 'Jakarta',
+            'manager_name' => "Manager {$i}",
+            'phone' => "0812345670{$i}",
+        ]);
+        Registration::create([
+            'event_id' => $event->id,
+            'contingent_id' => $contingent->id,
+            'registration_number' => "REG-RR-00{$i}",
+            'status' => 'verified',
+            'payment_status' => 'verified',
+        ]);
+        $athlete = Athlete::create([
+            'contingent_id' => $contingent->id,
+            'name' => "Kenshi {$i}",
+            'gender' => 'male',
+        ]);
+        AthleteMatchCategoryEntry::create([
+            'event_id' => $event->id,
+            'athlete_id' => $athlete->id,
+            'event_match_category_id' => $category->id,
+        ]);
+        $athletes[] = $athlete;
+    }
+
+    $generator = app(TournamentDrawingGenerator::class);
+    $prechecks = $generator->precheck($event);
+    $check = $prechecks->firstWhere('id', $category->id);
+
+    expect($check['participant_count'])->toBe(3);
+    expect($check['is_round_robin_eligible'])->toBeTrue();
+    expect(array_keys($check['available_formats']))->toContain('round_robin');
+
+    // Generate with Round Robin
+    $category->update(['preferred_bracket_type' => 'round_robin']);
+    $result = $generator->generate($event, $category);
+
+    expect($result['generated'])->toBe(1);
+
+    $drawing = $category->tournamentDrawing()->first();
+    expect($drawing->bracket_type)->toBe('round_robin');
+    // For 3 participants: 3*(3-1)/2 = 3 matches
+    expect($drawing->matches()->count())->toBe(3);
+
+    $roundLabels = $drawing->matches()->pluck('round_label')->unique()->values()->all();
+    expect($roundLabels)->toContain('Putaran 1');
+    expect($roundLabels)->toContain('Putaran 2');
+    expect($roundLabels)->toContain('Putaran 3');
 });

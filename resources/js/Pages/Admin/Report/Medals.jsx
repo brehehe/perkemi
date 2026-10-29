@@ -4,10 +4,14 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router } from '@inertiajs/react';
 
-export default function ReportMedals({ activeEvent, events = [], medalStats, standings }) {
+export default function ReportMedals({ activeEvent, events = [], medalStats, standings, rankingSystem = 'medals', rankingLabel = '', pointsWeights = { gold: 5, silver: 3, bronze: 1 } }) {
     const handlePrint = () => {
         window.print();
     };
+
+    const goldWeight = pointsWeights?.gold ?? 5;
+    const silverWeight = pointsWeights?.silver ?? 3;
+    const bronzeWeight = pointsWeights?.bronze ?? 1;
 
     return (
         <AdminLayout title="Hasil Juara & Perolehan Medali">
@@ -29,6 +33,10 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                             <p className="text-xs text-[#b5afa6] mt-1 max-w-2xl">
                                 Rekapitulasi perolehan medali emas, perak, perunggu, dan akumulasi poin penentuan Kontingen Juara Umum Kejuaraan Shorinji Kempo.
                             </p>
+                            <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-xs text-[#d4a843] border border-white/15">
+                                <i className="fa-solid fa-sliders"></i>
+                                <span>Konfigurasi Juara Umum: <strong>{rankingLabel || (rankingSystem === 'points' ? `Sistem Poin Berbobot (${goldWeight}-${silverWeight}-${bronzeWeight})` : 'Standar Medali (Emas > Perak > Perunggu)')}</strong></span>
+                            </div>
                         </div>
 
                         <div className="flex w-full flex-col gap-2 md:max-w-md">
@@ -36,17 +44,54 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                                 ariaLabel="Pilih event hasil juara"
                                 options={events.map((event) => ({ value: event.id, label: event.name, sublabel: event.city }))}
                                 value={activeEvent?.id || ''}
-                                onChange={(eventId) => router.get('/admin/laporan/hasil', { event_id: eventId })}
+                                onChange={(eventId) => router.get('/admin/laporan/hasil', { event_id: eventId, system: rankingSystem })}
                                 clearable={false}
                             />
-                            <Button variant="unstyled" size="none"
-                                type="button"
-                                onClick={handlePrint}
-                                className="min-h-11 justify-center px-4 py-2 text-xs font-semibold bg-[#d4a843] hover:bg-[#b88f34] text-[#0f0d0b] rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-md"
-                            >
-                                <i className="fa-solid fa-print"></i>
-                                <span>Cetak Laporan Klasemen</span>
-                            </Button>
+                            <div className="flex items-center gap-1.5 p-1 bg-white/10 rounded-xl border border-white/15 text-xs">
+                                <button
+                                    type="button"
+                                    onClick={() => router.get('/admin/laporan/hasil', { event_id: activeEvent?.id, system: 'medals' })}
+                                    className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition-all ${
+                                        rankingSystem === 'medals' 
+                                            ? 'bg-[#d4a843] text-[#0f0d0b] shadow-sm font-semibold' 
+                                            : 'text-white/80 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    <i className="fa-solid fa-medal mr-1.5"></i>
+                                    Standar Medali
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => router.get('/admin/laporan/hasil', { event_id: activeEvent?.id, system: 'points' })}
+                                    className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition-all ${
+                                        rankingSystem === 'points' 
+                                            ? 'bg-[#d4a843] text-[#0f0d0b] shadow-sm font-semibold' 
+                                            : 'text-white/80 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    <i className="fa-solid fa-calculator mr-1.5"></i>
+                                    Bobot Poin (5-3-1)
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button variant="unstyled" size="none"
+                                    type="button"
+                                    onClick={handlePrint}
+                                    className="flex-1 min-h-11 justify-center px-4 py-2 text-xs font-semibold bg-[#d4a843] hover:bg-[#b88f34] text-[#0f0d0b] rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-md"
+                                >
+                                    <i className="fa-solid fa-print"></i>
+                                    <span>Cetak Klasemen</span>
+                                </Button>
+                                <a
+                                    href={`/admin/laporan/berita-acara?event_id=${encodeURIComponent(activeEvent?.id || '')}&ranking_method=${encodeURIComponent(rankingSystem)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="min-h-11 justify-center px-4 py-2 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-md"
+                                >
+                                    <i className="fa-solid fa-file-signature"></i>
+                                    <span>Berita Acara (A4)</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -60,7 +105,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                         <div>
                             <span className="text-[11px] font-medium text-[#7a746e] dark:text-slate-300">Total Medali Emas</span>
                             <p className="text-2xl font-bold text-[#0f0d0b] font-cinzel dark:text-white">{medalStats.gold || 0}</p>
-                            <span className="text-[10px] text-amber-700 dark:text-amber-300">Juara I (5 Poin)</span>
+                            <span className="text-[10px] text-amber-700 dark:text-amber-300">Juara I ({goldWeight} Poin)</span>
                         </div>
                     </div>
 
@@ -71,7 +116,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                         <div>
                             <span className="text-[11px] font-medium text-[#7a746e] dark:text-slate-300">Total Medali Perak</span>
                             <p className="text-2xl font-bold text-[#0f0d0b] font-cinzel dark:text-white">{medalStats.silver || 0}</p>
-                            <span className="text-[10px] text-slate-600 dark:text-slate-300">Juara II (3 Poin)</span>
+                            <span className="text-[10px] text-slate-600 dark:text-slate-300">Juara II ({silverWeight} Poin)</span>
                         </div>
                     </div>
 
@@ -82,7 +127,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                         <div>
                             <span className="text-[11px] font-medium text-[#7a746e] dark:text-slate-300">Total Medali Perunggu</span>
                             <p className="text-2xl font-bold text-[#0f0d0b] font-cinzel dark:text-white">{medalStats.bronze || 0}</p>
-                            <span className="text-[10px] text-amber-900 dark:text-orange-300">Juara III (1 Poin)</span>
+                            <span className="text-[10px] text-amber-900 dark:text-orange-300">Juara III ({bronzeWeight} Poin)</span>
                         </div>
                     </div>
                 </div>
@@ -95,7 +140,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                             <span>Tabel Klasemen Perolehan Medali Kontingen</span>
                         </h2>
                         <span className="text-xs text-[#7a746e] dark:text-slate-300">
-                            Prioritas: Emas &gt; Perak &gt; Perunggu &gt; Total Skor
+                            Prioritas: {rankingSystem === 'points' ? `Total Poin Berbobot (${goldWeight}E + ${silverWeight}P + ${bronzeWeight}Pr)` : 'Emas > Perak > Perunggu'}
                         </span>
                     </div>
 
@@ -118,7 +163,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                                         const rank = index + 1;
                                         const isTop3 = rank <= 3;
                                         const totalMedals = con.gold_count + con.silver_count + con.bronze_count;
-                                        const points = (con.gold_count * 5) + (con.silver_count * 3) + (con.bronze_count * 1);
+                                        const points = con.total_points ?? ((con.gold_count * goldWeight) + (con.silver_count * silverWeight) + (con.bronze_count * bronzeWeight));
 
                                         return (
                                             <tr key={con.id} className={`hover:bg-[#f7f4ef]/50 transition-colors dark:hover:bg-[#272d36] ${

@@ -33,6 +33,7 @@ class RegisterRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
+            'nik_perkemi' => ['nullable', 'string', 'max:30', Rule::unique('users', 'nik_perkemi')],
             'contingent_name' => ['required', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:255'],
             'manager_name' => ['required', 'string', 'max:255'],
@@ -51,11 +52,24 @@ class RegisterRequest extends FormRequest
         return [
             'name' => 'nama lengkap',
             'email' => 'alamat email',
+            'nik_perkemi' => 'NIK PERKEMI',
             'contingent_name' => 'nama kontingen',
             'city' => 'kabupaten / kota',
             'manager_name' => 'nama manager',
             'phone' => 'nomor HP / WhatsApp',
             'address' => 'alamat',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'nik_perkemi.unique' => 'NIK PERKEMI sudah terdaftar dalam sistem.',
+            'email.unique' => 'Alamat email sudah terdaftar dalam sistem.',
+            'phone.unique' => 'Nomor HP / WhatsApp sudah terdaftar dalam sistem.',
         ];
     }
 }

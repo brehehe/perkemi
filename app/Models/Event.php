@@ -65,6 +65,7 @@ class Event extends Model
         'minimum_contingents_per_category',
         'status',
         'is_active',
+        'is_training_mode',
         'organizer',
         'contact_person',
         'contact_phone',
@@ -72,6 +73,10 @@ class Event extends Model
         'cover_image_path',
         'participant_rules',
         'tts_announcer_enabled',
+        'champion_ranking_system',
+        'champion_gold_points',
+        'champion_silver_points',
+        'champion_bronze_points',
     ];
 
     /**
@@ -98,7 +103,11 @@ class Event extends Model
             'minimum_entries_per_category' => 'integer',
             'minimum_contingents_per_category' => 'integer',
             'is_active' => 'boolean',
+            'is_training_mode' => 'boolean',
             'tts_announcer_enabled' => 'boolean',
+            'champion_gold_points' => 'integer',
+            'champion_silver_points' => 'integer',
+            'champion_bronze_points' => 'integer',
             'deleted_at' => 'datetime',
         ];
     }

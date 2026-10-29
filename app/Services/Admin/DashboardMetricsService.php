@@ -267,6 +267,11 @@ class DashboardMetricsService
         $bronzeVal = TournamentRank::Bronze->value;
         $runnerUpVal = TournamentRank::RunnerUp->value;
 
+        $isPointsSystem = $event instanceof Event && ($event->champion_ranking_system ?? 'medals') === 'points';
+        $goldMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_gold_points ?? 5)) : 1;
+        $silverMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_silver_points ?? 3)) : 1;
+        $bronzeMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_bronze_points ?? 1)) : 1;
+
         $contingents = Contingent::query()
             ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
             ->select(['id', 'name'])
@@ -293,19 +298,43 @@ class DashboardMetricsService
                     }
                 },
             ])
-            ->orderByRaw('gold_count DESC, silver_count DESC, bronze_count DESC')
+            ->get()
+            ->sort(function ($a, $b) use ($isPointsSystem, $goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
+                if ($isPointsSystem) {
+                    $aPoints = ((int) $a->gold_count * $goldMultiplier) + ((int) $a->silver_count * $silverMultiplier) + ((int) $a->bronze_count * $bronzeMultiplier);
+                    $bPoints = ((int) $b->gold_count * $goldMultiplier) + ((int) $b->silver_count * $silverMultiplier) + ((int) $b->bronze_count * $bronzeMultiplier);
+                    if ($aPoints !== $bPoints) {
+                        return $bPoints <=> $aPoints;
+                    }
+                }
+
+                if ((int) $a->gold_count !== (int) $b->gold_count) {
+                    return (int) $b->gold_count <=> (int) $a->gold_count;
+                }
+
+                if ((int) $a->silver_count !== (int) $b->silver_count) {
+                    return (int) $b->silver_count <=> (int) $a->silver_count;
+                }
+
+                if ((int) $a->bronze_count !== (int) $b->bronze_count) {
+                    return (int) $b->bronze_count <=> (int) $a->bronze_count;
+                }
+
+                return strcmp($a->name, $b->name);
+            })
             ->take(7)
-            ->get();
+            ->values();
 
         $labels = $contingents->pluck('name')->toArray();
         $goldData = $contingents->pluck('gold_count')->map(fn ($v) => (int) $v)->toArray();
         $silverData = $contingents->pluck('silver_count')->map(fn ($v) => (int) $v)->toArray();
         $bronzeData = $contingents->pluck('bronze_count')->map(fn ($v) => (int) $v)->toArray();
 
-        $contingentsList = $contingents->map(function ($con) {
+        $contingentsList = $contingents->map(function ($con) use ($goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
             $gold = (int) $con->gold_count;
             $silver = (int) $con->silver_count;
             $bronze = (int) $con->bronze_count;
+            $totalPoints = ($gold * $goldMultiplier) + ($silver * $silverMultiplier) + ($bronze * $bronzeMultiplier);
 
             return [
                 'id' => $con->id,
@@ -314,6 +343,7 @@ class DashboardMetricsService
                 'silver_count' => $silver,
                 'bronze_count' => $bronze,
                 'total_score' => $gold + $silver + $bronze,
+                'total_points' => $totalPoints,
             ];
         })->toArray();
 
@@ -323,6 +353,15 @@ class DashboardMetricsService
             'silver' => $silverData,
             'bronze' => $bronzeData,
             'contingents' => $contingentsList,
+            'ranking_system' => $isPointsSystem ? 'points' : 'medals',
+            'ranking_label' => $isPointsSystem
+                ? "Sistem Poin Berbobot (Emas: {$goldMultiplier}, Perak: {$silverMultiplier}, Perunggu: {$bronzeMultiplier})"
+                : 'Standar Medali (Emas > Perak > Perunggu)',
+            'points_weights' => [
+                'gold' => $goldMultiplier,
+                'silver' => $silverMultiplier,
+                'bronze' => $bronzeMultiplier,
+            ],
         ];
     }
 

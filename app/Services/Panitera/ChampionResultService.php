@@ -39,9 +39,9 @@ class ChampionResultService
             'drawing_status' => $drawing?->status,
             'participant_count' => $participantCount,
             'required_champion_count' => $requiredChampionCount,
-            'is_exhibition' => $drawing ? $participantCount <= 3 : null,
+            'is_exhibition' => $drawing ? ((bool) $category->is_exhibition || $participantCount <= 3) : null,
             'classification_label' => $drawing
-                ? ($participantCount <= 3 ? 'Ekshibisi' : 'Non-ekshibisi')
+                ? (((bool) $category->is_exhibition || $participantCount <= 3) ? 'Ekshibisi' : 'Non-ekshibisi')
                 : 'Drawing belum dibuat',
             'participants' => $participants->values(),
             'generation' => $generation,
@@ -145,7 +145,7 @@ class ChampionResultService
                     'contingent_name' => $participant['contingent_name'] ?: $participant['label'],
                     'rank' => $champion['rank'],
                     'match_category' => $category->name,
-                    'is_exhibition' => $participantCount <= 3,
+                    'is_exhibition' => (bool) $category->is_exhibition || $participantCount <= 3,
                 ]);
             });
         });
@@ -260,15 +260,65 @@ class ChampionResultService
         $format = $category->tournamentDrawing?->bracket_type;
         $ranked = collect();
 
-        if ($format === 'double_elimination') {
+        if ($format === 'round_robin') {
+            $participants = $this->participants($category);
+            $scores = $participants->mapWithKeys(fn (array $p): array => [
+                (string) $p['entry_id'] => [
+                    'participant' => $p,
+                    'wins' => 0,
+                    'matches' => 0,
+                ],
+            ])->all();
+
+            $completedCount = 0;
+            foreach ($matches as $match) {
+                $outcome = $this->randoriOutcome($match);
+                if ($outcome) {
+                    $completedCount++;
+                    $wEntryId = (string) ($outcome['winner']['entry_id'] ?? '');
+                    if ($wEntryId !== '' && isset($scores[$wEntryId])) {
+                        $scores[$wEntryId]['wins']++;
+                        $scores[$wEntryId]['matches']++;
+                    }
+                    $lEntryId = (string) ($outcome['loser']['entry_id'] ?? '');
+                    if ($lEntryId !== '' && isset($scores[$lEntryId])) {
+                        $scores[$lEntryId]['matches']++;
+                    }
+                }
+            }
+
+            if ($matches->count() === 0 || $completedCount < $matches->count()) {
+                return $this->unavailableGeneration("Pertandingan Setengah Kompetisi belum selesai ({$completedCount}/{$matches->count()} partai selesai). Selesaikan seluruh partai terlebih dahulu.");
+            }
+
+            uasort($scores, fn (array $a, array $b): int => $b['wins'] <=> $a['wins']);
+
+            $rank = 1;
+            foreach ($scores as $item) {
+                $ranked->push($this->rankedParticipant(
+                    $rank,
+                    $item['participant'],
+                    "Peringkat {$rank} Setengah Kompetisi ({$item['wins']} menang)",
+                ));
+                $rank++;
+            }
+        } elseif ($format === 'double_elimination') {
+            $gf2 = $matches->firstWhere('round_label', 'Grand Final Ulang (GF2)');
             $grandFinal = $matches->firstWhere('round_label', 'Grand Final');
             $lowerFinal = $matches->firstWhere('round_label', 'Final Lower Bracket');
             $lowerRound = $matches->firstWhere('round_label', 'Lower Bracket · Babak 1');
+
+            $gf2Outcome = ($gf2 && $gf2->status === 'completed' && ! $gf2->is_bye && $gf2->winner_corner)
+                ? $this->randoriOutcome($gf2)
+                : null;
             $grandFinalOutcome = $this->randoriOutcome($grandFinal);
             $lowerFinalOutcome = $this->randoriOutcome($lowerFinal);
             $lowerRoundOutcome = $this->randoriOutcome($lowerRound);
 
-            if ($grandFinalOutcome) {
+            if ($gf2Outcome) {
+                $ranked->push($this->rankedParticipant(1, $gf2Outcome['winner'], 'Pemenang Grand Final Ulang (GF2)'));
+                $ranked->push($this->rankedParticipant(2, $gf2Outcome['loser'], 'Runner-up Grand Final Ulang (GF2)'));
+            } elseif ($grandFinalOutcome) {
                 $ranked->push($this->rankedParticipant(1, $grandFinalOutcome['winner'], 'Pemenang Grand Final'));
                 $ranked->push($this->rankedParticipant(2, $grandFinalOutcome['loser'], 'Runner-up Grand Final'));
             }

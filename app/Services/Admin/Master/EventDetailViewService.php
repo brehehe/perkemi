@@ -200,6 +200,7 @@ class EventDetailViewService
             'description' => $c->description,
             'order' => $c->order,
             'is_active' => (bool) $c->is_active,
+            'access_code' => $c->access_code,
         ]);
 
         // Formatted match categories
@@ -222,6 +223,7 @@ class EventDetailViewService
             'max_kyu' => $mc->max_kyu,
             'order' => $mc->order,
             'is_active' => (bool) $mc->is_active,
+            'is_exhibition' => (bool) $mc->is_exhibition,
         ]);
 
         // Formatted rundowns
@@ -279,6 +281,10 @@ class EventDetailViewService
                 'status' => $event->status instanceof \BackedEnum ? $event->status->value : (string) $event->status,
                 'is_active' => (bool) $event->is_active,
                 'tts_announcer_enabled' => (bool) $event->tts_announcer_enabled,
+                'champion_ranking_system' => $event->champion_ranking_system ?? 'medals',
+                'champion_gold_points' => (int) ($event->champion_gold_points ?? 5),
+                'champion_silver_points' => (int) ($event->champion_silver_points ?? 3),
+                'champion_bronze_points' => (int) ($event->champion_bronze_points ?? 1),
                 'organizer' => $event->organizer,
                 'contact_person' => $event->contact_person,
                 'contact_phone' => $event->contact_phone,

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -29,6 +30,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment('production') || (bool) config('app.force_https', false)) {
+            URL::forceScheme('https');
+        }
+
         Athlete::observe(DashboardRealtimeObserver::class);
         Contingent::observe(DashboardRealtimeObserver::class);
         Registration::observe(DashboardRealtimeObserver::class);

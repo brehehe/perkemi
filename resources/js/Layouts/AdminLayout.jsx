@@ -8,6 +8,7 @@ import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 
 const reportMenuItems = [
     { key: 'champions', title: 'Hasil Juara', subtitle: 'Susunan juara resmi per nomor pertandingan', icon: 'fa-trophy' },
+    { key: 'category-recap', title: 'Rekap Per Nomor', subtitle: 'Rekapitulasi peserta, bagan, dan pemenang per nomor', icon: 'fa-layer-group' },
     { key: 'all-scores', title: 'Skor Menyeluruh', subtitle: 'Gabungan seluruh hasil Embu dan Randori', icon: 'fa-chart-line' },
     { key: 'embu-recap', title: 'Rekap Embu', subtitle: 'Nilai akhir, durasi, dan denda Embu', icon: 'fa-ranking-star' },
     { key: 'randori-recap', title: 'Rekap Randori', subtitle: 'Skor AKA-SHIRO dan pengesahan', icon: 'fa-hand-fist' },
@@ -15,6 +16,7 @@ const reportMenuItems = [
     { key: 'referee-analysis', title: 'Analisis Per Wasit', subtitle: 'Statistik dan kelengkapan penilaian', icon: 'fa-chart-column' },
     { key: 'embu-summary', title: 'Rekapitulasi Embu', subtitle: 'Matriks lima Juri dan nilai akhir', icon: 'fa-table-list' },
     { key: 'scoring-summary', title: 'Rekap Penilaian', subtitle: 'Ringkasan status seluruh penilaian', icon: 'fa-clipboard-check' },
+    { key: 'medal-standings', title: 'Klasemen Medali', subtitle: 'Perolehan medali dan peringkat Juara Umum', icon: 'fa-medal' },
 ];
 
 const masterTransferPages = {
@@ -64,8 +66,10 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isSchedule = url.startsWith('/admin/pertandingan/jadwal');
     const isEventReferees = url.startsWith('/admin/pertandingan/wasit');
     const isMerge = url.startsWith('/admin/pertandingan/merge');
+    const isWeighIn = url.startsWith('/admin/pertandingan/timbang-badan');
     const isReferee = url.startsWith('/admin/arbitrase/wasit');
     const isScoring = url.startsWith('/admin/arbitrase/scoring');
+    const isEvaluation = url.startsWith('/admin/arbitrase/evaluasi');
     const isPaniteraDashboard = url.startsWith('/admin/panitera/scoring') && !url.includes('/embu-result') && !url.includes('/randori-result') && !url.includes('/champions');
     const isPaniteraEmbu = url.startsWith('/admin/panitera/scoring/embu-result');
     const isPaniteraRandori = url.startsWith('/admin/panitera/scoring/randori-result');
@@ -92,8 +96,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const [openSections, setOpenSections] = useState({
         pendaftaran: true,
         master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
-        pertandingan: isDrawing || isSchedule || isEventReferees || isMerge,
-        arbitrase: isReferee || isScoring,
+        pertandingan: isDrawing || isSchedule || isEventReferees || isMerge || isWeighIn,
+        arbitrase: isReferee || isScoring || isEvaluation,
         panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
         laporan: isReportHub || isMedals || isRecap,
     });
@@ -121,6 +125,11 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         || props.registration?.event?.id
         || props.event?.id
         || requestedEventId;
+    const isTrainingMode = Boolean(
+        tenant?.is_training_mode
+        || props.activeEvent?.is_training_mode
+        || props.event?.is_training_mode
+    );
     const withEventContext = (path) => {
         const [pathname, query = ''] = path.split('?');
         const searchParams = new URLSearchParams(query);
@@ -269,6 +278,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             onSelect: () => router.visit(withEventContext('/admin/pertandingan/jadwal')),
         },
         {
+            id: 'weigh-in',
+            title: 'Penimbangan Badan Hari-H',
+            subtitle: 'Input berat badan, status lolos/overweight, kunci sesi, dan berita acara',
+            category: 'Pertandingan',
+            icon: <i className="fa-solid fa-weight-scale text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/pertandingan/timbang-badan')),
+        },
+        {
             id: 'event-wasit',
             title: 'Wasit Event & Absensi QR',
             subtitle: 'Akun, kehadiran, dan panel lima wasit per court',
@@ -299,6 +316,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             category: 'Arbitrase',
             icon: <i className="fa-solid fa-chart-column text-[#d4a843]"></i>,
             onSelect: () => router.visit(withEventContext('/admin/arbitrase/scoring')),
+        },
+        {
+            id: 'evaluasi-wasit',
+            title: 'Evaluasi Wasit & Anti-Bias',
+            subtitle: 'Analisis standar deviasi, trimmed rate, dan bias kedaerahan',
+            category: 'Arbitrase',
+            icon: <i className="fa-solid fa-scale-unbalanced text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/arbitrase/evaluasi')),
         },
         {
             id: 'panitera-dashboard',
@@ -568,6 +593,18 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <span>Wasit Event & QR</span>
                                     </Link>
                                     {!isPaniteraAccount && (
+                                    <>
+                                    <Link
+                                        href={withEventContext('/admin/pertandingan/timbang-badan')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
+                                            isWeighIn
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeighIn ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Penimbangan Hari-H</span>
+                                    </Link>
                                     <Link
                                         href={withEventContext('/admin/pertandingan/merge')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
@@ -579,6 +616,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <i className={`fa-solid fa-object-group w-4 text-[11px] ${isMerge ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
                                         <span>Merge Nomer Pertandingan</span>
                                     </Link>
+                                    </>
                                     )}
                                 </div>
                             )}
@@ -662,6 +700,17 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                     >
                                         <i className={`fa-solid fa-chart-column w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
                                         <span>Laporan Hasil Penilaian</span>
+                                    </Link>
+                                    <Link
+                                        href={withEventContext('/admin/arbitrase/evaluasi')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
+                                            isEvaluation
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <i className={`fa-solid fa-scale-unbalanced w-4 text-[11px] ${isEvaluation ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Evaluasi Wasit & Anti-Bias</span>
                                     </Link>
                                 </div>
                             )}
@@ -1008,6 +1057,52 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             </div>
                         </div>
                     </header>
+
+                    {/* Simulation Sandbox Mode Banner */}
+                    {isTrainingMode && (
+                        <aside aria-label="Mode Simulasi Aktif" className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 px-4 py-2.5 text-white shadow-md border-b border-amber-900/20">
+                            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                                <div className="flex items-center gap-2.5 text-xs font-bold">
+                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/20 text-white animate-pulse">
+                                        <i className="fa-solid fa-flask" aria-hidden="true" />
+                                    </span>
+                                    <span>
+                                        <strong>MODE SIMULASI & GLADI BERSIH AKTIF:</strong> Data partai, skor, dan log waktu diisolasi dari rekap turnamen resmi.
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => router.post('/admin/simulation/seed', { event_id: currentEventId })}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2.5 py-1 font-semibold text-white hover:bg-black/30 transition"
+                                    >
+                                        <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+                                        Buat Partai Latihan
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (window.confirm('Bersihkan seluruh partai, bagan, dan skor simulasi? Master data atlet/kontingen tetap aman.')) {
+                                                router.post('/admin/simulation/reset', { event_id: currentEventId });
+                                            }
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2.5 py-1 font-semibold text-white hover:bg-black/30 transition"
+                                    >
+                                        <i className="fa-solid fa-trash-can" aria-hidden="true" />
+                                        Reset Data Simulasi
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => router.post('/admin/simulation/toggle', { event_id: currentEventId })}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 font-bold text-amber-900 shadow hover:bg-amber-50 transition"
+                                    >
+                                        <i className="fa-solid fa-power-off" aria-hidden="true" />
+                                        Nonaktifkan Simulasi
+                                    </button>
+                                </div>
+                            </div>
+                        </aside>
+                    )}
 
                     {/* Main Content Body */}
                     <main className="admin-main min-w-0 p-3 sm:p-4 md:px-7 md:pb-5 md:pt-7">

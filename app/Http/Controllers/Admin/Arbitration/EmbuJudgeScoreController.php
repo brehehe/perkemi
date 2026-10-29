@@ -13,6 +13,7 @@ use App\Models\TournamentMatch;
 use App\Services\Referee\EmbuRefereeScoreService;
 use App\Services\Referee\RefereeIdentity;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Cache;
 
 class EmbuJudgeScoreController extends Controller
 {
@@ -59,6 +60,12 @@ class EmbuJudgeScoreController extends Controller
                 ->whereDate('attendance_date', now()->toDateString())
                 ->exists();
         abort_unless($isCheckedIn, 403, 'Scan QR event dan court terlebih dahulu.');
+
+        $lockKey = "referee_session_lock:court_{$tournamentMatch->event_court_id}:role_{$role->value}";
+        $currentHolder = Cache::get($lockKey);
+        if ($currentHolder && $currentHolder !== $request->session()->getId()) {
+            abort(409, 'Posisi telah diambil alih oleh perangkat lain. Sesi Anda dihentikan.');
+        }
 
         $validated = $request->validated();
         $scoreService->save(

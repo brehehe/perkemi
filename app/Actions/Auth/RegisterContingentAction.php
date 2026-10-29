@@ -35,6 +35,7 @@ class RegisterContingentAction
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'phone' => $data['phone'],
+                'nik_perkemi' => $data['nik_perkemi'] ?? null,
                 'password' => Hash::make($plainPassword),
             ]);
 

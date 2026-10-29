@@ -5,7 +5,7 @@ use App\Models\TournamentMatch;
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
-    return (int) $user->id === (int) $id;
+    return filled($user?->id) && filled($id) && (string) $user->id === (string) $id;
 });
 
 Broadcast::channel('tournament-match.{matchId}', function ($user, string $matchId): bool {

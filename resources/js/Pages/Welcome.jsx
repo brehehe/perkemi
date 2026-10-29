@@ -21,6 +21,18 @@ function Icon({ name, className = '' }) {
 }
 
 function PhaseBadge({ event }) {
+    if (event.phase === 'ongoing') {
+        return (
+            <span className="home-phase home-phase-ongoing inline-flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/15 px-2.5 py-0.5 text-xs font-black uppercase tracking-wider text-red-600 dark:text-red-400 shadow-sm animate-pulse">
+                <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600" />
+                </span>
+                LIVE · Berlangsung
+            </span>
+        );
+    }
+
     return <span className={`home-phase home-phase-${event.phase}`}><span aria-hidden="true" />{event.phase_label}</span>;
 }
 
@@ -43,12 +55,28 @@ function EventRow({ event }) {
             <div className="home-event-info min-w-0">
                 <div className="mb-3 flex flex-wrap items-center gap-3">
                     <PhaseBadge event={event} />
+                    {event.is_training_mode && (
+                        <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700 border border-amber-500/30">
+                            <i className="fa-solid fa-flask mr-1" aria-hidden="true" />
+                            Mode Simulasi
+                        </span>
+                    )}
                     <span className="event-muted text-xs">{event.year}</span>
                 </div>
                 <h3><Link href={event.url}>{event.name}</Link></h3>
                 <div className="home-event-meta mt-4 flex flex-wrap gap-x-6 gap-y-2">
                     <span><Icon name="fa-calendar-days" />{event.dates_formatted}</span>
-                    <span><Icon name="fa-location-dot" />{[event.city, event.province].filter(Boolean).join(', ')}</span>
+                    <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue, event.city, event.province].filter(Boolean).join(', '))}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline inline-flex items-center gap-1.5 text-inherit"
+                        title="Buka petunjuk arah di Google Maps"
+                    >
+                        <Icon name="fa-location-dot" className="text-red-500" />
+                        {[event.venue, event.city, event.province].filter(Boolean).join(', ')}
+                        <Icon name="fa-arrow-up-right-from-square" className="text-[10px] opacity-70" />
+                    </a>
                 </div>
                 <p className="event-muted mt-2 text-xs leading-6">{event.venue}</p>
                 <div className="event-muted mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -62,7 +90,22 @@ function EventRow({ event }) {
                 {event.registration_state === 'scheduled' && event.registration_start_formatted && <p className="event-muted mt-1 text-xs leading-5">Mulai {event.registration_start_formatted}</p>}
                 <p className="home-fee mt-4">{event.is_paid ? <><strong>{event.fee_per_athlete_formatted}</strong><span> / atlet</span></> : <strong>Pendaftaran gratis</strong>}</p>
                 {event.is_paid && <p className="event-muted mt-1 text-xs">Kontingen {event.fee_per_contingent_formatted}</p>}
-                <Link href={event.url} className="event-button event-button-secondary mt-5">Lihat detail event <Icon name="fa-arrow-right" className="text-xs" /></Link>
+                {event.phase === 'ongoing' ? (
+                    <div className="mt-5 flex flex-col gap-2">
+                        <Link href={`${event.url}#courts`} className="event-button event-button-primary inline-flex items-center justify-center gap-2 text-xs font-bold shadow-sm">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                            </span>
+                            Pantau Live Tatami
+                        </Link>
+                        <Link href={event.url} className="event-button event-button-secondary text-xs">
+                            Detail Lengkap <Icon name="fa-arrow-right" className="text-xs" />
+                        </Link>
+                    </div>
+                ) : (
+                    <Link href={event.url} className="event-button event-button-secondary mt-5">Lihat detail event <Icon name="fa-arrow-right" className="text-xs" /></Link>
+                )}
             </div>
         </article>
     );
@@ -231,8 +274,25 @@ export default function Welcome({
 
             <footer className="home-footer">
                 <div className="event-container flex flex-col justify-between gap-7 py-10 md:flex-row md:items-center">
-                    <div><p className="home-brand-name">PB PERKEMI</p><p className="mt-2 text-xs leading-6">Persaudaraan Shorinji Kempo Indonesia<br />&copy; {new Date().getFullYear()} SMART PERKEMI</p></div>
-                    <nav aria-label="Navigasi footer" className="flex flex-wrap items-center gap-7 text-sm"><a href="#events">Event kejuaraan</a><a href="#guide">Panduan</a><a href="#home-top">Kembali ke atas <Icon name="fa-arrow-up" className="ml-2 text-xs" /></a></nav>
+                    <div>
+                        <p className="home-brand-name">PB PERKEMI</p>
+                        <p className="mt-2 text-xs leading-6">
+                            Persaudaraan Shorinji Kempo Indonesia<br />
+                            Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak: sekretariat@perkemi.org<br />
+                            &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta dilindungi.
+                        </p>
+                    </div>
+                    <nav aria-label="Navigasi footer" className="flex flex-wrap items-center gap-6 text-sm">
+                        <a href="#events">Event kejuaraan</a>
+                        <a href="#guide">Panduan</a>
+                        <Link href="/login" className="font-semibold text-[#d4a843] hover:underline inline-flex items-center gap-1.5">
+                            <Icon name="fa-user-shield" className="text-xs" />Login Panitera / Ofisial
+                        </Link>
+                        <Link href="/login" className="font-semibold hover:underline inline-flex items-center gap-1.5">
+                            <Icon name="fa-users" className="text-xs" />Login Koordinator
+                        </Link>
+                        <a href="#home-top">Kembali ke atas <Icon name="fa-arrow-up" className="ml-1 text-xs" /></a>
+                    </nav>
                 </div>
             </footer>
         </div>

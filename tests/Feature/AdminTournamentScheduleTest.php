@@ -468,3 +468,19 @@ test('event staff cannot download another events schedule', function () {
         ->get('http://event-bukan-milik-staf.localhost/admin/pertandingan/jadwal/export?event_id='.$otherEvent->id)
         ->assertForbidden();
 });
+
+test('admin can unschedule a match back to unscheduled pool', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'lepas-jadwal');
+
+    $this->actingAs($user)
+        ->delete('/admin/pertandingan/jadwal/matches/'.$fixture['match']->id.'?event_id='.$fixture['event']->id)
+        ->assertRedirect()
+        ->assertSessionHas('success', "Partai #{$fixture['match']->match_sequence} ({$fixture['match']->round_label}) berhasil dilepas dari jadwal dan dikembalikan ke antrean.");
+
+    $freshMatch = $fixture['match']->fresh();
+    expect($freshMatch->scheduled_start_at)->toBeNull()
+        ->and($freshMatch->scheduled_end_at)->toBeNull()
+        ->and($freshMatch->event_court_id)->toBeNull()
+        ->and($freshMatch->rundown_id)->toBeNull();
+});

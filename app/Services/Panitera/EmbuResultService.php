@@ -44,15 +44,51 @@ class EmbuResultService
                         ? round((float) $preliminaryScore + (float) $finalScore, 2)
                         : null,
                     'preliminary_judge_one' => $preliminaryRow['judge_one'] ?? null,
+                    'preliminary_judge_two' => $preliminaryRow['judge_two'] ?? null,
+                    'preliminary_raw_score' => $preliminaryRow['raw_score'] ?? null,
                     'final_judge_one' => $row['judge_one'],
+                    'final_judge_two' => $row['judge_two'],
+                    'final_raw_score' => $row['raw_score'],
+                    'manual_tiebreak_winner' => (bool) ($row['metadata']['manual_tiebreak_winner'] ?? false),
                 ];
             });
 
         return $rows->sort(function (array $left, array $right): int {
-            return $this->compareNullableDesc($left['total_score'], $right['total_score'])
-                ?: $this->compareNullableDesc($left['final_judge_one'], $right['final_judge_one'])
-                ?: $this->compareNullableDesc($left['preliminary_judge_one'], $right['preliminary_judge_one'])
-                ?: strcmp($left['participant_label'], $right['participant_label']);
+            // Skenario A: Total Nilai Akumulasi (Penyisihan + Final)
+            $cmpA = $this->compareNullableDesc($left['total_score'], $right['total_score']);
+            if ($cmpA !== 0) {
+                return $cmpA;
+            }
+
+            // Skenario B: Nilai Wasit 1 Babak Final, lalu Wasit 1 Babak Penyisihan
+            $cmpB = $this->compareNullableDesc($left['final_judge_one'], $right['final_judge_one'])
+                ?: $this->compareNullableDesc($left['preliminary_judge_one'], $right['preliminary_judge_one']);
+            if ($cmpB !== 0) {
+                return $cmpB;
+            }
+
+            // Skenario C: Total Nilai Murni Seluruh Wasit Babak Final, lalu Penyisihan
+            $cmpC = $this->compareNullableDesc($left['final_raw_score'], $right['final_raw_score'])
+                ?: $this->compareNullableDesc($left['preliminary_raw_score'], $right['preliminary_raw_score']);
+            if ($cmpC !== 0) {
+                return $cmpC;
+            }
+
+            // Skenario D: Nilai Wasit 2 Babak Final, lalu Nilai Babak Penyisihan
+            $cmpD = $this->compareNullableDesc($left['final_judge_two'], $right['final_judge_two'])
+                ?: $this->compareNullableDesc($left['preliminary_score'], $right['preliminary_score']);
+            if ($cmpD !== 0) {
+                return $cmpD;
+            }
+
+            // Skenario E: Keputusan Manual Panitera/Dewan Juri
+            $leftManual = (bool) ($left['manual_tiebreak_winner'] ?? false);
+            $rightManual = (bool) ($right['manual_tiebreak_winner'] ?? false);
+            if ($leftManual !== $rightManual) {
+                return $leftManual ? -1 : 1;
+            }
+
+            return strcmp($left['participant_label'], $right['participant_label']);
         })->values();
     }
 
@@ -68,7 +104,7 @@ class EmbuResultService
         };
     }
 
-    /** @return Collection<int, array{pool: string, rank: int, next_rank: int, score: float, judge_one: float}> */
+    /** @return Collection<int, array{pool: string, rank: int, next_rank: int, score: float, judge_one: float, raw_score: float, judge_two: float, match_id_a: string, match_id_b: string, label_a: string, label_b: string, scenario: string}> */
     public function boundaryTies(EventMatchCategory $category): Collection
     {
         $quota = $this->quotaPerPool($category);
@@ -87,9 +123,13 @@ class EmbuResultService
                 }
 
                 $sameScore = (float) $qualified['score']['final_score'] === (float) $next['score']['final_score'];
-                $sameJudgeOne = (float) $qualified['judge_one'] === (float) $next['judge_one'];
+                $sameJudgeOne = (float) ($qualified['judge_one'] ?? 0) === (float) ($next['judge_one'] ?? 0);
+                $sameRawScore = (float) ($qualified['raw_score'] ?? 0) === (float) ($next['raw_score'] ?? 0);
+                $sameJudgeTwo = (float) ($qualified['judge_two'] ?? 0) === (float) ($next['judge_two'] ?? 0);
+                $hasManualDecision = (bool) ($qualified['metadata']['manual_tiebreak_winner'] ?? false)
+                    || (bool) ($next['metadata']['manual_tiebreak_winner'] ?? false);
 
-                if (! $sameScore || ! $sameJudgeOne) {
+                if (! $sameScore || ! $sameJudgeOne || ! $sameRawScore || ! $sameJudgeTwo || $hasManualDecision) {
                     return null;
                 }
 
@@ -98,7 +138,14 @@ class EmbuResultService
                     'rank' => $quota,
                     'next_rank' => $quota + 1,
                     'score' => (float) $qualified['score']['final_score'],
-                    'judge_one' => (float) $qualified['judge_one'],
+                    'judge_one' => (float) ($qualified['judge_one'] ?? 0),
+                    'raw_score' => (float) ($qualified['raw_score'] ?? 0),
+                    'judge_two' => (float) ($qualified['judge_two'] ?? 0),
+                    'match_id_a' => (string) $qualified['match_id'],
+                    'match_id_b' => (string) $next['match_id'],
+                    'label_a' => (string) $qualified['participant_label'],
+                    'label_b' => (string) $next['participant_label'],
+                    'scenario' => 'E',
                 ];
             })
             ->filter()
@@ -205,7 +252,7 @@ class EmbuResultService
                     'contingent_name' => $row['metadata']['contingent_name'] ?? $row['participant_label'],
                     'rank' => $index + 1,
                     'match_category' => $category->name,
-                    'is_exhibition' => (int) $category->tournamentDrawing?->participant_count <= 3,
+                    'is_exhibition' => (bool) $category->is_exhibition || (int) $category->tournamentDrawing?->participant_count <= 3,
                 ]);
             });
         });
@@ -217,11 +264,36 @@ class EmbuResultService
         return $rankings->take(4)->values()->contains(function (array $row, int $index) use ($rankings): bool {
             $next = $rankings->get($index + 1);
 
-            return $next !== null
-                && $row['total_score'] !== null
-                && (float) $row['total_score'] === (float) $next['total_score']
-                && (float) $row['final_judge_one'] === (float) $next['final_judge_one']
-                && (float) $row['preliminary_judge_one'] === (float) $next['preliminary_judge_one'];
+            if ($next === null || $row['total_score'] === null || $next['total_score'] === null) {
+                return false;
+            }
+
+            $sameTotal = (float) $row['total_score'] === (float) $next['total_score'];
+            $sameJudgeOne = (float) ($row['final_judge_one'] ?? 0) === (float) ($next['final_judge_one'] ?? 0)
+                && (float) ($row['preliminary_judge_one'] ?? 0) === (float) ($next['preliminary_judge_one'] ?? 0);
+            $sameRawScore = (float) ($row['final_raw_score'] ?? 0) === (float) ($next['final_raw_score'] ?? 0)
+                && (float) ($row['preliminary_raw_score'] ?? 0) === (float) ($next['preliminary_raw_score'] ?? 0);
+            $sameJudgeTwo = (float) ($row['final_judge_two'] ?? 0) === (float) ($next['final_judge_two'] ?? 0)
+                && (float) ($row['preliminary_score'] ?? 0) === (float) ($next['preliminary_score'] ?? 0);
+
+            $hasManual = (bool) ($row['manual_tiebreak_winner'] ?? false) || (bool) ($next['manual_tiebreak_winner'] ?? false);
+
+            return $sameTotal && $sameJudgeOne && $sameRawScore && $sameJudgeTwo && ! $hasManual;
+        });
+    }
+
+    public function setManualTiebreakWinner(TournamentMatch $winnerMatch, ?TournamentMatch $tiedMatch = null): void
+    {
+        DB::transaction(function () use ($winnerMatch, $tiedMatch): void {
+            if ($tiedMatch) {
+                $tiedMetadata = $tiedMatch->metadata ?? [];
+                $tiedMetadata['manual_tiebreak_winner'] = false;
+                $tiedMatch->update(['metadata' => $tiedMetadata]);
+            }
+
+            $winnerMetadata = $winnerMatch->metadata ?? [];
+            $winnerMetadata['manual_tiebreak_winner'] = true;
+            $winnerMatch->update(['metadata' => $winnerMetadata]);
         });
     }
 
@@ -247,6 +319,17 @@ class EmbuResultService
                 }
 
                 $judgeOneIndex = array_search(1, $judgeNumbers, true);
+                $judgeTwoIndex = array_search(2, $judgeNumbers, true);
+
+                $judgeOne = $score && $judgeOneIndex !== false
+                    ? (float) $judgeScores[$judgeOneIndex]
+                    : null;
+                $judgeTwo = $score && $judgeTwoIndex !== false
+                    ? (float) $judgeScores[$judgeTwoIndex]
+                    : null;
+                $rawScore = $score && $judgeScores !== []
+                    ? (float) array_sum($judgeScores)
+                    : null;
 
                 return [
                     'match_id' => $match->id,
@@ -259,9 +342,10 @@ class EmbuResultService
                     'participant_entry_id' => $match->participant_entry_id,
                     'participant_label' => $match->participant_label ?? 'Peserta belum ditentukan',
                     'metadata' => $match->metadata ?? [],
-                    'judge_one' => $score && $judgeOneIndex !== false
-                        ? (float) $judgeScores[$judgeOneIndex]
-                        : null,
+                    'judge_one' => $judgeOne,
+                    'judge_two' => $judgeTwo,
+                    'raw_score' => $rawScore,
+                    'manual_tiebreak_winner' => (bool) ($match->metadata['manual_tiebreak_winner'] ?? false),
                     'score' => $score ? [
                         'id' => $score->id,
                         'tiebreak_round' => $score->tiebreak_round,
@@ -285,9 +369,38 @@ class EmbuResultService
     private function sortRows(Collection $rows): Collection
     {
         return $rows->sort(function (array $left, array $right): int {
-            return $this->compareNullableDesc($left['score']['final_score'] ?? null, $right['score']['final_score'] ?? null)
-                ?: $this->compareNullableDesc($left['judge_one'], $right['judge_one'])
-                ?: strcmp($left['participant_label'], $right['participant_label']);
+            // Skenario A: Nilai Akhir (Trimmed Mean - Denda)
+            $cmpA = $this->compareNullableDesc($left['score']['final_score'] ?? null, $right['score']['final_score'] ?? null);
+            if ($cmpA !== 0) {
+                return $cmpA;
+            }
+
+            // Skenario B: Nilai Wasit 1 (Chief Judge)
+            $cmpB = $this->compareNullableDesc($left['judge_one'] ?? null, $right['judge_one'] ?? null);
+            if ($cmpB !== 0) {
+                return $cmpB;
+            }
+
+            // Skenario C: Total Nilai Murni Seluruh Wasit (sebelum trimming)
+            $cmpC = $this->compareNullableDesc($left['raw_score'] ?? null, $right['raw_score'] ?? null);
+            if ($cmpC !== 0) {
+                return $cmpC;
+            }
+
+            // Skenario D: Nilai Wasit 2
+            $cmpD = $this->compareNullableDesc($left['judge_two'] ?? null, $right['judge_two'] ?? null);
+            if ($cmpD !== 0) {
+                return $cmpD;
+            }
+
+            // Skenario E: Keputusan Manual Panitera/Dewan Juri
+            $leftManual = (bool) ($left['metadata']['manual_tiebreak_winner'] ?? false);
+            $rightManual = (bool) ($right['metadata']['manual_tiebreak_winner'] ?? false);
+            if ($leftManual !== $rightManual) {
+                return $leftManual ? -1 : 1;
+            }
+
+            return strcmp($left['participant_label'], $right['participant_label']);
         })->values();
     }
 

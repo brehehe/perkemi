@@ -2,6 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Models\Clerk;
+use App\Models\Event;
+use App\Models\EventCourtAssignment;
+use App\Models\Referee;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -62,6 +66,57 @@ class UserSeeder extends Seeder
             );
 
             $user->syncRoles([$u['role']]);
+        }
+
+        $events = Event::all();
+        if ($events->isNotEmpty()) {
+            foreach ($events as $event) {
+                // Attach Panitera
+                $panitera = User::where('email', 'panitera@smart-perkemi.id')->first();
+                if ($panitera) {
+                    $event->users()->syncWithoutDetaching([$panitera->id => ['access_role' => Event::AccessRoleStaff]]);
+                    $clerk = Clerk::firstOrCreate(
+                        ['email' => $panitera->email],
+                        ['name' => $panitera->name, 'phone' => $panitera->phone ?? '081234567890', 'is_active' => true]
+                    );
+                    $event->clerks()->syncWithoutDetaching([$clerk->id => ['role' => 'clerk']]);
+                    $court = $event->courts()->first();
+                    if ($court) {
+                        EventCourtAssignment::firstOrCreate(
+                            ['event_court_id' => $court->id, 'staff_type' => 'clerk', 'staff_id' => $clerk->id],
+                            ['role' => 'clerk']
+                        );
+                    }
+                }
+
+                // Attach Wasit
+                $wasit = User::where('email', 'wasit@smart-perkemi.id')->first();
+                if ($wasit) {
+                    $event->users()->syncWithoutDetaching([$wasit->id => ['access_role' => Event::AccessRoleStaff]]);
+                    $referee = Referee::firstOrCreate(
+                        ['email' => $wasit->email],
+                        [
+                            'user_id' => $wasit->id,
+                            'name' => $wasit->name,
+                            'phone' => '081234567891',
+                            'license_number' => 'PB-WST-001',
+                            'certification_level' => 'Nasional A',
+                            'dan_grade' => 'IV Dan',
+                            'region' => 'Jawa Timur',
+                            'is_active' => true,
+                        ]
+                    );
+                    $event->referees()->syncWithoutDetaching([$referee->id => ['role' => 'chief']]);
+                }
+
+                // Attach other operational staff
+                foreach (['pendaftaran@smart-perkemi.id', 'pertandingan@smart-perkemi.id', 'arbitrase@smart-perkemi.id'] as $staffEmail) {
+                    $staffUser = User::where('email', $staffEmail)->first();
+                    if ($staffUser) {
+                        $event->users()->syncWithoutDetaching([$staffUser->id => ['access_role' => Event::AccessRoleStaff]]);
+                    }
+                }
+            }
         }
     }
 }

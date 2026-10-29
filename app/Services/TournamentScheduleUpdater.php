@@ -175,9 +175,22 @@ class TournamentScheduleUpdater
             || $match->scheduled_end_at === null
             || $match->event_court_id === null
             || $match->rundown_id === null) {
-            throw ValidationException::withMessages([
-                'schedule' => 'Partai asal belum memiliki slot yang dapat dipindahkan.',
-            ]);
+            if ($swapTarget !== null) {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Partai belum terjadwal hanya dapat ditempatkan pada slot kosong, bukan menukar partai terjadwal.',
+                ]);
+            }
+
+            $duration = max(1, (int) ($match->event?->match_duration_minutes ?: 10));
+            $destinationEnd = $destinationStart->addMinutes($duration);
+
+            return collect([[
+                'id' => $match->id,
+                'court_id' => $destinationCourtId,
+                'rundown_id' => $destinationSessionId,
+                'start' => $destinationStart,
+                'end' => $destinationEnd,
+            ]]);
         }
 
         $sourceStart = CarbonImmutable::instance($match->scheduled_start_at);

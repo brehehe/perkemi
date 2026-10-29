@@ -12,6 +12,7 @@ use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\PaniteraTimerState;
 use App\Services\Panitera\RandoriScoreDraftStore;
+use App\Services\Var\VarReviewService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -285,7 +286,14 @@ class PaniteraMatchController extends Controller
                     'signature_names' => $randoriScore->signature_names,
                     'notes' => $randoriScore->notes,
                     'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
+                    'decision_override' => data_get($match->metadata, 'result.decision_override'),
+                    'win_method' => data_get($match->metadata, 'result.win_method'),
                 ] : null),
+            'var_review' => [
+                'cards_remaining' => app(VarReviewService::class)->calculateCardsRemaining($match),
+                'active_review' => ($activeReview = $match->activeVarReview) ? app(VarReviewService::class)->formatReview($activeReview) : null,
+                'recent_reviews' => $match->varReviews()->latest()->limit(5)->get()->map(fn ($r) => app(VarReviewService::class)->formatReview($r))->values()->all(),
+            ],
         ];
     }
 

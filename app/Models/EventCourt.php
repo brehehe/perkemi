@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class EventCourt extends Model
 {
@@ -30,9 +33,19 @@ class EventCourt extends Model
         'name',
         'location',
         'description',
+        'access_code',
         'order',
         'is_active',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (EventCourt $court) {
+            if (empty($court->access_code)) {
+                $court->access_code = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+            }
+        });
+    }
 
     /**
      * The attributes that should be cast.
@@ -46,6 +59,38 @@ class EventCourt extends Model
             'is_active' => 'boolean',
             'deleted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Retrieve the model for a bound value with UUID safeguard.
+     *
+     * @param  Builder|Relation  $query
+     * @param  mixed  $value
+     * @param  string|null  $field
+     * @return Builder|Relation
+     */
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        $field = $field ?? $this->getRouteKeyName();
+
+        if ($field === 'id' && ! Str::isUuid((string) $value) && ! Str::isUlid((string) $value) && strlen((string) $value) !== 36 && strlen((string) $value) !== 26) {
+            return $query->where(function ($sub) use ($value) {
+                if (is_numeric($value)) {
+                    $sub->where('order', (int) $value)
+                        ->orWhere('name', 'Court '.$value)
+                        ->orWhere('name', 'court '.$value)
+                        ->orWhere('name', (string) $value)
+                        ->orWhere('access_code', (string) $value);
+                } else {
+                    $normalized = str_replace('-', ' ', strtolower((string) $value));
+                    $sub->whereRaw('LOWER(name) = ?', [strtolower((string) $value)])
+                        ->orWhereRaw('LOWER(name) = ?', [$normalized])
+                        ->orWhereRaw("LOWER(REPLACE(name, ' ', '')) = ?", [str_replace(' ', '', $normalized)]);
+                }
+            });
+        }
+
+        return parent::resolveRouteBindingQuery($query, $value, $field);
     }
 
     /**

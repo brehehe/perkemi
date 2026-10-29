@@ -2269,3 +2269,392 @@ test('completed matches expose result summaries in the dashboard match list', fu
             ->where('matches.data.1.result.is_locked', true)
         );
 });
+
+test('panitera views embu result as read-only while admin can input and update scores', function () {
+    $event = createPaniteraEvent('Event Embu Result Roles');
+    $panitera = createPaniteraUser($event);
+    $admin = User::factory()->create();
+    Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+    $admin->assignRole('Admin');
+    $event->users()->attach($admin, ['access_role' => Event::AccessRoleAdmin]);
+
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Berpasangan Putra', 'embu', 'embu_pool_cross');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'pool' => 'A',
+        'match_sequence' => 1,
+        'participant_label' => 'Kontingen A · Pasangan 1',
+        'metadata' => ['key' => 'team-1', 'contingent_name' => 'Kontingen A'],
+    ]);
+
+    // 1. Panitera only views recap (canInputScore = false, canOverrideScore = false)
+    $this->actingAs($panitera)
+        ->get("/admin/panitera/scoring/embu-result?event_id={$event->id}&category={$category->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/EmbuResult')
+            ->where('canManage', true)
+            ->where('canInputScore', false)
+            ->where('canOverrideScore', false)
+        );
+
+    // Panitera cannot manually post scores from recap
+    $this->actingAs($panitera)
+        ->post("/admin/panitera/scoring/embu-result/{$match->id}", [
+            'event_id' => $event->id,
+            'judge_scores' => [75, 76, 77, 78, 79],
+            'duration_seconds' => 110,
+            'tiebreak_round' => 0,
+        ])
+        ->assertForbidden();
+
+    // 2. Admin has full rights (canInputScore = true, canOverrideScore = true)
+    $this->actingAs($admin)
+        ->get("/admin/panitera/scoring/embu-result?event_id={$event->id}&category={$category->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/EmbuResult')
+            ->where('canManage', true)
+            ->where('canInputScore', true)
+            ->where('canOverrideScore', true)
+        );
+
+    // Admin can input initial score
+    $this->actingAs($admin)
+        ->post("/admin/panitera/scoring/embu-result/{$match->id}", [
+            'event_id' => $event->id,
+            'judge_scores' => [75, 76, 77, 78, 79],
+            'duration_seconds' => 110,
+            'tiebreak_round' => 0,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $score = EmbuScore::whereBelongsTo($match)->first();
+    expect($score)->not->toBeNull()
+        ->and((float) $score->middle_score)->toBe(231.0);
+
+    // Admin can update / override score
+    $this->actingAs($admin)
+        ->post("/admin/panitera/scoring/embu-result/{$match->id}", [
+            'event_id' => $event->id,
+            'judge_scores' => [80, 81, 82, 83, 84],
+            'duration_seconds' => 115,
+            'tiebreak_round' => 0,
+            'notes' => 'Koreksi nilai oleh Admin',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $updatedScore = $score->fresh();
+    expect((float) $updatedScore->middle_score)->toBe(246.0)
+        ->and($updatedScore->notes)->toBe('Koreksi nilai oleh Admin');
+});
+
+test('randori 2x waza-ari automatically triggers waza-ari awasete ippon and records win method', function () {
+    $event = createPaniteraEvent('Event Randori Auto Ippon');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'is_active' => true,
+    ]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Dewasa Putra 60kg', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_court_id' => $court->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'status' => 'ready',
+        'timer_status' => 'running',
+        'timer_started_at_ms' => now()->getTimestampMs() - 45000,
+        'timer_elapsed_ms' => 45000,
+        'metadata' => [
+            'red' => ['contingent_name' => 'Aka Surabaya'],
+            'blue' => ['contingent_name' => 'Shiro Malang'],
+        ],
+    ]);
+
+    $empty = ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 0, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0];
+    $signatures = [
+        'arbitrase' => 'data:image/png;base64,aaa',
+        'field_coordinator' => 'data:image/png;base64,bbb',
+        'referee' => 'data:image/png;base64,ccc',
+        'clerk' => 'data:image/png;base64,ddd',
+        'red_manager' => 'data:image/png;base64,eee',
+        'white_manager' => 'data:image/png;base64,fff',
+    ];
+
+    $aka = [...$empty, 'waza_ari' => 2];
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
+            'event_id' => $event->id,
+            'aka' => $aka,
+            'shiro' => $empty,
+            'signatures' => $signatures,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $match->refresh();
+    expect($match->metadata['result']['win_method'])->toBe('waza_ari_awasete_ippon')
+        ->and($match->metadata['result']['is_auto_ippon'])->toBeTrue()
+        ->and($match->metadata['result']['winner_corner'])->toBe('aka');
+});
+
+test('embu multi-tier tiebreak and manual tiebreak decision resolve tied rankings', function () {
+    $event = createPaniteraEvent('Event Embu Tiebreak A-E');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Berpasangan Putri', 'embu', 'embu_2_pools');
+
+    $matchA = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan Pool A',
+        'pool' => 'A',
+        'match_sequence' => 1,
+        'participant_label' => 'Tim Alpha',
+        'metadata' => ['key' => 'team-alpha'],
+    ]);
+    EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $matchA->id,
+        'judge_scores' => [80, 80, 80, 80, 80],
+        'middle_score' => 240,
+        'final_score' => 240,
+        'time_penalty' => 0,
+    ]);
+
+    $matchB = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan Pool A',
+        'pool' => 'A',
+        'match_sequence' => 2,
+        'participant_label' => 'Tim Beta',
+        'metadata' => ['key' => 'team-beta'],
+    ]);
+    EmbuScore::create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $matchB->id,
+        'judge_scores' => [80, 80, 80, 80, 80],
+        'middle_score' => 240,
+        'final_score' => 240,
+        'time_penalty' => 0,
+    ]);
+
+    $service = app(EmbuResultService::class);
+    $rankingsBefore = $service->preliminaryRankings($category)->get('A');
+    expect($rankingsBefore)->toHaveCount(2);
+
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/embu-result/{$matchB->id}/manual-tiebreak", [
+            'event_id' => $event->id,
+            'tied_match_id' => $matchA->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $matchB->refresh();
+    expect($matchB->metadata['manual_tiebreak_winner'])->toBeTrue();
+
+    $rankingsAfter = $service->preliminaryRankings($category)->get('A');
+    expect($rankingsAfter->first()['match_id'])->toBe($matchB->id)
+        ->and($rankingsAfter->last()['match_id'])->toBe($matchA->id);
+});
+
+test('panitera can record medical stop doctor stop which awards kiken gachi and stops injured athlete', function () {
+    $event = createPaniteraEvent('Event Medical Stop');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Medis', 'randori', 'single_elimination');
+
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $user->id,
+        'name' => 'Kontingen Medis',
+        'city' => 'Surabaya',
+        'manager_name' => 'Manajer Medis',
+        'phone' => '081234567890',
+    ]);
+    $injuredAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Cedera',
+        'gender' => 'male',
+        'birth_date' => '2005-01-01',
+        'kyu_dan' => '1_dan',
+    ]);
+    $opponentAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Sehat',
+        'gender' => 'male',
+        'birth_date' => '2005-01-01',
+        'kyu_dan' => '1_dan',
+    ]);
+
+    $injuredEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $injuredAthlete->id,
+        'event_match_category_id' => $category->id,
+        'competition_status' => 'active',
+    ]);
+    $opponentEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $opponentAthlete->id,
+        'event_match_category_id' => $category->id,
+        'competition_status' => 'active',
+    ]);
+
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'red_entry_id' => $injuredEntry->id,
+        'blue_entry_id' => $opponentEntry->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 1,
+        'red_label' => 'Kenshi Cedera',
+        'blue_label' => 'Kenshi Sehat',
+        'status' => 'in_progress',
+        'metadata' => [
+            'red' => ['label' => 'Kenshi Cedera', 'entry_id' => $injuredEntry->id, 'athlete_ids' => [$injuredAthlete->id]],
+            'blue' => ['label' => 'Kenshi Sehat', 'entry_id' => $opponentEntry->id, 'athlete_ids' => [$opponentAthlete->id]],
+            'placeholder' => false,
+        ],
+    ]);
+
+    $empty = ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 0, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0];
+    $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    $signatures = array_fill_keys(['arbitrase', 'field_coordinator', 'referee', 'clerk', 'red_manager', 'white_manager'], $signature);
+
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
+            'event_id' => $event->id,
+            'aka' => $empty,
+            'shiro' => $empty,
+            'signatures' => $signatures,
+            'decision_override' => [
+                'type' => 'medical_stop',
+                'affected_corner' => 'aka',
+                'reason' => 'Dislokasi bahu kanan / rekomendasi dokter pertandingan',
+            ],
+            'return_to_match' => true,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $freshMatch = $match->fresh();
+    expect($freshMatch->status)->toBe('completed')
+        ->and($freshMatch->metadata['result']['winner_corner'])->toBe('shiro')
+        ->and($freshMatch->metadata['result']['win_method'])->toBe('kiken')
+        ->and($injuredEntry->fresh()->competition_status)->toBe('stopped')
+        ->and($injuredEntry->fresh()->status_notes)->toContain('Doctor / Medical Stop');
+});
+
+test('panitera can record disqualification hansoku make and shikkaku global', function () {
+    $event = createPaniteraEvent('Event Disqualification');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori DQ', 'randori', 'single_elimination');
+    [$otherCategory] = createPaniteraCategory($event, 'Embu Lain', 'embu', 'embu_direct_final');
+
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $user->id,
+        'name' => 'Kontingen DQ',
+        'city' => 'Surabaya',
+        'manager_name' => 'Manajer DQ',
+        'phone' => '081234567891',
+    ]);
+    $disqualifiedAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Pelanggar',
+        'gender' => 'male',
+        'birth_date' => '2005-01-01',
+        'kyu_dan' => '1_dan',
+    ]);
+    $opponentAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Tertib',
+        'gender' => 'male',
+        'birth_date' => '2005-01-01',
+        'kyu_dan' => '1_dan',
+    ]);
+
+    $disqualifiedEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $disqualifiedAthlete->id,
+        'event_match_category_id' => $category->id,
+        'competition_status' => 'active',
+    ]);
+    $otherEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $disqualifiedAthlete->id,
+        'event_match_category_id' => $otherCategory->id,
+        'competition_status' => 'active',
+    ]);
+    $opponentEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $opponentAthlete->id,
+        'event_match_category_id' => $category->id,
+        'competition_status' => 'active',
+    ]);
+
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'red_entry_id' => $disqualifiedEntry->id,
+        'blue_entry_id' => $opponentEntry->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 1,
+        'red_label' => 'Kenshi Pelanggar',
+        'blue_label' => 'Kenshi Tertib',
+        'status' => 'in_progress',
+        'metadata' => [
+            'red' => ['label' => 'Kenshi Pelanggar', 'entry_id' => $disqualifiedEntry->id, 'athlete_ids' => [$disqualifiedAthlete->id]],
+            'blue' => ['label' => 'Kenshi Tertib', 'entry_id' => $opponentEntry->id, 'athlete_ids' => [$opponentAthlete->id]],
+            'placeholder' => false,
+        ],
+    ]);
+
+    $empty = ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 0, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0];
+    $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    $signatures = array_fill_keys(['arbitrase', 'field_coordinator', 'referee', 'clerk', 'red_manager', 'white_manager'], $signature);
+
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
+            'event_id' => $event->id,
+            'aka' => $empty,
+            'shiro' => $empty,
+            'signatures' => $signatures,
+            'decision_override' => [
+                'type' => 'disqualification',
+                'affected_corner' => 'aka',
+                'disqualification_scope' => 'global',
+                'reason' => 'Tindakan anarkis / melanggar kehormatan Shorinji Kempo',
+            ],
+            'return_to_match' => true,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $freshMatch = $match->fresh();
+    expect($freshMatch->status)->toBe('completed')
+        ->and($freshMatch->metadata['result']['winner_corner'])->toBe('shiro')
+        ->and($freshMatch->metadata['result']['win_method'])->toBe('hansoku_gachi')
+        ->and($disqualifiedEntry->fresh()->competition_status)->toBe('disqualified')
+        ->and($disqualifiedEntry->fresh()->status_notes)->toContain('Shikkaku (Global Turnamen)')
+        ->and($otherEntry->fresh()->competition_status)->toBe('disqualified');
+});

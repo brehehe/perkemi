@@ -26,6 +26,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -336,6 +337,21 @@ class ArbitrationController extends Controller
                 ? $penaltyState->resolve($activeMatch, $judgeScore)
                 : ['values' => [], 'points' => 0.0, 'source' => null, 'updated_by' => null, 'updated_at' => null];
 
+            $lockKey = "referee_session_lock:court_{$court->id}:role_{$role->value}";
+            $currentSessionHolder = Cache::get($lockKey);
+            $currentSessionId = $request->session()->getId();
+
+            $isTakenOver = false;
+            if ($currentSessionHolder && $currentSessionHolder !== $currentSessionId) {
+                if ($request->boolean('takeover')) {
+                    Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+                } else {
+                    $isTakenOver = true;
+                }
+            } else {
+                Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+            }
+
             $refereeSession = [
                 'referee_name' => $referee->name,
                 'court_id' => $court->id,
@@ -343,6 +359,8 @@ class ArbitrationController extends Controller
                 'role_key' => $assignment->role,
                 'role' => $role->label(),
                 'judge_number' => $role->judgeNumber(),
+                'is_taken_over' => $isTakenOver,
+                'takeover_url' => request()->fullUrlWithQuery(['takeover' => 1]),
                 'can_manage_penalties' => $role === RefereeCourtRole::Chief,
                 'penalty_state' => $sharedPenaltyState,
                 'is_checked_in' => RefereeAttendance::query()

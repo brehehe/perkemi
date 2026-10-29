@@ -48,6 +48,7 @@ class SaveEventMatchCategoryRequest extends FormRequest
             'max_kyu' => ['nullable', 'string', 'max:50'],
             'order' => ['nullable', 'integer'],
             'is_active' => ['boolean'],
+            'is_exhibition' => ['nullable', 'boolean'],
         ];
     }
 }

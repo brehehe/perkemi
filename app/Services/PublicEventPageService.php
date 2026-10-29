@@ -24,11 +24,24 @@ class PublicEventPageService
     {
         return $event->load([
             'ageCategories' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
-            'courts' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
+            'courts' => fn ($query) => $query->where('is_active', true)
+                ->with([
+                    'tournamentMatches' => fn ($mq) => $mq->where('is_bye', false)
+                        ->whereIn('status', ['ready', 'in_progress'])
+                        ->with([
+                            'matchCategory:id,name,type',
+                            'randoriScore',
+                            'embuScores',
+                        ])
+                        ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
+                        ->orderBy('match_sequence'),
+                ])
+                ->orderBy('order'),
             'matchCategories' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
             'rundowns' => fn ($query) => $query->orderBy('date')->orderBy('order'),
             'paymentMethods' => fn ($query) => $query->where('is_active', true)->orderBy('order'),
             'referees' => fn ($query) => $query->where('referees.is_active', true)->orderBy('referees.name'),
+            'contingents' => fn ($query) => $query->withCount('athletes')->orderBy('name'),
         ])->loadCount(['contingents', 'registrations']);
     }
 
@@ -76,6 +89,7 @@ class PublicEventPageService
                 'contact_phone' => $event->contact_phone,
                 'rules_doc' => $event->rules_doc,
                 'cover_image_url' => $event->coverImageUrl(),
+                'google_maps_url' => 'https://www.google.com/maps/search/?api=1&query='.urlencode(implode(', ', array_filter([$event->venue, $event->city, $event->province]))),
                 'contingents_count' => (int) $event->contingents_count,
                 'registrations_count' => (int) $event->registrations_count,
             ],
@@ -91,12 +105,73 @@ class PublicEventPageService
                 'fee_formatted' => $event->is_paid ? 'Rp '.number_format((float) $category->fee, 0, ',', '.') : 'Gratis',
                 'description' => $this->eligibility->enabled($event) ? null : $category->description,
             ]),
-            'courts' => $event->courts->map(fn (EventCourt $court) => [
-                'id' => $court->id,
-                'name' => $court->name,
-                'location' => $court->location,
-                'description' => $court->description,
-            ]),
+            'courts' => $event->courts->map(function (EventCourt $court) use ($event) {
+                $activeMatch = $court->tournamentMatches->first();
+                $nextMatch = $court->tournamentMatches->skip(1)->first();
+                $monitorUrl = route('event.public.court.monitor', ['slug' => $event->slug, 'eventCourt' => $court->id]);
+                $monitorFullUrl = url($monitorUrl);
+
+                $activeMatchData = null;
+                if ($activeMatch) {
+                    $isRandori = $activeMatch->matchCategory?->type === 'randori';
+                    $randoriScore = $activeMatch->randoriScore;
+                    $embuScore = $activeMatch->embuScores->first();
+
+                    $akaScore = $isRandori ? (int) ($randoriScore?->aka_total ?? $randoriScore?->aka_score ?? 0) : null;
+                    $shiroScore = $isRandori ? (int) ($randoriScore?->shiro_total ?? $randoriScore?->shiro_score ?? 0) : null;
+                    $akaWazaAri = $isRandori ? (int) ($randoriScore?->aka_breakdown['waza_ari'] ?? $randoriScore?->score_breakdown['aka']['waza_ari'] ?? 0) : null;
+                    $shiroWazaAri = $isRandori ? (int) ($randoriScore?->shiro_breakdown['waza_ari'] ?? $randoriScore?->score_breakdown['shiro']['waza_ari'] ?? 0) : null;
+
+                    $activeMatchData = [
+                        'id' => $activeMatch->id,
+                        'status' => $activeMatch->status,
+                        'status_label' => match ($activeMatch->status) {
+                            'ready' => 'Siap Dipanggil',
+                            'in_progress' => 'Sedang Berlangsung',
+                            default => 'Aktif',
+                        },
+                        'category' => $activeMatch->matchCategory?->name,
+                        'type' => $activeMatch->matchCategory?->type,
+                        'round' => $activeMatch->round_label,
+                        'sequence' => $activeMatch->match_sequence,
+                        'aka_label' => $activeMatch->red_label,
+                        'shiro_label' => $activeMatch->blue_label,
+                        'participant' => $activeMatch->participant_label ?: implode(' vs ', array_filter([$activeMatch->red_label, $activeMatch->blue_label])),
+                        'score_display' => $isRandori
+                            ? "{$akaScore} - {$shiroScore}"
+                            : ($embuScore ? number_format((float) $embuScore->final_score, 2) : 'Menunggu Penilaian'),
+                        'aka_score' => $akaScore,
+                        'shiro_score' => $shiroScore,
+                        'aka_waza_ari' => $akaWazaAri,
+                        'shiro_waza_ari' => $shiroWazaAri,
+                        'embu_final_score' => ! $isRandori && $embuScore ? (float) $embuScore->final_score : null,
+                    ];
+                }
+
+                $nextMatchData = null;
+                if ($nextMatch) {
+                    $nextMatchData = [
+                        'id' => $nextMatch->id,
+                        'sequence' => $nextMatch->match_sequence,
+                        'category' => $nextMatch->matchCategory?->name,
+                        'type' => $nextMatch->matchCategory?->type,
+                        'round' => $nextMatch->round_label,
+                        'participant' => $nextMatch->participant_label ?: implode(' vs ', array_filter([$nextMatch->red_label, $nextMatch->blue_label])),
+                    ];
+                }
+
+                return [
+                    'id' => $court->id,
+                    'name' => $court->name,
+                    'location' => $court->location,
+                    'description' => $court->description,
+                    'monitor_url' => $monitorUrl,
+                    'monitor_full_url' => $monitorFullUrl,
+                    'qr_url' => 'https://quickchart.io/qr?size=320&margin=2&ecLevel=M&text='.urlencode($monitorFullUrl),
+                    'active_match' => $activeMatchData,
+                    'next_match' => $nextMatchData,
+                ];
+            }),
             'matchCategories' => $event->matchCategories->map(fn (EventMatchCategory $category) => [
                 'id' => $category->id,
                 'age_category_id' => $category->age_category_id,
@@ -147,6 +222,14 @@ class PublicEventPageService
             'championGroups' => $this->championGroups($event),
             'embuScores' => $this->embuScores($event),
             'randoriBrackets' => $this->randoriBrackets($event),
+            'contingents' => $event->contingents->map(fn ($contingent) => [
+                'id' => $contingent->id,
+                'name' => $contingent->name,
+                'city' => $contingent->city,
+                'province' => $contingent->province,
+                'manager_name' => $contingent->manager_name,
+                'athletes_count' => (int) ($contingent->athletes_count ?? 0),
+            ])->values(),
             'canManage' => $canManage,
             'canAccessDashboard' => $canAccessDashboard,
             'isHomepage' => $isHomepage,

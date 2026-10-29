@@ -35,7 +35,6 @@ class RandoriResultController extends Controller
         $matches = $category
             ? TournamentMatch::query()
                 ->where('event_match_category_id', $category->id)
-                ->where('is_bye', false)
                 ->with(['randoriScore', 'court:id,name'])
                 ->orderBy('match_sequence')
                 ->get()
@@ -45,11 +44,14 @@ class RandoriResultController extends Controller
                     'round_label' => $match->round_label,
                     'sequence' => $match->match_sequence,
                     'court_id' => $match->event_court_id,
+                    'bracket_position' => (int) ($match->bracket_position ?? 1),
+                    'next_match_id' => $match->next_match_id,
                     'aka_label' => $match->red_label,
                     'shiro_label' => $match->blue_label,
                     'court' => $match->court?->name,
                     'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
                     'status' => $match->status,
+                    'is_bye' => (bool) $match->is_bye,
                     'is_ready' => ! ($match->metadata['placeholder'] ?? false),
                     'score' => $match->randoriScore ? [
                         'aka_breakdown' => $match->randoriScore->aka_breakdown,
@@ -61,6 +63,8 @@ class RandoriResultController extends Controller
                         'locked_at' => $match->randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
                         'verified_at' => $match->randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
                         'notes' => $match->randoriScore->notes,
+                        'decision_override' => data_get($match->metadata, 'result.decision_override'),
+                        'win_method' => data_get($match->metadata, 'result.win_method'),
                     ] : null,
                 ])->values()
             : collect();
@@ -77,6 +81,13 @@ class RandoriResultController extends Controller
                 'drawing_status' => $item->tournamentDrawing?->status,
             ])->values(),
             'selectedCategory' => $category?->id,
+            'categoryDetails' => $category ? [
+                'id' => $category->id,
+                'name' => $category->name,
+                'gender' => $category->gender,
+                'format' => $category->tournamentDrawing?->bracket_type,
+                'drawing_status' => $category->tournamentDrawing?->status,
+            ] : null,
             'matches' => $matches,
             'canManage' => $eventContext->canManage($request, $event),
         ]);
@@ -105,6 +116,7 @@ class RandoriResultController extends Controller
             $validated['signature_names'] ?? null,
             $validated['notes'] ?? null,
             $request->user()->id,
+            $validated['decision_override'] ?? null,
         );
         $state = $drafts->replaceFromScore($tournamentMatch, $score, $request->user()->id);
         $this->broadcastState(

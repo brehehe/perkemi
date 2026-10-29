@@ -22,11 +22,25 @@ class AthleteMatchCategoryEntry extends Model
         'event_match_category_id',
         'team_number',
         'age_group_promotion',
+        'actual_weight',
+        'weigh_in_status',
+        'weigh_in_notes',
+        'weigh_in_at',
+        'weigh_in_locked_at',
+        'weigh_in_by',
+        'competition_status',
+        'status_notes',
     ];
 
     protected function casts(): array
     {
-        return ['team_number' => 'integer', 'age_group_promotion' => 'boolean'];
+        return [
+            'team_number' => 'integer',
+            'age_group_promotion' => 'boolean',
+            'actual_weight' => 'decimal:2',
+            'weigh_in_at' => 'datetime',
+            'weigh_in_locked_at' => 'datetime',
+        ];
     }
 
     /**
@@ -51,5 +65,13 @@ class AthleteMatchCategoryEntry extends Model
     public function matchCategory(): BelongsTo
     {
         return $this->belongsTo(EventMatchCategory::class, 'event_match_category_id');
+    }
+
+    /**
+     * Get the user who conducted the weigh in.
+     */
+    public function weighedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'weigh_in_by');
     }
 }

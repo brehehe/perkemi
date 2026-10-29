@@ -957,6 +957,144 @@ class RegistrationController extends Controller
         return back()->with('success', "Nomor pertandingan untuk {$athlete->name} berhasil dihapus.");
     }
 
+    /**
+     * Bulk store Entry by Number (mass category selection for a contingent).
+     */
+    public function storeEntryByNumber(Request $request, Registration $registration): RedirectResponse
+    {
+        $this->ensureTenantRegistration($request, $registration);
+        abort_unless($this->canManageRegistration($request, $registration), 403);
+        $this->ensureRegistrationEditable($request, $registration);
+
+        $validated = $request->validate([
+            'category_ids' => 'required|array|min:1',
+            'category_ids.*' => 'required|uuid|exists:event_match_categories,id',
+            'athlete_assignments' => 'nullable|array',
+            'athlete_assignments.*' => 'nullable|uuid|exists:athletes,id',
+        ]);
+
+        $event = $registration->event;
+        $contingent = $registration->contingent;
+        $categoryIds = collect($validated['category_ids'])->unique();
+        $assignments = collect($validated['athlete_assignments'] ?? []);
+
+        DB::transaction(function () use ($event, $contingent, $categoryIds, $assignments, $registration): void {
+            $athletes = Athlete::query()
+                ->where('contingent_id', $contingent->id)
+                ->get()
+                ->keyBy('id');
+
+            $categories = EventMatchCategory::query()
+                ->whereBelongsTo($event)
+                ->whereIn('id', $categoryIds)
+                ->where('is_active', true)
+                ->whereNull('merged_into_id')
+                ->with('ageCategory:id,min_age,max_age')
+                ->get()
+                ->keyBy('id');
+
+            foreach ($categories as $category) {
+                // If specific athlete was chosen for this category:
+                $assignedAthleteId = $assignments->get($category->id);
+                $targetAthlete = $assignedAthleteId ? $athletes->get($assignedAthleteId) : null;
+
+                // Auto-match an available athlete from contingent if not explicitly assigned
+                if (! $targetAthlete) {
+                    $targetAthlete = $athletes->first(function (Athlete $athlete) use ($category, $event) {
+                        $alreadyEntered = AthleteMatchCategoryEntry::query()
+                            ->where('athlete_id', $athlete->id)
+                            ->where('event_match_category_id', $category->id)
+                            ->exists();
+
+                        if ($alreadyEntered) {
+                            return false;
+                        }
+
+                        $currentCount = AthleteMatchCategoryEntry::query()
+                            ->whereBelongsTo($event)
+                            ->where('athlete_id', $athlete->id)
+                            ->count();
+
+                        if ($event->max_match_categories_per_athlete && $currentCount >= $event->max_match_categories_per_athlete) {
+                            return false;
+                        }
+
+                        if ($category->gender && $category->gender !== 'mixed') {
+                            $expected = in_array(strtolower($category->gender), ['male', 'putra', 'l'], true) ? ['l', 'male', 'putra'] : ['p', 'female', 'putri'];
+                            if (! in_array(strtolower($athlete->gender ?? ''), $expected, true)) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    });
+                }
+
+                // If contingent does not yet have an athlete matching the category, create a designated slot entry
+                if (! $targetAthlete) {
+                    $isFemale = in_array(strtolower($category->gender ?? ''), ['female', 'putri', 'p'], true);
+                    $targetAthlete = Athlete::create([
+                        'contingent_id' => $contingent->id,
+                        'name' => "Kenshi {$contingent->name} ({$category->name})",
+                        'gender' => $isFemale ? 'P' : 'L',
+                        'kyu_dan' => 'Kyu III',
+                    ]);
+                    $athletes->put($targetAthlete->id, $targetAthlete);
+                }
+
+                $alreadyIn = AthleteMatchCategoryEntry::query()
+                    ->where('athlete_id', $targetAthlete->id)
+                    ->where('event_match_category_id', $category->id)
+                    ->exists();
+
+                if (! $alreadyIn) {
+                    AthleteMatchCategoryEntry::create([
+                        'event_id' => $event->id,
+                        'athlete_id' => $targetAthlete->id,
+                        'event_match_category_id' => $category->id,
+                        'team_number' => 1,
+                    ]);
+                }
+            }
+
+            $this->syncRegistrationFees($registration);
+        });
+
+        return back()->with('success', "Entry by Number berhasil disimpan untuk kontingen {$contingent->name} (".count($categoryIds).' nomor pertandingan).');
+    }
+
+    private function syncRegistrationFees(Registration $registration): void
+    {
+        $event = $registration->event;
+        if (! $event->is_paid) {
+            $registration->update([
+                'verification_code' => null,
+                'total_amount' => 0,
+                'final_amount' => 0,
+                'payment_status' => PaymentStatus::Verified,
+                'payment_amount' => 0,
+                'payment_verified_at' => null,
+                'payment_verified_by' => null,
+                'payment_note' => 'Event gratis; pembayaran tidak diperlukan.',
+            ]);
+
+            return;
+        }
+
+        $athleteCount = Athlete::query()->where('contingent_id', $registration->contingent_id)
+            ->whereHas('matchCategoryEntries', fn ($query) => $query->where('event_id', $registration->event_id))->count();
+        $base = (float) $event->fee_per_contingent + $athleteCount * (float) $event->fee_per_athlete;
+        if ($registration->verification_code === null) {
+            Event::query()->whereKey($registration->event_id)->lockForUpdate()->firstOrFail();
+        }
+        $code = $registration->verification_code ?? Registration::nextVerificationCode($registration->event_id);
+        $amount = $base + $code;
+        $changes = ['verification_code' => $code, 'total_amount' => $base, 'final_amount' => $amount];
+        if ((float) $registration->final_amount !== $amount || (float) $registration->total_amount !== $base) {
+            $registration->update($changes);
+        }
+    }
+
     public function destroyRegistrationAthleteMatchCategoryEntry(
         Request $request,
         Registration $registration,

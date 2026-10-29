@@ -25,6 +25,7 @@ function CourtPanelCard({ court, activeEvent }) {
     const [activeRoleTab, setActiveRoleTab] = useState('chief');
     const [historyOpen, setHistoryOpen] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
+    const [tokenCopied, setTokenCopied] = useState(false);
     const resetForm = useForm({ event_id: activeEvent.id });
 
     const resetPanel = () => {
@@ -52,6 +53,28 @@ function CourtPanelCard({ court, activeEvent }) {
                         </span>
                     </div>
                     <p className="mt-1 text-xs text-[#7a746e]">{court.location || 'Lokasi court belum dicatat'}</p>
+                    {court.access_code && (
+                        <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[11px] font-medium text-[#7a746e]">Token Meja Panitera:</span>
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-0.5 font-mono text-xs font-bold text-amber-900">
+                                {court.access_code}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                                            navigator.clipboard.writeText(court.access_code);
+                                            setTokenCopied(true);
+                                            setTimeout(() => setTokenCopied(false), 2000);
+                                        }
+                                    }}
+                                    className="cursor-pointer text-amber-700 hover:text-amber-950 p-0.5"
+                                    title="Salin Token Meja Panitera (6 Digit)"
+                                >
+                                    <i className={`fa-solid ${tokenCopied ? 'fa-check text-emerald-600' : 'fa-copy'} text-[11px]`} />
+                                </button>
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <div className="grid w-full gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:justify-end">
                     <button type="button" onClick={() => setHistoryOpen(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs font-bold text-[#625b54] hover:bg-[#f5f1eb]">

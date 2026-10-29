@@ -54,6 +54,40 @@ function EmptyState({ session, activeEvent }) {
         );
     }
 
+    if (session.is_taken_over) {
+        return (
+            <section role="alert" className="rounded-2xl border border-rose-300 bg-rose-50 p-5 text-rose-950 shadow-sm sm:p-6">
+                <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-sm">
+                        <i className="fa-solid fa-triangle-exclamation text-xl" aria-hidden="true" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-700">Peringatan Perebutan Sesi</p>
+                        <h2 className="mt-1 text-2xl font-black text-rose-950">Posisi telah diambil alih</h2>
+                        <p className="mt-2 text-sm leading-6 text-rose-900">
+                            Sistem mendeteksi bahwa posisi Wasit <strong>{session.role}</strong> di <strong>{session.court_name}</strong> saat ini aktif di perangkat lain. Akses penilaian pada perangkat ini dinonaktifkan demi integritas penjurian.
+                        </p>
+                        <div className="mt-5 flex flex-wrap gap-3">
+                            <a
+                                href={session.takeover_url}
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-700 px-5 text-sm font-bold text-white transition hover:bg-rose-800"
+                            >
+                                <i className="fa-solid fa-right-left" aria-hidden="true" />
+                                Ambil Alih Posisi Ini
+                            </a>
+                            <Link
+                                href={`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`}
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-5 text-sm font-semibold text-rose-900 hover:bg-rose-100"
+                            >
+                                Kembali ke Portal Wasit
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        );
+    }
+
     if (!session.is_checked_in) {
         return (
             <section role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm sm:p-6">
@@ -547,7 +581,7 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
             <Head title="Penilaian Wasit Embu | Smart Perkemi" />
 
             <div className="space-y-5">
-                {refereeSession?.is_checked_in && activeMatch && isEmbu ? (
+                {refereeSession?.is_checked_in && !refereeSession?.is_taken_over && activeMatch && isEmbu ? (
                     <EmbuScoreForm
                         key={`${activeMatch.id}-${refereeSession.judge_number}`}
                         activeEvent={activeEvent}

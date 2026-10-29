@@ -5,6 +5,7 @@ namespace App\Services\Panitera;
 use App\Models\TournamentMatch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class PaniteraTimerState
 {
@@ -14,6 +15,8 @@ class PaniteraTimerState
         $elapsed = max(0, (int) $match->timer_elapsed_ms) ?: max(0, (int) $match->timer_elapsed_seconds) * 1000;
         $duration = max(10, (int) data_get($match->metadata, 'panitera.timer_duration_seconds', 120));
         $type = $match->matchCategory?->type;
+        $categoryName = (string) $match->matchCategory?->name;
+        $isTandoku = Str::contains(Str::lower($categoryName), ['tandoku', 'tunggal']);
 
         return [
             'status' => $match->timer_status,
@@ -23,6 +26,9 @@ class PaniteraTimerState
             'elapsed_ms' => $elapsed,
             'direction' => $type === 'randori' ? 'down' : 'up',
             'category_type' => $type,
+            'category_name' => $categoryName,
+            'is_tandoku' => $isTandoku,
+            'penalty_category' => $isTandoku ? 'Tandoku / Tunggal' : 'Pasangan / Beregu',
             'run_id' => data_get($match->metadata, 'panitera.timer_run_id'),
             'duration_seconds' => $duration,
             'duration_ms' => $duration * 1000,
