@@ -40,11 +40,23 @@ class EventCourt extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (EventCourt $court) {
+        static::saving(function (EventCourt $court) {
             if (empty($court->access_code)) {
-                $court->access_code = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                $court->access_code = static::generateUniqueAccessCode();
             }
         });
+    }
+
+    /**
+     * Generate a unique 6-digit access code for court panitera login.
+     */
+    public static function generateUniqueAccessCode(): string
+    {
+        do {
+            $code = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+        } while (static::query()->where('access_code', $code)->exists());
+
+        return $code;
     }
 
     /**

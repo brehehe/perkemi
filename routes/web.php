@@ -139,6 +139,7 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     // Event Courts (Lapangan / Tatami)
     Route::post('event/{event}/court', [EventDetailController::class, 'storeCourt'])->name('event.court.store');
     Route::put('event/{event}/court/{court}', [EventDetailController::class, 'updateCourt'])->name('event.court.update');
+    Route::post('event/{event}/court/{court}/regenerate-token', [EventDetailController::class, 'regenerateCourtToken'])->name('event.court.regenerate-token');
     Route::delete('event/{event}/court/{court}', [EventDetailController::class, 'destroyCourt'])->name('event.court.destroy');
 
     // Event Match Categories (Nomer Pertandingan)

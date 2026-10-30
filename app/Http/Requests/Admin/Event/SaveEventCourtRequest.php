@@ -28,6 +28,7 @@ class SaveEventCourtRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:500'],
             'order' => ['nullable', 'integer'],
             'is_active' => ['boolean'],
+            'regenerate_token' => ['nullable', 'boolean'],
         ];
     }
 }

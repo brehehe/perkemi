@@ -153,6 +153,21 @@ export default function EventDetail({
         }
     };
 
+    const handleRegenerateCourtToken = (court) => {
+        if (!confirm(`Buat token baru untuk ${court.name}? Token lama (jika ada) tidak akan dapat digunakan lagi.`)) {
+            return;
+        }
+        router.post(`/admin/master/event/${event.id}/court/${court.id}/regenerate-token`, {}, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const updatedCourt = page.props.courts?.find((c) => c.id === court.id);
+                if (updatedCourt && editingCourt?.id === court.id) {
+                    setEditingCourt(updatedCourt);
+                }
+            },
+        });
+    };
+
     // ══════════════════════════════════════════════════════════════
     // MODAL STATES
     // ══════════════════════════════════════════════════════════════
@@ -274,6 +289,7 @@ export default function EventDetail({
         description: '',
         order: 0,
         is_active: true,
+        regenerate_token: false,
     });
 
     // Form: Match Category (CRUD)
@@ -499,6 +515,7 @@ export default function EventDetail({
             description: '',
             order: (courts.length || 0) + 1,
             is_active: true,
+            regenerate_token: false,
         });
         setIsCourtModalOpen(true);
     };
@@ -512,6 +529,7 @@ export default function EventDetail({
             description: court.description || '',
             order: court.order ?? 0,
             is_active: court.is_active ?? true,
+            regenerate_token: false,
         });
         setIsCourtModalOpen(true);
     };
@@ -1406,9 +1424,26 @@ export default function EventDetail({
                                                             >
                                                                 <i className={`fa-solid ${copiedCourtTokenId === court.id ? 'fa-check text-emerald-600' : 'fa-copy'} text-[11px]`} />
                                                             </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRegenerateCourtToken(court)}
+                                                                className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 p-0.5 rounded cursor-pointer transition-colors"
+                                                                title="Buat Ulang Token Baru"
+                                                            >
+                                                                <i className="fa-solid fa-arrows-rotate text-[10px]" />
+                                                            </button>
                                                         </div>
                                                     ) : (
-                                                        <span className="text-[#888] font-mono text-xs">-</span>
+                                                        <Button
+                                                            type="button"
+                                                            size="xs"
+                                                            variant="outline"
+                                                            onClick={() => handleRegenerateCourtToken(court)}
+                                                            className="text-[11px] border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200"
+                                                        >
+                                                            <i className="fa-solid fa-key mr-1 text-[10px]" />
+                                                            Buat Token
+                                                        </Button>
                                                     )}
                                                 </td>
 
@@ -2887,33 +2922,73 @@ export default function EventDetail({
                         </div>
                     </div>
 
-                    {editingCourt?.access_code ? (
-                        <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-900/50 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                            <div>
-                                <p className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                    <i className="fa-solid fa-key text-amber-600 dark:text-amber-400" />
-                                    Token Login Panitera (6 Digit)
-                                </p>
-                                <p className="text-[11px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
-                                    Gunakan token ini untuk login cepat meja skoring melalui tab 'Token Panitera' di halaman Login.
-                                </p>
+                    {editingCourt ? (
+                        editingCourt.access_code ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-900/50 p-3.5 space-y-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                            <i className="fa-solid fa-key text-amber-600 dark:text-amber-400" />
+                                            Token Login Panitera (6 Digit)
+                                        </p>
+                                        <p className="text-[11px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
+                                            Gunakan token ini untuk login cepat meja skoring melalui tab 'Token Panitera' di halaman Login.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className="font-mono text-base font-extrabold tracking-widest text-amber-950 dark:text-amber-100 bg-white dark:bg-slate-900 px-3 py-1 rounded-lg border border-amber-300 dark:border-amber-700 shadow-2xs">
+                                            {editingCourt.access_code}
+                                        </span>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCopyCourtToken(editingCourt)}
+                                            className="bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 border-amber-300"
+                                        >
+                                            <i className={`fa-solid ${copiedCourtTokenId === editingCourt.id ? 'fa-check text-emerald-600' : 'fa-copy'} mr-1.5`} />
+                                            {copiedCourtTokenId === editingCourt.id ? 'Tersalin' : 'Salin'}
+                                        </Button>
+                                    </div>
+                                </div>
+                                <div className="border-t border-amber-200/60 dark:border-amber-900/40 pt-2 flex items-center justify-between">
+                                    <Checkbox
+                                        id="court-regenerate-token"
+                                        label="Acak ulang token 6-digit baru saat disimpan"
+                                        checked={courtForm.data.regenerate_token}
+                                        onChange={(event) => courtForm.setData('regenerate_token', event.target.checked)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRegenerateCourtToken(editingCourt)}
+                                        className="text-xs font-bold text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 underline decoration-dotted"
+                                    >
+                                        Buat Sekarang
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                <span className="font-mono text-base font-extrabold tracking-widest text-amber-950 dark:text-amber-100 bg-white dark:bg-slate-900 px-3 py-1 rounded-lg border border-amber-300 dark:border-amber-700 shadow-2xs">
-                                    {editingCourt.access_code}
-                                </span>
+                        ) : (
+                            <div className="rounded-xl border border-amber-300 bg-amber-50/90 dark:bg-amber-950/40 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+                                <div>
+                                    <p className="font-bold flex items-center gap-1.5">
+                                        <i className="fa-solid fa-circle-exclamation text-amber-600" />
+                                        Token Belum Dibuat
+                                    </p>
+                                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                                        Token 6 digit akan otomatis digenerate saat Anda menekan tombol Simpan di bawah, atau buat sekarang langsung.
+                                    </p>
+                                </div>
                                 <Button
                                     type="button"
-                                    variant="outline"
                                     size="sm"
-                                    onClick={() => handleCopyCourtToken(editingCourt)}
-                                    className="bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 border-amber-300"
+                                    onClick={() => handleRegenerateCourtToken(editingCourt)}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
                                 >
-                                    <i className={`fa-solid ${copiedCourtTokenId === editingCourt.id ? 'fa-check text-emerald-600' : 'fa-copy'} mr-1.5`} />
-                                    {copiedCourtTokenId === editingCourt.id ? 'Tersalin' : 'Salin'}
+                                    <i className="fa-solid fa-key mr-1.5" />
+                                    Generate Sekarang
                                 </Button>
                             </div>
-                        </div>
+                        )
                     ) : (
                         <div className="rounded-xl border border-dashed border-[#d9d3c9] bg-[#faf8f5] dark:bg-slate-900/50 p-3 text-xs text-[#7a746e]">
                             <i className="fa-solid fa-circle-info mr-1.5 text-amber-600" />

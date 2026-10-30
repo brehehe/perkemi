@@ -4,7 +4,15 @@ import { Button, Checkbox, Input, ThemeToggle } from '@/Components/UI';
 
 export default function Login({ totalAthletes = 520, totalProvinces = 38, year = new Date().getFullYear(), status }) {
     const [showPassword, setShowPassword] = useState(false);
-    const [loginMode, setLoginMode] = useState('account'); // 'account' | 'panitera'
+    const [loginMode, setLoginMode] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('tab') === 'panitera') {
+                return 'panitera';
+            }
+        }
+        return 'account';
+    });
 
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',

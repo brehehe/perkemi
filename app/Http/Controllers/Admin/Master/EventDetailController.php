@@ -30,6 +30,7 @@ use App\Models\User;
 use App\Services\Admin\Master\EventDetailViewService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -222,7 +223,8 @@ class EventDetailController extends Controller
         $validated = $request->validated();
 
         $event->courts()->create([
-            ...$validated,
+            ...Arr::except($validated, ['regenerate_token']),
+            'access_code' => EventCourt::generateUniqueAccessCode(),
             'order' => $validated['order'] ?? ($event->courts()->max('order') + 1),
             'is_active' => $validated['is_active'] ?? true,
         ]);
@@ -236,9 +238,23 @@ class EventDetailController extends Controller
 
         $validated = $request->validated();
 
-        $court->update($validated);
+        if (! empty($validated['regenerate_token']) || empty($court->access_code)) {
+            $court->access_code = EventCourt::generateUniqueAccessCode();
+        }
+
+        $court->update(Arr::except($validated, ['regenerate_token']));
 
         return back()->with('success', "Lapangan '{$court->name}' berhasil diperbarui.");
+    }
+
+    public function regenerateCourtToken(Event $event, EventCourt $court): RedirectResponse
+    {
+        abort_unless($court->event_id === $event->id, 404);
+
+        $court->access_code = EventCourt::generateUniqueAccessCode();
+        $court->save();
+
+        return back()->with('success', "Token Panitera untuk '{$court->name}' berhasil diperbarui: {$court->access_code}");
     }
 
     public function destroyCourt(Event $event, EventCourt $court): RedirectResponse
