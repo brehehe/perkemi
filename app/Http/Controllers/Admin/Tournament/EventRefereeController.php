@@ -72,6 +72,7 @@ class EventRefereeController extends Controller
             ->get()
             ->groupBy('staff_id');
         $refereeNames = $event->referees->pluck('name', 'id');
+        $refereesById = $event->referees->keyBy('id');
         $expiresAt = $this->qrExpiresAt($event);
 
         $referees = $event->referees->map(function (Referee $referee) use ($assignmentsByReferee, $courtNames, $legacyUsers, $today): array {
@@ -127,9 +128,10 @@ class EventRefereeController extends Controller
         })->values();
         $presentRefereeIds = $referees->where('is_present', true)->pluck('id');
 
-        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames): array {
+        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames, $refereesById): array {
             $refereeAssignments = $court->assignments
                 ->where('staff_type', 'referee')
+                ->where('role', '!=', 'reserve')
                 ->keyBy('role');
             $courtAttendances = $court->refereeAttendances->keyBy('referee_id');
             $panelComplete = collect(RefereeCourtRole::values())
@@ -149,10 +151,11 @@ class EventRefereeController extends Controller
                 ]),
                 'panel_complete' => $panelComplete,
                 'panel_ready' => $panelReady,
-                'has_panel' => $refereeAssignments->isNotEmpty(),
-                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames, $event, $court, $expiresAt): array {
+                'has_panel' => $court->assignments->where('staff_type', 'referee')->isNotEmpty(),
+                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames, $refereesById, $event, $court, $expiresAt): array {
                     $assignment = $refereeAssignments->get($role->value);
                     $refereeId = $assignment?->staff_id;
+                    $ref = $refereeId ? $refereesById->get($refereeId) : null;
 
                     return [
                         'role' => $role->value,
@@ -160,6 +163,8 @@ class EventRefereeController extends Controller
                         'judge_number' => $role->judgeNumber(),
                         'referee_id' => $refereeId,
                         'referee_name' => $refereeId ? $refereeNames->get($refereeId) : null,
+                        'dan_grade' => $ref?->dan_grade,
+                        'region' => $ref?->region,
                         'court_present' => $refereeId
                             ? $presentRefereeIds->contains($refereeId) && $courtAttendances->has($refereeId)
                             : false,
@@ -173,6 +178,25 @@ class EventRefereeController extends Controller
                         ]),
                     ];
                 })->values(),
+                'reserves' => $court->assignments
+                    ->where('staff_type', 'referee')
+                    ->where('role', 'reserve')
+                    ->map(function (EventCourtAssignment $assignment) use ($refereesById, $courtAttendances, $presentRefereeIds): array {
+                        $ref = $refereesById->get($assignment->staff_id);
+
+                        return [
+                            'referee_id' => $assignment->staff_id,
+                            'referee_name' => $ref?->name ?? 'Wasit tidak tersedia',
+                            'dan_grade' => $ref?->dan_grade,
+                            'region' => $ref?->region,
+                            'court_present' => $assignment->staff_id
+                                ? $presentRefereeIds->contains($assignment->staff_id) && $courtAttendances->has($assignment->staff_id)
+                                : false,
+                            'court_checked_in_at' => $assignment->staff_id
+                                ? $courtAttendances->get($assignment->staff_id)?->checked_in_at?->translatedFormat('d M Y, H:i')
+                                : null,
+                        ];
+                    })->values(),
                 'assignment_history' => $court->refereeAssignmentHistories->map(fn (RefereeCourtAssignmentHistory $history): array => [
                     'id' => $history->id,
                     'batch_id' => $history->batch_id,
@@ -331,10 +355,25 @@ class EventRefereeController extends Controller
         $event = $eventContext->eventFor($request);
         $this->ensureCanManageEventReferees($request, $event);
 
-        $assignmentCount = $generateRefereeCourtPanels->execute($event, $request->user()?->id);
-        $courtCount = intdiv($assignmentCount, count(RefereeCourtRole::cases()));
+        $assignmentCount = $generateRefereeCourtPanels->allocateCourts($event, $request->user()?->id);
+        $courtCount = $event->courts()->where('is_active', true)->count();
 
-        return back()->with('success', "Penugasan {$assignmentCount} wasit untuk {$courtCount} court berhasil digenerate. Setiap wasit selanjutnya wajib scan QR court.");
+        return back()->with('success', "Pembagian {$assignmentCount} penugasan wasit untuk {$courtCount} court berhasil digenerate seimbang per kota dan tingkatan DAN.");
+    }
+
+    public function rotateCourtPanel(
+        Request $request,
+        EventCourt $eventCourt,
+        EventContext $eventContext,
+        GenerateRefereeCourtPanelsAction $generateRefereeCourtPanels,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+        abort_unless($eventCourt->event_id === $event->id, 404);
+
+        $count = $generateRefereeCourtPanels->rotateCourtPanel($eventCourt, $request->user()?->id);
+
+        return back()->with('success', "Penugasan wasit {$eventCourt->name} berhasil dirotasi untuk nomor pertandingan berikutnya.");
     }
 
     public function resetCourtPanel(
@@ -477,7 +516,7 @@ class EventRefereeController extends Controller
         $user = $request->user();
         $eventAccessRole = $user ? $event->accessRoleFor($user) : null;
         $canManage = $user && (
-            $user->hasAnyRole(['Super Admin', 'Admin'])
+            $user->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase', 'Koordinator Lapangan', 'Pertandingan'])
             || in_array($eventAccessRole, [
                 Event::AccessRoleResponsible,
                 Event::AccessRoleAdmin,

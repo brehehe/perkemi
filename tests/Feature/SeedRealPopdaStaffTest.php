@@ -42,12 +42,14 @@ test('seed real popda referees command cleans dummy staff and creates 19 real of
         ->and(User::where('email', 'dr.ihyan.amri@smart-perkemi.id')->exists())->toBeTrue()
         ->and(User::where('email', 'anik.yussetyowati@smart-perkemi.id')->exists())->toBeTrue();
 
-    // Verify 15 event referees
-    expect($event->referees()->count())->toBe(15);
+    // Verify 14 event referees from popda.csv (8 Wasit Utama + 6 Wasit)
+    expect($event->referees()->count())->toBe(14);
 
-    // Verify court panel generation: 2 courts x 5 positions = 10 assignments
+    // Verify court allocation: 2 courts x 5 active positions = 10, plus 4 in reserve pool = 14 total
     $assignments = EventCourtAssignment::whereIn('event_court_id', $event->courts->modelKeys())->get();
-    expect($assignments)->toHaveCount(10);
+    expect($assignments)->toHaveCount(14);
+    expect($assignments->where('role', '!=', 'reserve'))->toHaveCount(10);
+    expect($assignments->where('role', 'reserve'))->toHaveCount(4);
 
     // Check Wasit Utama qualifications: must be IV DAN+
     $chiefAssignments = $assignments->where('role', RefereeCourtRole::Chief->value);

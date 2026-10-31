@@ -10,6 +10,9 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
             if (params.get('tab') === 'panitera') {
                 return 'panitera';
             }
+            if (params.get('tab') === 'nik' || window.location.pathname.includes('/wasit/login')) {
+                return 'nik';
+            }
         }
         return 'account';
     });
@@ -18,6 +21,10 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
         email: '',
         password: '',
         remember: false,
+    });
+
+    const nikForm = useForm({
+        nik: '',
     });
 
     const tokenForm = useForm({
@@ -29,6 +36,11 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
         post('/login', {
             onFinish: () => reset('password'),
         });
+    };
+
+    const submitNik = (e) => {
+        e.preventDefault();
+        nikForm.post('/login/nik');
     };
 
     const submitToken = (e) => {
@@ -144,44 +156,110 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                     </div>
                                 </div>
 
-                                <div className="flex border-b border-[#e5ded4] dark:border-[#3a3530] mb-5">
+                                <div className="flex border-b border-[#e5ded4] dark:border-[#3a3530] mb-5 overflow-x-auto no-scrollbar">
                                     <button
                                         type="button"
                                         onClick={() => setLoginMode('account')}
-                                        className={`flex-1 pb-3 text-xs font-bold tracking-wider uppercase transition-colors border-b-2 ${
+                                        className={`flex-1 min-w-[85px] pb-3 text-xs font-bold tracking-wider uppercase transition-colors border-b-2 text-center ${
                                             loginMode === 'account'
                                                 ? 'border-[#c0392b] text-[#c0392b] dark:text-[#f87171] dark:border-[#f87171]'
                                                 : 'border-transparent text-[#7a746e] hover:text-[#17120f] dark:text-[#a8a29e] dark:hover:text-white'
                                         }`}
                                     >
-                                        <i className="fa-solid fa-user-shield mr-2" aria-hidden="true" />
-                                        Akun Pengguna
+                                        <i className="fa-solid fa-user-shield mr-1.5" aria-hidden="true" />
+                                        Akun
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLoginMode('nik')}
+                                        className={`flex-1 min-w-[110px] pb-3 text-xs font-bold tracking-wider uppercase transition-colors border-b-2 text-center ${
+                                            loginMode === 'nik'
+                                                ? 'border-[#c0392b] text-[#c0392b] dark:text-[#f87171] dark:border-[#f87171]'
+                                                : 'border-transparent text-[#7a746e] hover:text-[#17120f] dark:text-[#a8a29e] dark:hover:text-white'
+                                        }`}
+                                    >
+                                        <i className="fa-solid fa-id-card mr-1.5" aria-hidden="true" />
+                                        NIK Wasit
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setLoginMode('panitera')}
-                                        className={`flex-1 pb-3 text-xs font-bold tracking-wider uppercase transition-colors border-b-2 ${
+                                        className={`flex-1 min-w-[115px] pb-3 text-xs font-bold tracking-wider uppercase transition-colors border-b-2 text-center ${
                                             loginMode === 'panitera'
                                                 ? 'border-[#d4a843] text-[#a96f12] dark:text-[#d4a843] dark:border-[#d4a843]'
                                                 : 'border-transparent text-[#7a746e] hover:text-[#17120f] dark:text-[#a8a29e] dark:hover:text-white'
                                         }`}
                                     >
-                                        <i className="fa-solid fa-key mr-2" aria-hidden="true" />
-                                        Token Panitera (6 Digit)
+                                        <i className="fa-solid fa-key mr-1.5" aria-hidden="true" />
+                                        Panitera
                                     </button>
                                 </div>
 
                                 <h1 className="font-cinzel card-h1 dark:text-white text-2xl font-bold tracking-wide">
-                                    {loginMode === 'account' ? 'Masuk ke Akun' : 'Masuk Meja Panitera'}
+                                    {loginMode === 'account' ? 'Masuk ke Akun' : loginMode === 'nik' ? 'Masuk NIK Wasit & Ofisial' : 'Masuk Meja Panitera'}
                                 </h1>
                                 <p className="card-p dark:text-[#b5afa6] text-sm mt-1.5">
                                     {loginMode === 'account'
                                         ? 'Gunakan email atau nomor HP akun Anda untuk melanjutkan.'
+                                        : loginMode === 'nik'
+                                        ? 'Masukkan NIK PERKEMI resmi untuk akses cepat perangkat pertandingan.'
                                         : 'Gunakan 6 digit token tatami untuk mengontrol antrean dan timer meja.'}
                                 </p>
                             </div>
 
-                            {loginMode === 'panitera' ? (
+                            {loginMode === 'nik' ? (
+                                /* Wasit / Official NIK Form */
+                                <form onSubmit={submitNik} className="space-y-5 px-5 py-6 sm:px-8 sm:py-7">
+                                    <div className="rounded-xl border border-red-500/30 bg-red-50/70 dark:bg-red-950/20 p-3.5 text-xs text-[#7f1d1d] dark:text-[#fecaca]">
+                                        <p className="font-semibold flex items-center gap-2">
+                                            <i className="fa-solid fa-user-shield text-[#c0392b] dark:text-[#f87171]" />
+                                            Akses Khusus Perangkat Pertandingan
+                                        </p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-[#991b1b] dark:text-[#fca5a5]">
+                                            Dikhususkan untuk Arbitrase, Koordinator Pertandingan, Koordinator Court, Wasit Utama, dan Wasit. Masuk cepat menggunakan NIK PERKEMI resmi tanpa password.
+                                        </p>
+                                    </div>
+
+                                    <Input
+                                        label="NIK PERKEMI (Nomor Induk Kenshi)"
+                                        required
+                                        value={nikForm.data.nik}
+                                        onChange={(event) => nikForm.setData('nik', event.target.value)}
+                                        placeholder="Contoh: 74.1.06.01.01.001"
+                                        autoComplete="username"
+                                        iconLeft={<i className="fa-solid fa-id-card" aria-hidden="true" />}
+                                        error={nikForm.errors.nik}
+                                        containerClassName="w-full animate-fade-up-3"
+                                        labelClassName="label-text dark:text-[#b5afa6] tracking-widest"
+                                        className="kempo-input font-mono text-center tracking-wider text-base font-bold"
+                                    />
+
+                                    <div className="gold-line animate-fade-up-4"></div>
+
+                                    <Button
+                                        type="submit"
+                                        disabled={nikForm.processing || !nikForm.data.nik.trim()}
+                                        size="lg"
+                                        className="submit-btn relative w-full tracking-wide overflow-hidden animate-fade-up-4"
+                                        style={{
+                                            background: 'linear-gradient(135deg, #c0392b, #96281b)',
+                                            boxShadow: '0 4px 20px rgba(192,57,43,.4)',
+                                        }}
+                                    >
+                                        {nikForm.processing ? (
+                                            <span className="flex items-center justify-center gap-2.5">
+                                                <i className="fa-solid fa-circle-notch animate-spin text-white"></i>
+                                                Memverifikasi NIK...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center justify-center gap-2.5">
+                                                <i className="fa-solid fa-right-to-bracket text-white"></i>
+                                                Masuk sebagai Wasit / Ofisial
+                                            </span>
+                                        )}
+                                    </Button>
+                                </form>
+                            ) : loginMode === 'panitera' ? (
                                 /* Panitera Token Form */
                                 <form onSubmit={submitToken} className="space-y-5 px-5 py-6 sm:px-8 sm:py-7">
                                     <div className="rounded-xl border border-[#d4a843]/40 bg-[#fffbf2] dark:bg-[#d4a843]/10 p-3.5 text-xs text-[#5f4210] dark:text-[#fff4ce]">

@@ -41,6 +41,7 @@ use App\Http\Controllers\Admin\Tournament\EventRefereeController;
 use App\Http\Controllers\Admin\Tournament\TournamentController;
 use App\Http\Controllers\Admin\Tournament\WeighInController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\NikLoginController;
 use App\Http\Controllers\Auth\PaniteraTokenLoginController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Contingent\AthleteController as ContingentAthleteController;
@@ -289,6 +290,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::delete('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'unscheduleMatch'])->name('schedule.matches.destroy');
     Route::get('wasit', [EventRefereeController::class, 'index'])->name('wasit.index');
     Route::post('wasit/courts/generate', [EventRefereeController::class, 'generateCourtPanels'])->name('wasit.courts.generate');
+    Route::post('wasit/courts/{eventCourt}/rotate', [EventRefereeController::class, 'rotateCourtPanel'])->name('wasit.courts.panel.rotate');
     Route::put('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'updateCourtPanel'])->name('wasit.courts.panel.update');
     Route::delete('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'resetCourtPanel'])->name('wasit.courts.panel.reset');
     Route::put('wasit/{referee}/attendance', [EventRefereeController::class, 'updateAttendance'])->name('wasit.attendance.update');
@@ -381,6 +383,9 @@ Route::middleware('guest')->group(function () {
     Route::get('login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::get('wasit/login', [AuthenticatedSessionController::class, 'create'])->name('wasit.login');
     Route::post('login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('login/nik', NikLoginController::class)
+        ->middleware('throttle:15,1')
+        ->name('login.nik');
     Route::post('login/panitera-token', PaniteraTokenLoginController::class)
         ->middleware('throttle:10,1')
         ->name('login.panitera-token');

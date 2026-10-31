@@ -18,7 +18,19 @@ use Illuminate\Validation\ValidationException;
 
 class GenerateRefereeCourtPanelsAction
 {
+    /**
+     * Stage 1: Koordinator Pertandingan membagi seluruh wasit aktif ke Court 1 & 2
+     * dengan penyeimbangan kota (selisih antar court max 1) dan kualifikasi DAN.
+     */
     public function execute(Event $event, ?string $changedByUserId): int
+    {
+        return $this->allocateCourts($event, $changedByUserId);
+    }
+
+    /**
+     * Membagi pool wasit ke seluruh court aktif (Koordinator Pertandingan).
+     */
+    public function allocateCourts(Event $event, ?string $changedByUserId): int
     {
         return DB::transaction(function () use ($event, $changedByUserId): int {
             Event::query()->whereKey($event->id)->lockForUpdate()->firstOrFail();
@@ -49,14 +61,13 @@ class GenerateRefereeCourtPanelsAction
                 ->lockForUpdate()
                 ->pluck('referee_id');
 
-            $roles = collect(RefereeCourtRole::cases());
-            $requiredRefereeCount = $courts->count() * $roles->count();
+            $requiredTotal = $courts->count() * 5;
 
-            if ($presentRefereeIds->count() < $requiredRefereeCount) {
-                $shortage = $requiredRefereeCount - $presentRefereeIds->count();
+            if ($presentRefereeIds->count() < $requiredTotal) {
+                $shortage = $requiredTotal - $presentRefereeIds->count();
 
                 throw ValidationException::withMessages([
-                    'generate' => "Dibutuhkan {$requiredRefereeCount} wasit aktif yang hadir untuk {$courts->count()} court. Saat ini tersedia {$presentRefereeIds->count()}; tambahkan absensi {$shortage} wasit lagi.",
+                    'generate' => "Dibutuhkan {$requiredTotal} wasit aktif yang hadir untuk {$courts->count()} court. Saat ini tersedia {$presentRefereeIds->count()}; tambahkan absensi {$shortage} wasit lagi.",
                 ]);
             }
 
@@ -65,30 +76,25 @@ class GenerateRefereeCourtPanelsAction
                 ->lockForUpdate()
                 ->get();
 
-            // 4.1 & 4.2: Ketentuan wasit utama yg IV Dan ke atas / Nasional
-            $chiefCandidates = $referees->filter(fn (Referee $r): bool => self::isChiefQualified($r))->shuffle();
+            // Pisahkan kualifikasi: Wasit Utama (IV DAN+) dan Wasit Pembantu (III DAN-)
+            $chiefCandidates = $referees->filter(fn (Referee $r): bool => self::isChiefQualified($r));
+            $assistantCandidates = $referees->reject(fn (Referee $r): bool => self::isChiefQualified($r));
 
             if ($chiefCandidates->count() < $courts->count()) {
                 $shortageChief = $courts->count() - $chiefCandidates->count();
 
                 throw ValidationException::withMessages([
-                    'generate' => "Dibutuhkan minimal {$courts->count()} wasit dengan kualifikasi IV DAN ke atas / Wasit Nasional yang hadir untuk posisi Wasit Utama. Saat ini hanya tersedia {$chiefCandidates->count()}; tambahkan {$shortageChief} wasit IV DAN ke atas lagi.",
+                    'generate' => "Dibutuhkan minimal {$courts->count()} wasit dengan kualifikasi IV DAN ke atas / Wasit Nasional untuk posisi Wasit Utama. Saat ini hanya tersedia {$chiefCandidates->count()}; tambahkan {$shortageChief} wasit IV DAN ke atas lagi.",
                 ]);
             }
 
-            // Alokasikan Chief (Wasit Utama) untuk setiap court
-            $chosenChiefs = $chiefCandidates->take($courts->count())->values();
-            $chosenChiefIds = $chosenChiefs->pluck('id');
-
-            // Wasit yang tersisa untuk posisi daerah dan pembantu
-            $remainingPool = $referees->whereNotIn('id', $chosenChiefIds)->shuffle();
-
-            // 4.3: Yg 3 Dan daerah diprioritaskan untuk posisi Wasit Daerah 1 & 2
-            $regionalCandidates = $remainingPool->filter(fn (Referee $r): bool => self::isRegionalQualified($r))->values();
-            $assistantCandidates = $remainingPool->reject(fn (Referee $r): bool => self::isRegionalQualified($r))->values();
+            // 3.1: Pembagian Court 1 & 2 dengan penyeimbangan kota (selisih antar court max 1)
+            $courtPools = $this->distributeRefereesEquallyAcrossCourts($courts, $chiefCandidates, $assistantCandidates);
 
             $occurredAt = now();
             $batchId = (string) Str::uuid();
+
+            // Simpan riwayat penghapusan penugasan lama
             $assignmentsByCourt = EventCourtAssignment::query()
                 ->whereIn('event_court_id', $courts->modelKeys())
                 ->where('staff_type', 'referee')
@@ -108,6 +114,7 @@ class GenerateRefereeCourtPanelsAction
                 );
             }
 
+            // Bersihkan penugasan & check-in court hari ini untuk refresh
             EventCourtAssignment::query()
                 ->whereIn('event_court_id', $courts->modelKeys())
                 ->where('staff_type', 'referee')
@@ -119,49 +126,50 @@ class GenerateRefereeCourtPanelsAction
                 ->whereDate('attendance_date', now()->toDateString())
                 ->delete();
 
-            // Pool yang dapat diambil secara dinamis
-            $regionalPool = $regionalCandidates->collect();
-            $otherPool = $assistantCandidates->collect();
+            $totalAssigned = 0;
 
-            $pullReferee = function () use (&$regionalPool, &$otherPool): Referee {
-                if ($regionalPool->isNotEmpty()) {
-                    return $regionalPool->shift();
-                }
+            // 3.2 & 3.3: Untuk setiap court, seleksi 5 wasit bertugas dengan saringan kota (max 2 per kota)
+            foreach ($courts as $court) {
+                /** @var Collection<int, Referee> $poolForCourt */
+                $poolForCourt = $courtPools->get($court->id, collect());
 
-                return $otherPool->shift();
-            };
+                $panel = $this->selectMatchPanel($poolForCourt);
 
-            foreach ($courts as $courtIndex => $court) {
                 $newAssignments = collect();
 
                 // 1. Wasit Utama (IV DAN+)
-                $chief = $chosenChiefs[$courtIndex];
                 $newAssignments->push(EventCourtAssignment::query()->create([
                     'event_court_id' => $court->id,
                     'staff_type' => 'referee',
-                    'staff_id' => $chief->id,
+                    'staff_id' => $panel['chief']->id,
                     'role' => RefereeCourtRole::Chief->value,
                 ]));
 
-                // 2. Wasit Daerah 1 & 2 (Prioritaskan III DAN Daerah)
-                foreach ([RefereeCourtRole::RegionalOne, RefereeCourtRole::RegionalTwo] as $role) {
-                    $ref = $pullReferee();
+                // 2. Wasit Pembantu (4 posisi: Regional 1, Regional 2, Assistant 1, Assistant 2)
+                $assistantRoles = [
+                    RefereeCourtRole::RegionalOne,
+                    RefereeCourtRole::RegionalTwo,
+                    RefereeCourtRole::AssistantOne,
+                    RefereeCourtRole::AssistantTwo,
+                ];
+
+                foreach ($panel['assistants'] as $index => $assistant) {
+                    $roleEnum = $assistantRoles[$index] ?? RefereeCourtRole::AssistantTwo;
                     $newAssignments->push(EventCourtAssignment::query()->create([
                         'event_court_id' => $court->id,
                         'staff_type' => 'referee',
-                        'staff_id' => $ref->id,
-                        'role' => $role->value,
+                        'staff_id' => $assistant->id,
+                        'role' => $roleEnum->value,
                     ]));
                 }
 
-                // 3. Wasit Pembantu 1 & 2 (Sisa pool)
-                foreach ([RefereeCourtRole::AssistantOne, RefereeCourtRole::AssistantTwo] as $role) {
-                    $ref = $pullReferee();
+                // 3. Cadangan / Pool court ini yang tidak masuk 5 besar (untuk rotasi)
+                foreach ($panel['reserves'] as $reserve) {
                     $newAssignments->push(EventCourtAssignment::query()->create([
                         'event_court_id' => $court->id,
                         'staff_type' => 'referee',
-                        'staff_id' => $ref->id,
-                        'role' => $role->value,
+                        'staff_id' => $reserve->id,
+                        'role' => 'reserve',
                     ]));
                 }
 
@@ -174,10 +182,318 @@ class GenerateRefereeCourtPanelsAction
                     batchId: $batchId,
                     occurredAt: $occurredAt,
                 );
+
+                $totalAssigned += $newAssignments->count();
             }
 
-            return $requiredRefereeCount;
+            return $totalAssigned;
         });
+    }
+
+    /**
+     * Stage 2 & Rotasi: Koordinator Court merotasi susunan wasit untuk nomor pertandingan berikutnya
+     * dari kelompok pool court tersebut (3.4).
+     */
+    public function rotateCourtPanel(EventCourt $court, ?string $changedByUserId): int
+    {
+        return DB::transaction(function () use ($court, $changedByUserId): int {
+            EventCourt::query()->whereKey($court->id)->lockForUpdate()->firstOrFail();
+            $event = $court->event()->lockForUpdate()->firstOrFail();
+
+            // Ambil semua wasit yang sudah dialokasikan ke court ini (baik aktif maupun reserve)
+            $courtAssignments = EventCourtAssignment::query()
+                ->where('event_court_id', $court->id)
+                ->where('staff_type', 'referee')
+                ->lockForUpdate()
+                ->get();
+
+            if ($courtAssignments->count() < 5) {
+                throw ValidationException::withMessages([
+                    'rotate' => "Court {$court->name} belum memiliki minimal 5 wasit dalam kelompok court-nya. Jalankan Pembagian Court oleh Koordinator Pertandingan terlebih dahulu.",
+                ]);
+            }
+
+            $courtRefereeIds = $courtAssignments->pluck('staff_id');
+            $referees = Referee::query()
+                ->whereIn('id', $courtRefereeIds)
+                ->where('is_active', true)
+                ->get();
+
+            $currentChiefId = $courtAssignments->firstWhere('role', RefereeCourtRole::Chief->value)?->staff_id;
+            $currentChief = $currentChiefId ? $referees->firstWhere('id', $currentChiefId) : null;
+            $currentReserveIds = $courtAssignments->where('role', 'reserve')->pluck('staff_id')->toArray();
+
+            // Pilih panel baru dengan rotasi: prioritaskan yang sedang di reserve
+            $panel = $this->selectMatchPanel($referees, $currentChief, $currentReserveIds);
+
+            $occurredAt = now();
+            $batchId = (string) Str::uuid();
+
+            // Simpan riwayat pencopotan panel lama
+            $this->recordAssignmentHistory(
+                event: $event,
+                eventCourt: $court,
+                assignments: $courtAssignments,
+                action: RefereeCourtAssignmentHistory::ActionRemoved,
+                changedByUserId: $changedByUserId,
+                batchId: $batchId,
+                occurredAt: $occurredAt,
+            );
+
+            // Bersihkan penugasan lama court ini
+            EventCourtAssignment::query()
+                ->where('event_court_id', $court->id)
+                ->where('staff_type', 'referee')
+                ->delete();
+
+            // Hapus check-in court lama agar wasit yang baru ditugaskan melakukan scan ulang
+            RefereeCourtAttendance::query()
+                ->whereBelongsTo($event)
+                ->whereBelongsTo($court, 'court')
+                ->whereDate('attendance_date', now()->toDateString())
+                ->delete();
+
+            $newAssignments = collect();
+
+            // 1. Wasit Utama baru
+            $newAssignments->push(EventCourtAssignment::query()->create([
+                'event_court_id' => $court->id,
+                'staff_type' => 'referee',
+                'staff_id' => $panel['chief']->id,
+                'role' => RefereeCourtRole::Chief->value,
+            ]));
+
+            // 2. Wasit Pembantu baru
+            $assistantRoles = [
+                RefereeCourtRole::RegionalOne,
+                RefereeCourtRole::RegionalTwo,
+                RefereeCourtRole::AssistantOne,
+                RefereeCourtRole::AssistantTwo,
+            ];
+
+            foreach ($panel['assistants'] as $index => $assistant) {
+                $roleEnum = $assistantRoles[$index] ?? RefereeCourtRole::AssistantTwo;
+                $newAssignments->push(EventCourtAssignment::query()->create([
+                    'event_court_id' => $court->id,
+                    'staff_type' => 'referee',
+                    'staff_id' => $assistant->id,
+                    'role' => $roleEnum->value,
+                ]));
+            }
+
+            // 3. Cadangan baru
+            foreach ($panel['reserves'] as $reserve) {
+                $newAssignments->push(EventCourtAssignment::query()->create([
+                    'event_court_id' => $court->id,
+                    'staff_type' => 'referee',
+                    'staff_id' => $reserve->id,
+                    'role' => 'reserve',
+                ]));
+            }
+
+            $this->recordAssignmentHistory(
+                event: $event,
+                eventCourt: $court,
+                assignments: $newAssignments,
+                action: RefereeCourtAssignmentHistory::ActionAssigned,
+                changedByUserId: $changedByUserId,
+                batchId: $batchId,
+                occurredAt: $occurredAt,
+            );
+
+            return $newAssignments->count();
+        });
+    }
+
+    /**
+     * Membagi wasit ke court dengan algoritma penyeimbangan kota:
+     * Selisih per kota antar court maksimal 1 orang.
+     *
+     * @param  Collection<int, EventCourt>  $courts
+     * @param  Collection<int, Referee>  $chiefs
+     * @param  Collection<int, Referee>  $assistants
+     * @return Collection<string, Collection<int, Referee>> Map court_id => Collection<Referee>
+     */
+    protected function distributeRefereesEquallyAcrossCourts(
+        Collection $courts,
+        Collection $chiefs,
+        Collection $assistants,
+    ): Collection {
+        $courtPools = collect();
+        $courtCityCounts = [];
+        $courtTotalCounts = [];
+
+        foreach ($courts as $court) {
+            $courtPools->put($court->id, collect());
+            $courtCityCounts[$court->id] = [];
+            $courtTotalCounts[$court->id] = 0;
+        }
+
+        // Helper untuk memasukkan wasit ke court yang paling seimbang
+        $assignRefereeToBestCourt = function (Referee $referee) use ($courts, &$courtPools, &$courtCityCounts, &$courtTotalCounts): void {
+            $city = self::normalizeCity($referee->region);
+
+            // Cari court dengan jumlah personil kota tersebut paling sedikit
+            $bestCourtId = null;
+            $minCityCount = PHP_INT_MAX;
+            $minTotalCount = PHP_INT_MAX;
+
+            foreach ($courts as $court) {
+                $cityCount = $courtCityCounts[$court->id][$city] ?? 0;
+                $totalCount = $courtTotalCounts[$court->id];
+
+                if ($cityCount < $minCityCount || ($cityCount === $minCityCount && $totalCount < $minTotalCount)) {
+                    $minCityCount = $cityCount;
+                    $minTotalCount = $totalCount;
+                    $bestCourtId = $court->id;
+                }
+            }
+
+            $courtPools->get($bestCourtId)->push($referee);
+            $courtCityCounts[$bestCourtId][$city] = ($courtCityCounts[$bestCourtId][$city] ?? 0) + 1;
+            $courtTotalCounts[$bestCourtId]++;
+        };
+
+        // 1. Distribusikan Wasit Utama (IV DAN+) seimbang per kota
+        $chiefsByCity = $chiefs->shuffle()->groupBy(fn (Referee $r): string => self::normalizeCity($r->region))
+            ->sortByDesc(fn ($group) => $group->count());
+
+        foreach ($chiefsByCity as $group) {
+            foreach ($group as $referee) {
+                $assignRefereeToBestCourt($referee);
+            }
+        }
+
+        // 2. Distribusikan Wasit Pembantu (III DAN-) seimbang per kota
+        $assistantsByCity = $assistants->shuffle()->groupBy(fn (Referee $r): string => self::normalizeCity($r->region))
+            ->sortByDesc(fn ($group) => $group->count());
+
+        foreach ($assistantsByCity as $group) {
+            foreach ($group as $referee) {
+                $assignRefereeToBestCourt($referee);
+            }
+        }
+
+        return $courtPools;
+    }
+
+    /**
+     * Memilih 5 personil penugasan partai/nomor pertandingan dari pool court:
+     * - 1 Wasit Utama (IV DAN+)
+     * - 4 Wasit Pembantu (III DAN- diprioritaskan)
+     * - Saringan Kota (3.3): Maksimal 2 wasit dari kota yang sama dalam 1 nomor.
+     *   Diambil masing-masing kota 1, bila masih kurang baru ditambah 1 (max 2).
+     * - Rotasi (3.4): Memprioritaskan wasit yang di reserve / istirahat pada partai sebelumnya.
+     *
+     * @param  Collection<int, Referee>  $courtReferees
+     * @param  list<string>  $prioritizeReserveIds
+     * @return array{
+     *     chief: Referee,
+     *     assistants: Collection<int, Referee>,
+     *     reserves: Collection<int, Referee>
+     * }
+     */
+    public function selectMatchPanel(
+        Collection $courtReferees,
+        ?Referee $currentChief = null,
+        array $prioritizeReserveIds = [],
+    ): array {
+        // 1. Pilih Wasit Utama (IV DAN+)
+        $chiefCandidates = $courtReferees->filter(fn (Referee $r): bool => self::isChiefQualified($r));
+
+        if ($chiefCandidates->isEmpty()) {
+            // Fallback jika tidak ada IV DAN di pool
+            $chiefCandidates = $courtReferees;
+        }
+
+        // Prioritas Wasit Utama: yang sedang di reserve dan bukan Chief sebelumnya
+        $chosenChief = $chiefCandidates->first(function (Referee $r) use ($currentChief, $prioritizeReserveIds): bool {
+            return in_array($r->id, $prioritizeReserveIds, true) && ($currentChief === null || $r->id !== $currentChief->id);
+        })
+            ?? $chiefCandidates->first(fn (Referee $r): bool => $currentChief === null || $r->id !== $currentChief->id)
+            ?? $chiefCandidates->first();
+
+        $selectedCities = [
+            self::normalizeCity($chosenChief->region) => 1,
+        ];
+
+        // 2. Pool untuk Wasit Pembantu (semua wasit court selain Chief yang terpilih)
+        $remainingPool = $courtReferees->where('id', '!=', $chosenChief->id);
+
+        // Beri bobot / urutkan kandidat pembantu:
+        // Prioritas 1: Sedang di reserve (istirahat)
+        // Prioritas 2: III DAN (Wasit Pembantu resmi)
+        $sortedCandidates = $remainingPool->sort(function (Referee $a, Referee $b) use ($prioritizeReserveIds): int {
+            $aReserve = in_array($a->id, $prioritizeReserveIds, true) ? 1 : 0;
+            $bReserve = in_array($b->id, $prioritizeReserveIds, true) ? 1 : 0;
+            if ($aReserve !== $bReserve) {
+                return $bReserve <=> $aReserve;
+            }
+
+            $aRegional = self::isRegionalQualified($a) ? 1 : 0;
+            $bRegional = self::isRegionalQualified($b) ? 1 : 0;
+
+            return $bRegional <=> $aRegional;
+        })->values();
+
+        $chosenAssistants = collect();
+
+        // 3.3 Pass 1: Ambil masing-masing kota hanya 1 (diversity first)
+        foreach ($sortedCandidates as $candidate) {
+            if ($chosenAssistants->count() >= 4) {
+                break;
+            }
+
+            $city = self::normalizeCity($candidate->region);
+            $currentCityCount = $selectedCities[$city] ?? 0;
+
+            if ($currentCityCount === 0) {
+                $chosenAssistants->push($candidate);
+                $selectedCities[$city] = 1;
+            }
+        }
+
+        // 3.3 Pass 2: Bila masih kurang dari 4, tambahkan 1 diantara kota yang sudah ada (maksimal 2)
+        if ($chosenAssistants->count() < 4) {
+            foreach ($sortedCandidates as $candidate) {
+                if ($chosenAssistants->count() >= 4) {
+                    break;
+                }
+
+                if ($chosenAssistants->contains('id', $candidate->id)) {
+                    continue;
+                }
+
+                $city = self::normalizeCity($candidate->region);
+                $currentCityCount = $selectedCities[$city] ?? 0;
+
+                if ($currentCityCount < 2) {
+                    $chosenAssistants->push($candidate);
+                    $selectedCities[$city] = $currentCityCount + 1;
+                }
+            }
+        }
+
+        // Pass 3 (Fallback darurat jika pool sangat kecil dan constraint kota tidak terpenuhi)
+        if ($chosenAssistants->count() < 4) {
+            foreach ($sortedCandidates as $candidate) {
+                if ($chosenAssistants->count() >= 4) {
+                    break;
+                }
+                if (! $chosenAssistants->contains('id', $candidate->id)) {
+                    $chosenAssistants->push($candidate);
+                }
+            }
+        }
+
+        $activeIds = $chosenAssistants->pluck('id')->push($chosenChief->id);
+        $reserves = $courtReferees->whereNotIn('id', $activeIds)->values();
+
+        return [
+            'chief' => $chosenChief,
+            'assistants' => $chosenAssistants,
+            'reserves' => $reserves,
+        ];
     }
 
     public static function isChiefQualified(Referee $referee): bool
@@ -210,6 +526,16 @@ class GenerateRefereeCourtPanelsAction
         }
 
         return false;
+    }
+
+    public static function normalizeCity(?string $region): string
+    {
+        $cleaned = trim((string) $region);
+        if ($cleaned === '') {
+            return 'LAINNYA';
+        }
+
+        return mb_strtoupper($cleaned);
     }
 
     /**

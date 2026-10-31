@@ -19,228 +19,275 @@ class SeedRealPopdaStaff extends Command
 {
     protected $signature = 'perkemi:seed-real-referees
                             {event=01a10112-aeff-7254-8a89-2e315b7f16f9 : UUID event (default POPDA)}
-                            {--generate-panels : Langsung generate penugasan panel 5 wasit untuk setiap court aktif}';
+                            {--generate-panels : Langsung generate penugasan panel 5 wasit untuk setiap court aktif}
+                            {--force-clean : Hapus wasit/petugas dummy sebelum seeding (HANYA untuk lingkungan pengujian/dev, TIDAK DIJALANKAN di production)}';
 
-    protected $description = 'Hapus wasit/petugas dummy dan buat akun serta roster wasit/petugas real sesuai SK POPDA Perkemi';
+    protected $description = 'Sinkronisasi akun & data real 21 personil Arbitrase, Koordinator, dan Wasit POPDA XV dari popda.csv (Aman & Idempoten untuk Production)';
 
     /**
+     * Fallback roster jika file popda.csv tidak terbaca.
+     *
      * @var list<array{
-     *     no: int,
      *     name: string,
-     *     dan_grade: string,
      *     nik: string,
+     *     dan_grade: string,
+     *     certificate_number: string,
      *     position: string,
+     *     city: string,
      *     roles: list<string>,
      *     is_event_referee: bool,
      *     is_coordinator: bool,
      *     certification_level: string
      * }>
      */
-    protected array $officials = [
+    protected array $fallbackOfficials = [
         [
-            'no' => 1,
             'name' => 'M. Djamhuri Djauhari',
-            'dan_grade' => 'V DAN',
             'nik' => '69.1.13.03.99.001',
-            'position' => 'Arbitrase / Koordinator Pertandingan',
-            'roles' => ['Arbitrase', 'Pertandingan'],
-            'is_event_referee' => false,
-            'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
-        ],
-        [
-            'no' => 2,
-            'name' => 'Bernard Laisina',
-            'dan_grade' => 'V DAN Daikenshi',
-            'nik' => '76.1.13.01.04.001',
-            'position' => 'Arbitrase / Koordinator Pertandingan',
-            'roles' => ['Arbitrase', 'Pertandingan'],
-            'is_event_referee' => false,
-            'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
-        ],
-        [
-            'no' => 3,
-            'name' => 'Daud Tatengkeng',
             'dan_grade' => 'V DAN',
+            'certificate_number' => '038/WST-NAS/XI/2024',
+            'position' => 'Arbitrase Pertandingan',
+            'city' => 'Kabupaten Malang',
+            'roles' => ['Arbitrase', 'Pertandingan'],
+            'is_event_referee' => false,
+            'is_coordinator' => false,
+            'certification_level' => 'Wasit Nasional',
+        ],
+        [
+            'name' => 'Bernard Laisina',
+            'nik' => '76.1.13.01.04.001',
+            'dan_grade' => 'V DAN Daikenshi',
+            'certificate_number' => '033/WST-NAS/X/2022',
+            'position' => 'Arbitrase Pertandingan',
+            'city' => 'Kota Surabaya',
+            'roles' => ['Arbitrase', 'Pertandingan'],
+            'is_event_referee' => false,
+            'is_coordinator' => false,
+            'certification_level' => 'Wasit Nasional',
+        ],
+        [
+            'name' => 'Bambang Andjar Supeno',
+            'nik' => '70.1.13.03.01.001',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '024/REF-WST-NAS/VII/2023',
+            'position' => 'Arbitrase Pertandingan',
+            'city' => 'Kota Malang',
+            'roles' => ['Arbitrase', 'Pertandingan'],
+            'is_event_referee' => false,
+            'is_coordinator' => false,
+            'certification_level' => 'Wasit Nasional',
+        ],
+        [
+            'name' => 'Wawan Setyawan',
+            'nik' => '85.2.13.03.08.001',
+            'dan_grade' => 'V DAN Daikenshi',
+            'certificate_number' => '009/WST-NAS/IX/2025',
+            'position' => 'Koordinator Pertandingan',
+            'city' => 'Gresik',
+            'roles' => ['Koordinator Lapangan', 'Pertandingan'],
+            'is_event_referee' => false,
+            'is_coordinator' => true,
+            'certification_level' => 'Wasit Nasional',
+        ],
+        [
+            'name' => 'dr. Ibnu Widagdo',
+            'nik' => '77.1.13.01.04.001',
+            'dan_grade' => 'V DAN',
+            'certificate_number' => '039/WST-NAS/XI/2024',
+            'position' => 'Wakil Koordinator Pertandingan',
+            'city' => 'Kota Surabaya',
+            'roles' => ['Koordinator Lapangan', 'Pertandingan'],
+            'is_event_referee' => false,
+            'is_coordinator' => true,
+            'certification_level' => 'Wasit Nasional',
+        ],
+        [
+            'name' => 'Daud Tatengkeng',
             'nik' => '69.1.13.03.99.002',
+            'dan_grade' => 'V DAN',
+            'certificate_number' => '029/WST-DRH/X/2025',
             'position' => 'Koordinator Court',
+            'city' => 'Tuban',
             'roles' => ['Koordinator Lapangan', 'Court'],
             'is_event_referee' => false,
             'is_coordinator' => true,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 4,
             'name' => 'Sugiono',
-            'dan_grade' => 'IV DAN',
             'nik' => '70.1.13.01.04.002',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '037/WST-DRH/X/2025',
             'position' => 'Koordinator Court',
+            'city' => 'Kota Surabaya',
             'roles' => ['Koordinator Lapangan', 'Court'],
             'is_event_referee' => false,
             'is_coordinator' => true,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 5,
-            'name' => 'dr Ihyan Amri',
-            'dan_grade' => 'IV DAN',
+            'name' => 'dr. Ihyan Amri',
             'nik' => '74.1.06.01.01.001',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '040/WST-DRH/X/2025',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Surabaya',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 6,
             'name' => 'Joko Listyono',
-            'dan_grade' => 'IV DAN',
             'nik' => '87.2.13.04.04.007',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '018/WST-DRH/X/2025',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Pasuruan',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 7,
             'name' => 'Antonius Eko Purnomo',
-            'dan_grade' => 'IV DAN',
             'nik' => '85.1.13.03.01.001',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '017/WST-DRH/X/2025',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Malang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 8,
             'name' => 'Esau Moses Christiaan',
-            'dan_grade' => 'IV DAN',
             'nik' => '88.3.13.03.01.001',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '010/WST-DRH/VII/2024',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Malang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 9,
             'name' => 'Sarip Maulana Bathik',
-            'dan_grade' => 'IV DAN',
             'nik' => '87.1.13.01.12.002',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '030/WST-DRH/X/2025',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Surabaya',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 10,
             'name' => 'Arya Setyanto Wicaksono',
-            'dan_grade' => 'IV DAN',
             'nik' => '90.3.13.01.20.001',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '038/WST-DRH/X/2025',
+            'position' => 'Wasit Utama',
+            'city' => 'Kota Surabaya',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 11,
             'name' => 'Luluk Cahyono',
-            'dan_grade' => 'IV DAN',
             'nik' => '90.3.13.11.01.001',
-            'position' => 'Wasit',
-            'roles' => ['Wasit'],
-            'is_event_referee' => true,
-            'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
-        ],
-        [
-            'no' => 12,
-            'name' => 'Hari Winarko',
             'dan_grade' => 'IV DAN',
+            'certificate_number' => '002/WST-DRH/II/2024',
+            'position' => 'Wasit Utama',
+            'city' => 'Bojonegoro',
+            'roles' => ['Wasit'],
+            'is_event_referee' => true,
+            'is_coordinator' => false,
+            'certification_level' => 'Wasit Daerah',
+        ],
+        [
+            'name' => 'Hari Winarko',
             'nik' => '88.3.13.12.01.005',
-            'position' => 'Wasit',
+            'dan_grade' => 'IV DAN',
+            'certificate_number' => '026/WST-DRH/VII/2022',
+            'position' => 'Wasit Utama',
+            'city' => 'Tuban',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
-            'certification_level' => 'Wasit Nasional',
+            'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 13,
             'name' => 'Anik Yussetyowati',
-            'dan_grade' => 'III DAN',
             'nik' => '92.2.13.01.13.004',
+            'dan_grade' => 'III DAN',
+            'certificate_number' => '023/WST-DRH/X/2025',
             'position' => 'Wasit',
+            'city' => 'Kota Malang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
             'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 14,
             'name' => 'Rahayu Apriliyanti',
-            'dan_grade' => 'III DAN',
             'nik' => '86.1.13.09.01.003',
+            'dan_grade' => 'III DAN',
+            'certificate_number' => '021/WST-DRH/X/2025',
             'position' => 'Wasit',
+            'city' => 'Jombang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
             'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 15,
             'name' => 'Thalib Alkatiri',
-            'dan_grade' => 'III DAN',
             'nik' => '87.1.13.01.09.002',
+            'dan_grade' => 'III DAN',
+            'certificate_number' => '001/WST-DRH/II/2024',
             'position' => 'Wasit',
+            'city' => 'Kota Surabaya',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
             'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 16,
             'name' => 'Tri Saraswati',
-            'dan_grade' => 'III DAN',
             'nik' => '90.3.13.03.01.013',
-            'position' => 'Wasit',
-            'roles' => ['Wasit'],
-            'is_event_referee' => true,
-            'is_coordinator' => false,
-            'certification_level' => 'Wasit Daerah',
-        ],
-        [
-            'no' => 18,
-            'name' => 'Rizqi Febrian Pramudita',
             'dan_grade' => 'III DAN',
-            'nik' => '07.1.13.10.04.010',
+            'certificate_number' => '032/WST-DRH/X/2025',
             'position' => 'Wasit',
+            'city' => 'Kabupaten Malang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
             'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 19,
             'name' => 'Iwan Wijaya',
-            'dan_grade' => 'III DAN',
             'nik' => '77.1.02.03.01.003',
+            'dan_grade' => 'III DAN',
+            'certificate_number' => '051/WST-DRH/IX/2026',
             'position' => 'Wasit',
+            'city' => 'Bangkalan',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
             'certification_level' => 'Wasit Daerah',
         ],
         [
-            'no' => 21,
             'name' => 'Ismail Wahyuono',
-            'dan_grade' => 'III DAN',
             'nik' => '89.3.13.09.03.001',
+            'dan_grade' => 'III DAN',
+            'certificate_number' => '045/WST-DRH/IX/2026',
             'position' => 'Wasit',
+            'city' => 'Jombang',
             'roles' => ['Wasit'],
             'is_event_referee' => true,
             'is_coordinator' => false,
@@ -261,53 +308,63 @@ class SeedRealPopdaStaff extends Command
             return self::FAILURE;
         }
 
-        $this->info("Menghapus wasit & petugas dummy untuk event: {$event->name}...");
+        $officials = $this->loadOfficialsFromCsv();
 
-        DB::transaction(function () use ($event, $demoData): void {
-            // 1. Hapus demo data jika ada
-            try {
-                $demoData->delete($event);
-            } catch (\Throwable) {
-                // Abaikan jika tidak ada demo data
-            }
+        $this->info("=== Sinkronisasi Roster Resmi POPDA XV ({$event->name}) ===");
+        $this->info('Total personil yang diproses: '.count($officials).' orang.');
 
-            // 2. Bersihkan user wasit dummy sisa (wasit%@example.test)
-            $dummyUsers = User::query()
-                ->where('email', 'like', 'wasit%@example.test')
-                ->orWhere('email', 'like', '%dummy%')
-                ->get();
+        // Jika dan hanya jika user menambahkan flag --force-clean (khusus testing lokal)
+        if ($this->option('force-clean')) {
+            $this->warn('Menjalankan pembersihan data dummy (--force-clean aktif)...');
+            DB::transaction(function () use ($event, $demoData): void {
+                try {
+                    $demoData->delete($event);
+                } catch (\Throwable) {
+                    // Abaikan jika tidak ada demo data
+                }
 
-            foreach ($dummyUsers as $user) {
-                $user->referee()?->forceDelete();
-                $user->forceDelete();
-            }
+                $dummyUsers = User::query()
+                    ->where('email', 'like', 'wasit%@example.test')
+                    ->orWhere('email', 'like', '%dummy%')
+                    ->get();
 
-            // 3. Bersihkan referee bertanda dummy
-            Referee::query()
-                ->where('license_number', 'like', '%-DMO-%')
-                ->orWhere('notes', 'like', '%DUMMY%')
-                ->orWhere('name', 'like', '%Dummy%')
-                ->forceDelete();
-        });
+                foreach ($dummyUsers as $user) {
+                    $user->referee()?->forceDelete();
+                    $user->forceDelete();
+                }
 
-        $this->info('Data dummy berhasil dibersihkan.');
-        $this->info("Membuat akun dan data wasit & petugas real untuk: {$event->name}...");
+                Referee::query()
+                    ->where('license_number', 'like', '%-DMO-%')
+                    ->orWhere('notes', 'like', '%DUMMY%')
+                    ->orWhere('name', 'like', '%Dummy%')
+                    ->forceDelete();
+            });
+            $this->info('Pembersihan data dummy selesai.');
+        } else {
+            $this->info('Mode produksi aman: Tidak ada penghapusan data (Hanya pembaruan/penambahan idempoten).');
+        }
 
         $tableRows = [];
 
-        DB::transaction(function () use ($event, &$tableRows): void {
-            foreach ($this->officials as $official) {
+        DB::transaction(function () use ($event, $officials, &$tableRows): void {
+            $counter = 1;
+
+            foreach ($officials as $official) {
                 $cleanSlug = Str::slug($official['name'], '.');
                 $email = "{$cleanSlug}@smart-perkemi.id";
-                $password = $official['nik'];
+                $password = $official['nik']; // Default password adalah NIK
 
-                // 1. Buat / update User
-                $user = User::withTrashed()->whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first();
+                // 1. Cari atau buat User dengan aman
+                $user = User::withTrashed()
+                    ->where('nik_perkemi', $official['nik'])
+                    ->orWhereRaw('LOWER(email) = ?', [mb_strtolower($email)])
+                    ->first();
 
                 if (! $user) {
                     $user = User::query()->create([
                         'name' => $official['name'],
                         'email' => $email,
+                        'nik_perkemi' => $official['nik'],
                         'password' => Hash::make($password),
                         'email_verified_at' => now(),
                     ]);
@@ -316,14 +373,21 @@ class SeedRealPopdaStaff extends Command
                         $user->restore();
                     }
                     $user->name = $official['name'];
-                    $user->password = Hash::make($password);
-                    $user->email_verified_at = now();
+                    $user->nik_perkemi = $official['nik'];
+                    $user->email_verified_at = $user->email_verified_at ?? now();
+                    // Jika password belum pernah diset atau ingin dipastikan sinkron dengan NIK
+                    if (! $user->password) {
+                        $user->password = Hash::make($password);
+                    }
                     $user->save();
                 }
 
                 // 2. Assign Spatie Roles
                 foreach ($official['roles'] as $roleName) {
-                    $user->assignRole(Role::findOrCreate($roleName, 'web'));
+                    $role = Role::findOrCreate($roleName, 'web');
+                    if (! $user->hasRole($roleName)) {
+                        $user->assignRole($role);
+                    }
                 }
 
                 // 3. Kaitkan ke Event User
@@ -331,45 +395,39 @@ class SeedRealPopdaStaff extends Command
                     $user->id => ['access_role' => Event::AccessRoleStaff],
                 ]);
 
-                // 4. Buat / update Master Referee
-                $referee = Referee::withTrashed()
-                    ->where('license_number', $official['nik'])
-                    ->orWhere('user_id', $user->id)
-                    ->first();
-
-                if (! $referee) {
-                    $referee = Referee::query()->create([
-                        'user_id' => $user->id,
-                        'name' => $official['name'],
-                        'dan_grade' => $official['dan_grade'],
-                        'license_number' => $official['nik'],
-                        'certification_level' => $official['certification_level'],
-                        'region' => 'Jawa Timur',
-                        'email' => $email,
-                        'is_active' => true,
-                    ]);
-                } else {
-                    if ($referee->trashed()) {
-                        $referee->restore();
-                    }
-                    $referee->update([
-                        'user_id' => $user->id,
-                        'name' => $official['name'],
-                        'dan_grade' => $official['dan_grade'],
-                        'license_number' => $official['nik'],
-                        'certification_level' => $official['certification_level'],
-                        'region' => 'Jawa Timur',
-                        'email' => $email,
-                        'is_active' => true,
-                    ]);
-                }
-
-                // 5. Jika bertugas sebagai Wasit Event, attach ke event & catat kehadiran hari ini
+                // 4. Jika bertugas sebagai Wasit (Utama / Pembantu), kelola Master Referee
                 if ($official['is_event_referee']) {
+                    $referee = Referee::withTrashed()
+                        ->where('license_number', $official['nik'])
+                        ->orWhere('user_id', $user->id)
+                        ->first();
+
+                    $refereeData = [
+                        'user_id' => $user->id,
+                        'name' => $official['name'],
+                        'dan_grade' => $official['dan_grade'],
+                        'license_number' => $official['nik'],
+                        'certification_level' => $official['certification_level'],
+                        'region' => $official['city'], // Kota / Kabupaten Asal
+                        'email' => $email,
+                        'is_active' => true,
+                    ];
+
+                    if (! $referee) {
+                        $referee = Referee::query()->create($refereeData);
+                    } else {
+                        if ($referee->trashed()) {
+                            $referee->restore();
+                        }
+                        $referee->update($refereeData);
+                    }
+
+                    // Attach ke Event Referees
                     $event->referees()->syncWithoutDetaching([
                         $referee->id => ['role' => 'referee'],
                     ]);
 
+                    // Catat kehadiran hari ini agar siap ditugaskan / digenerate
                     RefereeAttendance::query()->updateOrCreate(
                         [
                             'event_id' => $event->id,
@@ -384,63 +442,159 @@ class SeedRealPopdaStaff extends Command
                     );
                 }
 
-                // 6. Jika bertugas sebagai Koordinator Court
+                // 5. Jika bertugas sebagai Koordinator (Pertandingan / Court / Lapangan)
                 if ($official['is_coordinator']) {
                     $coordinator = FieldCoordinator::withTrashed()
                         ->where('coordinator_number', $official['nik'])
                         ->first();
 
+                    $coordData = [
+                        'coordinator_number' => $official['nik'],
+                        'name' => $official['name'],
+                        'region' => $official['city'],
+                        'email' => $email,
+                        'is_active' => true,
+                    ];
+
                     if (! $coordinator) {
-                        $coordinator = FieldCoordinator::query()->create([
-                            'coordinator_number' => $official['nik'],
-                            'name' => $official['name'],
-                            'region' => 'Jawa Timur',
-                            'email' => $email,
-                            'is_active' => true,
-                        ]);
+                        $coordinator = FieldCoordinator::query()->create($coordData);
                     } else {
                         if ($coordinator->trashed()) {
                             $coordinator->restore();
                         }
-                        $coordinator->update([
-                            'name' => $official['name'],
-                            'region' => 'Jawa Timur',
-                            'email' => $email,
-                            'is_active' => true,
-                        ]);
+                        $coordinator->update($coordData);
                     }
 
+                    $assignmentArea = str_contains(strtolower($official['position']), 'court') ? 'court' : 'general';
                     $event->fieldCoordinators()->syncWithoutDetaching([
-                        $coordinator->id => ['assignment_area' => 'court'],
+                        $coordinator->id => ['assignment_area' => $assignmentArea],
                     ]);
                 }
 
                 $tableRows[] = [
-                    $official['no'],
+                    $counter++,
                     $official['name'],
+                    $official['nik'],
                     $official['dan_grade'],
-                    $official['certification_level'],
-                    $email,
-                    $password,
+                    $official['city'],
                     $official['position'],
+                    $email,
                 ];
             }
         });
 
         $this->newLine();
         $this->table(
-            ['No', 'Nama', 'Tingkatan', 'Sertifikasi', 'Email', 'Password (NIK)', 'Jabatan'],
+            ['No', 'Nama Sesuai SK', 'NIK PERKEMI', 'Tingkatan', 'Kota Asal', 'Jabatan', 'Email'],
             $tableRows
         );
 
-        $this->info('Semua akun dan data real berhasil dibuat!');
+        $this->info('✓ Seluruh akun dan data personil POPDA berhasil disinkronisasi tanpa menghapus data produksi.');
 
         if ($this->option('generate-panels')) {
-            $this->info('Mengenerate penugasan court panel 5 wasit...');
+            $this->info('Mengenerate penugasan court panel wasit...');
             $count = $generatePanelsAction->execute($event, null);
-            $this->info("Berhasil mengenerate penugasan {$count} wasit untuk court aktif.");
+            $this->info("✓ Berhasil mengenerate penugasan {$count} wasit untuk court aktif.");
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Membaca file CSV popda.csv atau fallback ke array baku.
+     *
+     * @return list<array{
+     *     name: string,
+     *     nik: string,
+     *     dan_grade: string,
+     *     certificate_number: string,
+     *     position: string,
+     *     city: string,
+     *     roles: list<string>,
+     *     is_event_referee: bool,
+     *     is_coordinator: bool,
+     *     certification_level: string
+     * }>
+     */
+    protected function loadOfficialsFromCsv(): array
+    {
+        $csvPath = database_path('seeders/csv/popda.csv');
+
+        if (! file_exists($csvPath)) {
+            $this->warn("File {$csvPath} tidak ditemukan, menggunakan fallback roster internal.");
+
+            return $this->fallbackOfficials;
+        }
+
+        $file = fopen($csvPath, 'r');
+        if (! $file) {
+            return $this->fallbackOfficials;
+        }
+
+        $header = fgetcsv($file);
+        if (! $header) {
+            fclose($file);
+
+            return $this->fallbackOfficials;
+        }
+
+        $officials = [];
+
+        while (($row = fgetcsv($file)) !== false) {
+            if (empty(array_filter($row))) {
+                continue; // Abaikan baris kosong
+            }
+
+            $name = trim($row[0] ?? '');
+            $nik = trim($row[1] ?? '');
+            $dan = trim($row[2] ?? '');
+            $certificate = trim($row[3] ?? '');
+            $position = trim($row[4] ?? '');
+            $city = trim($row[5] ?? '');
+
+            if ($name === '' || $nik === '') {
+                continue;
+            }
+
+            $isReferee = str_contains(strtolower($position), 'wasit');
+            $isCoordinator = str_contains(strtolower($position), 'koordinator');
+            $isArbitrase = str_contains(strtolower($position), 'arbitrase');
+
+            $roles = [];
+            if ($isArbitrase) {
+                $roles[] = 'Arbitrase';
+                $roles[] = 'Pertandingan';
+            } elseif ($isCoordinator) {
+                $roles[] = 'Koordinator Lapangan';
+                if (str_contains(strtolower($position), 'court')) {
+                    $roles[] = 'Court';
+                } else {
+                    $roles[] = 'Pertandingan';
+                }
+            } elseif ($isReferee) {
+                $roles[] = 'Wasit';
+            }
+
+            $certLevel = str_contains(strtoupper($certificate), 'WST-NAS') || str_contains(strtoupper($certificate), 'REF-WST-NAS')
+                ? 'Wasit Nasional'
+                : 'Wasit Daerah';
+
+            $officials[] = [
+                'name' => $name,
+                'nik' => $nik,
+                'dan_grade' => $dan,
+                'certificate_number' => $certificate,
+                'position' => $position,
+                'city' => $city,
+                'roles' => $roles,
+                'is_event_referee' => $isReferee,
+                'is_coordinator' => $isCoordinator,
+                'certification_level' => $certLevel,
+            ];
+        }
+
+        fclose($file);
+
+        return ! empty($officials) ? $officials : $this->fallbackOfficials;
     }
 }
