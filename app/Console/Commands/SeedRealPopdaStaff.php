@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 class SeedRealPopdaStaff extends Command
 {
     protected $signature = 'perkemi:seed-real-referees
-                            {event=01a10112-aeff-7254-8a89-2e315b7f16f9 : UUID event (default POPDA)}
+                            {event=01a1019a-bd63-7007-9dcd-ac139687e38b : UUID event (default POPDA)}
                             {--generate-panels : Langsung generate penugasan panel 5 wasit untuk setiap court aktif}
                             {--force-clean : Hapus wasit/petugas dummy sebelum seeding (HANYA untuk lingkungan pengujian/dev, TIDAK DIJALANKAN di production)}';
 

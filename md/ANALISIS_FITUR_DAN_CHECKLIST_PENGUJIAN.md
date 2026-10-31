@@ -209,7 +209,7 @@ Berikut adalah rekapitulasi komprehensif perubahan teknis, penambahan fitur baru
   Penguji (QA / Panitia) sering kesulitan menemukan letak menu yang tepat untuk menguji setiap butir dari 147 skenario uji. Dibutuhkan tautan langsung satu-klik dari kartu checklist ke menu terkait dengan parameter ID/slug event yang aktif secara dinamis.
 - **Poin Implementasi Kunci:**
   1. **Pemetaan Metadata 147 Item:** Menyuntikkan atribut `menu` (nama menu & breadcrumb) serta `url` pada seluruh 19 kategori di `DocumentationController.php`.
-  2. **Resolusi Parameter URL Dinamis:** Penggantian otomatis placeholder `{id}`, `{slug}`, dan `{eventCourt}` dengan data event uji aktif (misal: `01a10112-aeff-7254-8a89-2e315b7f16f9` / `popda-xv-jawa-timur-2026`).
+  2. **Resolusi Parameter URL Dinamis:** Penggantian otomatis placeholder `{id}`, `{slug}`, dan `{eventCourt}` dengan data event uji aktif (misal: `01a1019a-bd63-7007-9dcd-ac139687e38b` / `popda-xv-jawa-timur-2026`).
   3. **Tombol "Buka Menu ↗":** Integrasi tombol satu-klik pada setiap baris item checklist untuk membuka menu pengujian di tab baru secara instan.
   4. **Banner Event Referensi:** Menyediakan visual context event aktif beserta pintasan menuju konfigurasi event tersebut.
 - **Berkas yang Dibuat / Dimodifikasi:**

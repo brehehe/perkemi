@@ -30,7 +30,7 @@ export default function Checklist({
     const [copiedModal, setCopiedModal] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState(() => [1, 2, 3, 4, 5, 6]);
 
-    const activeEventId = sampleEvent?.id || '01a10112-aeff-7254-8a89-2e315b7f16f9';
+    const activeEventId = sampleEvent?.id || '01a1019a-bd63-7007-9dcd-ac139687e38b';
     const activeEventSlug = sampleEvent?.slug || 'popda-xv-jawa-timur-2026';
     const activeEventName = sampleEvent?.name || 'POPDA XV Provinsi Jawa Timur 2026 — Shorinji Kempo';
 

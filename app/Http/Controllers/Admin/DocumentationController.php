@@ -20,7 +20,7 @@ class DocumentationController extends Controller
         $filePath = base_path('md/ANALISIS_FITUR_DAN_CHECKLIST_PENGUJIAN.md');
         $markdownContent = File::exists($filePath) ? File::get($filePath) : '';
 
-        $activeEvent = Event::find('01a10112-aeff-7254-8a89-2e315b7f16f9')
+        $activeEvent = Event::find('01a1019a-bd63-7007-9dcd-ac139687e38b')
             ?? Event::latest()->first();
 
         $categories = $this->checklistCategories();
@@ -48,7 +48,7 @@ class DocumentationController extends Controller
                 'slug' => $activeEvent->slug,
                 'name' => $activeEvent->name,
             ] : [
-                'id' => '01a10112-aeff-7254-8a89-2e315b7f16f9',
+                'id' => '01a1019a-bd63-7007-9dcd-ac139687e38b',
                 'slug' => 'popda-xv-jawa-timur-2026',
                 'name' => 'POPDA XV Provinsi Jawa Timur 2026 — Shorinji Kempo',
             ],
