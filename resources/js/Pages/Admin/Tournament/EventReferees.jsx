@@ -20,7 +20,7 @@ function QrPreview({ value, label }) {
     );
 }
 
-function CourtPanelCard({ court, activeEvent }) {
+function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordinator }) {
     const [qrOpen, setQrOpen] = useState(false);
     const [activeRoleTab, setActiveRoleTab] = useState('chief');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -108,6 +108,70 @@ function CourtPanelCard({ court, activeEvent }) {
                 </div>
             </div>
             <div className="space-y-4 p-5">
+                {/* Koordinator Court Status Banner */}
+                <div className="flex flex-col gap-3 rounded-xl border border-amber-200/90 bg-amber-50/50 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-sm ${court.coordinator ? 'bg-amber-600 text-white shadow-xs' : 'bg-gray-200 text-gray-500'}`}>
+                            <i className="fa-solid fa-user-tie text-[15px]" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Koordinator Court</span>
+                                {court.coordinator ? (
+                                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800">
+                                        Ditugaskan
+                                    </span>
+                                ) : (
+                                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[9px] font-bold text-gray-700">
+                                        Belum Ada
+                                    </span>
+                                )}
+                            </div>
+                            {court.coordinator ? (
+                                <>
+                                    <p className="truncate text-sm font-bold text-[#17120f]">{court.coordinator.name}</p>
+                                    <p className="text-[11px] text-amber-900/80">
+                                        No. Koordinator / NIK: <strong>{court.coordinator.coordinator_number}</strong>
+                                        {court.coordinator.region ? ` · ${court.coordinator.region}` : ''}
+                                        {court.coordinator.phone ? ` · Telp: ${court.coordinator.phone}` : ''}
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-xs italic text-gray-500">Belum ada Koordinator Court yang ditugaskan ke {court.name}.</p>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                            href={`/admin/koordinator-court?court_id=${court.id}&event_id=${activeEvent.id}`}
+                            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-[#17120f] px-3.5 text-xs font-bold text-[#f0c060] hover:bg-[#2b2520] transition-colors shadow-xs"
+                            title="Buka panel khusus untuk generate 5 wasit dan pantau partai arena ini"
+                        >
+                            <i className="fa-solid fa-chalkboard-user text-[11px]" aria-hidden="true" />
+                            <span>Buka Panel Koordinator Court (Generate Wasit) →</span>
+                        </Link>
+                        <button
+                            type="button"
+                            onClick={() => onAssignCoordinator(court)}
+                            className="cursor-pointer inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[#c5a059] bg-[#fffbf2] px-3 text-xs font-bold text-[#8a631c] hover:bg-amber-100"
+                        >
+                            <i className={`fa-solid ${court.coordinator ? 'fa-right-left' : 'fa-user-plus'} text-[11px]`} aria-hidden="true" />
+                            {court.coordinator ? 'Pindah / Ganti Court' : 'Tugaskan Koordinator'}
+                        </button>
+                        {court.coordinator && (
+                            <button
+                                type="button"
+                                onClick={() => onResetCoordinator(court)}
+                                className="cursor-pointer inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700 hover:bg-red-50"
+                                title="Reset Penugasan Koordinator dari Court ini"
+                            >
+                                <i className="fa-solid fa-user-xmark text-[11px]" aria-hidden="true" />
+                                Reset Koordinator
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
                     {court.panel.map((panelMember, index) => (
                         <div key={panelMember.role} className={`flex flex-col justify-between rounded-xl border p-3.5 transition-shadow hover:shadow-xs ${panelMember.referee_name ? 'border-[#e8e1d8] bg-[#fbfaf8]' : 'border-dashed border-[#d9d3c9] bg-white'}`}>
@@ -339,16 +403,34 @@ function CourtPanelCard({ court, activeEvent }) {
     );
 }
 
-export default function EventReferees({ activeEvent, events = [], referees = [], courts = [], roles = [], eventCheckInUrl, qrExpiresAt, refereeLoginUrl, today, stats = {} }) {
+export default function EventReferees({
+    activeEvent,
+    events = [],
+    referees = [],
+    courts = [],
+    availableCoordinators = [],
+    roles = [],
+    eventCheckInUrl,
+    qrExpiresAt,
+    refereeLoginUrl,
+    today,
+    stats = {},
+}) {
     const { flash = {} } = usePage().props;
     const [accountReferee, setAccountReferee] = useState(null);
     const [attendanceReferee, setAttendanceReferee] = useState(null);
     const [qrOpen, setQrOpen] = useState(false);
     const [generateOpen, setGenerateOpen] = useState(false);
+    const [assignCoordinatorCourt, setAssignCoordinatorCourt] = useState(null);
+    const [resetCoordinatorCourt, setResetCoordinatorCourt] = useState(null);
+    const [generateCoordinatorsOpen, setGenerateCoordinatorsOpen] = useState(false);
     const [search, setSearch] = useState('');
     const accountForm = useForm({ event_id: activeEvent.id, email: '', phone: '', password: '', password_confirmation: '' });
     const attendanceForm = useForm({ event_id: activeEvent.id, attendance_date: today, is_present: true, notes: '' });
     const generateForm = useForm({ event_id: activeEvent.id });
+    const coordinatorForm = useForm({ event_id: activeEvent.id, coordinator_id: '' });
+    const resetCoordinatorForm = useForm({ event_id: activeEvent.id });
+    const generateCoordinatorsForm = useForm({ event_id: activeEvent.id });
     const assignableRefereeCount = stats.assignable ?? referees.filter((referee) => referee.is_active && referee.is_present).length;
     const requiredRefereeCount = courts.length * roles.length;
     const canGeneratePanels = requiredRefereeCount > 0 && assignableRefereeCount >= requiredRefereeCount;
@@ -403,6 +485,46 @@ export default function EventReferees({ activeEvent, events = [], referees = [],
         });
     };
 
+    const openAssignCoordinator = (court) => {
+        setAssignCoordinatorCourt(court);
+        coordinatorForm.setData({
+            event_id: activeEvent.id,
+            coordinator_id: court.coordinator?.id || (availableCoordinators[0]?.id ?? ''),
+        });
+        coordinatorForm.clearErrors();
+    };
+
+    const submitAssignCoordinator = (event) => {
+        event.preventDefault();
+        if (!assignCoordinatorCourt) return;
+        coordinatorForm.post(`/admin/pertandingan/wasit/courts/${assignCoordinatorCourt.id}/coordinator`, {
+            preserveScroll: true,
+            onSuccess: () => setAssignCoordinatorCourt(null),
+        });
+    };
+
+    const openResetCoordinator = (court) => {
+        setResetCoordinatorCourt(court);
+        resetCoordinatorForm.setData({ event_id: activeEvent.id });
+    };
+
+    const submitResetCoordinator = (event) => {
+        event.preventDefault();
+        if (!resetCoordinatorCourt) return;
+        resetCoordinatorForm.delete(`/admin/pertandingan/wasit/courts/${resetCoordinatorCourt.id}/coordinator`, {
+            preserveScroll: true,
+            onSuccess: () => setResetCoordinatorCourt(null),
+        });
+    };
+
+    const submitGenerateCoordinators = (event) => {
+        event.preventDefault();
+        generateCoordinatorsForm.post('/admin/pertandingan/wasit/courts/generate-coordinators', {
+            preserveScroll: true,
+            onSuccess: () => setGenerateCoordinatorsOpen(false),
+        });
+    };
+
     return (
         <AdminLayout title="Wasit Event & Absensi QR">
             <Head title="Wasit Event & Absensi QR | Smart Perkemi" />
@@ -425,18 +547,36 @@ export default function EventReferees({ activeEvent, events = [], referees = [],
                 <section className="space-y-4" aria-labelledby="court-panel-title">
                     <div className="flex flex-col gap-4 rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 3 · Pembagian Court & Rotasi</p>
-                            <h2 id="court-panel-title" className="mt-1 text-xl font-bold text-[#17120f]">Pembagian Roster Court 1 & 2 dan Penugasan Wasit</h2>
+                            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 3 · Penugasan Koordinator Court</p>
+                            <h2 id="court-panel-title" className="mt-1 text-xl font-bold text-[#17120f]">Penempatan Koordinator Court per Arena</h2>
                             <p className="mt-1 max-w-3xl text-sm leading-6 text-[#7a746e]">
-                                Koordinator Pertandingan membagi seluruh wasit aktif ke Court 1 & 2 seimbang per kota asal dan kualifikasi DAN. Selanjutnya Koordinator Court dapat merotasi wasit bertugas untuk setiap nomor pertandingan.
+                                Arbitrase bertugas menugaskan & men-generate Koordinator Court ke masing-masing arena. Penugasan 5 Wasit dan rotasi wasit per nomor pertandingan dilakukan secara mandiri oleh masing-masing Koordinator Court melalui <strong>Panel Koordinator Court</strong>.
                             </p>
                         </div>
                         <div className="w-full shrink-0 lg:w-auto">
-                            <p className={`mb-2 text-xs font-semibold ${canGeneratePanels ? 'text-emerald-700' : 'text-amber-700'}`}>{assignableRefereeCount} Wasit hadir tersedia · perlu {requiredRefereeCount}</p>
-                            <Button onClick={openGenerate} disabled={!canGeneratePanels} className="min-h-11 w-full bg-[#17120f] text-white hover:bg-[#2a241f] lg:w-auto">
-                                <i className="fa-solid fa-scale-balanced mr-2" aria-hidden="true" />
-                                {hasExistingPanels ? 'Bagi Ulang Court 1 & 2 (Koordinator)' : 'Bagi Roster Court 1 & 2 (Koordinator)'}
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    type="button"
+                                    onClick={() => setGenerateCoordinatorsOpen(true)}
+                                    disabled={availableCoordinators.length === 0}
+                                    className="min-h-11 w-full bg-[#17120f] text-[#f0c060] hover:bg-[#2a241f] border border-[#d4a843]/40 font-bold lg:w-auto shadow-sm"
+                                    title="Bagi penempatan Koordinator Lapangan ke court secara merata"
+                                >
+                                    <i className="fa-solid fa-user-tie mr-2 text-[#f0c060]" aria-hidden="true" />
+                                    Bagi Koordinator Court
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={openGenerate}
+                                    disabled={!canGeneratePanels}
+                                    className="min-h-11 w-full border-[#d8c9ae] bg-white text-[#8a631c] hover:bg-amber-50 lg:w-auto text-xs"
+                                    title="Opsi bagi Koordinator Pertandingan untuk langsung membagi wasit"
+                                >
+                                    <i className="fa-solid fa-scale-balanced mr-2 text-amber-700" aria-hidden="true" />
+                                    {hasExistingPanels ? 'Bagi Ulang Wasit Court' : 'Bagi Wasit Court'}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                     {courts.length > 0 && !canGeneratePanels && (
@@ -445,7 +585,15 @@ export default function EventReferees({ activeEvent, events = [], referees = [],
                             <p>Penugasan belum dapat digenerate. Tambahkan absensi <strong>{Math.max(requiredRefereeCount - assignableRefereeCount, 0)} Wasit aktif</strong> lagi sampai tersedia {requiredRefereeCount} Wasit untuk {courts.length} court.</p>
                         </div>
                     )}
-                    {courts.map((court) => <CourtPanelCard key={court.id} court={court} activeEvent={activeEvent} />)}
+                    {courts.map((court) => (
+                        <CourtPanelCard
+                            key={court.id}
+                            court={court}
+                            activeEvent={activeEvent}
+                            onAssignCoordinator={openAssignCoordinator}
+                            onResetCoordinator={openResetCoordinator}
+                        />
+                    ))}
                     {courts.length === 0 && <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-10 text-center text-sm text-[#7a746e]">Belum ada court aktif pada event ini.</div>}
                 </section>
             </div>
@@ -504,6 +652,186 @@ export default function EventReferees({ activeEvent, events = [], referees = [],
                 </form>
             </Modal>
             <Modal isOpen={qrOpen} onClose={() => setQrOpen(false)} title="QR Absensi Wasit Event" footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}><div className="mx-auto max-w-sm"><QrPreview value={eventCheckInUrl} label={activeEvent.name} /><p className="mt-3 text-center text-xs leading-5 text-[#7a746e]">Wasit scan menggunakan kamera ponsel, login, lalu tekan Konfirmasi Kehadiran.</p></div></Modal>
+
+            {/* Modal Tugaskan / Pindah Koordinator Court */}
+            <Modal
+                isOpen={Boolean(assignCoordinatorCourt)}
+                onClose={() => !coordinatorForm.processing && setAssignCoordinatorCourt(null)}
+                title={`Penugasan Koordinator Court (${assignCoordinatorCourt?.name || ''})`}
+                subtitle="Pilih personel Koordinator Lapangan untuk mengelola perwasitan court ini"
+                closeOnBackdrop={!coordinatorForm.processing}
+                closeOnEscape={!coordinatorForm.processing}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => setAssignCoordinatorCourt(null)}
+                            disabled={coordinatorForm.processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="submit"
+                            form="assign-coordinator-form"
+                            loading={coordinatorForm.processing}
+                            disabled={!coordinatorForm.data.coordinator_id}
+                            className="bg-[#17120f] text-[#f0c060] hover:bg-[#2a241f]"
+                        >
+                            <i className="fa-solid fa-check mr-2" />
+                            Simpan Penugasan Koordinator
+                        </Button>
+                    </>
+                }
+            >
+                <form id="assign-coordinator-form" onSubmit={submitAssignCoordinator} className="space-y-4">
+                    {coordinatorForm.errors.coordinator_id && (
+                        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                            {coordinatorForm.errors.coordinator_id}
+                        </div>
+                    )}
+                    <div className="rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3 text-xs text-[#625b54]">
+                        <p className="font-bold text-[#17120f] mb-1">
+                            <i className="fa-solid fa-circle-info mr-1.5 text-amber-600" />
+                            Ketentuan Penugasan / Pindah Court:
+                        </p>
+                        <p>
+                            Jika koordinator yang dipilih saat ini sedang bertugas di court lain, sistem akan <strong>otomatis memindahkan</strong> fokus penugasannya ke {assignCoordinatorCourt?.name}. Akun koordinator tersebut akan langsung tersinkronisasi saat login dengan NIK.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-[#3d3732]">
+                            Pilih Koordinator Lapangan ({availableCoordinators.length} Tersedia):
+                        </label>
+                        <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                            {availableCoordinators.map((c) => {
+                                const currentlyAssignedCourt = courts.find((ct) => ct.coordinator?.id === c.id);
+                                const isCurrentCourt = currentlyAssignedCourt?.id === assignCoordinatorCourt?.id;
+                                const isSelected = coordinatorForm.data.coordinator_id === c.id;
+
+                                return (
+                                    <label
+                                        key={c.id}
+                                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors ${
+                                            isSelected
+                                                ? 'border-amber-400 bg-amber-50/70 text-amber-950 ring-1 ring-amber-400'
+                                                : 'border-[#e8e1d8] bg-white hover:bg-[#faf7f2]'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="radio"
+                                                name="coordinator_id"
+                                                value={c.id}
+                                                checked={isSelected}
+                                                onChange={(e) => coordinatorForm.setData('coordinator_id', e.target.value)}
+                                                className="text-amber-600 focus:ring-amber-500"
+                                            />
+                                            <div>
+                                                <p className="text-sm font-bold text-[#17120f]">{c.name}</p>
+                                                <p className="text-xs text-[#7a746e]">
+                                                    NIK / No: {c.coordinator_number} · {c.region || 'Jawa Timur'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            {isCurrentCourt ? (
+                                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                                                    Sedang di Court Ini
+                                                </span>
+                                            ) : currentlyAssignedCourt ? (
+                                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-900" title="Akan dipindahkan ke court ini">
+                                                    di {currentlyAssignedCourt.name} → Pindah
+                                                </span>
+                                            ) : (
+                                                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-600">
+                                                    Belum Ditugaskan
+                                                </span>
+                                            )}
+                                        </div>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal Reset Koordinator Court */}
+            <Modal
+                isOpen={Boolean(resetCoordinatorCourt)}
+                onClose={() => !resetCoordinatorForm.processing && setResetCoordinatorCourt(null)}
+                title={`Reset Koordinator Court (${resetCoordinatorCourt?.name || ''})?`}
+                subtitle="Mengosongkan penugasan koordinator dari court ini"
+                closeOnBackdrop={!resetCoordinatorForm.processing}
+                closeOnEscape={!resetCoordinatorForm.processing}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => setResetCoordinatorCourt(null)}
+                            disabled={resetCoordinatorForm.processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            onClick={submitResetCoordinator}
+                            loading={resetCoordinatorForm.processing}
+                            className="bg-red-600 text-white hover:bg-red-700"
+                        >
+                            <i className="fa-solid fa-user-xmark mr-2" />
+                            Ya, Reset Koordinator Court
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3 text-sm text-[#4a433d]">
+                    <p>
+                        Koordinator <strong>{resetCoordinatorCourt?.coordinator?.name}</strong> akan dikosongkan dari <strong>{resetCoordinatorCourt?.name}</strong>.
+                    </p>
+                    <p className="text-xs text-[#746c64]">
+                        Personel tersebut akan kembali ke daftar koordinator yang belum ditugaskan dan dapat dipindahkan ke court lain kapan saja.
+                    </p>
+                </div>
+            </Modal>
+
+            {/* Modal Bagi Koordinator Lapangan ke Court Secara Merata */}
+            <Modal
+                isOpen={generateCoordinatorsOpen}
+                onClose={() => !generateCoordinatorsForm.processing && setGenerateCoordinatorsOpen(false)}
+                title="Bagi Penempatan Koordinator Court?"
+                subtitle="Membagi Koordinator Lapangan secara otomatis ke seluruh court aktif"
+                closeOnBackdrop={!generateCoordinatorsForm.processing}
+                closeOnEscape={!generateCoordinatorsForm.processing}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => setGenerateCoordinatorsOpen(false)}
+                            disabled={generateCoordinatorsForm.processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            onClick={submitGenerateCoordinators}
+                            loading={generateCoordinatorsForm.processing}
+                            className="bg-[#17120f] text-[#f0c060] hover:bg-[#2a241f]"
+                        >
+                            <i className="fa-solid fa-users-gear mr-2 text-amber-400" />
+                            Bagi Koordinator Sekarang
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3 text-sm text-[#4a433d]">
+                    <p>
+                        Sistem akan menempatkan personel Master Koordinator Lapangan ({availableCoordinators.length} orang tersedia) ke {courts.length} court aktif secara berurutan.
+                    </p>
+                    <p className="text-xs text-[#746c64]">
+                        Penugasan koordinator yang sudah ada sebelumnya akan diperbarui secara merata.
+                    </p>
+                </div>
+            </Modal>
         </AdminLayout>
     );
 }

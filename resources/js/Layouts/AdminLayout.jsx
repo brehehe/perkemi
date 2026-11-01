@@ -70,6 +70,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isReferee = url.startsWith('/admin/arbitrase/wasit');
     const isScoring = url.startsWith('/admin/arbitrase/scoring');
     const isEvaluation = url.startsWith('/admin/arbitrase/evaluasi');
+    const isCourtCoordinator = url.startsWith('/admin/koordinator-court') || url.startsWith('/admin/arbitrase/court-coordinator');
     const isPaniteraDashboard = url.startsWith('/admin/panitera/scoring') && !url.includes('/embu-result') && !url.includes('/randori-result') && !url.includes('/champions');
     const isPaniteraEmbu = url.startsWith('/admin/panitera/scoring/embu-result');
     const isPaniteraRandori = url.startsWith('/admin/panitera/scoring/randori-result');
@@ -97,6 +98,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         pendaftaran: true,
         master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
         pertandingan: isDrawing || isSchedule || isEventReferees || isMerge || isWeighIn,
+        courtCoordinator: isCourtCoordinator,
         arbitrase: isReferee || isScoring || isEvaluation,
         panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
         laporan: isReportHub || isMedals || isRecap,
@@ -117,6 +119,10 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const tenant = props.tenant?.event || null;
     const isFullAdmin = user.roles?.some((role) => ['Super Admin', 'Admin'].includes(role));
     const isPaniteraAccount = user.roles?.includes('Panitera') && !isFullAdmin;
+    const isPertandinganCoordinator = user.roles?.includes('Pertandingan');
+    const isCourtCoordinatorAccount = (user.roles?.includes('Koordinator Lapangan') || user.roles?.includes('Court'))
+        && !isPertandinganCoordinator
+        && !isFullAdmin;
     const isRestrictedTenant = Boolean(tenant) && !isFullAdmin;
     const isResponsibleTenant = tenant?.access_role === 'responsible';
     const requestedEventId = currentSearchParams.get('event_id');
@@ -156,6 +162,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         'verifikasi',
         'drawing',
         'schedule',
+        'court-coordinator',
         'event-wasit',
         'merge',
         'wasit',
@@ -278,6 +285,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             onSelect: () => router.visit(withEventContext('/admin/pertandingan/jadwal')),
         },
         {
+            id: 'court-coordinator',
+            title: 'Panel Koordinator Court',
+            subtitle: 'Generate susunan 5 wasit dan rotasi arena per court',
+            category: 'Koordinator Court',
+            icon: <i className="fa-solid fa-chalkboard-user text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/koordinator-court')),
+        },
+        {
             id: 'weigh-in',
             title: 'Penimbangan Badan Hari-H',
             subtitle: 'Input berat badan, status lolos/overweight, kunci sesi, dan berita acara',
@@ -376,7 +391,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     ].filter((command) => (
         (!isRestrictedTenant || tenantCommandIds.has(command.id))
         && (!isResponsibleTenant || !responsibleTenantHiddenCommandIds.has(command.id))
-        && (!isPaniteraAccount || ['panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'event-wasit', 'website'].includes(command.id))
+        && (!isPaniteraAccount || ['panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
+        && (!isCourtCoordinatorAccount || ['court-coordinator', 'panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
     ));
 
     // Close mobile sidebar on resize to desktop
@@ -431,12 +447,22 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         );
     }
 
+    const brandSubtitle = (isCourtCoordinatorAccount || isCourtCoordinator)
+        ? 'Koordinator Panitera & Court · 2026'
+        : (isPaniteraAccount || isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions)
+            ? 'Koordinator Panitera · 2026'
+            : (user.roles?.includes('Koordinator Lapangan') || user.roles?.includes('Court'))
+                ? 'Koordinator Panitera & Court · 2026'
+                : tenant
+                    ? `Mode Event · ${tenant.city || '2026'}`
+                    : 'Admin Panel · 2026';
+
     return (
         <>
             <Head title={`${title} | Smart Perkemi`} />
 
             <div className="theme-shell min-h-screen bg-[#f7f4ef] text-[#0f0d0b] font-dm flex flex-col antialiased dark:bg-[#0f1115] dark:text-slate-100">
-                <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
+                <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle={brandSubtitle}>
                     {tenant && (
                         <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
                             <Link
@@ -483,144 +509,131 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                     <nav className="flex-1 px-0 py-3 overflow-y-auto space-y-0.5 text-[13px] custom-scrollbar">
                         {/* Dashboard Link */}
                         <Link
-                            href={isPaniteraAccount ? withEventContext('/admin/panitera/scoring') : '/admin/dashboard'}
-                            className={`flex items-center gap-3 px-6 py-2.5 text-[13px] transition-colors ${
-                                (isDashboard || (isPaniteraAccount && isPaniteraDashboard))
+                            href={isCourtCoordinatorAccount ? withEventContext('/admin/koordinator-court') : isPaniteraAccount ? withEventContext('/admin/panitera/scoring') : '/admin/dashboard'}
+                            className={`flex items-center gap-3 px-6 py-2.5 text-[13px] transition-colors ${(isDashboard || (isPaniteraAccount && isPaniteraDashboard) || (isCourtCoordinatorAccount && isCourtCoordinator))
                                     ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 text-[#f0c060] font-medium'
                                     : 'text-white/80 font-medium hover:bg-white/5 hover:text-white'
-                            }`}
+                                }`}
                         >
                             <i className="fa-solid fa-gauge-high w-4 text-[13px]"></i>
-                            <span>{isPaniteraAccount ? 'Dashboard Panitera' : tenant ? 'Dashboard Event' : 'Dashboard'}</span>
+                            <span>{isCourtCoordinatorAccount ? 'Panel Koordinator Court' : isPaniteraAccount ? 'Dashboard Panitera' : tenant ? 'Dashboard Event' : 'Dashboard'}</span>
                         </Link>
 
                         {/* Pendaftaran Section */}
-                        {!isPaniteraAccount && (
-                        <div className="border-t border-white/5 mt-1 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => toggleSection('pendaftaran')}
-                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                            >
-                                <span>Pendaftaran</span>
-                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.pendaftaran ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
-                            </button>
-                            {openSections.pendaftaran && (
-                                <div className="space-y-0.5 pl-2">
-                                    <Link
-                                        href={withEventContext('/admin/pendaftaran/registrasi')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isRegistration
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-file-signature w-4 text-[11px] ${isRegistration ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Registrasi Kontingen</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/pendaftaran/nomor-pertandingan')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${
-                                            isMatchGroups
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-people-group w-4 shrink-0 text-[11px] ${isMatchGroups ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Nomor dan Kelompok Pertandingan</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/pendaftaran/verifikasi')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isVerification
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-user-check w-4 text-[11px] ${isVerification ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Verifikasi Atlet</span>
-                                    </Link>
-                                </div>
-                            )}
-                        </div>
+                        {!isPaniteraAccount && !isCourtCoordinatorAccount && (
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('pendaftaran')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Pendaftaran</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.pendaftaran ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.pendaftaran && (
+                                    <div className="space-y-0.5 pl-2">
+                                        <Link
+                                            href={withEventContext('/admin/pendaftaran/registrasi')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isRegistration
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-file-signature w-4 text-[11px] ${isRegistration ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Registrasi Kontingen</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pendaftaran/nomor-pertandingan')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isMatchGroups
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-people-group w-4 shrink-0 text-[11px] ${isMatchGroups ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Nomor dan Kelompok Pertandingan</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pendaftaran/verifikasi')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isVerification
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-user-check w-4 text-[11px] ${isVerification ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Verifikasi Atlet</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Pertandingan Section */}
-                        <div className="border-t border-white/5 mt-1 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => toggleSection('pertandingan')}
-                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                            >
-                                <span>Pertandingan</span>
-                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.pertandingan ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
-                            </button>
-                            {openSections.pertandingan && (
-                                <div className="space-y-0.5 pl-2">
-                                    {!isPaniteraAccount && <>
-                                    <Link
-                                        href={withEventContext('/admin/pertandingan/drawing')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isDrawing
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-dice w-4 text-[11px] ${isDrawing ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Drawing & Bagan TM</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/pertandingan/jadwal')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isSchedule
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-calendar-days w-4 text-[11px] ${isSchedule ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Jadwal Pertandingan</span>
-                                    </Link>
-                                    </>}
-                                    <Link
-                                        href={withEventContext('/admin/pertandingan/wasit')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isEventReferees
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-user-shield w-4 text-[11px] ${isEventReferees ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Wasit Event & QR</span>
-                                    </Link>
-                                    {!isPaniteraAccount && (
-                                    <>
-                                    <Link
-                                        href={withEventContext('/admin/pertandingan/timbang-badan')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isWeighIn
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeighIn ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Penimbangan Hari-H</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/pertandingan/merge')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isMerge
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-object-group w-4 text-[11px] ${isMerge ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Merge Nomer Pertandingan</span>
-                                    </Link>
-                                    </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        {!isPaniteraAccount && !isCourtCoordinatorAccount && (
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('pertandingan')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Pertandingan</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.pertandingan ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.pertandingan && (
+                                    <div className="space-y-0.5 pl-2">
+                                        <Link
+                                            href={withEventContext('/admin/pertandingan/drawing')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isDrawing
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-dice w-4 text-[11px] ${isDrawing ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Drawing & Bagan TM</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pertandingan/jadwal')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isSchedule
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-calendar-days w-4 text-[11px] ${isSchedule ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Jadwal Pertandingan</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pertandingan/wasit')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isEventReferees
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-user-shield w-4 text-[11px] ${isEventReferees ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Wasit Event & QR</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pertandingan/timbang-badan')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isWeighIn
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeighIn ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Penimbangan Hari-H</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pertandingan/merge')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isMerge
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-object-group w-4 text-[11px] ${isMerge ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Merge Nomer Pertandingan</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Panitera Section */}
                         <div className="border-t border-white/5 mt-1 pt-1">
@@ -666,258 +679,287 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             )}
                         </div>
 
-                        {/* Sistem Arbitrase & Panitera Section */}
+                        {/* Koordinator Court Section */}
                         {!isPaniteraAccount && (
-                        <div className="border-t border-white/5 mt-1 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => toggleSection('arbitrase')}
-                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                            >
-                                <span>Arbitrase & Wasit</span>
-                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.arbitrase ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
-                            </button>
-                            {openSections.arbitrase && (
-                                <div className="space-y-0.5 pl-2">
-                                    <Link
-                                        href={withEventContext('/admin/arbitrase/wasit')}
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('courtCoordinator')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Koordinator Court</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.courtCoordinator ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.courtCoordinator && (
+                                    <div className="space-y-0.5 pl-2">
+                                        <Link
+                                            href={withEventContext('/admin/koordinator-court')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isCourtCoordinator
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-chalkboard-user w-4 text-[11px] ${isCourtCoordinator ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Panel Koordinator Court</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Sistem Arbitrase & Wasit Section */}
+                        {!isPaniteraAccount && !isCourtCoordinatorAccount && (
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('arbitrase')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Arbitrase & Wasit</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.arbitrase ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.arbitrase && (
+                                    <div className="space-y-0.5 pl-2">
+                                        {/* <Link
+                                        href={withEventContext('/admin/pertandingan/wasit')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isReferee
+                                            isEventReferees
                                                 ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
                                                 : 'text-white/65 hover:text-white hover:bg-white/5'
                                         }`}
                                     >
-                                        <i className={`fa-solid fa-gavel w-4 text-[11px] ${isReferee ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Data Wasit & Juri</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/arbitrase/scoring')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isScoring
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-chart-column w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Laporan Hasil Penilaian</span>
-                                    </Link>
-                                    <Link
-                                        href={withEventContext('/admin/arbitrase/evaluasi')}
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${
-                                            isEvaluation
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <i className={`fa-solid fa-scale-unbalanced w-4 text-[11px] ${isEvaluation ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Evaluasi Wasit & Anti-Bias</span>
-                                    </Link>
-                                </div>
-                            )}
-                        </div>
+                                        <i className={`fa-solid fa-user-tie w-4 text-[11px] ${isEventReferees ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Penugasan Koordinator Court</span>
+                                    </Link> */}
+                                        <Link
+                                            href={withEventContext('/admin/arbitrase/wasit')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isReferee
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-gavel w-4 text-[11px] ${isReferee ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Data Wasit & Juri</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/arbitrase/scoring')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isScoring
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-chart-column w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Laporan Hasil Penilaian</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/arbitrase/evaluasi')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isEvaluation
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-scale-unbalanced w-4 text-[11px] ${isEvaluation ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Evaluasi Wasit & Anti-Bias</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Laporan Section */}
-                        {!isPaniteraAccount && (
-                        <div className="border-t border-white/5 mt-1 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => toggleSection('laporan')}
-                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                            >
-                                <span>Laporan & Hasil</span>
-                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.laporan ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
-                            </button>
-                            {openSections.laporan && (
-                                <div className="space-y-0.5 pl-2">
-                                    {reportMenuItems.map((report) => {
-                                        const isActive = isReportHub && activeReport === report.key;
+                        {!isPaniteraAccount && !isCourtCoordinatorAccount && (
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('laporan')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Laporan & Hasil</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.laporan ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.laporan && (
+                                    <div className="space-y-0.5 pl-2">
+                                        {reportMenuItems.map((report) => {
+                                            const isActive = isReportHub && activeReport === report.key;
 
-                                        return (
-                                            <Link
-                                                key={report.key}
-                                                href={reportHref(report.key)}
-                                                aria-current={isActive ? 'page' : undefined}
-                                                className={`flex min-h-11 items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${
-                                                    isActive
-                                                        ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
-                                                        : 'text-white/65 hover:bg-white/5 hover:text-white'
-                                                }`}
-                                            >
-                                                <i className={`fa-solid ${report.icon} w-4 shrink-0 text-[11px] ${isActive ? 'text-[#f0c060]' : 'text-[#d4a843]'}`} aria-hidden="true"></i>
-                                                <span>{report.title}</span>
-                                            </Link>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                                            return (
+                                                <Link
+                                                    key={report.key}
+                                                    href={reportHref(report.key)}
+                                                    aria-current={isActive ? 'page' : undefined}
+                                                    className={`flex min-h-11 items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isActive
+                                                            ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
+                                                            : 'text-white/65 hover:bg-white/5 hover:text-white'
+                                                        }`}
+                                                >
+                                                    <i className={`fa-solid ${report.icon} w-4 shrink-0 text-[11px] ${isActive ? 'text-[#f0c060]' : 'text-[#d4a843]'}`} aria-hidden="true"></i>
+                                                    <span>{report.title}</span>
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Master Data Section */}
-                        {!isPaniteraAccount && (
-                        <div className="border-t border-white/5 mt-1 pt-1">
-                            <button
-                                type="button"
-                                onClick={() => toggleSection('master')}
-                                className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                            >
-                                <span>Master Data</span>
-                                <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.master ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
-                            </button>
-                            {openSections.master && (
-                                <div className="space-y-0.5 pl-2">
-                                    <Link
-                                        href={tenant ? '/admin/master/event/detail' : '/admin/master/event'}
-                                        className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                            isEventMaster
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <i className={`fa-solid fa-calendar-check w-4 text-[11px] ${isEventMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                            <span>Data Event / Acara</span>
-                                        </div>
-                                        {isEventMaster && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
-                                                Aktif
-                                            </span>
+                        {!isPaniteraAccount && !isCourtCoordinatorAccount && (
+                            <div className="border-t border-white/5 mt-1 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection('master')}
+                                    className="w-full flex items-center justify-between px-6 py-2 text-[10px] uppercase font-bold tracking-wider text-[#b5afa6]/70 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                    <span>Master Data</span>
+                                    <i className={`fa-solid fa-chevron-right text-[8px] transition-transform ${openSections.master ? 'rotate-90 text-[#d4a843]' : ''}`}></i>
+                                </button>
+                                {openSections.master && (
+                                    <div className="space-y-0.5 pl-2">
+                                        <Link
+                                            href={tenant ? '/admin/master/event/detail' : '/admin/master/event'}
+                                            className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isEventMaster
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <i className={`fa-solid fa-calendar-check w-4 text-[11px] ${isEventMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Data Event / Acara</span>
+                                            </div>
+                                            {isEventMaster && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
+                                                    Aktif
+                                                </span>
+                                            )}
+                                        </Link>
+                                        {!isResponsibleTenant && (
+                                            <>
+                                                <Link
+                                                    href="/admin/master/contingent"
+                                                    className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isContingentMaster
+                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <i className={`fa-solid fa-flag w-4 text-[11px] ${isContingentMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                        <span>Data Kontingen</span>
+                                                    </div>
+                                                    {isContingentMaster && (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
+                                                            Aktif
+                                                        </span>
+                                                    )}
+                                                </Link>
+                                                <Link
+                                                    href="/admin/master/athlete"
+                                                    className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isAthleteMaster
+                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <i className={`fa-solid fa-users w-4 text-[11px] ${isAthleteMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                        <span>Data Atlet & Kenshi</span>
+                                                    </div>
+                                                    {isAthleteMaster && (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
+                                                            Aktif
+                                                        </span>
+                                                    )}
+                                                </Link>
+                                                <Link
+                                                    href="/admin/master/official"
+                                                    className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isOfficialMaster
+                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <i className={`fa-solid fa-id-badge w-4 text-[11px] ${isOfficialMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                        <span>Data Official</span>
+                                                    </div>
+                                                    {isOfficialMaster && (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
+                                                            Aktif
+                                                        </span>
+                                                    )}
+                                                </Link>
+                                            </>
                                         )}
-                                    </Link>
-                                    {!isResponsibleTenant && (
-                                        <>
+                                        {!isRestrictedTenant && <>
                                             <Link
-                                                href="/admin/master/contingent"
-                                                className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                                    isContingentMaster
+                                                href="/admin/master/kyu"
+                                                className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isKyuMaster
                                                         ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
                                                         : 'text-white/65 hover:text-white hover:bg-white/5'
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <i className={`fa-solid fa-flag w-4 text-[11px] ${isContingentMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                                    <span>Data Kontingen</span>
+                                                    <i className={`fa-solid fa-ranking-star w-4 text-[11px] ${isKyuMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                    <span>Master Kyu & Dan</span>
                                                 </div>
-                                                {isContingentMaster && (
+                                                {isKyuMaster && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">Aktif</span>
+                                                )}
+                                            </Link>
+                                            <Link
+                                                href="/admin/master/technique"
+                                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isTechniqueMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                <i className={`fa-solid fa-hand-fist w-4 text-[11px] ${isTechniqueMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Master Teknik</span>
+                                            </Link>
+                                            <Link
+                                                href="/admin/master/weight-class"
+                                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isWeightClassMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeightClassMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Master Berat Badan</span>
+                                            </Link>
+                                            <Link
+                                                href="/admin/master/payment-method"
+                                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaymentMethodMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                <i className={`fa-solid fa-money-check-dollar w-4 text-[11px] ${isPaymentMethodMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Metode Pembayaran</span>
+                                            </Link>
+                                            <Link
+                                                href="/admin/master/referee"
+                                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isRefereeMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                <i className={`fa-solid fa-scale-balanced w-4 text-[11px] ${isRefereeMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Master Data Wasit</span>
+                                            </Link>
+                                            <Link
+                                                href="/admin/master/clerk"
+                                                className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isClerkMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                <i className={`fa-solid fa-clipboard-list w-4 text-[11px] ${isClerkMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                <span>Master Data Panitera</span>
+                                            </Link>
+                                            <Link href="/admin/master/field-coordinator" className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isFieldCoordinatorMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}><i className={`fa-solid fa-people-group w-4 text-[11px] ${isFieldCoordinatorMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i><span>Koordinator Lapangan</span></Link>
+                                            <Link
+                                                href="/admin/master/user"
+                                                className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isUserMaster
+                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <i className={`fa-solid fa-user-gear w-4 text-[11px] ${isUserMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                                    <span>Pengguna & Role</span>
+                                                </div>
+                                                {isUserMaster && (
                                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
                                                         Aktif
                                                     </span>
                                                 )}
                                             </Link>
-                                            <Link
-                                                href="/admin/master/athlete"
-                                                className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                                    isAthleteMaster
-                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <i className={`fa-solid fa-users w-4 text-[11px] ${isAthleteMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                                    <span>Data Atlet & Kenshi</span>
-                                                </div>
-                                                {isAthleteMaster && (
-                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
-                                                        Aktif
-                                                    </span>
-                                                )}
-                                            </Link>
-                                            <Link
-                                                href="/admin/master/official"
-                                                className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                                    isOfficialMaster
-                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <i className={`fa-solid fa-id-badge w-4 text-[11px] ${isOfficialMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                                    <span>Data Official</span>
-                                                </div>
-                                                {isOfficialMaster && (
-                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
-                                                        Aktif
-                                                    </span>
-                                                )}
-                                            </Link>
-                                        </>
-                                    )}
-                                    {!isRestrictedTenant && <>
-                                    <Link
-                                        href="/admin/master/kyu"
-                                        className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                            isKyuMaster
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <i className={`fa-solid fa-ranking-star w-4 text-[11px] ${isKyuMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                            <span>Master Kyu & Dan</span>
-                                        </div>
-                                        {isKyuMaster && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">Aktif</span>
-                                        )}
-                                    </Link>
-                                    <Link
-                                        href="/admin/master/technique"
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isTechniqueMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid fa-hand-fist w-4 text-[11px] ${isTechniqueMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Master Teknik</span>
-                                    </Link>
-                                    <Link
-                                        href="/admin/master/weight-class"
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isWeightClassMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeightClassMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Master Berat Badan</span>
-                                    </Link>
-                                    <Link
-                                        href="/admin/master/payment-method"
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaymentMethodMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid fa-money-check-dollar w-4 text-[11px] ${isPaymentMethodMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Metode Pembayaran</span>
-                                    </Link>
-                                    <Link
-                                        href="/admin/master/referee"
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isRefereeMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid fa-scale-balanced w-4 text-[11px] ${isRefereeMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Master Data Wasit</span>
-                                    </Link>
-                                    <Link
-                                        href="/admin/master/clerk"
-                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isClerkMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid fa-clipboard-list w-4 text-[11px] ${isClerkMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                        <span>Master Data Panitera</span>
-                                    </Link>
-                                    <Link href="/admin/master/field-coordinator" className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isFieldCoordinatorMaster ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}><i className={`fa-solid fa-people-group w-4 text-[11px] ${isFieldCoordinatorMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i><span>Koordinator Lapangan</span></Link>
-                                    <Link
-                                        href="/admin/master/user"
-                                        className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${
-                                            isUserMaster
-                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                : 'text-white/65 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <i className={`fa-solid fa-user-gear w-4 text-[11px] ${isUserMaster ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
-                                            <span>Pengguna & Role</span>
-                                        </div>
-                                        {isUserMaster && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#d4a843]/20 text-[#f0c060] font-semibold">
-                                                Aktif
-                                            </span>
-                                        )}
-                                    </Link>
-                                    </>}
-                                </div>
-                            )}
-                        </div>
+                                        </>}
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Profile & Logout */}
@@ -997,7 +1039,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                 <button
                                     type="button"
                                     onClick={() => setProfileOpen(!profileOpen)}
-                                className="flex min-h-11 items-center gap-2 rounded-xl px-1 transition-colors hover:bg-[#ede9e1]"
+                                    className="flex min-h-11 items-center gap-2 rounded-xl px-1 transition-colors hover:bg-[#ede9e1]"
                                 >
                                     <Avatar
                                         name={user.name}

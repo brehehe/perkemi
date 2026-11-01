@@ -343,7 +343,12 @@ class PublicEventPageService
             ->with([
                 'matchCategory:id,name,type',
                 'matches' => fn ($query) => $query
-                    ->with(['randoriScore', 'court:id,name'])
+                    ->with([
+                        'randoriScore',
+                        'court:id,name',
+                        'redEntry.athlete.contingent:id,name',
+                        'blueEntry.athlete.contingent:id,name',
+                    ])
                     ->orderBy('match_sequence'),
             ])
             ->get();
@@ -384,6 +389,8 @@ class PublicEventPageService
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M, H:i'),
             'aka' => $match->red_label ?: 'Menunggu peserta',
             'shiro' => $match->blue_label ?: 'Menunggu peserta',
+            'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+            'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
             'aka_score' => $score?->aka_total,
             'shiro_score' => $score?->shiro_total,
             'winner' => $score?->winner_corner,

@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\Panitera\StoreEmbuScoreRequest;
 use App\Models\EmbuScore;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\ChampionResultService;
 use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\EventContext;
@@ -18,8 +19,12 @@ use Inertia\Response;
 
 class EmbuResultController extends Controller
 {
-    public function index(Request $request, EventContext $eventContext, EmbuResultService $results): Response
-    {
+    public function index(
+        Request $request,
+        EventContext $eventContext,
+        EmbuResultService $results,
+        ChampionResultService $championsService,
+    ): Response {
         $event = $eventContext->eventFor($request);
         $categories = $event->matchCategories()
             ->where('type', 'embu')
@@ -42,21 +47,10 @@ class EmbuResultController extends Controller
             ? $results->preliminaryRankings($category)->map(fn ($rows) => $rows->values())->all()
             : [];
         $finalRankings = $category ? $results->finalRankings($category) : collect();
-        $champions = $category
-            ? $event->tournamentResults()
-                ->where(function ($query) use ($category): void {
-                    $query->where('event_match_category_id', $category->id)
-                        ->orWhere(function ($legacy) use ($category): void {
-                            $legacy->whereNull('event_match_category_id')
-                                ->where('match_category', $category->name);
-                        });
-                })
-                ->orderBy('rank')->get()->map(fn ($result): array => [
-                    'id' => $result->id,
-                    'rank' => $result->rank->value,
-                    'rank_label' => $result->rank->label(),
-                    'contingent_name' => $result->contingent_name,
-                ])->values()
+
+        $champData = $category ? $championsService->categoryData($event, $category) : null;
+        $champions = $champData
+            ? $champData['current_champions']->values()
             : collect();
 
         return Inertia::render('Admin/Panitera/EmbuResult', [
@@ -79,6 +73,9 @@ class EmbuResultController extends Controller
             'quotaPerPool' => $category ? $results->quotaPerPool($category) : null,
             'hasTopFourTie' => $category ? $results->hasTopFourTie($finalRankings) : false,
             'champions' => $champions,
+            'generationReady' => (bool) ($champData['generation']['ready'] ?? false),
+            'generationMessage' => (string) ($champData['generation']['message'] ?? ''),
+            'generationCandidates' => collect($champData['generation']['champions'] ?? [])->values(),
             'canManage' => $eventContext->canManage($request, $event),
             'canInputScore' => $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false,
             'canOverrideScore' => $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false,

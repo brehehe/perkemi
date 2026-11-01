@@ -11,7 +11,7 @@ export default function PaniteraHeader({ title, description, icon = 'fa-clipboar
                 <div className="max-w-3xl">
                     <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.12em] text-[#e1b94e] sm:text-xs sm:tracking-[.14em]">
                         <i className={`fa-solid ${icon}`} aria-hidden="true" />
-                        Sistem Panitera per Event
+                        Koordinator Panitera & Court · Sistem Panitera
                     </p>
                     <h1 className="mt-2 text-2xl font-bold leading-tight tracking-tight md:text-3xl">{title}</h1>
                     <p className="mt-2.5 text-sm leading-relaxed text-white/70">{description}</p>

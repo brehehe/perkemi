@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\Panitera\StoreRandoriScoreRequest;
 use App\Http\Requests\Admin\Panitera\UpdateRandoriScoreDraftRequest;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\ChampionResultService;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\RandoriResultService;
@@ -22,8 +23,11 @@ use Inertia\Response;
 
 class RandoriResultController extends Controller
 {
-    public function index(Request $request, EventContext $eventContext): Response
-    {
+    public function index(
+        Request $request,
+        EventContext $eventContext,
+        ChampionResultService $championsService,
+    ): Response {
         $event = $eventContext->eventFor($request);
         $categories = $event->matchCategories()
             ->where('type', 'randori')
@@ -39,7 +43,12 @@ class RandoriResultController extends Controller
         $matches = $category
             ? TournamentMatch::query()
                 ->where('event_match_category_id', $category->id)
-                ->with(['randoriScore', 'court:id,name'])
+                ->with([
+                    'randoriScore',
+                    'court:id,name',
+                    'redEntry.athlete.contingent:id,name',
+                    'blueEntry.athlete.contingent:id,name',
+                ])
                 ->orderBy('match_sequence')
                 ->get()
                 ->map(fn (TournamentMatch $match): array => [
@@ -52,6 +61,11 @@ class RandoriResultController extends Controller
                     'next_match_id' => $match->next_match_id,
                     'aka_label' => $match->red_label,
                     'shiro_label' => $match->blue_label,
+                    'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                    'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                    'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                    'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                    'metadata' => $match->metadata,
                     'court' => $match->court?->name,
                     'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
                     'status' => $match->status,
@@ -73,6 +87,19 @@ class RandoriResultController extends Controller
                 ])->values()
             : collect();
 
+        $championship = null;
+        if ($category) {
+            $champData = $championsService->categoryData($event, $category);
+            $championship = [
+                'required_count' => $champData['required_champion_count'],
+                'is_confirmed' => $champData['current_champions']->isNotEmpty(),
+                'current_champions' => $champData['current_champions']->values(),
+                'generation_ready' => (bool) ($champData['generation']['ready'] ?? false),
+                'generation_message' => (string) ($champData['generation']['message'] ?? ''),
+                'candidates' => collect($champData['generation']['champions'] ?? [])->values(),
+            ];
+        }
+
         return Inertia::render('Admin/Panitera/RandoriResult', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
             'events' => $eventContext->accessibleEvents($request),
@@ -93,6 +120,7 @@ class RandoriResultController extends Controller
                 'drawing_status' => $category->tournamentDrawing?->status,
             ] : null,
             'matches' => $matches,
+            'championship' => $championship,
             'canManage' => $eventContext->canManage($request, $event),
         ]);
     }

@@ -29,6 +29,15 @@ function getStatusBadge(match) {
     return <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500 border border-slate-200">Menunggu</span>;
 }
 
+const isPlaceholder = (label) => {
+    if (!label) return true;
+    const trimmed = label.trim();
+    const upper = trimmed.toUpperCase();
+    if (upper === 'BYE' || upper === '-' || upper === '—') return true;
+    const lower = trimmed.toLowerCase();
+    return lower.startsWith('pemenang') || lower.startsWith('kalah') || lower.startsWith('menunggu') || lower.startsWith('sudut');
+};
+
 export default function RandoriResult({
     activeEvent,
     events = [],
@@ -37,13 +46,26 @@ export default function RandoriResult({
     selectedCategory,
     categoryDetails,
     matches = [],
+    championship = null,
     canManage = false,
 }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [viewMode, setViewMode] = useState('bracket'); // 'bracket' | 'list'
+    const [generating, setGenerating] = useState(false);
 
     const category = categoryDetails || categories.find((item) => item.id === selectedCategory);
     const isDoubleElim = category?.format === 'double_elimination';
+
+    const handleGenerateChampions = () => {
+        if (!selectedCategory) return;
+        setGenerating(true);
+        router.post(`/admin/panitera/scoring/champions/${selectedCategory}/generate`, {
+            event_id: activeEvent.id,
+        }, {
+            preserveScroll: true,
+            onFinish: () => setGenerating(false),
+        });
+    };
 
     // Group matches by round for bracket view
     const matchesByRound = useMemo(() => {
@@ -140,6 +162,144 @@ export default function RandoriResult({
                     )}
                 </section>
 
+                {/* Banner Juara Resmi jika sudah dikonfirmasi */}
+                {selectedCategory && championship?.is_confirmed && championship?.current_champions?.length > 0 && (
+                    <section className="rounded-2xl border border-amber-300/80 bg-gradient-to-r from-amber-50 via-yellow-50/50 to-white p-4 sm:p-5 shadow-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200/70 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-slate-950 font-black shadow-xs">
+                                    <i className="fa-solid fa-trophy" />
+                                </span>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                                        Juara Resmi Telah Ditetapkan
+                                        <Badge variant="green" size="xs">Resmi</Badge>
+                                    </h3>
+                                    <p className="text-xs text-slate-600">
+                                        Hasil medali dan juara telah tercatat secara sah untuk nomor {category?.name}.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Link
+                                    href={`/admin/panitera/scoring/champions?category=${selectedCategory}&event_id=${encodeURIComponent(activeEvent.id)}`}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-50 transition shadow-2xs"
+                                >
+                                    <i className="fa-solid fa-medal text-amber-600" /> Kelola di Menu Juara
+                                </Link>
+                                {canManage && championship?.generation_ready && (
+                                    <Button
+                                        size="xs"
+                                        variant="outline"
+                                        onClick={handleGenerateChampions}
+                                        disabled={generating}
+                                        className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                                        iconLeft={<i className="fa-solid fa-arrows-rotate" />}
+                                    >
+                                        {generating ? 'Memproses...' : 'Generate Ulang Juara'}
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            {championship.current_champions.map((champ) => {
+                                const isGold = Number(champ.rank) === 1;
+                                const isSilver = Number(champ.rank) === 2;
+
+                                return (
+                                    <div
+                                        key={champ.id || champ.rank}
+                                        className={`rounded-xl border p-3.5 shadow-2xs transition-all ${
+                                            isGold
+                                                ? 'border-amber-300 bg-amber-50/70'
+                                                : isSilver
+                                                ? 'border-slate-300 bg-slate-50/70'
+                                                : 'border-orange-200 bg-orange-50/50'
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                                            <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-black uppercase ${
+                                                isGold
+                                                    ? 'bg-amber-500 text-slate-950'
+                                                    : isSilver
+                                                    ? 'bg-slate-300 text-slate-800'
+                                                    : 'bg-amber-700 text-white'
+                                            }`}>
+                                                <i className="fa-solid fa-medal text-[10px]" />
+                                                {champ.rank_label || `Juara ${champ.rank}`}
+                                            </span>
+                                            <span className="text-xs font-black text-slate-400">#{champ.rank}</span>
+                                        </div>
+                                        <p className="font-bold text-slate-900 text-sm leading-snug">{champ.label}</p>
+                                        <p className="mt-1 text-xs text-slate-600 flex items-center gap-1">
+                                            <i className="fa-solid fa-shield-halved text-[10px] text-slate-400" />
+                                            {champ.contingent_name || '—'}
+                                        </p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
+
+                {/* Banner Siap Generate Juara jika belum dikonfirmasi */}
+                {selectedCategory && !championship?.is_confirmed && championship?.generation_ready && (
+                    <section className="rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/10 via-amber-400/20 to-amber-500/10 p-4 sm:p-5 shadow-sm space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="flex items-start sm:items-center gap-3">
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-slate-950 font-black text-lg shadow-sm">
+                                    <i className="fa-solid fa-crown" />
+                                </span>
+                                <div>
+                                    <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
+                                        Seluruh Pertandingan Selesai — Siap Generate Hasil Juara!
+                                    </h3>
+                                    <p className="text-xs text-slate-700 mt-0.5">
+                                        {championship.generation_message || 'Seluruh partai telah tuntas. Klik tombol di samping untuk otomatis menetapkan susunan juara.'}
+                                    </p>
+                                </div>
+                            </div>
+                            {canManage && (
+                                <Button
+                                    variant="gold"
+                                    size="md"
+                                    onClick={handleGenerateChampions}
+                                    disabled={generating}
+                                    className="shrink-0 shadow-sm font-black"
+                                    iconLeft={<i className="fa-solid fa-crown" />}
+                                >
+                                    {generating ? 'Men-generate Juara...' : 'Generate Hasil Juara'}
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Preview Calon Juara */}
+                        {championship.candidates?.length > 0 && (
+                            <div className="mt-2 pt-3 border-t border-amber-300/60">
+                                <p className="text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-2">
+                                    Kandidat Juara Berdasarkan Bagan:
+                                </p>
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                    {championship.candidates.map((cand) => (
+                                        <div key={cand.rank} className="rounded-xl border border-amber-200/80 bg-white/90 p-2.5 text-xs shadow-2xs">
+                                            <div className="flex items-center justify-between font-bold text-amber-900">
+                                                <span>{cand.rank === 1 ? '🥇 Juara 1 (Emas)' : cand.rank === 2 ? '🥈 Juara 2 (Perak)' : cand.rank === 3 ? '🥉 Juara 3 (Perunggu)' : '🥉 Juara 3 Bersama'}</span>
+                                            </div>
+                                            <p className="mt-1 font-semibold text-slate-900 truncate">{cand.label}</p>
+                                            {cand.contingent_name && (
+                                                <p className="text-[11px] text-slate-500 truncate">{cand.contingent_name}</p>
+                                            )}
+                                            {cand.basis && (
+                                                <p className="mt-0.5 text-[10px] text-amber-700 italic">{cand.basis}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </section>
+                )}
+
                 {/* Main Content Area */}
                 {selectedCategory && matches.length > 0 ? (
                     viewMode === 'bracket' ? (
@@ -186,6 +346,9 @@ export default function RandoriResult({
                                                                 <span className="text-[10px] text-rose-700 font-bold uppercase">Sudut Merah</span>
                                                             </div>
                                                             <p className="mt-1 break-words text-xs sm:text-sm font-semibold">{match.aka_label || '—'}</p>
+                                                            {match.aka_contingent && !isPlaceholder(match.aka_label) && (
+                                                                <p className="mt-0.5 text-[11px] font-medium text-rose-800/80 leading-tight">{match.aka_contingent}</p>
+                                                            )}
                                                             {match.score && <p className="mt-2 text-xl font-black text-rose-900">{match.score.aka_total}</p>}
                                                         </div>
                                                         <div className="flex items-center border-x border-[#e5ded4] px-2 text-[10px] font-black text-[#9b9188] sm:px-3 sm:text-xs bg-[#faf8f5]">
@@ -197,6 +360,9 @@ export default function RandoriResult({
                                                                 <span className="rounded px-1.5 py-0.5 text-[9px] font-black bg-slate-700 text-white">SHIRO</span>
                                                             </div>
                                                             <p className="mt-1 break-words text-xs sm:text-sm font-semibold">{match.shiro_label || '—'}</p>
+                                                            {match.shiro_contingent && !isPlaceholder(match.shiro_label) && (
+                                                                <p className="mt-0.5 text-[11px] font-medium text-slate-600 leading-tight">{match.shiro_contingent}</p>
+                                                            )}
                                                             {match.score && <p className="mt-2 text-xl font-black text-slate-900">{match.score.shiro_total}</p>}
                                                         </div>
                                                     </div>

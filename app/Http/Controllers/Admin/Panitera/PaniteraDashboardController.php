@@ -7,6 +7,7 @@ use App\Models\EmbuScore;
 use App\Models\EventCourtAssignment;
 use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\ChampionResultService;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\TournamentDrawingGenerator;
@@ -102,23 +103,36 @@ class PaniteraDashboardController extends Controller
         $requestedViewMode = $request->string('view_mode')->toString();
         $viewMode = in_array($requestedViewMode, ['timeline', 'categories'], true) ? $requestedViewMode : 'timeline';
 
-        $categoriesData = $categoryOptions->map(function ($cat) use ($event, $assignedCourtIds, $selectedCourtId): array {
-            $catMatchesQuery = TournamentMatch::query()
-                ->whereBelongsTo($event)
-                ->where('event_match_category_id', $cat->id)
-                ->where('is_bye', false)
-                ->when($assignedCourtIds !== null, fn (Builder $q) => $q->whereIn('event_court_id', $assignedCourtIds))
-                ->when($selectedCourtId !== '', fn (Builder $q) => $q->where('event_court_id', $selectedCourtId));
+        $allCategoryMatches = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->where('is_bye', false)
+            ->when($assignedCourtIds !== null, fn (Builder $q) => $q->whereIn('event_court_id', $assignedCourtIds))
+            ->when($selectedCourtId !== '', fn (Builder $q) => $q->where('event_court_id', $selectedCourtId))
+            ->with('court:id,name,order')
+            ->get(['id', 'event_match_category_id', 'event_court_id', 'phase', 'round_label', 'status', 'metadata', 'scheduled_start_at', 'match_sequence'])
+            ->groupBy('event_match_category_id');
 
-            $matchesList = (clone $catMatchesQuery)->get(['id', 'phase', 'round_label', 'status', 'metadata']);
-            $total = $matchesList->count();
-            $completed = $matchesList->where('status', 'completed')->count();
+        $categoriesData = $categoryOptions->map(function ($cat) use ($allCategoryMatches): array {
+            $catMatches = $allCategoryMatches->get($cat->id, collect());
+            $total = $catMatches->count();
+            $completed = $catMatches->where('status', 'completed')->count();
 
-            $prelimMatches = $matchesList->filter(fn ($m) => $m->phase !== 'final');
-            $finalMatches = $matchesList->filter(fn ($m) => $m->phase === 'final');
+            $prelimMatches = $catMatches->filter(fn ($m) => $m->phase !== 'final');
+            $finalMatches = $catMatches->filter(fn ($m) => $m->phase === 'final');
 
             $hasPlaceholders = $finalMatches->contains(fn ($m) => (bool) ($m->metadata['placeholder'] ?? false));
             $prelimAllDone = $prelimMatches->isNotEmpty() && $prelimMatches->every(fn ($m) => $m->status === 'completed');
+
+            $scheduledMatches = $catMatches->filter(fn ($m) => $m->scheduled_start_at !== null)
+                ->sortBy(fn ($m): array => [
+                    $m->scheduled_start_at?->timestamp ?? PHP_INT_MAX,
+                    $m->match_sequence,
+                ]);
+
+            $earliestScheduledMatch = $scheduledMatches->first();
+            $firstMatch = $earliestScheduledMatch ?? $catMatches->sortBy('match_sequence')->first();
+
+            $hasSchedule = $earliestScheduledMatch !== null && $earliestScheduledMatch->scheduled_start_at !== null;
 
             return [
                 'id' => $cat->id,
@@ -139,10 +153,46 @@ class PaniteraDashboardController extends Controller
                 'has_placeholders' => $hasPlaceholders,
                 'format' => $cat->tournamentDrawing?->bracket_type,
                 'can_advance_finalists' => $cat->type === 'embu' && $cat->tournamentDrawing?->bracket_type !== 'embu_direct_final' && $prelimMatches->isNotEmpty() && $finalMatches->isNotEmpty(),
+                'has_schedule' => $hasSchedule,
+                'earliest_scheduled_timestamp' => $hasSchedule ? $earliestScheduledMatch->scheduled_start_at->timestamp : null,
+                'earliest_scheduled_at' => $hasSchedule ? $earliestScheduledMatch->scheduled_start_at->translatedFormat('d M, H:i') : null,
+                'earliest_scheduled_time' => $hasSchedule ? $earliestScheduledMatch->scheduled_start_at->format('H:i') : null,
+                'earliest_court_name' => $firstMatch?->court?->name,
+                'earliest_match_sequence' => $firstMatch?->match_sequence,
             ];
         })
             ->filter(fn ($cat) => $cat['total_matches'] > 0 || $selectedCourtId === '')
             ->values();
+
+        if ($sortBy === 'schedule') {
+            $categoriesData = $categoriesData->sort(function (array $a, array $b): int {
+                $aHas = $a['has_schedule'] ? 0 : 1;
+                $bHas = $b['has_schedule'] ? 0 : 1;
+                if ($aHas !== $bHas) {
+                    return $aHas <=> $bHas;
+                }
+
+                if ($a['has_schedule'] && $b['has_schedule']) {
+                    if ($a['earliest_scheduled_timestamp'] !== $b['earliest_scheduled_timestamp']) {
+                        return $a['earliest_scheduled_timestamp'] <=> $b['earliest_scheduled_timestamp'];
+                    }
+                    if (($a['earliest_match_sequence'] ?? 0) !== ($b['earliest_match_sequence'] ?? 0)) {
+                        return ($a['earliest_match_sequence'] ?? 0) <=> ($b['earliest_match_sequence'] ?? 0);
+                    }
+                }
+
+                if ($a['order'] !== $b['order']) {
+                    return ($a['order'] ?? PHP_INT_MAX) <=> ($b['order'] ?? PHP_INT_MAX);
+                }
+
+                return strcmp($a['name'], $b['name']);
+            })->values();
+        } else {
+            $categoriesData = $categoriesData->sortBy(fn (array $c): array => [
+                $c['order'] ?? PHP_INT_MAX,
+                $c['name'],
+            ])->values();
+        }
 
         $scopedMatches = fn (): Builder => TournamentMatch::query()
             ->whereBelongsTo($event)
@@ -155,6 +205,8 @@ class PaniteraDashboardController extends Controller
                 'court:id,name',
                 'embuScores',
                 'randoriScore',
+                'redEntry.athlete.contingent:id,name',
+                'blueEntry.athlete.contingent:id,name',
             ])
             ->when($selectedCourtId !== '', fn (Builder $query) => $query->where('event_court_id', $selectedCourtId))
             ->when($selectedCategoryId !== '', fn (Builder $query) => $query->where('event_match_category_id', $selectedCategoryId))
@@ -212,39 +264,62 @@ class PaniteraDashboardController extends Controller
         );
 
         $randoriMatches = [];
+        $championship = null;
         if ($selectedCategoryId !== '') {
             $selectedCategoryModel = $categoryOptions->firstWhere('id', $selectedCategoryId);
-            if ($selectedCategoryModel?->type === 'randori') {
-                app(TournamentDrawingGenerator::class)->syncCategoryByes($selectedCategoryModel);
-                $randoriMatches = TournamentMatch::query()
-                    ->where('event_match_category_id', $selectedCategoryId)
-                    ->with(['randoriScore', 'court:id,name'])
-                    ->orderBy('match_sequence')
-                    ->get()
-                    ->map(fn (TournamentMatch $match): array => [
-                        'id' => $match->id,
-                        'phase' => $match->phase,
-                        'round_label' => $match->round_label,
-                        'sequence' => $match->match_sequence,
-                        'court_id' => $match->event_court_id,
-                        'bracket_position' => (int) ($match->bracket_position ?? 1),
-                        'next_match_id' => $match->next_match_id,
-                        'aka_label' => $match->red_label,
-                        'shiro_label' => $match->blue_label,
-                        'court' => $match->court?->name,
-                        'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
-                        'status' => $match->status,
-                        'is_bye' => (bool) $match->is_bye,
-                        'is_ready' => ! ($match->metadata['placeholder'] ?? false),
-                        'score' => $match->randoriScore ? [
-                            'aka_total' => (int) $match->randoriScore->aka_total,
-                            'shiro_total' => (int) $match->randoriScore->shiro_total,
-                            'winner_corner' => $match->randoriScore->winner_corner,
-                            'is_locked' => $match->randoriScore->locked_at !== null,
-                            'locked_at' => $match->randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
-                            'notes' => $match->randoriScore->notes,
-                        ] : null,
-                    ])->values()->all();
+            if ($selectedCategoryModel) {
+                if ($selectedCategoryModel->type === 'randori') {
+                    app(TournamentDrawingGenerator::class)->syncCategoryByes($selectedCategoryModel);
+                    $randoriMatches = TournamentMatch::query()
+                        ->where('event_match_category_id', $selectedCategoryId)
+                        ->with([
+                            'randoriScore',
+                            'court:id,name',
+                            'redEntry.athlete.contingent:id,name',
+                            'blueEntry.athlete.contingent:id,name',
+                        ])
+                        ->orderBy('match_sequence')
+                        ->get()
+                        ->map(fn (TournamentMatch $match): array => [
+                            'id' => $match->id,
+                            'phase' => $match->phase,
+                            'round_label' => $match->round_label,
+                            'sequence' => $match->match_sequence,
+                            'court_id' => $match->event_court_id,
+                            'bracket_position' => (int) ($match->bracket_position ?? 1),
+                            'next_match_id' => $match->next_match_id,
+                            'aka_label' => $match->red_label,
+                            'shiro_label' => $match->blue_label,
+                            'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                            'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                            'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                            'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                            'metadata' => $match->metadata,
+                            'court' => $match->court?->name,
+                            'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                            'status' => $match->status,
+                            'is_bye' => (bool) $match->is_bye,
+                            'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                            'score' => $match->randoriScore ? [
+                                'aka_total' => (int) $match->randoriScore->aka_total,
+                                'shiro_total' => (int) $match->randoriScore->shiro_total,
+                                'winner_corner' => $match->randoriScore->winner_corner,
+                                'is_locked' => $match->randoriScore->locked_at !== null,
+                                'locked_at' => $match->randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
+                                'notes' => $match->randoriScore->notes,
+                            ] : null,
+                        ])->values()->all();
+                }
+
+                $champData = app(ChampionResultService::class)->categoryData($event, $selectedCategoryModel);
+                $championship = [
+                    'required_count' => $champData['required_champion_count'],
+                    'is_confirmed' => $champData['current_champions']->isNotEmpty(),
+                    'current_champions' => $champData['current_champions']->values(),
+                    'generation_ready' => (bool) ($champData['generation']['ready'] ?? false),
+                    'generation_message' => (string) ($champData['generation']['message'] ?? ''),
+                    'candidates' => collect($champData['generation']['champions'] ?? [])->values(),
+                ];
             }
         }
 
@@ -266,6 +341,7 @@ class PaniteraDashboardController extends Controller
             'categories' => $categoriesData,
             'matches' => $matches,
             'randoriMatches' => $randoriMatches,
+            'championship' => $championship,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -342,6 +418,13 @@ class PaniteraDashboardController extends Controller
             'participant' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
             'red_label' => $match->red_label,
             'blue_label' => $match->blue_label,
+            'aka_label' => $match->red_label,
+            'shiro_label' => $match->blue_label,
+            'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+            'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+            'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+            'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+            'contingent_name' => $match->metadata['contingent_name'] ?? $match->metadata['red']['contingent_name'] ?? null,
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
             'status' => $match->status,
             'status_label' => match ($match->status) {

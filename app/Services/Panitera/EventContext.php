@@ -77,6 +77,10 @@ class EventContext
             return true;
         }
 
+        if ($user?->hasAnyRole(['Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase'])) {
+            return true;
+        }
+
         return (bool) (in_array($event->accessRoleFor($user), [
             Event::AccessRoleResponsible,
             Event::AccessRoleAdmin,
@@ -120,6 +124,7 @@ class EventContext
             || $event->users()->whereKey($user->id)->exists()
             || $event->clerks()->whereRaw('LOWER(clerks.email) = ?', [$email])->exists()
             || $event->fieldCoordinators()->whereRaw('LOWER(field_coordinators.email) = ?', [$email])->exists()
+            || ($user->hasAnyRole(['Koordinator Lapangan', 'Court', 'Arbitrase', 'Pertandingan']) && $event->is_active)
             || ($user->hasRole('Wasit') && (
                 $event->referees()->where(function (Builder $refereeQuery) use ($user, $email, $refereeId): void {
                     $refereeQuery->where('referees.user_id', $user->id)

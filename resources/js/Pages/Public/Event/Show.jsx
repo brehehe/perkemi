@@ -83,14 +83,27 @@ function PublicMatchCard({ match }) {
         match.metadata?.notes?.includes('dilewati') ||
         (match.is_bye && (match.round_label?.includes('GF2') || match.round_label?.includes('Grand Final Ulang')));
 
-    const isPlaceholderAka = !match.aka || match.aka.toLowerCase().startsWith('pemenang') || match.aka.toLowerCase().startsWith('kalah') || match.aka.toLowerCase().includes('menunggu');
-    const isPlaceholderShiro = !match.shiro || match.shiro.toLowerCase().startsWith('pemenang') || match.shiro.toLowerCase().startsWith('kalah') || match.shiro.toLowerCase().includes('menunggu');
+    const isPlaceholderAka = !match.aka || match.aka.toLowerCase().startsWith('pemenang') || match.aka.toLowerCase().startsWith('kalah') || match.aka.toLowerCase().includes('menunggu') || match.aka.trim().toUpperCase() === 'BYE';
+    const isPlaceholderShiro = !match.shiro || match.shiro.toLowerCase().startsWith('pemenang') || match.shiro.toLowerCase().startsWith('kalah') || match.shiro.toLowerCase().includes('menunggu') || match.shiro.trim().toUpperCase() === 'BYE';
+
+    const resolveContingent = (contingentDirect, metaCorner) => {
+        if (contingentDirect && typeof contingentDirect === 'string') return contingentDirect;
+        if (contingentDirect?.name) return contingentDirect.name;
+        if (metaCorner?.contingent_name) return metaCorner.contingent_name;
+        if (metaCorner?.city) return metaCorner.city;
+        if (metaCorner?.contingent && typeof metaCorner.contingent === 'string') return metaCorner.contingent;
+        if (metaCorner?.contingent?.name) return metaCorner.contingent.name;
+        return '';
+    };
+
+    const akaContingent = resolveContingent(match.aka_contingent, match.metadata?.red);
+    const shiroContingent = resolveContingent(match.shiro_contingent, match.metadata?.blue);
 
     return (
         <div
             className={`event-bracket-match ${
                 match.is_bye ? 'event-bracket-bye' : ''
-            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 w-68 shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
+            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 w-72 shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
         >
             {/* Header: Partai & Court */}
             <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700/80 !bg-stone-100 dark:!bg-stone-800/90 px-3 py-1.5 text-[10px] font-bold !text-stone-800 dark:!text-stone-200">
@@ -115,25 +128,34 @@ function PublicMatchCard({ match }) {
                         : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
                 }`}
             >
-                <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                    <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2">
+                    <span className="shrink-0 self-start mt-0.5 rounded bg-rose-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
                         AKA
                     </span>
-                    <span
-                        className={`truncate text-xs ${
-                            isAkaWinner
-                                ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
-                                : isPlaceholderAka
-                                ? 'font-medium !text-stone-600 dark:!text-stone-300'
-                                : 'font-semibold !text-stone-900 dark:!text-stone-100'
-                        }`}
-                        title={match.aka}
-                    >
-                        {match.aka || 'Menunggu peserta'}
-                    </span>
-                    {isAkaWinner && (
-                        <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
-                    )}
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                            <span
+                                className={`truncate text-xs ${
+                                    isAkaWinner
+                                        ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
+                                        : isPlaceholderAka
+                                        ? 'font-medium !text-stone-600 dark:!text-stone-300'
+                                        : 'font-semibold !text-stone-900 dark:!text-stone-100'
+                                }`}
+                                title={match.aka}
+                            >
+                                {match.aka || 'Menunggu peserta'}
+                            </span>
+                            {isAkaWinner && (
+                                <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
+                            )}
+                        </div>
+                        {akaContingent && !isPlaceholderAka && (
+                            <p className="truncate text-[10.5px] font-normal !text-stone-500 dark:!text-stone-400 leading-tight mt-0.5" title={akaContingent}>
+                                {akaContingent}
+                            </p>
+                        )}
+                    </div>
                 </div>
                 <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
                     {akaAdvancesByBye ? (
@@ -154,25 +176,34 @@ function PublicMatchCard({ match }) {
                         : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
                 }`}
             >
-                <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                    <span className="shrink-0 rounded bg-slate-700 dark:bg-slate-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2">
+                    <span className="shrink-0 self-start mt-0.5 rounded bg-slate-700 dark:bg-slate-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
                         SHIRO
                     </span>
-                    <span
-                        className={`truncate text-xs ${
-                            isShiroWinner
-                                ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
-                                : isPlaceholderShiro
-                                ? 'font-medium !text-stone-600 dark:!text-stone-300'
-                                : 'font-semibold !text-stone-900 dark:!text-stone-100'
-                        }`}
-                        title={match.shiro}
-                    >
-                        {match.shiro || 'Menunggu peserta'}
-                    </span>
-                    {isShiroWinner && (
-                        <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
-                    )}
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                            <span
+                                className={`truncate text-xs ${
+                                    isShiroWinner
+                                        ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
+                                        : isPlaceholderShiro
+                                        ? 'font-medium !text-stone-600 dark:!text-stone-300'
+                                        : 'font-semibold !text-stone-900 dark:!text-stone-100'
+                                }`}
+                                title={match.shiro}
+                            >
+                                {match.shiro || 'Menunggu peserta'}
+                            </span>
+                            {isShiroWinner && (
+                                <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
+                            )}
+                        </div>
+                        {shiroContingent && !isPlaceholderShiro && (
+                            <p className="truncate text-[10.5px] font-normal !text-stone-500 dark:!text-stone-400 leading-tight mt-0.5" title={shiroContingent}>
+                                {shiroContingent}
+                            </p>
+                        )}
+                    </div>
                 </div>
                 <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
                     {shiroAdvancesByBye ? (

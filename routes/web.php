@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\Arbitration\ArbitrationController;
 use App\Http\Controllers\Admin\Arbitration\ArbitrationEvaluationController;
 use App\Http\Controllers\Admin\Arbitration\ArbitrationScorePrintController;
+use App\Http\Controllers\Admin\Arbitration\CourtCoordinatorController;
 use App\Http\Controllers\Admin\Arbitration\EmbuJudgeScoreController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DocumentationController;
@@ -61,6 +62,7 @@ use App\Http\Controllers\WelcomeController;
 use App\Mail\ContingentAccountCreatedMail;
 use App\Models\Contingent;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
@@ -297,6 +299,9 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::post('wasit/courts/{eventCourt}/rotate', [EventRefereeController::class, 'rotateCourtPanel'])->name('wasit.courts.panel.rotate');
     Route::put('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'updateCourtPanel'])->name('wasit.courts.panel.update');
     Route::delete('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'resetCourtPanel'])->name('wasit.courts.panel.reset');
+    Route::post('wasit/courts/{eventCourt}/coordinator', [EventRefereeController::class, 'updateCourtCoordinator'])->name('wasit.courts.coordinator.update');
+    Route::delete('wasit/courts/{eventCourt}/coordinator', [EventRefereeController::class, 'resetCourtCoordinator'])->name('wasit.courts.coordinator.reset');
+    Route::post('wasit/courts/generate-coordinators', [EventRefereeController::class, 'generateCourtCoordinators'])->name('wasit.courts.coordinators.generate');
     Route::put('wasit/{referee}/attendance', [EventRefereeController::class, 'updateAttendance'])->name('wasit.attendance.update');
     Route::post('wasit/{referee}/account', [EventRefereeController::class, 'upsertAccount'])->name('wasit.account.store');
     Route::get('merge', [TournamentController::class, 'merge'])->name('merge');
@@ -329,6 +334,24 @@ Route::prefix('admin/arbitrase')->middleware(['auth', 'event.tenant'])->name('ad
     Route::put('scoring/embu/{tournamentMatch}', [EmbuJudgeScoreController::class, 'update'])->name('scoring.embu.update');
     Route::get('evaluasi', [ArbitrationEvaluationController::class, 'index'])->name('evaluation');
     Route::get('evaluasi/export', [ArbitrationEvaluationController::class, 'export'])->name('evaluation.export');
+
+    // Backward-compatibility aliases for Court Coordinator
+    Route::get('court-coordinator', fn (Request $request) => redirect()->route('admin.koordinator-court.index', $request->query()))->name('court-coordinator.index');
+    Route::post('court-coordinator/courts/{eventCourt}/generate', [CourtCoordinatorController::class, 'generatePanel'])->name('court-coordinator.generate');
+    Route::post('court-coordinator/courts/{eventCourt}/rotate', [CourtCoordinatorController::class, 'rotatePanel'])->name('court-coordinator.rotate');
+    Route::post('court-coordinator/courts/{eventCourt}/swap', [CourtCoordinatorController::class, 'swapReferees'])->name('court-coordinator.swap');
+    Route::post('court-coordinator/courts/{eventCourt}/reset-duty', [CourtCoordinatorController::class, 'resetDutyCount'])->name('court-coordinator.duty.reset');
+    Route::delete('court-coordinator/courts/{eventCourt}/panel', [CourtCoordinatorController::class, 'resetPanel'])->name('court-coordinator.panel.reset');
+});
+
+// Koordinator Court (Panel Operasional Wasit Court)
+Route::prefix('admin/koordinator-court')->middleware(['auth', 'event.tenant'])->name('admin.koordinator-court.')->group(function () {
+    Route::get('/', [CourtCoordinatorController::class, 'index'])->name('index');
+    Route::post('courts/{eventCourt}/generate', [CourtCoordinatorController::class, 'generatePanel'])->name('generate');
+    Route::post('courts/{eventCourt}/rotate', [CourtCoordinatorController::class, 'rotatePanel'])->name('rotate');
+    Route::post('courts/{eventCourt}/swap', [CourtCoordinatorController::class, 'swapReferees'])->name('swap');
+    Route::post('courts/{eventCourt}/reset-duty', [CourtCoordinatorController::class, 'resetDutyCount'])->name('duty.reset');
+    Route::delete('courts/{eventCourt}/panel', [CourtCoordinatorController::class, 'resetPanel'])->name('panel.reset');
 });
 
 // Panitera

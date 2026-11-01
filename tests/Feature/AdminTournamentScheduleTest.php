@@ -484,3 +484,58 @@ test('admin can unschedule a match back to unscheduled pool', function () {
         ->and($freshMatch->event_court_id)->toBeNull()
         ->and($freshMatch->rundown_id)->toBeNull();
 });
+
+test('on match day, admin can reschedule upcoming matches even when drawing is published without affecting scores', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'hari-h-reschedule');
+
+    // Simulate Hari-H: drawing is published
+    $fixture['drawing']->update(['status' => 'published']);
+
+    $newCourt = EventCourt::create([
+        'event_id' => $fixture['event']->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    // Reschedule to Court 2 at 08:00
+    $this->actingAs($user)
+        ->put('/admin/pertandingan/jadwal/matches/'.$fixture['match']->id, [
+            'event_id' => $fixture['event']->id,
+            'event_court_id' => $newCourt->id,
+            'rundown_id' => $fixture['session']->id,
+            'start_time' => '08:00',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success', 'Partai berhasil dipindahkan. Partai lainnya tidak berubah.');
+
+    expect($fixture['match']->fresh()->event_court_id)->toBe($newCourt->id)
+        ->and($fixture['match']->fresh()->scheduled_start_at->format('H:i'))->toBe('08:00');
+});
+
+test('completed matches cannot be rescheduled to preserve match score integrity', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'completed-match-locked');
+
+    $fixture['match']->update(['status' => 'completed']);
+
+    $newCourt = EventCourt::create([
+        'event_id' => $fixture['event']->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->put('/admin/pertandingan/jadwal/matches/'.$fixture['match']->id, [
+            'event_id' => $fixture['event']->id,
+            'event_court_id' => $newCourt->id,
+            'rundown_id' => $fixture['session']->id,
+            'start_time' => '08:00',
+        ])
+        ->assertSessionHasErrors(['schedule']);
+
+    expect($fixture['match']->fresh()->event_court_id)->toBe($fixture['court']->id);
+});

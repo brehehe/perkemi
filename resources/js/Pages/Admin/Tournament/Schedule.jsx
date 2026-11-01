@@ -49,25 +49,35 @@ function EmptyState({ icon, title, description }) {
 
 function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onUnschedule, onDragStart, onDragEnd }) {
     const isEmbu = match.category_type === 'embu';
+    const isCompleted = match.status === 'completed';
+    const canMoveThisMatch = canManage && !isProcessing && !isCompleted;
 
     return (
         <article
-            draggable={canManage && !isProcessing}
-            onDragStart={(event) => onDragStart(event, match)}
+            draggable={canMoveThisMatch}
+            onDragStart={(event) => canMoveThisMatch && onDragStart(event, match)}
             onDragEnd={onDragEnd}
             className={`group rounded-xl border p-3 shadow-sm transition ${
                 isSelected
                     ? 'border-[#c0392b] bg-[#fff5f2] ring-2 ring-[#c0392b]/15'
-                    : isEmbu
-                        ? 'border-blue-200 bg-blue-50/70 hover:border-blue-300'
-                        : 'border-rose-200 bg-rose-50/70 hover:border-rose-300'
-            } ${canManage ? 'cursor-grab active:cursor-grabbing' : ''} ${isProcessing ? 'opacity-60' : ''}`}
+                    : isCompleted
+                        ? 'border-emerald-300 bg-emerald-50/60 shadow-2xs'
+                        : isEmbu
+                            ? 'border-blue-200 bg-blue-50/70 hover:border-blue-300'
+                            : 'border-rose-200 bg-rose-50/70 hover:border-rose-300'
+            } ${canMoveThisMatch ? 'cursor-grab active:cursor-grabbing' : ''} ${isProcessing ? 'opacity-60' : ''}`}
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${isEmbu ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
-                            {isEmbu ? 'Embu' : 'Randori'}
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            isCompleted
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : isEmbu
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-rose-100 text-rose-700'
+                        }`}>
+                            {isCompleted ? 'Selesai' : isEmbu ? 'Embu' : 'Randori'}
                         </span>
                         <span className="text-[11px] font-semibold text-[#8c827a]">Partai #{match.sequence}</span>
                     </div>
@@ -75,7 +85,13 @@ function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onUns
                     <p className="mt-1 text-xs font-semibold text-[#746b63]">{match.round_label}</p>
                 </div>
                 {canManage && (
-                    <i className={`fa-solid ${isProcessing ? 'fa-spinner animate-spin' : 'fa-grip-vertical'} mt-1 text-[#9b9188]`} aria-hidden="true" />
+                    isCompleted ? (
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700" title="Partai sudah selesai · Hasil & Nilai Terkunci">
+                            <i className="fa-solid fa-lock text-[11px]" />
+                        </span>
+                    ) : (
+                        <i className={`fa-solid ${isProcessing ? 'fa-spinner animate-spin' : 'fa-grip-vertical'} mt-1 text-[#9b9188] cursor-grab`} aria-hidden="true" title="Geser untuk memindahkan jadwal partai" />
+                    )
                 )}
             </div>
             <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-[#5f574f]">{match.participant || 'Menunggu peserta'}</p>
@@ -85,25 +101,34 @@ function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onUns
             </div>
             {canManage && (
                 <div className="mt-2 flex items-center gap-1.5">
-                    <button
-                        type="button"
-                        onClick={() => onSelect(match.id)}
-                        disabled={isProcessing}
-                        aria-pressed={isSelected}
-                        className="min-h-9 flex-1 rounded-lg border border-black/10 bg-white/80 px-2 py-1.5 text-xs font-bold text-[#5f574f] transition hover:border-[#c0392b]/40 hover:text-[#a93226] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-wait"
-                    >
-                        {isSelected ? 'Batalkan' : 'Pilih partai'}
-                    </button>
-                    {onUnschedule && (
-                        <button
-                            type="button"
-                            onClick={() => onUnschedule(match.id)}
-                            disabled={isProcessing}
-                            title="Lepas dari jadwal (kembalikan ke antrean belum terjadwal)"
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50/80 text-rose-700 transition hover:bg-rose-100 hover:text-rose-900"
-                        >
-                            <i className="fa-solid fa-arrow-rotate-left text-xs" />
-                        </button>
+                    {isCompleted ? (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100/60 rounded-lg px-2.5 py-1.5 w-full justify-center">
+                            <i className="fa-solid fa-shield-check text-xs" />
+                            <span>Hasil Selesai · Nilai Permanen</span>
+                        </div>
+                    ) : (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => onSelect(match.id)}
+                                disabled={isProcessing}
+                                aria-pressed={isSelected}
+                                className="min-h-9 flex-1 rounded-lg border border-black/10 bg-white/80 px-2 py-1.5 text-xs font-bold text-[#5f574f] transition hover:border-[#c0392b]/40 hover:text-[#a93226] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] disabled:cursor-wait"
+                            >
+                                {isSelected ? 'Batalkan' : 'Pilih partai'}
+                            </button>
+                            {onUnschedule && (
+                                <button
+                                    type="button"
+                                    onClick={() => onUnschedule(match.id)}
+                                    disabled={isProcessing}
+                                    title="Lepas dari jadwal (kembalikan ke antrean belum terjadwal)"
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50/80 text-rose-700 transition hover:bg-rose-100 hover:text-rose-900"
+                                >
+                                    <i className="fa-solid fa-arrow-rotate-left text-xs" />
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             )}
@@ -120,6 +145,7 @@ export default function Schedule({
     unscheduledMatches = [],
     settings = null,
     summary = {},
+    drawingsPublished = false,
     scheduleIsLocked = false,
     canManageSchedule = false,
 }) {
@@ -167,6 +193,19 @@ export default function Schedule({
 
         if (!match || !canManageSchedule || processingMatchId) {
             return;
+        }
+
+        if (match.status === 'completed') {
+            setClientErrors(['Partai yang sudah selesai dipertandingkan tidak dapat dipindahkan demi integritas rekam hasil.']);
+            return;
+        }
+
+        if (swapWithMatchId) {
+            const swapTarget = matchesById.get(swapWithMatchId);
+            if (swapTarget?.status === 'completed') {
+                setClientErrors(['Partai tujuan pertukaran sudah selesai dipertandingkan dan tidak dapat ditukar.']);
+                return;
+            }
         }
 
         if (match.session_id === session.id && match.court_id === court.id && match.scheduled_start === startTime) {
@@ -270,6 +309,33 @@ export default function Schedule({
                                     >
                                         <i className="fa-solid fa-xmark" aria-hidden="true" />
                                     </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {drawingsPublished && (
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-sky-50/80 to-blue-50/90 p-4 text-sm text-blue-950 shadow-2xs">
+                                <div className="flex items-start gap-3 min-w-0">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-800">
+                                        <i className="fa-solid fa-calendar-check text-xs" />
+                                    </span>
+                                    <div>
+                                        <p className="font-bold text-[#17120f] flex items-center gap-2 flex-wrap">
+                                            <span>Penyesuaian Jadwal Hari-H Siap Digunakan</span>
+                                            <span className="rounded-full bg-blue-100 border border-blue-300 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                                                Bagan Dipublikasikan
+                                            </span>
+                                        </p>
+                                        <p className="mt-1 text-xs leading-relaxed text-[#40566d]">
+                                            Anda bebas memindahkan jam atau court untuk partai yang <strong>belum selesai</strong>.
+                                            Seluruh rekap nilai, hasil penilaian wasit, dan pemenang yang sudah ada <strong>tetap aman dan tidak akan berubah/ter-reset</strong>.
+                                            Partai yang sudah selesai otomatis dikunci demi integritas rekam hasil pertandingan.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                                    <i className="fa-solid fa-shield-check text-emerald-600" />
+                                    Nilai Pertandingan Terproteksi
                                 </div>
                             </div>
                         )}

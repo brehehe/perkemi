@@ -123,9 +123,17 @@ class NikLoginController extends Controller
         }
 
         // Arahkan ke landing yang relevan
-        if ($user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase', 'Koordinator Lapangan'])) {
+        if ($user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase', 'Koordinator Lapangan', 'Pertandingan'])) {
             return redirect()->route('wasit.portal', ['event_id' => $event?->id])
                 ->with('success', "Selamat datang, {$user->name}. Anda berhasil masuk sebagai Wasit.");
+        }
+
+        $isCourtCoordinator = ($user->hasRole('Court') || $user->hasRole('Koordinator Lapangan'))
+            && ! $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']);
+
+        if ($isCourtCoordinator) {
+            return redirect()->route('admin.koordinator-court.index', ['event_id' => $event?->id])
+                ->with('success', "Selamat datang, {$user->name}. Anda berhasil masuk sebagai Koordinator Court.");
         }
 
         if ($user->hasAnyRole(['Arbitrase', 'Koordinator Lapangan', 'Pertandingan', 'Court'])) {

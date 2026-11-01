@@ -6,6 +6,7 @@ use App\Models\Clerk;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\FieldCoordinator;
 use App\Models\TournamentMatch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -17,7 +18,35 @@ class PaniteraCourtAccess
     {
         $user = $request->user();
 
-        if (! $user?->hasRole('Panitera') || $user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if (! $user || $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
+            return null;
+        }
+
+        // Koordinator Court restriction: scoped to their assigned court
+        if ($user->hasRole('Court') || $user->hasRole('Koordinator Lapangan')) {
+            $coordinator = FieldCoordinator::query()
+                ->where('is_active', true)
+                ->where(function ($q) use ($user): void {
+                    $q->whereRaw('LOWER(email) = ?', [mb_strtolower($user->email)])
+                        ->orWhere('coordinator_number', $user->nik_perkemi);
+                })
+                ->first();
+
+            if ($coordinator) {
+                $courtId = EventCourtAssignment::query()
+                    ->whereIn('event_court_id', $event->courts()->select('id'))
+                    ->where('staff_type', 'field_coordinator')
+                    ->where('staff_id', $coordinator->id)
+                    ->where('role', 'court_coordinator')
+                    ->value('event_court_id');
+
+                if ($courtId) {
+                    return collect([$courtId]);
+                }
+            }
+        }
+
+        if (! $user->hasRole('Panitera')) {
             return null;
         }
 

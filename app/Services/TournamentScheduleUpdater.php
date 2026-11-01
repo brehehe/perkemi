@@ -23,6 +23,12 @@ class TournamentScheduleUpdater
             ]);
         }
 
+        if ($match->status === 'completed') {
+            throw ValidationException::withMessages([
+                'schedule' => 'Partai yang sudah selesai dipertandingkan tidak dapat diubah jadwalnya demi integritas rekam hasil.',
+            ]);
+        }
+
         $court = $event->courts()
             ->where('is_active', true)
             ->find($schedule['event_court_id']);
@@ -129,9 +135,9 @@ class TournamentScheduleUpdater
             ]);
         }
 
-        if ($swapTarget->drawing?->status !== 'generated') {
+        if ($swapTarget->status === 'completed') {
             throw ValidationException::withMessages([
-                'schedule' => 'Partai tujuan masih terkunci. Kembalikan publikasi ke tahap penyusunan terlebih dahulu.',
+                'schedule' => 'Partai tujuan pertukaran sudah selesai dipertandingkan dan tidak dapat ditukar.',
             ]);
         }
 

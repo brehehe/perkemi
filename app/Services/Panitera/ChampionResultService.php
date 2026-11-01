@@ -192,7 +192,8 @@ class ChampionResultService
     private function participantData(array $metadata, ?string $fallbackLabel = null): ?array
     {
         $athleteIds = collect($metadata['athlete_ids'] ?? [])->filter()->values();
-        $key = $metadata['key'] ?? $metadata['entry_id'] ?? $athleteIds->first();
+        $entryId = $metadata['entry_id'] ?? null;
+        $key = $metadata['key'] ?? $entryId ?? $athleteIds->first();
 
         if (! is_string($key) || $key === '') {
             return null;
@@ -204,6 +205,7 @@ class ChampionResultService
 
         return [
             'key' => $key,
+            'entry_id' => is_string($entryId) ? $entryId : (is_string($key) ? $key : null),
             'label' => $label,
             'contingent_id' => is_string($metadata['contingent_id'] ?? null) ? $metadata['contingent_id'] : null,
             'contingent_name' => $contingentName,
@@ -238,6 +240,7 @@ class ChampionResultService
                 'rank' => $index + 1,
                 'participant_key' => $participant['key'],
                 'label' => $participant['label'],
+                'contingent_name' => $participant['contingent_name'] ?? null,
                 'basis' => 'Akumulasi '.number_format((float) $row['total_score'], 2, ',', '.'),
             ] : null;
         })->filter()->values();
@@ -262,27 +265,54 @@ class ChampionResultService
 
         if ($format === 'round_robin') {
             $participants = $this->participants($category);
-            $scores = $participants->mapWithKeys(fn (array $p): array => [
-                (string) $p['entry_id'] => [
+            $scores = [];
+            $lookup = [];
+            foreach ($participants as $p) {
+                $primaryKey = (string) ($p['key'] ?? $p['entry_id'] ?? '');
+                if ($primaryKey === '') {
+                    continue;
+                }
+                $scores[$primaryKey] = [
                     'participant' => $p,
                     'wins' => 0,
                     'matches' => 0,
-                ],
-            ])->all();
+                ];
+                $lookup[$primaryKey] = $primaryKey;
+                if (! empty($p['entry_id'])) {
+                    $lookup[(string) $p['entry_id']] = $primaryKey;
+                }
+                if (! empty($p['athlete_id'])) {
+                    $lookup[(string) $p['athlete_id']] = $primaryKey;
+                }
+            }
+
+            $resolveKey = function (?array $candidate) use ($lookup): ?string {
+                if (! $candidate) {
+                    return null;
+                }
+                foreach (['entry_id', 'key', 'athlete_id'] as $prop) {
+                    $val = (string) ($candidate[$prop] ?? '');
+                    if ($val !== '' && isset($lookup[$val])) {
+                        return $lookup[$val];
+                    }
+                }
+
+                return null;
+            };
 
             $completedCount = 0;
             foreach ($matches as $match) {
                 $outcome = $this->randoriOutcome($match);
                 if ($outcome) {
                     $completedCount++;
-                    $wEntryId = (string) ($outcome['winner']['entry_id'] ?? '');
-                    if ($wEntryId !== '' && isset($scores[$wEntryId])) {
-                        $scores[$wEntryId]['wins']++;
-                        $scores[$wEntryId]['matches']++;
+                    $wKey = $resolveKey($outcome['winner']);
+                    if ($wKey !== null && isset($scores[$wKey])) {
+                        $scores[$wKey]['wins']++;
+                        $scores[$wKey]['matches']++;
                     }
-                    $lEntryId = (string) ($outcome['loser']['entry_id'] ?? '');
-                    if ($lEntryId !== '' && isset($scores[$lEntryId])) {
-                        $scores[$lEntryId]['matches']++;
+                    $lKey = $resolveKey($outcome['loser']);
+                    if ($lKey !== null && isset($scores[$lKey])) {
+                        $scores[$lKey]['matches']++;
                     }
                 }
             }
@@ -404,6 +434,7 @@ class ChampionResultService
             'rank' => $rank,
             'participant_key' => $participant['key'],
             'label' => $participant['label'],
+            'contingent_name' => $participant['contingent_name'] ?? null,
             'basis' => $basis,
         ] : null;
     }

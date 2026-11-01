@@ -55,10 +55,14 @@ class AuthenticatedLandingService
         $request->session()->put('tenant_event_slug', $event->slug);
         $request->session()->forget('url.intended');
 
+        $isCourtCoordinator = ($user->hasRole('Court') || $user->hasRole('Koordinator Lapangan'))
+            && ! $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']);
+
         $routeName = match (true) {
             $this->isContingentOnlyAccess($event, $user) => 'kontingen.registrasi',
             $user->hasRole('Panitera') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => 'admin.panitera.scoring.index',
             $user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => 'wasit.portal',
+            $isCourtCoordinator => 'admin.koordinator-court.index',
             default => 'admin.dashboard',
         };
 
@@ -86,10 +90,14 @@ class AuthenticatedLandingService
         $eventId = $request->session()->get('tenant_event_id');
         $parameters = is_string($eventId) && $eventId !== '' ? ['event_id' => $eventId] : [];
 
+        $isCourtCoordinator = ($user->hasRole('Court') || $user->hasRole('Koordinator Lapangan'))
+            && ! $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']);
+
         return match (true) {
             $user->hasAnyRole(['kontingen', 'Contingent']) && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('kontingen.registrasi', $parameters),
             $user->hasRole('Wasit') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('wasit.portal', $parameters),
             $user->hasRole('Panitera') && ! $user->hasAnyRole(['Super Admin', 'Admin']) => route('admin.panitera.scoring.index', $parameters),
+            $isCourtCoordinator => route('admin.koordinator-court.index', $parameters),
             default => route('admin.dashboard', $parameters),
         };
     }

@@ -10,6 +10,8 @@ use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
+use App\Models\TournamentMatchVarReview;
+use App\Models\TournamentResult;
 use App\Services\TournamentDrawingGenerator;
 use App\Services\TournamentScheduleUpdater;
 use App\Services\TournamentScheduleWorkbook;
@@ -72,7 +74,13 @@ class TournamentController extends Controller
             ? TournamentDrawing::query()
                 ->whereBelongsTo($activeEvent)
                 ->where('event_match_category_id', $selectedCategory->id)
-                ->with(['matches.court:id,name', 'matches.rundown:id,name', 'matches.randoriScore'])
+                ->with([
+                    'matches.court:id,name',
+                    'matches.rundown:id,name',
+                    'matches.randoriScore',
+                    'matches.redEntry.athlete.contingent:id,name',
+                    'matches.blueEntry.athlete.contingent:id,name',
+                ])
                 ->first()
             : null;
         $matches = $selectedDrawing?->matches->map(fn ($match) => [
@@ -86,6 +94,10 @@ class TournamentController extends Controller
             'blue_label' => $match->blue_label,
             'aka_label' => $match->red_label,
             'shiro_label' => $match->blue_label,
+            'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+            'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+            'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+            'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
             'participant_label' => $match->participant_label,
             'is_bye' => (bool) $match->is_bye,
             'is_ready' => ! ($match->metadata['placeholder'] ?? false),
@@ -122,7 +134,13 @@ class TournamentController extends Controller
         $eventSchedule = $activeEvent instanceof Event
             ? $activeEvent->tournamentMatches()
                 ->whereNotNull('scheduled_start_at')
-                ->with(['matchCategory:id,name,type', 'court:id,name', 'rundown:id,name'])
+                ->with([
+                    'matchCategory:id,name,type',
+                    'court:id,name',
+                    'rundown:id,name',
+                    'redEntry.athlete.contingent:id,name',
+                    'blueEntry.athlete.contingent:id,name',
+                ])
                 ->orderBy('scheduled_start_at')
                 ->orderBy('match_sequence')
                 ->get()
@@ -140,6 +158,12 @@ class TournamentController extends Controller
                     'sequence' => $match->match_sequence,
                     'red_label' => $match->red_label,
                     'blue_label' => $match->blue_label,
+                    'aka_label' => $match->red_label,
+                    'shiro_label' => $match->blue_label,
+                    'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                    'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                    'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                    'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
                     'participant_label' => $match->participant_label,
                     'is_bye' => $match->is_bye,
                     'scheduled_start' => $match->scheduled_start_at?->format('Y-m-d H:i'),
@@ -257,9 +281,10 @@ class TournamentController extends Controller
             'scheduled_start' => $match->scheduled_start_at?->format('H:i'),
             'scheduled_end' => $match->scheduled_end_at?->format('H:i'),
         ])->values();
-        $scheduleIsLocked = $activeEvent?->tournamentDrawings()
+        $drawingsPublished = $activeEvent?->tournamentDrawings()
             ->whereIn('status', ['published', 'in_progress', 'completed'])
             ->exists() ?? false;
+        $canManageSchedule = $activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent);
 
         $unscheduledMatchesList = $activeEvent?->tournamentMatches()
             ->where('is_bye', false)
@@ -295,8 +320,9 @@ class TournamentController extends Controller
                 'categories' => $scheduledMatches->pluck('event_match_category_id')->unique()->count(),
                 'courts' => $courts->count(),
             ],
-            'scheduleIsLocked' => $scheduleIsLocked,
-            'canManageSchedule' => ! $scheduleIsLocked && $this->canManageTournament($request, $activeEvent),
+            'drawingsPublished' => $drawingsPublished,
+            'scheduleIsLocked' => false,
+            'canManageSchedule' => $canManageSchedule,
         ]);
     }
 
@@ -318,9 +344,17 @@ class TournamentController extends Controller
         $activeEvent = $this->eventForRequest($request);
         abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
 
+        $duration = $request->input('match_duration_minutes');
+        if ($duration !== null) {
+            $duration = max(1, min(120, (int) $duration));
+            $activeEvent->update(['match_duration_minutes' => $duration]);
+        } elseif ((int) $activeEvent->match_duration_minutes < 5) {
+            $activeEvent->update(['match_duration_minutes' => 10]);
+        }
+
         $result = $generator->generate($activeEvent);
 
-        return back()->with('success', "Generate selesai: {$result['generated']} nomor dibuat, {$result['skipped']} nomor perlu merge.");
+        return back()->with('success', "Generate bagan & jadwal selesai (durasi {$activeEvent->match_duration_minutes} menit per partai): {$result['generated']} nomor dibuat, {$result['skipped']} nomor perlu merge.");
     }
 
     public function redrawCategory(Request $request, EventMatchCategory $matchCategory, TournamentDrawingGenerator $generator): RedirectResponse
@@ -416,10 +450,9 @@ class TournamentController extends Controller
         abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
         abort_unless($tournamentMatch->event_id === $activeEvent->id, 404);
 
-        $tournamentMatch->loadMissing('drawing');
-        if ($tournamentMatch->drawing?->status !== 'generated') {
+        if ($tournamentMatch->status === 'completed') {
             throw ValidationException::withMessages([
-                'schedule' => 'Kembalikan publikasi ke tahap penyusunan sebelum mengubah jadwal.',
+                'schedule' => 'Partai yang sudah selesai dipertandingkan tidak dapat diubah jadwalnya demi integritas rekam hasil.',
             ]);
         }
 
@@ -439,10 +472,9 @@ class TournamentController extends Controller
         abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
         abort_unless($tournamentMatch->event_id === $activeEvent->id, 404);
 
-        $tournamentMatch->loadMissing('drawing');
-        if ($tournamentMatch->drawing?->status !== 'generated') {
+        if ($tournamentMatch->status === 'completed') {
             throw ValidationException::withMessages([
-                'schedule' => 'Kembalikan publikasi ke tahap penyusunan sebelum melepaskan partai dari jadwal.',
+                'schedule' => 'Partai yang sudah selesai dipertandingkan tidak dapat dilepas dari jadwal demi integritas rekam hasil.',
             ]);
         }
 
@@ -496,6 +528,13 @@ class TournamentController extends Controller
         }
 
         DB::transaction(function () use ($activeEvent): void {
+            // Soft delete hasil juara dan nilai juri
+            TournamentResult::query()->where('event_id', $activeEvent->id)->delete();
+            TournamentMatchVarReview::query()->where('event_id', $activeEvent->id)->delete();
+            $activeEvent->embuJudgeScores()->delete();
+            $activeEvent->embuScores()->delete();
+            $activeEvent->randoriScores()->delete();
+
             $activeEvent->tournamentDrawings()
                 ->whereIn('status', ['published', 'in_progress', 'completed'])
                 ->update([
@@ -520,7 +559,7 @@ class TournamentController extends Controller
             });
         });
 
-        return back()->with('success', 'Pertandingan berhasil direset. Bagan dan jadwal tetap tersimpan dan dapat disesuaikan kembali.');
+        return back()->with('success', 'Pertandingan, nilai juri, dan hasil juara berhasil direset dengan aman (tersimpan dalam arsip soft delete). Bagan dan jadwal tetap tersimpan dan dapat disesuaikan kembali.');
     }
 
     public function reset(Request $request): RedirectResponse
@@ -528,19 +567,26 @@ class TournamentController extends Controller
         $activeEvent = $this->eventForRequest($request);
         abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
 
-        if ($activeEvent->tournamentDrawings()->whereIn('status', ['in_progress', 'completed'])->exists()
-            || $activeEvent->tournamentMatches()->whereIn('status', ['live', 'finished'])->exists()) {
-            throw ValidationException::withMessages(['drawing' => 'Drawing tidak dapat direset karena pertandingan sudah dimulai.']);
-        }
-
         DB::transaction(function () use ($activeEvent): void {
+            // 1. Soft delete hasil juara turnamen
+            TournamentResult::query()->where('event_id', $activeEvent->id)->delete();
+
+            // 2. Soft delete review VAR
+            TournamentMatchVarReview::query()->where('event_id', $activeEvent->id)->delete();
+
+            // 3. Soft delete seluruh nilai pertandingan
             $activeEvent->embuJudgeScores()->delete();
             $activeEvent->embuScores()->delete();
             $activeEvent->randoriScores()->delete();
+
+            // 4. Soft delete seluruh pertandingan
+            $activeEvent->tournamentMatches()->delete();
+
+            // 5. Soft delete seluruh bagan drawing
             $activeEvent->tournamentDrawings()->delete();
         });
 
-        return back()->with('success', 'Draft drawing, seluruh nilai pertandingan, lembar penilaian Wasit, dan tanda tangan berhasil dihapus. Data peserta dan pengaturan event tetap tersimpan.');
+        return back()->with('success', 'Draft bagan pertandingan, seluruh nilai juri, hasil juara, dan laporan berhasil direset dengan aman (tersimpan dalam arsip soft delete). Data peserta dan pengaturan event tetap tersimpan.');
     }
 
     /**

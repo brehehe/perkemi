@@ -154,6 +154,8 @@ class CourtMonitorDataService
                 ->with([
                     'randoriScore',
                     'court:id,name',
+                    'redEntry.athlete.contingent:id,name',
+                    'blueEntry.athlete.contingent:id,name',
                 ])
                 ->orderBy('match_sequence')
                 ->get();
@@ -231,6 +233,11 @@ class CourtMonitorDataService
                 'participant_label' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
                 'aka_label' => $match->red_label,
                 'shiro_label' => $match->blue_label,
+                'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
+                'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                'metadata' => $match->metadata,
                 'court' => $match->court?->name,
                 'court_id' => $match->event_court_id,
                 'is_bye' => (bool) $match->is_bye,
@@ -403,9 +410,20 @@ class CourtMonitorDataService
             ->pluck('referee_id');
         $referees = $event->referees->keyBy('id');
 
+        $activeRoles = [
+            RefereeCourtRole::Chief->value,
+            RefereeCourtRole::RegionalOne->value,
+            RefereeCourtRole::RegionalTwo->value,
+            RefereeCourtRole::AssistantOne->value,
+            RefereeCourtRole::AssistantTwo->value,
+        ];
+
         return $court->assignments
             ->where('staff_type', 'referee')
+            ->filter(fn (EventCourtAssignment $assignment): bool => in_array($assignment->role, $activeRoles, true))
             ->sortBy(fn (EventCourtAssignment $assignment): int => RefereeCourtRole::tryFrom($assignment->role)?->judgeNumber() ?? 99)
+            ->values()
+            ->take(5)
             ->map(function (EventCourtAssignment $assignment) use ($presentRefereeIds, $referees): array {
                 $referee = $referees->get($assignment->staff_id);
                 $role = RefereeCourtRole::tryFrom($assignment->role);

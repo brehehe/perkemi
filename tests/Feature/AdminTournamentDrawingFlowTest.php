@@ -377,13 +377,13 @@ test('reset draft deletes event scores and referee signatures without affecting 
         ->assertSessionHasNoErrors()
         ->assertSessionHas('success');
 
-    $this->assertDatabaseMissing('embu_judge_scores', ['id' => $judgeScore->id]);
-    $this->assertDatabaseMissing('embu_scores', ['id' => $embuScore->id]);
-    $this->assertDatabaseMissing('randori_scores', ['id' => $randoriScore->id]);
-    $this->assertDatabaseMissing('tournament_matches', ['id' => $embuMatch->id]);
-    $this->assertDatabaseMissing('tournament_matches', ['id' => $randoriMatch->id]);
-    $this->assertDatabaseMissing('tournament_drawings', ['id' => $embuDrawing->id]);
-    $this->assertDatabaseMissing('tournament_drawings', ['id' => $randoriDrawing->id]);
+    $this->assertSoftDeleted('embu_judge_scores', ['id' => $judgeScore->id]);
+    $this->assertSoftDeleted('embu_scores', ['id' => $embuScore->id]);
+    $this->assertSoftDeleted('randori_scores', ['id' => $randoriScore->id]);
+    $this->assertSoftDeleted('tournament_matches', ['id' => $embuMatch->id]);
+    $this->assertSoftDeleted('tournament_matches', ['id' => $randoriMatch->id]);
+    $this->assertSoftDeleted('tournament_drawings', ['id' => $embuDrawing->id]);
+    $this->assertSoftDeleted('tournament_drawings', ['id' => $randoriDrawing->id]);
     $this->assertDatabaseHas('embu_judge_scores', [
         'id' => $otherJudgeScore->id,
         'event_id' => $otherEvent->id,

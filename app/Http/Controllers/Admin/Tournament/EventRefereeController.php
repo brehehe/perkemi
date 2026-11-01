@@ -12,6 +12,7 @@ use App\Http\Requests\Admin\Tournament\UpsertRefereeAccountRequest;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\FieldCoordinator;
 use App\Models\Referee;
 use App\Models\RefereeAttendance;
 use App\Models\RefereeCourtAssignmentHistory;
@@ -75,6 +76,18 @@ class EventRefereeController extends Controller
         $refereesById = $event->referees->keyBy('id');
         $expiresAt = $this->qrExpiresAt($event);
 
+        $availableCoordinators = FieldCoordinator::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email']);
+        $coordinatorsById = $availableCoordinators->keyBy('id');
+        $coordinatorAssignments = EventCourtAssignment::query()
+            ->whereIn('event_court_id', $event->courts->modelKeys())
+            ->where('staff_type', 'field_coordinator')
+            ->where('role', 'court_coordinator')
+            ->get()
+            ->keyBy('event_court_id');
+
         $referees = $event->referees->map(function (Referee $referee) use ($assignmentsByReferee, $courtNames, $legacyUsers, $today): array {
             $attendance = $referee->attendances
                 ->first(fn (RefereeAttendance $attendance): bool => $attendance->attendance_date?->toDateString() === $today);
@@ -128,7 +141,7 @@ class EventRefereeController extends Controller
         })->values();
         $presentRefereeIds = $referees->where('is_present', true)->pluck('id');
 
-        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames, $refereesById): array {
+        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames, $refereesById, $coordinatorAssignments, $coordinatorsById): array {
             $refereeAssignments = $court->assignments
                 ->where('staff_type', 'referee')
                 ->where('role', '!=', 'reserve')
@@ -140,11 +153,22 @@ class EventRefereeController extends Controller
                 ->every(fn (EventCourtAssignment $assignment): bool => $presentRefereeIds->contains($assignment->staff_id)
                     && $courtAttendances->has($assignment->staff_id));
 
+            $coordAssignment = $coordinatorAssignments->get($court->id);
+            $coord = $coordAssignment ? $coordinatorsById->get($coordAssignment->staff_id) : null;
+
             return [
                 'id' => $court->id,
                 'name' => $court->name,
                 'location' => $court->location,
                 'access_code' => $court->access_code,
+                'coordinator' => $coord ? [
+                    'id' => $coord->id,
+                    'assignment_id' => $coordAssignment->id,
+                    'name' => $coord->name,
+                    'coordinator_number' => $coord->coordinator_number,
+                    'region' => $coord->region,
+                    'phone' => $coord->phone,
+                ] : null,
                 'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
                     'event' => $event,
                     'eventCourt' => $court,
@@ -221,6 +245,13 @@ class EventRefereeController extends Controller
             'events' => $eventContext->accessibleEvents($request),
             'referees' => $referees,
             'courts' => $courts,
+            'availableCoordinators' => $availableCoordinators->map(fn ($c): array => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'coordinator_number' => $c->coordinator_number,
+                'region' => $c->region,
+                'phone' => $c->phone,
+            ])->values(),
             'roles' => RefereeCourtRole::options(),
             'eventCheckInUrl' => URL::temporarySignedRoute('wasit.check-in.event', $expiresAt, ['event' => $event]),
             'qrExpiresAt' => $expiresAt->translatedFormat('d M Y, H:i'),
@@ -509,6 +540,125 @@ class EventRefereeController extends Controller
         $dateLabel = ($checkedInAt ?? Carbon::parse($validated['attendance_date']))->translatedFormat('d M Y');
 
         return back()->with('success', "Kehadiran {$referee->name} pada {$dateLabel} diperbarui menjadi {$status}.");
+    }
+
+    public function updateCourtCoordinator(
+        Request $request,
+        EventCourt $eventCourt,
+        EventContext $eventContext,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+        abort_unless($eventCourt->event_id === $event->id, 404);
+
+        $validated = $request->validate([
+            'coordinator_id' => ['required', 'uuid', 'exists:field_coordinators,id'],
+        ], [
+            'coordinator_id.required' => 'Pilih koordinator court yang ingin ditugaskan.',
+            'coordinator_id.exists' => 'Data koordinator court tidak ditemukan.',
+        ]);
+
+        $coordinator = FieldCoordinator::query()->findOrFail($validated['coordinator_id']);
+
+        DB::transaction(function () use ($event, $eventCourt, $coordinator): void {
+            // Remove existing coordinator on this court
+            EventCourtAssignment::query()
+                ->where('event_court_id', $eventCourt->id)
+                ->where('staff_type', 'field_coordinator')
+                ->where('role', 'court_coordinator')
+                ->delete();
+
+            // Reassign: remove this coordinator from any other court in this event
+            EventCourtAssignment::query()
+                ->whereIn('event_court_id', $event->courts()->pluck('id'))
+                ->where('staff_type', 'field_coordinator')
+                ->where('staff_id', $coordinator->id)
+                ->delete();
+
+            EventCourtAssignment::query()->create([
+                'event_court_id' => $eventCourt->id,
+                'staff_type' => 'field_coordinator',
+                'staff_id' => $coordinator->id,
+                'role' => 'court_coordinator',
+            ]);
+        });
+
+        return back()->with('success', "Koordinator Court {$coordinator->name} berhasil ditugaskan ke {$eventCourt->name}.");
+    }
+
+    public function resetCourtCoordinator(
+        Request $request,
+        EventCourt $eventCourt,
+        EventContext $eventContext,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+        abort_unless($eventCourt->event_id === $event->id, 404);
+
+        $deleted = EventCourtAssignment::query()
+            ->where('event_court_id', $eventCourt->id)
+            ->where('staff_type', 'field_coordinator')
+            ->where('role', 'court_coordinator')
+            ->delete();
+
+        if ($deleted === 0) {
+            return back()->with('success', "Koordinator Court pada {$eventCourt->name} sudah kosong.");
+        }
+
+        return back()->with('success', "Penugasan Koordinator Court pada {$eventCourt->name} berhasil direset.");
+    }
+
+    public function generateCourtCoordinators(
+        Request $request,
+        EventContext $eventContext,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+
+        $courts = $event->courts()->where('is_active', true)->orderBy('order')->orderBy('id')->get();
+        if ($courts->isEmpty()) {
+            throw ValidationException::withMessages([
+                'coordinators' => 'Belum ada court aktif.',
+            ]);
+        }
+
+        $coordinators = FieldCoordinator::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        if ($coordinators->isEmpty()) {
+            throw ValidationException::withMessages([
+                'coordinators' => 'Belum ada data Master Koordinator Lapangan yang aktif.',
+            ]);
+        }
+
+        $assignedCount = DB::transaction(function () use ($courts, $coordinators): int {
+            EventCourtAssignment::query()
+                ->whereIn('event_court_id', $courts->pluck('id'))
+                ->where('staff_type', 'field_coordinator')
+                ->where('role', 'court_coordinator')
+                ->delete();
+
+            $count = 0;
+            $coordPool = $coordinators->values();
+
+            foreach ($courts as $index => $court) {
+                if (isset($coordPool[$index])) {
+                    EventCourtAssignment::query()->create([
+                        'event_court_id' => $court->id,
+                        'staff_type' => 'field_coordinator',
+                        'staff_id' => $coordPool[$index]->id,
+                        'role' => 'court_coordinator',
+                    ]);
+                    $count++;
+                }
+            }
+
+            return $count;
+        });
+
+        return back()->with('success', "Berhasil menempatkan {$assignedCount} Koordinator Court secara merata pada arena pertandingan.");
     }
 
     private function ensureCanManageEventReferees(Request $request, Event $event): void

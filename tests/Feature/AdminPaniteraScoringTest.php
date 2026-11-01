@@ -2843,3 +2843,77 @@ test('panitera category lock enforces view-only read-only mode and default redir
         ])
         ->assertStatus(422);
 });
+
+test('panitera dashboard orders categories by earliest scheduled match time when sorted by schedule', function (): void {
+    $event = createPaniteraEvent('Event Schedule Order Test');
+    $user = createPaniteraUser($event);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'is_active' => true,
+    ]);
+
+    // Cat 1 has master order 1, but its match is at 10:00
+    [$cat1, $drawing1] = createPaniteraCategory($event, 'Kategori Siang', 'randori', 'single_elimination');
+    $cat1->update(['order' => 1]);
+    TournamentMatch::create([
+        'event_id' => $event->id,
+        'tournament_drawing_id' => $drawing1->id,
+        'event_match_category_id' => $cat1->id,
+        'event_court_id' => $court->id,
+        'status' => 'ready',
+        'phase' => 'preliminary',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 2,
+        'is_bye' => false,
+        'scheduled_start_at' => Carbon::parse('2026-11-07 10:00:00'),
+    ]);
+
+    // Cat 2 has master order 2, but its match is at 08:00 (earlier!)
+    [$cat2, $drawing2] = createPaniteraCategory($event, 'Kategori Pagi', 'embu', 'embu_direct_final');
+    $cat2->update(['order' => 2]);
+    TournamentMatch::create([
+        'event_id' => $event->id,
+        'tournament_drawing_id' => $drawing2->id,
+        'event_match_category_id' => $cat2->id,
+        'event_court_id' => $court->id,
+        'status' => 'ready',
+        'phase' => 'preliminary',
+        'round_label' => 'Babak 1',
+        'match_sequence' => 1,
+        'is_bye' => false,
+        'scheduled_start_at' => Carbon::parse('2026-11-07 08:00:00'),
+    ]);
+
+    // Cat 3 has no schedule yet
+    [$cat3, $drawing3] = createPaniteraCategory($event, 'Kategori Belum Terjadwal', 'embu', 'embu_direct_final');
+    $cat3->update(['order' => 3]);
+
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}&sort_by=schedule");
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Panitera/Dashboard')
+        ->has('categories', 3)
+        ->where('categories.0.id', $cat2->id) // 08:00 comes first!
+        ->where('categories.0.earliest_scheduled_time', '08:00')
+        ->where('categories.1.id', $cat1->id) // 10:00 comes second!
+        ->where('categories.1.earliest_scheduled_time', '10:00')
+        ->where('categories.2.id', $cat3->id) // Unscheduled comes last!
+        ->where('categories.2.has_schedule', false)
+    );
+
+    // When sorted by category, master order 1 (#cat1) comes first
+    $responseCategorySort = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}&sort_by=category");
+
+    $responseCategorySort->assertOk();
+    $responseCategorySort->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Panitera/Dashboard')
+        ->has('categories', 3)
+        ->where('categories.0.id', $cat1->id)
+        ->where('categories.1.id', $cat2->id)
+        ->where('categories.2.id', $cat3->id)
+    );
+});

@@ -1205,7 +1205,12 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                         </section>
                     )}
 
-                    {mode === 'officials' && (
+                    {mode === 'officials' && (() => {
+                        const officialStaff = (snapshot.staff || [])
+                            .filter((member) => member.judge_number !== null && member.judge_number !== undefined)
+                            .slice(0, 5);
+
+                        return (
                         <section className="min-h-[60vh] rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
                             <div className="text-center">
                                 <p className="text-sm font-black uppercase tracking-[.18em] text-amber-700 dark:text-[#d4a843]">Susunan Wasit & Juri</p>
@@ -1213,7 +1218,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                 <p className="mt-2 text-sm font-medium text-slate-600 dark:text-white/50">Diurutkan dari Wasit Utama hingga Juri 5</p>
                             </div>
                             <div className="mx-auto mt-10 grid max-w-7xl gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                                {snapshot.staff.map((member) => {
+                                {officialStaff.map((member) => {
                                     const initials = member.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
                                     return (
                                         <article key={member.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 shadow-xs">
@@ -1248,14 +1253,15 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                         </article>
                                     );
                                 })}
-                                {snapshot.staff.length === 0 && (
+                                {officialStaff.length === 0 && (
                                     <p className="rounded-2xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-slate-500 dark:text-white/45 sm:col-span-2 xl:col-span-5">
                                         Wasit dan Juri belum ditugaskan ke court ini.
                                     </p>
                                 )}
                             </div>
                         </section>
-                    )}
+                        );
+                    })()}
                 </div>
             </main>
         </>

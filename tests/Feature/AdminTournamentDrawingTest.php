@@ -241,3 +241,69 @@ test('randori category conditionally enables round robin format for 3 to 5 entri
     expect($roundLabels)->toContain('Putaran 2');
     expect($roundLabels)->toContain('Putaran 3');
 });
+
+test('drawing matches include aka and shiro contingent names', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Event Drawing Kontingen',
+        'slug' => 'event-drawing-kontingen',
+        'venue' => 'GOR Drawing',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa 60kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'is_active' => true,
+    ]);
+
+    for ($i = 1; $i <= 3; $i++) {
+        $contingent = Contingent::create([
+            'event_id' => $event->id,
+            'user_id' => $admin->id,
+            'name' => "Kontingen Garuda {$i}",
+            'city' => 'Surabaya',
+            'manager_name' => "Manager {$i}",
+            'phone' => "0812345678{$i}",
+        ]);
+        Registration::create([
+            'event_id' => $event->id,
+            'contingent_id' => $contingent->id,
+            'registration_number' => "REG-KTG-00{$i}",
+            'status' => 'verified',
+            'payment_status' => 'verified',
+        ]);
+        $athlete = Athlete::create([
+            'contingent_id' => $contingent->id,
+            'name' => "Kenshi Bintang {$i}",
+            'gender' => 'male',
+        ]);
+        AthleteMatchCategoryEntry::create([
+            'event_id' => $event->id,
+            'athlete_id' => $athlete->id,
+            'event_match_category_id' => $category->id,
+        ]);
+    }
+
+    $generator = app(TournamentDrawingGenerator::class);
+    $category->update(['preferred_bracket_type' => 'round_robin']);
+    $generator->generate($event, $category);
+
+    $this->actingAs($admin)
+        ->get(route('admin.pertandingan.drawing', ['event_id' => $event->id, 'category' => $category->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Tournament/Drawing')
+            ->has('matches', 3)
+            ->where('matches.0.aka_label', fn ($val) => ! empty($val))
+            ->where('matches.0.aka_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda'))
+            ->where('matches.0.shiro_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda')));
+});

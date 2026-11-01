@@ -5,6 +5,7 @@ import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
+import Modal from '@/Components/UI/Overlays/Modal';
 import RandoriBracketTree from '@/Pages/Admin/Panitera/Partials/RandoriBracketTree';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
@@ -81,6 +82,35 @@ function MatchCard({ match }) {
     const blueDisqualified = Boolean(match.metadata?.blue_weigh_in_disqualified);
     const isWO = match.metadata?.result?.is_walkover || match.metadata?.result?.win_method === 'walkover_weigh_in';
 
+    const resolveContingent = (contingentDirect, metaCorner) => {
+        if (contingentDirect && typeof contingentDirect === 'string') return contingentDirect;
+        if (contingentDirect?.name) return contingentDirect.name;
+        if (metaCorner?.contingent_name) return metaCorner.contingent_name;
+        if (metaCorner?.city) return metaCorner.city;
+        if (metaCorner?.contingent && typeof metaCorner.contingent === 'string') return metaCorner.contingent;
+        if (metaCorner?.contingent?.name) return metaCorner.contingent.name;
+        return '';
+    };
+
+    const redContingent = resolveContingent(
+        match.aka_contingent || match.red_contingent,
+        match.metadata?.red
+    );
+
+    const blueContingent = resolveContingent(
+        match.shiro_contingent || match.blue_contingent,
+        match.metadata?.blue
+    );
+
+    const isPlaceholder = (label) => {
+        if (!label) return true;
+        const trimmed = label.trim();
+        const upper = trimmed.toUpperCase();
+        if (upper === 'BYE' || upper === '-' || upper === '—') return true;
+        const lower = trimmed.toLowerCase();
+        return lower.startsWith('pemenang') || lower.startsWith('kalah') || lower.startsWith('menunggu') || lower.startsWith('sudut');
+    };
+
     return (
         <article className="overflow-hidden rounded-xl border border-[#e8e1d8] bg-white shadow-sm">
             <div className="flex items-center justify-between bg-[#f7f4ef] px-3 py-2 text-xs font-bold uppercase tracking-wide text-[#746b63]">
@@ -96,11 +126,18 @@ function MatchCard({ match }) {
             </div>
             <div className="divide-y divide-[#eee8e0]">
                 <div className={`flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold ${redDisqualified ? 'bg-red-50/60 text-slate-400' : ''}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="h-3 w-3 shrink-0 rounded-full bg-red-600" />
-                        <span className={`truncate ${redDisqualified ? 'line-through text-slate-400' : ''}`}>
-                            {match.red_label || 'Menunggu hasil'}
-                        </span>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="h-3 w-3 shrink-0 self-start mt-1 rounded-full bg-red-600" />
+                        <div className="min-w-0 flex-1">
+                            <p className={`truncate text-sm font-bold text-[#17120f] ${redDisqualified ? 'line-through text-slate-400' : ''}`}>
+                                {match.red_label || 'Menunggu hasil'}
+                            </p>
+                            {redContingent && !isPlaceholder(match.red_label) && (
+                                <p className="truncate text-xs font-normal text-[#8c827a] mt-0.5">
+                                    {redContingent}
+                                </p>
+                            )}
+                        </div>
                     </div>
                     {redDisqualified && (
                         <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
@@ -109,11 +146,18 @@ function MatchCard({ match }) {
                     )}
                 </div>
                 <div className={`flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold ${blueDisqualified ? 'bg-blue-50/60 text-slate-400' : ''}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="h-3 w-3 shrink-0 rounded-full border border-slate-300 bg-white" />
-                        <span className={`truncate ${blueDisqualified ? 'line-through text-slate-400' : ''}`}>
-                            {match.blue_label || 'Menunggu hasil'}
-                        </span>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="h-3 w-3 shrink-0 self-start mt-1 rounded-full border border-slate-300 bg-white" />
+                        <div className="min-w-0 flex-1">
+                            <p className={`truncate text-sm font-bold text-[#17120f] ${blueDisqualified ? 'line-through text-slate-400' : ''}`}>
+                                {match.blue_label || 'Menunggu hasil'}
+                            </p>
+                            {blueContingent && !isPlaceholder(match.blue_label) && (
+                                <p className="truncate text-xs font-normal text-[#8c827a] mt-0.5">
+                                    {blueContingent}
+                                </p>
+                            )}
+                        </div>
                     </div>
                     {blueDisqualified && (
                         <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
@@ -398,9 +442,19 @@ function EmptyState({ icon, title, description }) {
 }
 
 function ScheduleMatchItem({ match, editable, onEdit }) {
+    const redContingent = match.aka_contingent || match.red_contingent || match.metadata?.red?.contingent_name;
+    const blueContingent = match.shiro_contingent || match.blue_contingent || match.metadata?.blue?.contingent_name;
+
+    const redDisplay = match.red_label
+        ? `${match.red_label}${redContingent && !match.red_label.toLowerCase().startsWith('pemenang') && !match.red_label.toLowerCase().startsWith('kalah') && match.red_label.toUpperCase() !== 'BYE' ? ` (${redContingent})` : ''}`
+        : 'Menunggu lawan';
+    const blueDisplay = match.blue_label
+        ? `${match.blue_label}${blueContingent && !match.blue_label.toLowerCase().startsWith('pemenang') && !match.blue_label.toLowerCase().startsWith('kalah') && match.blue_label.toUpperCase() !== 'BYE' ? ` (${blueContingent})` : ''}`
+        : 'Menunggu lawan';
+
     const participant = match.category_type === 'embu'
         ? match.participant_label || 'Menunggu hasil pool'
-        : `${match.red_label || 'Menunggu lawan'} vs ${match.blue_label || 'Menunggu lawan'}`;
+        : `${redDisplay} vs ${blueDisplay}`;
 
     return (
         <article className="rounded-xl border border-[#e5ddd3] bg-white p-3 shadow-sm">
@@ -528,6 +582,8 @@ function ScheduleEditorModal({ match, courts, sessions, draft, errors, processin
 
 export default function TournamentDrawing({ activeEvent, events = [], categories = [], selectedCategory, drawing, matches = [], scheduleCourts = [], scheduleSessions = [], eventSchedule = [], workflow, settings, canManageDrawing }) {
     const [processing, setProcessing] = useState('');
+    const [generateModalOpen, setGenerateModalOpen] = useState(false);
+    const [matchDuration, setMatchDuration] = useState(settings?.match_duration_minutes ? Math.max(10, Number(settings.match_duration_minutes)) : 10);
     const [resetConfirmation, setResetConfirmation] = useState(null);
     const [resetError, setResetError] = useState('');
     const [scheduleEditMode, setScheduleEditMode] = useState(false);
@@ -683,22 +739,6 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                   },
               ]
             : []),
-        ...(canManageDrawing && workflow.generated_categories > 0 && !isInProgress && !isCompleted
-            ? [
-                  {
-                      divider: true,
-                  },
-                  {
-                      label: processing === 'reset' ? 'Mereset Draft...' : 'Reset Draft Bagan',
-                      description: 'Hapus seluruh susunan bagan dan jadwal draft',
-                      icon: <i className="fa-solid fa-rotate-left text-rose-600" />,
-                      onClick: reset,
-                      disabled: !!processing,
-                      tone: 'rose',
-                      badge: 'Reset',
-                  },
-              ]
-            : []),
         ...(canManageDrawing && (isInProgress || isCompleted)
             ? [
                   {
@@ -706,9 +746,25 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                   },
                   {
                       label: processing === 'reset-competition' ? 'Mereset...' : 'Reset Pertandingan',
-                      description: 'Reset status turnamen dan hasil kembali ke awal',
+                      description: 'Reset status turnamen, nilai & hasil juara kembali ke jadwal tanpa menghapus susunan bagan',
                       icon: <i className={`fa-solid ${processing === 'reset-competition' ? 'fa-spinner animate-spin text-rose-600' : 'fa-arrow-rotate-left text-rose-600'}`} />,
                       onClick: resetCompetition,
+                      disabled: !!processing,
+                      tone: 'rose',
+                      badge: 'Reset',
+                  },
+              ]
+            : []),
+        ...(canManageDrawing && workflow.generated_categories > 0
+            ? [
+                  {
+                      divider: true,
+                  },
+                  {
+                      label: processing === 'reset' ? 'Mereset Draft...' : 'Reset Draft Bagan',
+                      description: 'Reset seluruh susunan bagan, nilai wasit, hasil juara & laporan (soft delete aman)',
+                      icon: <i className="fa-solid fa-rotate-left text-rose-600" />,
+                      onClick: reset,
                       disabled: !!processing,
                       tone: 'rose',
                       badge: 'Reset',
@@ -770,9 +826,9 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                                     variant="unstyled"
                                     size="none"
                                     type="button"
-                                    onClick={() => post('/admin/pertandingan/drawing/generate', {}, 'generate')}
+                                    onClick={() => setGenerateModalOpen(true)}
                                     disabled={!!processing}
-                                    className="rounded-lg bg-[#17120f] px-4 py-2.5 text-sm font-bold text-[#f0c060] hover:bg-black disabled:opacity-50 transition shadow-sm"
+                                    className="rounded-lg bg-[#17120f] px-4 py-2.5 text-sm font-bold text-[#f0c060] hover:bg-black disabled:opacity-50 transition shadow-sm cursor-pointer"
                                 >
                                     <i className={`fa-solid ${processing === 'generate' ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'} mr-1.5`} />
                                     {processing === 'generate' ? 'Membentuk bagan...' : 'Generate Semua'}
@@ -831,8 +887,6 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                             />
                         </div>
                     </section>
-
-                    <EventScheduleBoard courts={scheduleCourts} sessions={scheduleSessions} matches={eventSchedule} editable={scheduleEditMode && canManageDrawing && !isLocked} onEdit={openScheduleEditor} />
 
                     <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
                         <aside className="rounded-2xl border border-[#e8e1d8] bg-white p-3 shadow-sm xl:sticky xl:top-20 xl:self-start">
@@ -896,6 +950,8 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                         </main>
                     </div>
 
+                    <EventScheduleBoard courts={scheduleCourts} sessions={scheduleSessions} matches={eventSchedule} editable={scheduleEditMode && canManageDrawing && !isLocked} onEdit={openScheduleEditor} />
+
                 </>}
             </div>
             <ScheduleEditorModal
@@ -909,10 +965,90 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                 onClose={() => setEditingMatch(null)}
                 onSave={saveSchedule}
             />
-            <AlertConfirm isOpen={Boolean(resetConfirmation)} title={resetConfirmation === 'competition' ? 'Reset seluruh status pertandingan?' : 'Reset draft dan seluruh penilaian?'}
-                message={resetConfirmation === 'competition' ? 'Bagan dan jadwal tetap disimpan. Status partai dan nilai sementara akan dikembalikan ke awal.' : 'Seluruh draft bagan, jadwal, nilai Embu/Randori, lembar 10 aspek, catatan, dan tanda tangan lima Wasit pada event ini akan dihapus permanen. Data peserta dan pengaturan event tetap tersimpan. Tindakan ini tidak dapat dibatalkan.'}
-                confirmText={resetConfirmation === 'competition' ? 'Reset pertandingan' : 'Ya, reset & hapus nilai'} error={resetError} isLoading={Boolean(processing)}
+            <AlertConfirm isOpen={Boolean(resetConfirmation)} title={resetConfirmation === 'competition' ? 'Reset status & nilai pertandingan?' : 'Reset draft bagan, nilai, dan hasil juara?'}
+                message={resetConfirmation === 'competition' ? 'Bagan dan jadwal tetap disimpan. Status partai, nilai wasit, dan hasil juara sementara akan direset aman (disimpan dalam arsip soft delete).' : 'Seluruh susunan bagan, jadwal, nilai Embu & Randori, hasil juara, dan laporan pada event ini akan direset. Seluruh data lama tetap tersimpan aman sebagai arsip soft delete. Data atlet dan pendaftaran kontingen tetap utuh.'}
+                confirmText={resetConfirmation === 'competition' ? 'Reset pertandingan' : 'Ya, reset draft & nilai'} error={resetError} isLoading={Boolean(processing)}
                 onConfirm={confirmReset} onCancel={() => { if (!processing) setResetConfirmation(null); }} />
+
+            {/* Modal Konfirmasi & Pengaturan Durasi Generate */}
+            <Modal
+                isOpen={generateModalOpen}
+                onClose={() => !processing && setGenerateModalOpen(false)}
+                title="Generate Bagan & Jadwal Pertandingan"
+                subtitle={`Atur interval durasi partai untuk seluruh nomor pertandingan di ${activeEvent.name}`}
+                size="md"
+                footer={
+                    <div className="flex w-full items-center justify-end gap-2">
+                        <Button
+                            variant="outline"
+                            type="button"
+                            onClick={() => setGenerateModalOpen(false)}
+                            disabled={!!processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            variant="primary"
+                            type="button"
+                            disabled={!!processing}
+                            onClick={() => {
+                                post('/admin/pertandingan/drawing/generate', { match_duration_minutes: matchDuration }, 'generate');
+                                setGenerateModalOpen(false);
+                            }}
+                            className="bg-[#17120f] text-[#f0c060] hover:bg-black font-bold"
+                        >
+                            <i className={`fa-solid ${processing === 'generate' ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'} mr-1.5`} />
+                            Mulai Generate ({matchDuration} Menit/Partai)
+                        </Button>
+                    </div>
+                }
+            >
+                <div className="space-y-4 p-1 text-sm">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900 leading-relaxed">
+                        <i className="fa-solid fa-circle-info mr-1.5 text-amber-700" />
+                        Setiap partai pertandingan akan otomatis dijadwalkan dengan interval waktu <strong>{matchDuration} menit</strong> (contoh: 08:30–08:{30 + Number(matchDuration) < 60 ? 30 + Number(matchDuration) : '40'}, berikutnya 10 menit kemudian) di seluruh court aktif.
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-[#746b63] mb-1.5">
+                            Durasi Satu Partai / Jarak Antar Match (Menit):
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                min="1"
+                                max="120"
+                                value={matchDuration}
+                                onChange={(e) => setMatchDuration(Math.max(1, Number(e.target.value)))}
+                                className="w-28 rounded-lg border border-[#d8c9ae] px-3 py-2 text-sm font-bold text-[#17120f] focus:border-[#d4a843] focus:outline-hidden"
+                            />
+                            <span className="text-sm font-semibold text-[#746b63]">Menit per partai</span>
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {[10, 15, 12, 8, 5].map((dur) => (
+                                <button
+                                    key={dur}
+                                    type="button"
+                                    onClick={() => setMatchDuration(dur)}
+                                    className={`cursor-pointer rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                                        Number(matchDuration) === dur
+                                            ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                            : 'border border-[#dcd4ca] bg-white text-[#625b54] hover:bg-[#f7f4ef]'
+                                    }`}
+                                >
+                                    {dur === 10 ? '⭐ 10 Menit (Standar)' : `${dur} Menit`}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#e8e1d8] bg-[#fbfaf8] p-3 text-xs text-[#746b63] space-y-1">
+                        <p><strong>Lapangan Aktif:</strong> {settings.courts_count} Court</p>
+                        <p><strong>Sesi Pertandingan:</strong> {settings.sessions_count} Sesi Rundown</p>
+                        <p><strong>Jeda Istirahat Minimal:</strong> {settings.minimum_rest_minutes} Menit</p>
+                    </div>
+                </div>
+            </Modal>
         </AdminLayout>
     );
 }

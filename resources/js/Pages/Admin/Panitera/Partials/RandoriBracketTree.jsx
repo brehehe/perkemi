@@ -79,8 +79,40 @@ function BracketMatchCard({
         match.notes?.includes('dilewati') ||
         (match.is_bye && (match.round_label?.includes('GF2') || match.round_label?.includes('Grand Final Ulang')));
 
+    const getContingentName = (contingentDirect, metaCorner, entry) => {
+        if (contingentDirect && typeof contingentDirect === 'string') return contingentDirect;
+        if (contingentDirect?.name) return contingentDirect.name;
+        if (metaCorner?.contingent_name) return metaCorner.contingent_name;
+        if (metaCorner?.city) return metaCorner.city;
+        if (metaCorner?.contingent && typeof metaCorner.contingent === 'string') return metaCorner.contingent;
+        if (metaCorner?.contingent?.name) return metaCorner.contingent.name;
+        if (entry?.athlete?.contingent?.name) return entry.athlete.contingent.name;
+        return '';
+    };
+
+    const akaContingent = getContingentName(
+        match.aka_contingent || match.red_contingent,
+        match.metadata?.red,
+        match.redEntry
+    );
+
+    const shiroContingent = getContingentName(
+        match.shiro_contingent || match.blue_contingent,
+        match.metadata?.blue,
+        match.blueEntry
+    );
+
+    const isPlaceholder = (label) => {
+        if (!label) return true;
+        const trimmed = label.trim();
+        const upper = trimmed.toUpperCase();
+        if (upper === 'BYE' || upper === '-' || upper === '—') return true;
+        const lower = trimmed.toLowerCase();
+        return lower.startsWith('pemenang') || lower.startsWith('kalah') || lower.startsWith('menunggu') || lower.startsWith('sudut');
+    };
+
     return (
-        <div className="relative flex flex-col justify-center my-2.5 w-72 shrink-0 group">
+        <div className="relative flex flex-col justify-center my-2.5 w-76 shrink-0 group">
             {/* Main Match Container */}
             <div
                 className={`overflow-hidden rounded-xl border transition-all duration-200 shadow-xs hover:shadow-md ${
@@ -122,18 +154,27 @@ function BracketMatchCard({
                                 : 'bg-white dark:bg-[#1c1917] text-[#17120f] dark:text-white'
                         }`}
                     >
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black bg-rose-600 text-white shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className="shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black bg-rose-600 text-white shadow-2xs">
                                 AKA
                             </span>
-                            <span className="truncate text-xs font-semibold" title={akaLabel || 'Menunggu peserta'}>
-                                {akaLabel || 'Menunggu peserta'}
-                            </span>
-                            {isAkaWinner && (
-                                <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
-                            )}
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="truncate text-xs font-semibold" title={akaLabel || 'Menunggu peserta'}>
+                                        {akaLabel || 'Menunggu peserta'}
+                                    </span>
+                                    {isAkaWinner && (
+                                        <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
+                                    )}
+                                </div>
+                                {akaContingent && !isPlaceholder(akaLabel) && (
+                                    <p className="truncate text-[11px] font-medium text-[#625b54] dark:text-white/70 leading-tight mt-0.5" title={akaContingent}>
+                                        {akaContingent}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        <div className="shrink-0 font-mono font-bold text-xs sm:text-sm">
+                        <div className="shrink-0 font-mono font-bold text-xs sm:text-sm pl-1">
                             {match.score ? (
                                 <span className={isAkaWinner ? 'text-rose-700 dark:text-rose-400 font-black' : 'text-[#7a746e] dark:text-white/50'}>
                                     {match.score.aka_total}
@@ -156,18 +197,27 @@ function BracketMatchCard({
                                 : 'bg-white dark:bg-[#1c1917] text-[#17120f] dark:text-white'
                         }`}
                     >
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black bg-slate-700 dark:bg-slate-300 text-white dark:text-slate-900 shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className="shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black bg-slate-700 dark:bg-slate-300 text-white dark:text-slate-900 shadow-2xs">
                                 SHIRO
                             </span>
-                            <span className="truncate text-xs font-semibold" title={shiroLabel || 'Menunggu peserta'}>
-                                {shiroLabel || 'Menunggu peserta'}
-                            </span>
-                            {isShiroWinner && (
-                                <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
-                            )}
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="truncate text-xs font-semibold" title={shiroLabel || 'Menunggu peserta'}>
+                                        {shiroLabel || 'Menunggu peserta'}
+                                    </span>
+                                    {isShiroWinner && (
+                                        <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
+                                    )}
+                                </div>
+                                {shiroContingent && !isPlaceholder(shiroLabel) && (
+                                    <p className="truncate text-[11px] font-medium text-[#625b54] dark:text-white/70 leading-tight mt-0.5" title={shiroContingent}>
+                                        {shiroContingent}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        <div className="shrink-0 font-mono font-bold text-xs sm:text-sm">
+                        <div className="shrink-0 font-mono font-bold text-xs sm:text-sm pl-1">
                             {match.score ? (
                                 <span className={isShiroWinner ? 'text-slate-900 dark:text-white font-black' : 'text-[#7a746e] dark:text-white/50'}>
                                     {match.score.shiro_total}
@@ -234,7 +284,7 @@ function BracketRoundColumn({
     isLastRound,
 }) {
     return (
-        <div className="flex flex-col items-center shrink-0 w-76">
+        <div className="flex flex-col items-center shrink-0 w-80">
             {/* Round Column Header */}
             <div className="w-full mb-3 pb-2 border-b border-[#e5ded4] dark:border-white/10 text-center">
                 <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#9a6b20] dark:text-amber-400">
@@ -276,10 +326,24 @@ function BracketChampionPodium({ matches, isMonitor = false }) {
     const runnerUpName =
         winnerCorner === 'aka' ? finalMatch.shiro_label : winnerCorner === 'shiro' ? finalMatch.aka_label : null;
 
+    const championContingent =
+        winnerCorner === 'aka'
+            ? finalMatch.aka_contingent || finalMatch.red_contingent || finalMatch.metadata?.red?.contingent_name
+            : winnerCorner === 'shiro'
+            ? finalMatch.shiro_contingent || finalMatch.blue_contingent || finalMatch.metadata?.blue?.contingent_name
+            : null;
+
+    const runnerUpContingent =
+        winnerCorner === 'aka'
+            ? finalMatch.shiro_contingent || finalMatch.blue_contingent || finalMatch.metadata?.blue?.contingent_name
+            : winnerCorner === 'shiro'
+            ? finalMatch.aka_contingent || finalMatch.red_contingent || finalMatch.metadata?.red?.contingent_name
+            : null;
+
     if (!championName) return null;
 
     return (
-        <div className="flex flex-col items-center justify-center shrink-0 w-68 ml-4 my-auto self-center">
+        <div className="flex flex-col items-center justify-center shrink-0 w-72 ml-4 my-auto self-center">
             <div className="w-full rounded-2xl border-2 border-amber-300 dark:border-amber-500/40 bg-gradient-to-b from-amber-50 dark:from-amber-950/40 to-amber-100/60 dark:to-amber-950/20 p-5 text-center shadow-lg">
                 <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#17120f] dark:bg-amber-400 text-amber-400 dark:text-slate-950 shadow-md ring-4 ring-amber-400/20">
                     <i className="fa-solid fa-trophy text-2xl" />
@@ -290,6 +354,11 @@ function BracketChampionPodium({ matches, isMonitor = false }) {
                 <h4 className="mt-1.5 text-base font-black text-[#17120f] dark:text-white leading-snug break-words">
                     {championName}
                 </h4>
+                {championContingent && (
+                    <p className="mt-0.5 text-xs font-semibold text-[#7a746e] dark:text-white/70">
+                        {championContingent}
+                    </p>
+                )}
 
                 {runnerUpName && (
                     <div className="mt-4 pt-3 border-t border-amber-200/80 dark:border-amber-800/40 text-[11px]">
@@ -297,6 +366,11 @@ function BracketChampionPodium({ matches, isMonitor = false }) {
                             Juara 2 · Medali Perak
                         </p>
                         <p className="mt-0.5 font-bold text-slate-800 dark:text-white/80 break-words">{runnerUpName}</p>
+                        {runnerUpContingent && (
+                            <p className="mt-0.5 text-[10.5px] font-normal text-slate-500 dark:text-white/60">
+                                {runnerUpContingent}
+                            </p>
+                        )}
                     </div>
                 )}
             </div>
@@ -366,12 +440,14 @@ export default function RandoriBracketTree({
         matches.forEach((m) => {
             const red = m.aka_label || m.red_label;
             const blue = m.shiro_label || m.blue_label;
+            const redContingent = m.aka_contingent || m.red_contingent || m.metadata?.red?.contingent_name;
+            const blueContingent = m.shiro_contingent || m.blue_contingent || m.metadata?.blue?.contingent_name;
 
             if (red && !standings[red]) {
-                standings[red] = { name: red, played: 0, won: 0, lost: 0, points: 0 };
+                standings[red] = { name: red, contingent: redContingent, played: 0, won: 0, lost: 0, points: 0 };
             }
             if (blue && !standings[blue]) {
-                standings[blue] = { name: blue, played: 0, won: 0, lost: 0, points: 0 };
+                standings[blue] = { name: blue, contingent: blueContingent, played: 0, won: 0, lost: 0, points: 0 };
             }
 
             if (m.score) {
@@ -551,7 +627,10 @@ export default function RandoriBracketTree({
                                             )}
                                         </td>
                                         <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                            {row.name}
+                                            <div>{row.name}</div>
+                                            {row.contingent && (
+                                                <div className="text-[10px] font-normal text-slate-500 dark:text-white/50">{row.contingent}</div>
+                                            )}
                                         </td>
                                         <td className="py-2 px-3 text-center font-mono">{row.played}</td>
                                         <td className="py-2 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
