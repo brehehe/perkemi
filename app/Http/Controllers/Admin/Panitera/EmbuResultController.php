@@ -150,6 +150,14 @@ class EmbuResultController extends Controller
         }
 
         $elapsedMilliseconds += $runningMilliseconds;
+        $metadata = $tournamentMatch->metadata ?? [];
+        $judgeCount = count($validated['judge_scores']);
+        $metadata['panitera'] = [
+            ...($metadata['panitera'] ?? []),
+            'result_judge_count' => $judgeCount,
+            'result_judge_numbers' => range(1, $judgeCount),
+        ];
+
         $tournamentMatch->update([
             'status' => 'completed',
             'call_status' => 'completed',
@@ -159,6 +167,7 @@ class EmbuResultController extends Controller
             'timer_elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
             'timer_elapsed_ms' => $elapsedMilliseconds,
             'timer_version' => max(0, (int) $tournamentMatch->timer_version) + 1,
+            'metadata' => $metadata,
         ]);
 
         $redirect = $request->boolean('return_to_match')

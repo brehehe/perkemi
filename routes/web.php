@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\Master\AthleteController;
 use App\Http\Controllers\Admin\Master\ClerkController;
 use App\Http\Controllers\Admin\Master\ContingentController;
 use App\Http\Controllers\Admin\Master\EventController;
+use App\Http\Controllers\Admin\Master\EventDataSyncController;
 use App\Http\Controllers\Admin\Master\EventDetailController;
 use App\Http\Controllers\Admin\Master\EventRefereeImportController;
 use App\Http\Controllers\Admin\Master\FieldCoordinatorController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Admin\Master\WeightClassController;
 use App\Http\Controllers\Admin\Panitera\ChampionResultController;
 use App\Http\Controllers\Admin\Panitera\EmbuPenaltyController;
 use App\Http\Controllers\Admin\Panitera\EmbuResultController;
+use App\Http\Controllers\Admin\Panitera\PaniteraCategoryLockController;
 use App\Http\Controllers\Admin\Panitera\PaniteraCourtMonitorController;
 use App\Http\Controllers\Admin\Panitera\PaniteraDashboardController;
 use App\Http\Controllers\Admin\Panitera\PaniteraEventContextController;
@@ -123,6 +125,8 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     // Event Detail & Configuration
     Route::get('event/detail', [EventDetailController::class, 'show'])->name('event.detail.default');
     Route::get('event/{event}/detail', [EventDetailController::class, 'show'])->name('event.detail');
+    Route::get('event/{event}/export-package', [EventDataSyncController::class, 'export'])->name('event.export-package');
+    Route::post('event/import-package', [EventDataSyncController::class, 'import'])->name('event.import-package');
     Route::put('event/{event}/general', [EventDetailController::class, 'updateGeneral'])->name('event.update.general');
     Route::post('event/{event}/cover', [EventDetailController::class, 'updateCover'])->name('event.cover.update');
     Route::delete('event/{event}/cover', [EventDetailController::class, 'destroyCover'])->name('event.cover.destroy');
@@ -354,6 +358,10 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::get('scoring/champions', [ChampionResultController::class, 'index'])->name('champions.index');
     Route::post('scoring/champions/{matchCategory}/generate', [ChampionResultController::class, 'generate'])->name('champions.generate');
     Route::put('scoring/champions/{matchCategory}', [ChampionResultController::class, 'update'])->name('champions.update');
+
+    // Buka & Kunci Nomor Pertandingan (Scoring Lock)
+    Route::post('scoring/categories/{matchCategory}/lock', [PaniteraCategoryLockController::class, 'lock'])->name('categories.lock');
+    Route::post('scoring/categories/{matchCategory}/unlock', [PaniteraCategoryLockController::class, 'unlock'])->name('categories.unlock');
 
     // VAR (Video Assistant Review)
     Route::post('scoring/matches/{tournamentMatch}/var-review', [VarReviewController::class, 'store'])->name('matches.var.store');

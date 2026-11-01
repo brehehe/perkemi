@@ -12,6 +12,7 @@ use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\RandoriResultService;
 use App\Services\Panitera\RandoriScoreDraftStore;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,9 @@ class RandoriResultController extends Controller
             ->get(['id', 'name', 'type', 'gender', 'order']);
         $selectedCategoryId = $request->string('category')->toString() ?: $categories->first()?->id;
         $category = $selectedCategoryId ? $categories->firstWhere('id', $selectedCategoryId) : null;
+        if ($category) {
+            app(TournamentDrawingGenerator::class)->syncCategoryByes($category);
+        }
         $matches = $category
             ? TournamentMatch::query()
                 ->where('event_match_category_id', $category->id)
@@ -105,6 +109,11 @@ class RandoriResultController extends Controller
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
         abort_if($tournamentMatch->metadata['placeholder'] ?? false, 422, 'Peserta pertandingan belum lengkap.');
 
         $validated = $request->validated();
@@ -126,12 +135,16 @@ class RandoriResultController extends Controller
             $validated['sync_client_id'] ?? null,
         );
 
-        $redirect = $request->boolean('return_to_match')
-            ? redirect()->route('admin.panitera.matches.show', [
-                'tournamentMatch' => $tournamentMatch,
-                'event_id' => $event->id,
-            ])
-            : back();
+        if ($request->filled('redirect_to')) {
+            $redirect = redirect($request->input('redirect_to'));
+        } else {
+            $redirect = $request->boolean('return_to_match')
+                ? redirect()->route('admin.panitera.matches.show', [
+                    'tournamentMatch' => $tournamentMatch,
+                    'event_id' => $event->id,
+                ])
+                : back();
+        }
 
         return $redirect->with('success', 'Hasil Randori berhasil disimpan dan bagan berikutnya diperbarui. Kunci nilai setelah seluruh hasil dipastikan benar.');
     }
@@ -153,6 +166,11 @@ class RandoriResultController extends Controller
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
 
         $score = $results->lock($tournamentMatch, $request->user()->id);
         $state = $drafts->replaceFromScore($tournamentMatch, $score, $request->user()->id);
@@ -162,6 +180,11 @@ class RandoriResultController extends Controller
             $state,
             $request->string('sync_client_id')->toString() ?: null,
         );
+
+        if ($request->filled('redirect_to')) {
+            return redirect($request->input('redirect_to'))
+                ->with('success', 'Nilai Randori berhasil dikunci dan tidak dapat diubah lagi.');
+        }
 
         return redirect()->route('admin.panitera.matches.show', [
             'tournamentMatch' => $tournamentMatch,
@@ -180,6 +203,11 @@ class RandoriResultController extends Controller
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id && $tournamentMatch->matchCategory?->type === 'randori', 404);
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
         abort_if($tournamentMatch->metadata['placeholder'] ?? false, 422, 'Peserta pertandingan belum lengkap.');
 
         if ($tournamentMatch->randoriScore?->locked_at) {
@@ -214,15 +242,19 @@ class RandoriResultController extends Controller
         array $state,
         ?string $clientId,
     ): void {
-        RandoriScoreStateUpdated::dispatch(
-            eventId: $match->event_id,
-            matchId: $match->id,
-            courtId: $match->event_court_id,
-            action: $action,
-            version: $state['state']['version'],
-            changes: $state['changes'],
-            clientId: $clientId,
-            updatedAt: (string) $state['state']['updated_at'],
-        );
+        try {
+            RandoriScoreStateUpdated::dispatch(
+                eventId: $match->event_id,
+                matchId: $match->id,
+                courtId: $match->event_court_id,
+                action: $action,
+                version: $state['state']['version'],
+                changes: $state['changes'],
+                clientId: $clientId,
+                updatedAt: (string) $state['state']['updated_at'],
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

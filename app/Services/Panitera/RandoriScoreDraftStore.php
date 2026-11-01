@@ -45,6 +45,10 @@ class RandoriScoreDraftStore
                 $mergedData['notes'] = $data['notes'];
             }
 
+            if (array_key_exists('decision_override', $data)) {
+                $mergedData['decision_override'] = $data['decision_override'];
+            }
+
             $next = $this->normalizeState([
                 ...$mergedData,
                 'version' => $current['version'],
@@ -129,6 +133,14 @@ class RandoriScoreDraftStore
                 })
                 ->all(),
             'notes' => is_string($state['notes'] ?? null) ? $state['notes'] : '',
+            'decision_override' => is_array($state['decision_override'] ?? null)
+                ? [
+                    'type' => $state['decision_override']['type'] ?? null,
+                    'affected_corner' => $state['decision_override']['affected_corner'] ?? null,
+                    'disqualification_scope' => $state['decision_override']['disqualification_scope'] ?? null,
+                    'reason' => $state['decision_override']['reason'] ?? null,
+                ]
+                : null,
             'updated_at' => is_string($state['updated_at'] ?? null) ? $state['updated_at'] : null,
             'updated_by' => is_string($state['updated_by'] ?? null) ? $state['updated_by'] : null,
         ];
@@ -155,6 +167,10 @@ class RandoriScoreDraftStore
 
         if (($current['notes'] ?? '') !== ($next['notes'] ?? '')) {
             $changes['notes'] = $next['notes'];
+        }
+
+        if (($current['decision_override'] ?? null) !== ($next['decision_override'] ?? null)) {
+            $changes['decision_override'] = $next['decision_override'];
         }
 
         return $changes;

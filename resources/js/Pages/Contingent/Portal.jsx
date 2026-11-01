@@ -356,7 +356,8 @@ function AthletesSection({ athletes = [], kyus = [] }) {
     const submit = (event) => {
         event.preventDefault();
         const endpoint = editing ? `/kontingen/atlet/${editing.id}` : '/kontingen/atlet';
-        form.transform((data) => ({ ...data, ...(editing ? { _method: 'put' } : {}) })).post(endpoint, {
+        form.transform((data) => ({ ...data, ...(editing ? { _method: 'put' } : {}) }));
+        form.post(endpoint, {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: resetAthleteForm,

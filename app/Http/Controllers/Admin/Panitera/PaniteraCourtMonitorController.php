@@ -15,7 +15,7 @@ use Inertia\Response;
 class PaniteraCourtMonitorController extends Controller
 {
     /** @var list<string> */
-    private const Modes = ['arena', 'timer', 'result', 'officials'];
+    private const Modes = ['arena', 'match', 'timer', 'result', 'officials'];
 
     public function __construct(
         private readonly CourtMonitorDataService $monitorService,

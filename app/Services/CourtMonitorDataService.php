@@ -22,7 +22,13 @@ class CourtMonitorDataService
     /** @return array<string, mixed> */
     public function monitorData(Event $event, EventCourt $court): array
     {
-        $relations = ['matchCategory:id,name,type', 'embuScores', 'randoriScore', 'activeVarReview'];
+        $relations = [
+            'matchCategory:id,name,type',
+            'embuScores',
+            'embuJudgeScores.referee:id,name,region,dan_grade',
+            'randoriScore',
+            'activeVarReview',
+        ];
         $baseQuery = fn () => TournamentMatch::query()
             ->whereBelongsTo($event)
             ->whereBelongsTo($court, 'court')
@@ -57,6 +63,37 @@ class CourtMonitorDataService
 
         $serverNow = now();
 
+        $categoryRecap = $this->categoryRecapData($event, $court, $activeMatch, $lastCompletedMatch);
+        $activeCategoryId = $categoryRecap['id'] ?? null;
+
+        $categoriesOnCourt = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->whereBelongsTo($court, 'court')
+            ->where('is_bye', false)
+            ->with('matchCategory:id,name,type,gender,scoring_locked_at')
+            ->get()
+            ->filter(fn (TournamentMatch $m) => $m->matchCategory !== null)
+            ->groupBy('event_match_category_id')
+            ->map(function ($catMatches) use ($activeCategoryId): array {
+                $first = $catMatches->first();
+                $cat = $first->matchCategory;
+                $total = $catMatches->count();
+                $completed = $catMatches->where('status', 'completed')->count();
+
+                return [
+                    'id' => $cat?->id,
+                    'name' => $cat?->name,
+                    'type' => $cat?->type,
+                    'gender' => $cat?->gender,
+                    'is_locked' => (bool) $cat?->scoring_locked_at,
+                    'total_matches' => $total,
+                    'completed_matches' => $completed,
+                    'is_active' => $cat?->id === $activeCategoryId,
+                ];
+            })
+            ->values()
+            ->all();
+
         return [
             'server_now' => $serverNow->toIso8601String(),
             'server_now_ms' => $serverNow->getTimestampMs(),
@@ -69,6 +106,184 @@ class CourtMonitorDataService
                 'total' => $baseQuery()->count(),
                 'completed' => $baseQuery()->where('status', 'completed')->count(),
             ],
+            'category_recap' => $categoryRecap,
+            'categories_on_court' => $categoriesOnCourt,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    public function categoryRecapData(
+        Event $event,
+        EventCourt $court,
+        ?TournamentMatch $activeMatch,
+        ?TournamentMatch $lastCompletedMatch,
+    ): ?array {
+        $activeCategoryId = $activeMatch?->event_match_category_id
+            ?? $lastCompletedMatch?->event_match_category_id;
+
+        if (! $activeCategoryId) {
+            $firstCourtMatch = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->whereBelongsTo($court, 'court')
+                ->where('is_bye', false)
+                ->orderByRaw('scheduled_start_at IS NULL')
+                ->orderBy('scheduled_start_at')
+                ->orderBy('match_sequence')
+                ->first();
+            $activeCategoryId = $firstCourtMatch?->event_match_category_id;
+        }
+
+        if (! $activeCategoryId) {
+            return null;
+        }
+
+        $category = $event->matchCategories()
+            ->with('tournamentDrawing:id,event_match_category_id,bracket_type,status')
+            ->where('id', $activeCategoryId)
+            ->first();
+
+        if (! $category) {
+            return null;
+        }
+
+        if ($category->type === 'randori') {
+            app(TournamentDrawingGenerator::class)->syncCategoryByes($category);
+            $matches = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $category->id)
+                ->with([
+                    'randoriScore',
+                    'court:id,name',
+                ])
+                ->orderBy('match_sequence')
+                ->get();
+        } else {
+            $matchesQuery = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $category->id)
+                ->where('is_bye', false)
+                ->whereBelongsTo($court, 'court')
+                ->with([
+                    'embuScores',
+                    'court:id,name',
+                ])
+                ->orderBy('match_sequence');
+
+            $matches = $matchesQuery->get();
+
+            if ($matches->isEmpty()) {
+                $matches = TournamentMatch::query()
+                    ->whereBelongsTo($event)
+                    ->where('event_match_category_id', $category->id)
+                    ->where('is_bye', false)
+                    ->with([
+                        'embuScores',
+                        'court:id,name',
+                    ])
+                    ->orderBy('match_sequence')
+                    ->get();
+            }
+        }
+
+        $totalMatches = $matches->count();
+        $completedMatches = $matches->where('status', 'completed')->count();
+
+        // Calculate temporary rank for embu completed matches
+        $completedEmbu = $matches->filter(fn (TournamentMatch $m) => $m->status === 'completed' && $m->embuScores->isNotEmpty());
+        $sortedEmbu = $completedEmbu->sortByDesc(function (TournamentMatch $m) {
+            $score = $m->embuScores->first();
+            if ($score?->is_disqualified) {
+                return -999999;
+            }
+
+            return (float) ($score?->final_score ?? 0);
+        })->values();
+
+        $ranksByMatchId = [];
+        $rankCounter = 1;
+        foreach ($sortedEmbu as $m) {
+            $score = $m->embuScores->first();
+            if ($score?->is_disqualified) {
+                $ranksByMatchId[$m->id] = 'DQ';
+            } else {
+                $ranksByMatchId[$m->id] = $rankCounter++;
+            }
+        }
+
+        $matchRows = $matches->map(function (TournamentMatch $match) use ($event, $category, $activeMatch, $ranksByMatchId): array {
+            $embuScore = $match->embuScores->first();
+            $randoriScore = $match->randoriScore;
+            $isActive = $activeMatch && $match->id === $activeMatch->id;
+            $athletes = [];
+
+            if ($category->type === 'embu') {
+                $participantData = $this->participantDetails->forMatch($event, $match);
+                $athletes = collect($participantData['athletes'] ?? [])->pluck('name')->all();
+            }
+
+            return [
+                'id' => $match->id,
+                'phase' => $match->phase,
+                'bracket_position' => (int) ($match->bracket_position ?? 1),
+                'next_match_id' => $match->next_match_id,
+                'sequence' => $match->match_sequence,
+                'round_label' => $match->round_label,
+                'participant_label' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+                'aka_label' => $match->red_label,
+                'shiro_label' => $match->blue_label,
+                'court' => $match->court?->name,
+                'court_id' => $match->event_court_id,
+                'is_bye' => (bool) $match->is_bye,
+                'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                'athletes' => $athletes,
+                'status' => $match->status,
+                'status_label' => $this->statusLabel($match->status),
+                'call_status' => $match->call_status,
+                'call_status_label' => $this->callStatusLabel($match->call_status),
+                'is_active' => $isActive,
+                'is_completed' => $match->status === 'completed',
+                'rank' => $ranksByMatchId[$match->id] ?? null,
+                'scheduled_at' => $match->scheduled_start_at?->translatedFormat('H:i'),
+                'embu_result' => $embuScore ? [
+                    'final_score' => (float) $embuScore->final_score,
+                    'judge_scores' => is_array($embuScore->judge_scores) ? $embuScore->judge_scores : [],
+                    'time_penalty' => (float) $embuScore->time_penalty,
+                    'violation_penalty' => (float) $embuScore->violation_penalty,
+                    'total_penalty' => $embuScore->effectiveTotalPenalty(),
+                    'duration_seconds' => (int) $embuScore->duration_seconds,
+                    'is_disqualified' => (bool) $embuScore->is_disqualified,
+                    'disqualification_reason' => $embuScore->disqualification_reason,
+                    'status' => $embuScore->status,
+                ] : null,
+                'randori_result' => $randoriScore ? [
+                    'aka_label' => $match->red_label,
+                    'shiro_label' => $match->blue_label,
+                    'aka_total' => (int) $randoriScore->aka_total,
+                    'shiro_total' => (int) $randoriScore->shiro_total,
+                    'winner_corner' => $randoriScore->winner_corner,
+                    'status' => $randoriScore->status,
+                ] : null,
+                'score' => $randoriScore ? [
+                    'aka_total' => (int) $randoriScore->aka_total,
+                    'shiro_total' => (int) $randoriScore->shiro_total,
+                    'winner_corner' => $randoriScore->winner_corner,
+                    'is_locked' => $randoriScore->locked_at !== null,
+                    'status' => $randoriScore->status,
+                ] : null,
+            ];
+        })->values()->all();
+
+        return [
+            'id' => $category->id,
+            'name' => $category->name,
+            'type' => $category->type,
+            'gender' => $category->gender,
+            'format' => $category->tournamentDrawing?->bracket_type,
+            'is_locked' => (bool) $category->scoring_locked_at,
+            'locked_at' => $category->scoring_locked_at?->translatedFormat('d M Y, H:i'),
+            'total_matches' => $totalMatches,
+            'completed_matches' => $completedMatches,
+            'matches' => $matchRows,
         ];
     }
 
@@ -101,9 +316,32 @@ class CourtMonitorDataService
                 : ($randoriScore ? [
                     'aka_total' => $randoriScore->aka_total,
                     'shiro_total' => $randoriScore->shiro_total,
+                    'aka_breakdown' => $randoriScore->aka_breakdown ?? [],
+                    'shiro_breakdown' => $randoriScore->shiro_breakdown ?? [],
                     'winner_corner' => $randoriScore->winner_corner,
                     'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
                 ] : null),
+            'judge_scores' => $type === 'embu' && $match->relationLoaded('embuJudgeScores')
+                ? $match->embuJudgeScores
+                    ->where('tiebreak_round', 0)
+                    ->sortBy('judge_number')
+                    ->map(fn ($score): array => [
+                        'judge_number' => $score->judge_number,
+                        'role' => $score->role,
+                        'referee_name' => $score->referee?->name ?? 'Juri '.$score->judge_number,
+                        'technique_subtotal' => (float) $score->technique_subtotal,
+                        'expression_subtotal' => (float) $score->expression_subtotal,
+                        'total_score' => (float) $score->total_score,
+                        'completed_items' => (int) $score->completed_items,
+                        'status' => $score->status,
+                        'is_signed' => filled($score->signed_at),
+                    ])
+                    ->values()
+                    ->all()
+                : [],
+            'var_stream_url' => data_get($match->metadata, 'var_stream_url')
+                ?? data_get($match->court?->description, 'var_stream_url')
+                ?? 'https://var.smart-perkemi.id',
             'var_review' => [
                 'is_under_review' => (bool) data_get($match->metadata, 'under_var_review', false),
                 'reason' => data_get($match->metadata, 'var_review_reason'),

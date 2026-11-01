@@ -268,11 +268,27 @@ class RandoriResultService
                 ->where('event_match_category_id', $match->event_match_category_id)
                 ->where('round_label', 'Upper Bracket')
                 ->orderBy('match_sequence')
-                ->pluck('id')
-                ->values();
-            $corner = $upperMatches->search($match->id) === 1 ? 'blue' : 'red';
+                ->get();
+            $upperMatchIds = $upperMatches->pluck('id')->values();
+            $corner = $upperMatchIds->search($match->id) === 1 ? 'blue' : 'red';
+            $otherUpperMatch = $upperMatches->firstWhere('id', '!=', $match->id);
+
             $this->placeParticipant($matches->get('Final Upper Bracket'), $corner, $winner);
-            $this->placeParticipant($matches->get('Lower Bracket · Babak 1'), $corner, $loser);
+            $lowerRound = $matches->get('Lower Bracket · Babak 1');
+            $this->placeParticipant($lowerRound, $corner, $loser);
+
+            if ($otherUpperMatch && $otherUpperMatch->is_bye && $loser && $lowerRound) {
+                $lowerRoundMetadata = $lowerRound->fresh()->metadata ?? [];
+                $lowerRoundMetadata['placeholder'] = false;
+                $lowerRound->update([
+                    'status' => 'completed',
+                    'call_status' => 'completed',
+                    'is_bye' => true,
+                    'metadata' => $lowerRoundMetadata,
+                ]);
+
+                $this->placeParticipant($matches->get('Final Lower Bracket'), 'red', $loser);
+            }
 
             return;
         }

@@ -73,7 +73,262 @@ function EmbuScoreCard({ score }) {
     );
 }
 
+function PublicMatchCard({ match }) {
+    const akaAdvancesByBye = match.is_bye && match.aka?.toUpperCase() !== 'BYE';
+    const shiroAdvancesByBye = match.is_bye && match.shiro?.toUpperCase() !== 'BYE';
+    const isAkaWinner = match.winner === 'aka' || akaAdvancesByBye;
+    const isShiroWinner = match.winner === 'shiro' || shiroAdvancesByBye;
+
+    return (
+        <div className={`event-bracket-match ${match.is_bye ? 'event-bracket-bye' : ''} w-68 shrink-0`}>
+            <div className="flex items-center justify-between border-b px-3 py-1 text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold">
+                <span>Partai #{match.sequence}</span>
+                <span>{match.court || 'Court —'}</span>
+            </div>
+            <div className={isAkaWinner ? 'event-bracket-winner' : ''}>
+                <span className="flex items-center gap-1.5 truncate">
+                    <span className="rounded bg-rose-600 px-1 py-0.5 text-[8px] font-black text-white shrink-0">AKA</span>
+                    <span className="truncate">{match.aka}</span>
+                </span>
+                <strong>{akaAdvancesByBye ? 'Lolos' : match.aka_score ?? '—'}</strong>
+            </div>
+            <div className={isShiroWinner ? 'event-bracket-winner' : ''}>
+                <span className="flex items-center gap-1.5 truncate">
+                    <span className="rounded bg-slate-700 px-1 py-0.5 text-[8px] font-black text-white shrink-0">SHIRO</span>
+                    <span className="truncate">{match.shiro}</span>
+                </span>
+                <strong>{shiroAdvancesByBye ? 'Lolos' : match.shiro_score ?? '—'}</strong>
+            </div>
+            <p>
+                <span>{match.scheduled_at || 'Jadwal fleksibel'}</span>
+                {match.is_bye ? (
+                    <strong className="event-bye-badge">BYE</strong>
+                ) : match.status === 'completed' || match.winner ? (
+                    <span className="text-emerald-700 font-bold">Selesai</span>
+                ) : (
+                    <span>Menunggu</span>
+                )}
+            </p>
+        </div>
+    );
+}
+
 function RandoriBracket({ bracket }) {
+    if (bracket.format === 'double_elimination') {
+        const upperRounds = bracket.rounds.filter((r) => r.name?.toLowerCase().includes('upper'));
+        const lowerRounds = bracket.rounds.filter((r) => r.name?.toLowerCase().includes('lower'));
+        const grandFinalRounds = bracket.rounds.filter(
+            (r) => r.name?.toLowerCase().includes('grand final') || (!r.name?.toLowerCase().includes('upper') && !r.name?.toLowerCase().includes('lower'))
+        );
+
+        // Find champion if grand final is finished
+        const gf = grandFinalRounds[grandFinalRounds.length - 1]?.matches?.[0];
+        const champion = gf?.winner === 'aka' ? gf.aka : gf?.winner === 'shiro' ? gf.shiro : null;
+        const runnerUp = gf?.winner === 'aka' ? gf.shiro : gf?.winner === 'shiro' ? gf.aka : null;
+
+        return (
+            <article className="event-bracket">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p className="event-accent text-xs font-bold uppercase tracking-[.12em]">
+                            Bagan Sistem Gugur Ganda (Double Elimination)
+                        </p>
+                        <h3 className="mt-1">{bracket.category}</h3>
+                    </div>
+                    <span className="event-match-type">{bracket.status}</span>
+                </div>
+
+                <div className="event-bracket-scroll mt-6" tabIndex="0" aria-label={`Bagan Randori ${bracket.category}`}>
+                    <div className="flex items-start gap-8 min-w-max pb-4">
+                        {/* Left Column: Upper Bracket on top, Lower Bracket directly below */}
+                        <div className="flex flex-col gap-6">
+                            {/* UPPER BRACKET (BAGAN PEMENANG) */}
+                            <div className="rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 p-4">
+                                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-200 dark:border-blue-900/50">
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold">
+                                        <i className="fa-solid fa-sitemap" />
+                                    </span>
+                                    <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-blue-950 dark:text-blue-300">
+                                            Bagan Pemenang (Upper Bracket)
+                                        </h4>
+                                        <p className="text-[10px] text-blue-700/80 dark:text-blue-400/80">
+                                            Pemenang melaju ke Final Upper; yang kalah turun ke Lower Bracket
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-6">
+                                    {upperRounds.map((round) => (
+                                        <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
+                                            <p className="text-[11px] font-bold uppercase text-blue-900 dark:text-blue-200">{round.name}</p>
+                                            <div className="space-y-3">
+                                                {round.matches.map((match) => (
+                                                    <PublicMatchCard key={match.id} match={match} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* LOWER BRACKET (BAGAN HARAPAN) */}
+                            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 p-4">
+                                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-200 dark:border-amber-900/50">
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-600 text-white text-xs font-bold">
+                                        <i className="fa-solid fa-arrow-rotate-left" />
+                                    </span>
+                                    <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-950 dark:text-amber-300">
+                                            Bagan Harapan (Lower Bracket)
+                                        </h4>
+                                        <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80">
+                                            Kesempatan kedua bagi atlet yang kalah dari Upper Bracket
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-6">
+                                    {lowerRounds.map((round) => (
+                                        <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
+                                            <p className="text-[11px] font-bold uppercase text-amber-900 dark:text-amber-200">{round.name}</p>
+                                            <div className="space-y-3">
+                                                {round.matches.map((match) => (
+                                                    <PublicMatchCard key={match.id} match={match} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Grand Final on Right */}
+                        <div className="rounded-2xl border border-stone-800 bg-gradient-to-b from-stone-900 to-black text-white p-5 shrink-0 self-center shadow-xl min-w-[280px]">
+                            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/10">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400 text-stone-900 text-xs font-black">
+                                    <i className="fa-solid fa-crown" />
+                                </span>
+                                <div>
+                                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                                        Grand Final Penentuan
+                                    </h4>
+                                    <p className="text-[10px] text-stone-400">
+                                        Juara Upper vs Juara Lower
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                {grandFinalRounds.flatMap((r) => r.matches).map((match) => (
+                                    <PublicMatchCard key={match.id} match={match} />
+                                ))}
+                            </div>
+                            {champion && (
+                                <div className="mt-4 pt-3 border-t border-amber-400/30 text-center">
+                                    <i className="fa-solid fa-trophy text-amber-400 text-xl mb-1" />
+                                    <p className="text-[9px] uppercase tracking-widest text-amber-300 font-black">Juara 1 · Medali Emas</p>
+                                    <p className="text-sm font-bold text-white mt-0.5">{champion}</p>
+                                    {runnerUp && (
+                                        <p className="text-xs text-stone-400 mt-1">Juara 2: {runnerUp}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </article>
+        );
+    }
+
+    if (bracket.format === 'round_robin') {
+        const allMatches = bracket.rounds.flatMap((r) => r.matches);
+        const standingsMap = {};
+        allMatches.forEach((m) => {
+            if (m.aka && m.aka !== 'Menunggu peserta') {
+                if (!standingsMap[m.aka]) standingsMap[m.aka] = { name: m.aka, played: 0, won: 0, lost: 0, points: 0 };
+            }
+            if (m.shiro && m.shiro !== 'Menunggu peserta') {
+                if (!standingsMap[m.shiro]) standingsMap[m.shiro] = { name: m.shiro, played: 0, won: 0, lost: 0, points: 0 };
+            }
+            if (m.winner) {
+                if (m.aka && standingsMap[m.aka]) {
+                    standingsMap[m.aka].played += 1;
+                    if (m.winner === 'aka') standingsMap[m.aka].won += 1;
+                    else if (m.winner === 'shiro') standingsMap[m.aka].lost += 1;
+                    standingsMap[m.aka].points += (Number(m.aka_score) || 0);
+                }
+                if (m.shiro && standingsMap[m.shiro]) {
+                    standingsMap[m.shiro].played += 1;
+                    if (m.winner === 'shiro') standingsMap[m.shiro].won += 1;
+                    else if (m.winner === 'aka') standingsMap[m.shiro].lost += 1;
+                    standingsMap[m.shiro].points += (Number(m.shiro_score) || 0);
+                }
+            }
+        });
+        const standings = Object.values(standingsMap).sort((a, b) => b.won - a.won || b.points - a.points);
+
+        return (
+            <article className="event-bracket">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p className="event-accent text-xs font-bold uppercase tracking-[.12em]">
+                            Setengah Kompetisi (Round Robin)
+                        </p>
+                        <h3 className="mt-1">{bracket.category}</h3>
+                    </div>
+                    <span className="event-match-type">{bracket.status}</span>
+                </div>
+
+                {standings.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-300 mb-2">
+                            Klasemen Sementara
+                        </h4>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left">
+                                <thead>
+                                    <tr className="border-b border-amber-200 text-[10px] text-amber-800 uppercase">
+                                        <th className="py-1.5 px-2">Peringkat</th>
+                                        <th className="py-1.5 px-2">Nama Kenshi</th>
+                                        <th className="py-1.5 px-2 text-center">Main</th>
+                                        <th className="py-1.5 px-2 text-center">Menang</th>
+                                        <th className="py-1.5 px-2 text-center">Kalah</th>
+                                        <th className="py-1.5 px-2 text-right">Poin</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-amber-100">
+                                    {standings.map((s, idx) => (
+                                        <tr key={s.name}>
+                                            <td className="py-1.5 px-2 font-bold">{idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}</td>
+                                            <td className="py-1.5 px-2 font-semibold">{s.name}</td>
+                                            <td className="py-1.5 px-2 text-center">{s.played}</td>
+                                            <td className="py-1.5 px-2 text-center font-bold text-emerald-600">{s.won}</td>
+                                            <td className="py-1.5 px-2 text-center text-stone-500">{s.lost}</td>
+                                            <td className="py-1.5 px-2 text-right font-mono font-bold">{s.points}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                <div className="event-bracket-scroll mt-6" tabIndex="0" aria-label={`Jadwal Putaran ${bracket.category}`}>
+                    <div className="flex items-start gap-6 min-w-max pb-4">
+                        {bracket.rounds.map((round) => (
+                            <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
+                                <h4 className="text-xs font-bold uppercase text-stone-600">{round.name}</h4>
+                                <div className="space-y-3">
+                                    {round.matches.map((match) => (
+                                        <PublicMatchCard key={match.id} match={match} />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </article>
+        );
+    }
+
     const maxMatchesInRound = Math.max(...bracket.rounds.map((round) => round.matches.length), 1);
     const bracketHeight = Math.max(maxMatchesInRound * 148, 296);
 
@@ -732,8 +987,8 @@ export default function EventShow({
                                                         {contingent.name}
                                                     </h3>
                                                 </div>
-                                                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 text-xs font-extrabold text-amber-800 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
-                                                    <Icon name="fa-user-group" className="text-[10px] text-amber-600 dark:text-amber-400" />
+                                                <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950/80 px-2.5 py-1 text-xs font-black text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs">
+                                                    <Icon name="fa-user-group" className="text-[10px] text-amber-800 dark:text-amber-400" />
                                                     {contingent.athletes_count} atlet
                                                 </span>
                                             </div>
@@ -819,10 +1074,10 @@ export default function EventShow({
                                                 {court.active_match ? (
                                                     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider ${
                                                         court.active_match.status === 'in_progress'
-                                                            ? 'border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300 animate-pulse'
-                                                            : 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300'
+                                                            ? 'border border-red-300 bg-red-100 text-red-950 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 animate-pulse'
+                                                            : 'border border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/60 dark:text-amber-200'
                                                     }`}>
-                                                        <span className={`h-2 w-2 rounded-full ${court.active_match.status === 'in_progress' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                                                        <span className={`h-2 w-2 rounded-full ${court.active_match.status === 'in_progress' ? 'bg-red-600' : 'bg-amber-600 dark:bg-amber-400'}`} />
                                                         {court.active_match.status_label}
                                                     </span>
                                                 ) : (
@@ -838,14 +1093,14 @@ export default function EventShow({
                                         {court.active_match ? (
                                             <div className="mt-4 space-y-3.5">
                                                 {/* Match Header Bar */}
-                                                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 text-xs border border-slate-200/80 dark:border-slate-700/60">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-900 text-white dark:bg-slate-800 px-4 py-2.5 text-xs border border-slate-800 dark:border-slate-700/80 shadow-xs">
                                                     <div className="flex items-center gap-2.5">
-                                                        <span className="rounded-md bg-amber-500 px-2.5 py-0.5 text-[11px] font-black text-slate-950 shadow-2xs">
+                                                        <span className="rounded-md bg-amber-400 px-2.5 py-0.5 text-[11px] font-black text-slate-950 shadow-2xs">
                                                             Partai #{court.active_match.sequence}
                                                         </span>
-                                                        <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">{court.active_match.category}</span>
+                                                        <span className="font-bold text-white text-xs sm:text-sm">{court.active_match.category}</span>
                                                     </div>
-                                                    <span className="text-slate-600 dark:text-slate-300 font-semibold text-[11px] sm:text-xs">{court.active_match.round}</span>
+                                                    <span className="text-slate-300 dark:text-slate-300 font-semibold text-[11px] sm:text-xs">{court.active_match.round}</span>
                                                 </div>
 
                                                 {/* Split Battle Display for Randori or Score for Embu */}
@@ -899,17 +1154,17 @@ export default function EventShow({
                                                     </div>
                                                 ) : (
                                                     /* Embu Performance Display */
-                                                    <div className="rounded-xl border border-amber-200/80 dark:border-amber-500/30 bg-gradient-to-r from-amber-50/90 via-white to-amber-50/40 dark:from-amber-950/30 dark:via-slate-900 dark:to-amber-950/20 p-4 shadow-2xs">
+                                                    <div className="rounded-xl border border-amber-300/80 dark:border-amber-500/40 bg-amber-50/90 dark:bg-slate-900/90 p-4 shadow-2xs">
                                                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                                             <div>
-                                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200 border border-amber-300/50 dark:border-amber-700/50">
-                                                                    <Icon name="fa-trophy" className="text-[9px]" /> Penampilan Embu
+                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-200/90 text-amber-950 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60">
+                                                                    <Icon name="fa-trophy" className="text-[9px] text-amber-800 dark:text-amber-400" /> Penampilan Embu
                                                                 </span>
-                                                                <p className="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-1.5 tracking-tight leading-snug">{court.active_match.participant || 'Menunggu peserta'}</p>
+                                                                <p className="text-base sm:text-lg font-black text-slate-950 dark:text-white mt-1.5 tracking-tight leading-snug">{court.active_match.participant || 'Menunggu peserta'}</p>
                                                             </div>
-                                                            <div className="text-left sm:text-right shrink-0 bg-white/80 dark:bg-slate-800/80 sm:bg-transparent sm:dark:bg-transparent p-3 sm:p-0 rounded-xl border border-amber-200/50 sm:border-0">
-                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">Nilai Terbuka Arena</span>
-                                                                <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-600 dark:text-amber-400 tracking-tight">
+                                                            <div className="text-left sm:text-right shrink-0 bg-white/90 dark:bg-slate-800/90 sm:bg-transparent sm:dark:bg-transparent p-3 sm:p-0 rounded-xl border border-amber-200/80 sm:border-0 shadow-2xs sm:shadow-none">
+                                                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">Nilai Terbuka Arena</span>
+                                                                <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-950 dark:text-amber-300 tracking-tight">
                                                                     {court.active_match.score_display}
                                                                 </span>
                                                             </div>

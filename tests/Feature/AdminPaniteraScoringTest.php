@@ -2014,6 +2014,65 @@ test('randori score and signature drafts are broadcast and restored for another 
             ->where('match.randori_draft.notes', 'Draft dari meja utama.'));
 });
 
+test('randori draft update supports decision override and empty signature changes without error', function () {
+    $event = createPaniteraEvent('Event Draft Override Randori');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Putra 60 kg', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'red_label' => 'AKA',
+        'blue_label' => 'SHIRO',
+        'metadata' => ['placeholder' => false],
+    ]);
+
+    $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/randori-result/{$match->id}/draft", [
+            'event_id' => $event->id,
+            'client_id' => 'device-panitera-override',
+            'changes' => [
+                'decision_override' => [
+                    'type' => 'medical_stop',
+                    'affected_corner' => 'aka',
+                    'disqualification_scope' => 'match',
+                    'reason' => 'Cedera medis',
+                ],
+                'signatures' => [
+                    'arbitrase' => '',
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJson([
+            'version' => 1,
+            'changed' => true,
+        ]);
+
+    $eventBroadcast = new RandoriScoreStateUpdated(
+        eventId: $event->id,
+        matchId: $match->id,
+        courtId: null,
+        action: 'draft_updated',
+        version: 1,
+        changes: [
+            'signatures' => [
+                'arbitrase' => 'data:image/png;base64,samplebase64imagestring...',
+                'referee' => '',
+            ],
+        ],
+        clientId: 'device-test',
+        updatedAt: now()->toIso8601String(),
+    );
+
+    $payload = $eventBroadcast->broadcastWith();
+    expect($payload['changes']['signatures']['arbitrase'])->toBeTrue()
+        ->and($payload['changes']['signatures']['referee'])->toBeFalse();
+});
+
 test('randori requires a digital signature from each of the six approving parties', function () {
     $event = createPaniteraEvent('Event Tanda Tangan Randori');
     $user = createPaniteraUser($event);
@@ -2722,4 +2781,65 @@ test('panitera can record disqualification hansoku make and shikkaku global', fu
         ->and($disqualifiedEntry->fresh()->competition_status)->toBe('disqualified')
         ->and($disqualifiedEntry->fresh()->status_notes)->toContain('Shikkaku (Global Turnamen)')
         ->and($otherEntry->fresh()->competition_status)->toBe('disqualified');
+});
+
+test('panitera category lock enforces view-only read-only mode and default redirects back to boxes grid', function () {
+    $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'super_admin']);
+    $user->assignRole($role);
+
+    $event = createPaniteraEvent('Event Kunci Nomor');
+    $event->users()->attach($user, ['access_role' => Event::AccessRoleAdmin]);
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'is_active' => true,
+    ]);
+    [$category, $drawing] = createPaniteraCategory($event, 'Embu Berpasangan Putra', 'embu', 'embu_preliminary_final_1_pool');
+
+    $match = TournamentMatch::create([
+        'event_id' => $event->id,
+        'tournament_drawing_id' => $drawing->id,
+        'event_match_category_id' => $category->id,
+        'event_court_id' => $court->id,
+        'status' => 'ready',
+        'phase' => 'preliminary',
+        'round_label' => 'Babak Penyisihan',
+        'match_sequence' => 1,
+        'is_bye' => false,
+        'participant_label' => 'Tim 1',
+        'metadata' => ['placeholder' => false],
+    ]);
+
+    // Test locking redirects back to boxes grid
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/categories/{$category->id}/lock", [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect(route('admin.panitera.scoring.index', ['event_id' => $event->id, 'category_id' => '']));
+
+    expect($category->fresh()->scoring_locked_at)->not->toBeNull();
+
+    // Workflow actions should now be rejected as read-only
+    $this->actingAs($user)
+        ->put("/admin/panitera/scoring/matches/{$match->id}/workflow", [
+            'action' => 'start',
+            'event_id' => $event->id,
+        ])
+        ->assertStatus(422);
+
+    // Storing Embu result should now be rejected as read-only
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/matches/{$match->id}/embu-result", [
+            'event_id' => $event->id,
+        ])
+        ->assertStatus(422);
+
+    // Updating penalties should now be rejected as read-only
+    $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/matches/{$match->id}/embu-penalties", [
+            'event_id' => $event->id,
+            'violation_penalties' => ['composition_count' => 1],
+        ])
+        ->assertStatus(422);
 });

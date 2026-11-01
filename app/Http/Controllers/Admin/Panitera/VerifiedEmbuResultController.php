@@ -33,10 +33,20 @@ class VerifiedEmbuResultController extends Controller
             404,
         );
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
         $operator = $request->user();
         abort_unless($operator instanceof User, 403);
 
         $verifyEmbuResult->handle($event, $tournamentMatch, $operator);
+
+        if ($request->filled('redirect_to')) {
+            return redirect($request->input('redirect_to'))
+                ->with('success', 'Nilai Embu berhasil disimpan, partai ditutup, dan hasil masuk ke klasemen.');
+        }
 
         return redirect()
             ->route('admin.panitera.matches.show', [
@@ -65,6 +75,11 @@ class VerifiedEmbuResultController extends Controller
             404,
         );
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
         $operator = $request->user();
         abort_unless($operator instanceof User, 403);
 

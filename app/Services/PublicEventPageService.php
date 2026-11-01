@@ -336,7 +336,7 @@ class PublicEventPageService
     /** @return Collection<int, array<string, mixed>> */
     private function randoriBrackets(Event $event): Collection
     {
-        return TournamentDrawing::query()
+        $drawings = TournamentDrawing::query()
             ->whereBelongsTo($event)
             ->whereIn('status', ['published', 'in_progress', 'completed'])
             ->whereHas('matchCategory', fn ($query) => $query->where('type', 'randori'))
@@ -346,7 +346,15 @@ class PublicEventPageService
                     ->with(['randoriScore', 'court:id,name'])
                     ->orderBy('match_sequence'),
             ])
-            ->get()
+            ->get();
+
+        foreach ($drawings as $drawing) {
+            if ($drawing->matchCategory) {
+                app(TournamentDrawingGenerator::class)->syncCategoryByes($drawing->matchCategory);
+            }
+        }
+
+        return $drawings
             ->map(fn (TournamentDrawing $drawing): array => [
                 'id' => $drawing->id,
                 'category' => $drawing->matchCategory?->name,

@@ -64,11 +64,15 @@ class TournamentController extends Controller
             'city' => $participant['city'],
             'members' => $participant['members'] ?? [],
         ])->values();
+        if ($selectedCategory && $selectedCategory->type === 'randori') {
+            $generator->syncCategoryByes($selectedCategory);
+        }
+
         $selectedDrawing = $selectedCategory
             ? TournamentDrawing::query()
                 ->whereBelongsTo($activeEvent)
                 ->where('event_match_category_id', $selectedCategory->id)
-                ->with(['matches.court:id,name', 'matches.rundown:id,name'])
+                ->with(['matches.court:id,name', 'matches.rundown:id,name', 'matches.randoriScore'])
                 ->first()
             : null;
         $matches = $selectedDrawing?->matches->map(fn ($match) => [
@@ -80,8 +84,11 @@ class TournamentController extends Controller
             'position' => $match->bracket_position,
             'red_label' => $match->red_label,
             'blue_label' => $match->blue_label,
+            'aka_label' => $match->red_label,
+            'shiro_label' => $match->blue_label,
             'participant_label' => $match->participant_label,
-            'is_bye' => $match->is_bye,
+            'is_bye' => (bool) $match->is_bye,
+            'is_ready' => ! ($match->metadata['placeholder'] ?? false),
             'status' => $match->status,
             'court' => $match->court?->name,
             'session' => $match->rundown?->name,
@@ -89,6 +96,12 @@ class TournamentController extends Controller
             'scheduled_start_formatted' => $match->scheduled_start_at?->translatedFormat('d M, H:i'),
             'scheduled_end_formatted' => $match->scheduled_end_at?->format('H:i'),
             'metadata' => $match->metadata,
+            'score' => $match->randoriScore ? [
+                'winner_corner' => $match->randoriScore->winner_corner,
+                'aka_total' => $match->randoriScore->aka_total,
+                'shiro_total' => $match->randoriScore->shiro_total,
+                'is_locked' => $match->randoriScore->locked_at !== null,
+            ] : null,
         ])->values() ?? collect();
         $scheduleCourts = $activeEvent instanceof Event
             ? $activeEvent->courts()->where('is_active', true)->get(['id', 'name'])->map(fn ($court) => [

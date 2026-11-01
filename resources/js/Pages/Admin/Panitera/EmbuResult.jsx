@@ -21,11 +21,28 @@ function JudgeScores({ score }) {
 
     return (
         <div className="flex flex-wrap gap-1.5">
-            {score.judge_scores.map((value, index) => (
-                <span key={`${index}-${value}`} className={`rounded-md border px-2 py-1 font-mono ${index === minIndex || index === maxIndex ? 'border-rose-200 bg-rose-50 text-rose-500 line-through' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-                    W{score.judge_numbers?.[index] || index + 1}: {formatScore(value)}
-                </span>
-            ))}
+            {[0, 1, 2, 3, 4].map((index) => {
+                const value = score.judge_scores?.[index];
+                const judgeNumber = score.judge_numbers?.[index] || index + 1;
+                const hasScore = value !== undefined && value !== null && value !== '';
+                const isTrimmed = usesTrimmedScore && (index === minIndex || index === maxIndex);
+
+                return (
+                    <span
+                        key={index}
+                        className={`rounded-md border px-2 py-1 font-mono text-[11px] ${
+                            !hasScore
+                                ? 'border-dashed border-slate-200 bg-slate-50 text-slate-400'
+                                : isTrimmed
+                                ? 'border-rose-200 bg-rose-50 text-rose-500 line-through'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-800 font-semibold'
+                        }`}
+                        title={hasScore ? `Juri ${judgeNumber}: ${formatScore(value)}` : `Juri ${judgeNumber}: Belum diisi`}
+                    >
+                        W{judgeNumber}: {hasScore ? formatScore(value) : '—'}
+                    </span>
+                );
+            })}
         </div>
     );
 }
@@ -111,9 +128,12 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
     const openScore = (row) => {
         setSelectedMatch(row);
         form.clearErrors();
+        const existingScores = row.score?.judge_scores?.map(String) || [];
+        const paddedScores = [0, 1, 2, 3, 4].map((i) => existingScores[i] ?? '');
+
         form.setData({
             event_id: activeEvent.id,
-            judge_scores: row.score?.judge_scores?.map(String) || ['', '', '', '', ''],
+            judge_scores: paddedScores,
             duration_seconds: row.score?.duration_seconds ?? '',
             penalty_override: '',
             tiebreak_round: row.score?.tiebreak_round ?? 0,
@@ -296,8 +316,16 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                         </div>
                     </div>
                     <div>
-                        <p className="mb-2 text-xs font-bold text-[#17120f]">Nilai Juri (W1 – W5) <span className="text-rose-600">*</span></p>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-[#17120f]">
+                                Nilai Juri (W1 – W5) <span className="text-rose-600">*</span>
+                            </p>
+                            <span className="text-[11px] font-medium text-[#7a746e]">Minimal 1 juri terisi</span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#7a746e]">
+                            Tersedia 5 slot juri (W1 – W5). Anda dapat mengisi 1 hingga 5 juri sesuai wasit yang bertugas pada partai ini. Slot yang kosong otomatis diabaikan.
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
                             {form.data.judge_scores.map((value, index) => (
                                 <Input
                                     key={index}
@@ -306,7 +334,7 @@ export default function EmbuResult({ activeEvent, events = [], courts = [], cate
                                     min="0"
                                     max="100"
                                     step="0.01"
-                                    required
+                                    required={false}
                                     value={value}
                                     placeholder="0 - 100"
                                     error={form.errors[`judge_scores.${index}`]}

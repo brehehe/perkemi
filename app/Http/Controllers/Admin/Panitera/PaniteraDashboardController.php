@@ -9,6 +9,7 @@ use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -85,19 +86,78 @@ class PaniteraDashboardController extends Controller
         $categoryType = in_array($requestedCategoryType, ['embu', 'randori'], true) ? $requestedCategoryType : 'all';
         $search = Str::limit(trim($request->string('search')->toString()), 100, '');
 
+        $categoryOptions = $event->matchCategories()
+            ->where('is_active', true)
+            ->with('tournamentDrawing:id,event_match_category_id,bracket_type,status,participant_count')
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'type', 'gender', 'order', 'scoring_locked_at']);
+
+        $requestedCategoryId = $request->string('category_id')->toString();
+        $selectedCategoryId = $categoryOptions->contains('id', $requestedCategoryId) ? $requestedCategoryId : '';
+
+        $requestedSortBy = $request->string('sort_by')->toString();
+        $sortBy = in_array($requestedSortBy, ['schedule', 'category'], true) ? $requestedSortBy : 'schedule';
+
+        $requestedViewMode = $request->string('view_mode')->toString();
+        $viewMode = in_array($requestedViewMode, ['timeline', 'categories'], true) ? $requestedViewMode : 'timeline';
+
+        $categoriesData = $categoryOptions->map(function ($cat) use ($event, $assignedCourtIds, $selectedCourtId): array {
+            $catMatchesQuery = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $cat->id)
+                ->where('is_bye', false)
+                ->when($assignedCourtIds !== null, fn (Builder $q) => $q->whereIn('event_court_id', $assignedCourtIds))
+                ->when($selectedCourtId !== '', fn (Builder $q) => $q->where('event_court_id', $selectedCourtId));
+
+            $matchesList = (clone $catMatchesQuery)->get(['id', 'phase', 'round_label', 'status', 'metadata']);
+            $total = $matchesList->count();
+            $completed = $matchesList->where('status', 'completed')->count();
+
+            $prelimMatches = $matchesList->filter(fn ($m) => $m->phase !== 'final');
+            $finalMatches = $matchesList->filter(fn ($m) => $m->phase === 'final');
+
+            $hasPlaceholders = $finalMatches->contains(fn ($m) => (bool) ($m->metadata['placeholder'] ?? false));
+            $prelimAllDone = $prelimMatches->isNotEmpty() && $prelimMatches->every(fn ($m) => $m->status === 'completed');
+
+            return [
+                'id' => $cat->id,
+                'name' => $cat->name,
+                'type' => $cat->type,
+                'gender' => $cat->gender,
+                'order' => $cat->order,
+                'is_locked' => (bool) $cat->scoring_locked_at,
+                'locked_at' => $cat->scoring_locked_at?->translatedFormat('d M Y, H:i'),
+                'total_matches' => $total,
+                'completed_matches' => $completed,
+                'is_completed' => $total > 0 && $completed >= $total,
+                'prelim_total' => $prelimMatches->count(),
+                'prelim_completed' => $prelimMatches->where('status', 'completed')->count(),
+                'prelim_all_done' => $prelimAllDone,
+                'final_total' => $finalMatches->count(),
+                'final_completed' => $finalMatches->where('status', 'completed')->count(),
+                'has_placeholders' => $hasPlaceholders,
+                'format' => $cat->tournamentDrawing?->bracket_type,
+                'can_advance_finalists' => $cat->type === 'embu' && $cat->tournamentDrawing?->bracket_type !== 'embu_direct_final' && $prelimMatches->isNotEmpty() && $finalMatches->isNotEmpty(),
+            ];
+        })
+            ->filter(fn ($cat) => $cat['total_matches'] > 0 || $selectedCourtId === '')
+            ->values();
+
         $scopedMatches = fn (): Builder => TournamentMatch::query()
             ->whereBelongsTo($event)
             ->where('is_bye', false)
             ->when($assignedCourtIds !== null, fn (Builder $query) => $query->whereIn('event_court_id', $assignedCourtIds));
 
-        $matches = $scopedMatches()
+        $matchesQuery = $scopedMatches()
             ->with([
-                'matchCategory:id,name,type',
+                'matchCategory:id,name,type,gender,order,scoring_locked_at,scoring_locked_by',
                 'court:id,name',
                 'embuScores',
                 'randoriScore',
             ])
             ->when($selectedCourtId !== '', fn (Builder $query) => $query->where('event_court_id', $selectedCourtId))
+            ->when($selectedCategoryId !== '', fn (Builder $query) => $query->where('event_match_category_id', $selectedCategoryId))
             ->when($categoryType !== 'all', fn (Builder $query) => $query->whereHas(
                 'matchCategory',
                 fn (Builder $categoryQuery) => $categoryQuery->where('type', $categoryType),
@@ -114,15 +174,32 @@ class PaniteraDashboardController extends Controller
                         ->orWhereHas('matchCategory', fn (Builder $categoryQuery) => $categoryQuery->whereRaw('LOWER(name) LIKE ?', [$keyword]))
                         ->orWhereHas('court', fn (Builder $courtQuery) => $courtQuery->whereRaw('LOWER(name) LIKE ?', [$keyword]));
                 });
-            })
-            ->orderByRaw('scheduled_start_at IS NULL')
-            ->orderBy('scheduled_start_at')
-            ->orderBy('event_court_id')
-            ->orderBy('match_sequence')
-            ->orderBy('id')
-            ->paginate(15)
-            ->withQueryString()
-            ->through(fn (TournamentMatch $match): array => $this->matchData($match));
+            });
+
+        $perPage = ($selectedCategoryId !== '') ? 50 : 15;
+
+        if ($sortBy === 'category') {
+            $matches = $matchesQuery
+                ->join('event_match_categories', 'tournament_matches.event_match_category_id', '=', 'event_match_categories.id')
+                ->select('tournament_matches.*')
+                ->orderBy('event_match_categories.order')
+                ->orderBy('event_match_categories.name')
+                ->orderBy('tournament_matches.match_sequence')
+                ->orderBy('tournament_matches.id')
+                ->paginate($perPage)
+                ->withQueryString()
+                ->through(fn (TournamentMatch $match): array => $this->matchData($match));
+        } else {
+            $matches = $matchesQuery
+                ->orderByRaw('scheduled_start_at IS NULL')
+                ->orderBy('scheduled_start_at')
+                ->orderBy('event_court_id')
+                ->orderBy('match_sequence')
+                ->orderBy('id')
+                ->paginate($perPage)
+                ->withQueryString()
+                ->through(fn (TournamentMatch $match): array => $this->matchData($match));
+        }
 
         $totalMatches = $scopedMatches()->count();
         $completedMatches = $scopedMatches()->where('status', 'completed')->count();
@@ -133,6 +210,43 @@ class PaniteraDashboardController extends Controller
                 fn (Builder $matchQuery) => $matchQuery->whereIn('event_court_id', $assignedCourtIds),
             ),
         );
+
+        $randoriMatches = [];
+        if ($selectedCategoryId !== '') {
+            $selectedCategoryModel = $categoryOptions->firstWhere('id', $selectedCategoryId);
+            if ($selectedCategoryModel?->type === 'randori') {
+                app(TournamentDrawingGenerator::class)->syncCategoryByes($selectedCategoryModel);
+                $randoriMatches = TournamentMatch::query()
+                    ->where('event_match_category_id', $selectedCategoryId)
+                    ->with(['randoriScore', 'court:id,name'])
+                    ->orderBy('match_sequence')
+                    ->get()
+                    ->map(fn (TournamentMatch $match): array => [
+                        'id' => $match->id,
+                        'phase' => $match->phase,
+                        'round_label' => $match->round_label,
+                        'sequence' => $match->match_sequence,
+                        'court_id' => $match->event_court_id,
+                        'bracket_position' => (int) ($match->bracket_position ?? 1),
+                        'next_match_id' => $match->next_match_id,
+                        'aka_label' => $match->red_label,
+                        'shiro_label' => $match->blue_label,
+                        'court' => $match->court?->name,
+                        'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                        'status' => $match->status,
+                        'is_bye' => (bool) $match->is_bye,
+                        'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                        'score' => $match->randoriScore ? [
+                            'aka_total' => (int) $match->randoriScore->aka_total,
+                            'shiro_total' => (int) $match->randoriScore->shiro_total,
+                            'winner_corner' => $match->randoriScore->winner_corner,
+                            'is_locked' => $match->randoriScore->locked_at !== null,
+                            'locked_at' => $match->randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
+                            'notes' => $match->randoriScore->notes,
+                        ] : null,
+                    ])->values()->all();
+            }
+        }
 
         return Inertia::render('Admin/Panitera/Dashboard', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
@@ -149,12 +263,17 @@ class PaniteraDashboardController extends Controller
                 )->count(),
             ],
             'courts' => $courts,
+            'categories' => $categoriesData,
             'matches' => $matches,
+            'randoriMatches' => $randoriMatches,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
                 'category_type' => $categoryType,
                 'court_id' => $selectedCourtId,
+                'category_id' => $selectedCategoryId,
+                'sort_by' => $sortBy,
+                'view_mode' => $viewMode,
             ],
             'isCourtRestricted' => $assignedCourtIds !== null,
         ]);
@@ -209,10 +328,15 @@ class PaniteraDashboardController extends Controller
 
         return [
             'id' => $match->id,
+            'category_id' => $match->event_match_category_id,
             'category_name' => $match->matchCategory?->name,
             'category_type' => $categoryType,
+            'category_is_locked' => (bool) $match->matchCategory?->scoring_locked_at,
+            'category_locked_at' => $match->matchCategory?->scoring_locked_at?->translatedFormat('d M Y, H:i'),
             'court_id' => $match->event_court_id,
             'court' => $match->court?->name ?? 'Belum diplot',
+            'phase' => $match->phase ?? (Str::contains(Str::lower((string) $match->round_label), 'final') ? 'final' : 'preliminary'),
+            'pool' => $match->pool,
             'round_label' => $match->round_label,
             'sequence' => $match->match_sequence,
             'participant' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),

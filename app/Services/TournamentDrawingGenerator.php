@@ -42,7 +42,7 @@ class TournamentDrawingGenerator
                 }
 
                 $availableFormats = $this->availableFormatsFor($category, $participantCount);
-                $isRoundRobinEligible = $category->type === 'randori' && $participantCount >= 3 && $participantCount <= 5;
+                $isRoundRobinEligible = $category->type === 'randori' && $participantCount >= 2 && $participantCount <= 5;
 
                 return [
                     'id' => $category->id,
@@ -237,24 +237,17 @@ class TournamentDrawingGenerator
         }
 
         // Conditional Entry logic for Randori:
-        // Round Robin (Setengah Kompetisi) becomes available conditionally when entries are 3 to 5.
-        if ($participantCount >= 3 && $participantCount <= 5) {
+        // Round Robin (Setengah Kompetisi), Double Elimination, and Single Elimination:
+        if ($participantCount >= 2 && $participantCount <= 5) {
             return [
-                'round_robin' => 'Setengah Kompetisi (Round Robin) · Setiap atlet saling bertanding',
+                'round_robin' => 'Setengah Kompetisi (Round Robin)',
                 'double_elimination' => 'Sistem Gugur Ganda (Double Elimination)',
-                'single_elimination' => 'Sistem Gugur Tunggal',
-            ];
-        }
-
-        if ($participantCount <= 4) {
-            return [
-                'double_elimination' => 'Sistem Gugur Ganda (Double Elimination)',
-                'single_elimination' => 'Sistem Gugur Tunggal',
+                'single_elimination' => 'Sistem Gugur Tunggal (Single Elimination)',
             ];
         }
 
         return [
-            'single_elimination' => 'Sistem Gugur Tunggal',
+            'single_elimination' => 'Sistem Gugur Tunggal (Single Elimination)',
         ];
     }
 
@@ -361,6 +354,7 @@ class TournamentDrawingGenerator
 
         if ($drawing->bracket_type === 'double_elimination' || ($drawing->bracket_type === null && $participants->count() <= 4)) {
             $this->createDoubleEliminationNodes($event, $category, $drawing, $participants);
+            $this->syncCategoryByes($category);
 
             return;
         }
@@ -376,6 +370,7 @@ class TournamentDrawingGenerator
 
         foreach ($this->singleEliminationFirstRoundPairs($participants, $bracketSize) as $position => $pair) {
             [$red, $blue] = $pair;
+            $isBye = $red === null || $blue === null;
             $currentRound->push($this->createNode($event, $category, $drawing, [
                 'phase' => 'preliminary',
                 'round_label' => 'Babak 1',
@@ -385,7 +380,9 @@ class TournamentDrawingGenerator
                 'blue_entry_id' => $blue['entry_id'] ?? null,
                 'red_label' => $red['label'] ?? 'BYE',
                 'blue_label' => $blue['label'] ?? 'BYE',
-                'is_bye' => $red === null || $blue === null,
+                'is_bye' => $isBye,
+                'status' => $isBye ? 'completed' : 'pending',
+                'call_status' => $isBye ? 'completed' : 'waiting',
                 'metadata' => $this->pairMetadata($red, $blue),
             ]));
         }
@@ -430,6 +427,8 @@ class TournamentDrawingGenerator
 
             $currentRound = $nextRound;
         }
+
+        $this->syncCategoryByes($category);
     }
 
     /**
@@ -496,6 +495,7 @@ class TournamentDrawingGenerator
             $pair = $pair->values();
             $red = $pair->get(0);
             $blue = $pair->get(1);
+            $isBye = $red === null || $blue === null;
             $upperMatches->push($this->createNode($event, $category, $drawing, [
                 'phase' => 'preliminary',
                 'round_label' => 'Upper Bracket',
@@ -505,29 +505,57 @@ class TournamentDrawingGenerator
                 'blue_entry_id' => $blue['entry_id'] ?? null,
                 'red_label' => $red['label'] ?? 'BYE',
                 'blue_label' => $blue['label'] ?? 'BYE',
-                'is_bye' => $red === null || $blue === null,
+                'is_bye' => $isBye,
+                'status' => $isBye ? 'completed' : 'pending',
+                'call_status' => $isBye ? 'completed' : 'waiting',
                 'metadata' => $this->pairMetadata($red, $blue),
             ]));
         }
+
+        $upper1 = $upperMatches->get(0);
+        $upper2 = $upperMatches->get(1);
+
+        $upper1Winner = $upper1->is_bye ? ($upper1->metadata['red'] ?? $upper1->metadata['blue']) : null;
+        $upper2Winner = $upper2->is_bye ? ($upper2->metadata['red'] ?? $upper2->metadata['blue']) : null;
+
+        $lowerRoundIsBye = (bool) ($upper1->is_bye || $upper2->is_bye);
+        $lowerRoundRedLabel = $upper1->is_bye ? 'BYE' : ('Kalah Partai #'.$upper1->match_sequence);
+        $lowerRoundBlueLabel = $upper2->is_bye ? 'BYE' : ('Kalah Partai #'.$upper2->match_sequence);
 
         $lowerRound = $this->createNode($event, $category, $drawing, [
             'phase' => 'preliminary',
             'round_label' => 'Lower Bracket · Babak 1',
             'match_sequence' => $sequence++,
             'bracket_position' => 1,
-            'red_label' => 'Kalah Partai #'.$upperMatches[0]->match_sequence,
-            'blue_label' => 'Kalah Partai #'.$upperMatches[1]->match_sequence,
+            'red_label' => $lowerRoundRedLabel,
+            'blue_label' => $lowerRoundBlueLabel,
+            'is_bye' => $lowerRoundIsBye,
+            'status' => 'pending',
+            'call_status' => 'waiting',
             'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
         ]);
+
+        $upperFinalRedLabel = $upper1Winner['label'] ?? ('Pemenang Partai #'.$upper1->match_sequence);
+        $upperFinalBlueLabel = $upper2Winner['label'] ?? ('Pemenang Partai #'.$upper2->match_sequence);
 
         $upperFinal = $this->createNode($event, $category, $drawing, [
             'phase' => 'preliminary',
             'round_label' => 'Final Upper Bracket',
             'match_sequence' => $sequence++,
             'bracket_position' => 1,
-            'red_label' => 'Pemenang Partai #'.$upperMatches[0]->match_sequence,
-            'blue_label' => 'Pemenang Partai #'.$upperMatches[1]->match_sequence,
-            'metadata' => ['placeholder' => true, 'athlete_ids' => $athleteIds],
+            'red_entry_id' => $upper1Winner['entry_id'] ?? null,
+            'blue_entry_id' => $upper2Winner['entry_id'] ?? null,
+            'red_label' => $upperFinalRedLabel,
+            'blue_label' => $upperFinalBlueLabel,
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => ! ($upper1Winner && $upper2Winner),
+                'red' => $upper1Winner,
+                'blue' => $upper2Winner,
+                'athlete_ids' => $athleteIds,
+            ],
         ]);
         $upperMatches->each(fn (TournamentMatch $match) => $match->update(['next_match_id' => $upperFinal->id]));
 
@@ -669,5 +697,152 @@ class TournamentDrawingGenerator
             'blue' => $blue,
             'athlete_ids' => collect([$red['athlete_ids'] ?? [], $blue['athlete_ids'] ?? []])->flatten()->values()->all(),
         ];
+    }
+
+    /**
+     * Synchronize and advance initial BYEs into downstream match slots.
+     */
+    public function syncCategoryByes(EventMatchCategory $category): void
+    {
+        if ($category->type !== 'randori') {
+            return;
+        }
+
+        $drawing = $category->tournamentDrawing;
+        if (! $drawing) {
+            return;
+        }
+
+        $matches = TournamentMatch::query()
+            ->where('event_match_category_id', $category->id)
+            ->orderBy('match_sequence')
+            ->get();
+
+        if ($matches->isEmpty()) {
+            return;
+        }
+
+        // 1. Double Elimination
+        $isDoubleElim = $drawing->bracket_type === 'double_elimination' || $matches->contains(fn ($m) => str_contains($m->round_label ?? '', 'Lower Bracket'));
+        if ($isDoubleElim) {
+            $upperMatches = $matches->where('round_label', 'Upper Bracket')->values();
+            if ($upperMatches->count() >= 2) {
+                $upper1 = $upperMatches->get(0);
+                $upper2 = $upperMatches->get(1);
+
+                if ($upper1 instanceof TournamentMatch && $upper2 instanceof TournamentMatch) {
+                    if ($upper1->is_bye && $upper1->status !== 'completed') {
+                        $upper1->update(['status' => 'completed', 'call_status' => 'completed']);
+                    }
+                    if ($upper2->is_bye && $upper2->status !== 'completed') {
+                        $upper2->update(['status' => 'completed', 'call_status' => 'completed']);
+                    }
+
+                    $upper1Winner = $upper1->is_bye ? (data_get($upper1->metadata, 'red') ?? data_get($upper1->metadata, 'blue')) : null;
+                    $upper2Winner = $upper2->is_bye ? (data_get($upper2->metadata, 'red') ?? data_get($upper2->metadata, 'blue')) : null;
+
+                    $upperFinal = $matches->firstWhere('round_label', 'Final Upper Bracket');
+                    if ($upperFinal) {
+                        $upperFinalMeta = $upperFinal->metadata ?? [];
+                        $upperFinalUpdated = false;
+
+                        if ($upper1Winner && empty($upperFinal->red_entry_id)) {
+                            $upperFinal->red_entry_id = $upper1Winner['entry_id'] ?? null;
+                            $upperFinal->red_label = $upper1Winner['label'] ?? 'Peserta';
+                            $upperFinalMeta['red'] = $upper1Winner;
+                            $upperFinalUpdated = true;
+                        }
+                        if ($upper2Winner && empty($upperFinal->blue_entry_id)) {
+                            $upperFinal->blue_entry_id = $upper2Winner['entry_id'] ?? null;
+                            $upperFinal->blue_label = $upper2Winner['label'] ?? 'Peserta';
+                            $upperFinalMeta['blue'] = $upper2Winner;
+                            $upperFinalUpdated = true;
+                        }
+                        if ($upperFinalUpdated) {
+                            $upperFinalMeta['placeholder'] = ! isset($upperFinalMeta['red'], $upperFinalMeta['blue']);
+                            $upperFinal->metadata = $upperFinalMeta;
+                            $upperFinal->save();
+                        }
+                    }
+
+                    $lowerRound = $matches->firstWhere('round_label', 'Lower Bracket · Babak 1');
+                    if ($lowerRound && ($upper1->is_bye || $upper2->is_bye)) {
+                        $lowerRoundUpdated = false;
+                        if ($upper2->is_bye && $lowerRound->blue_label !== 'BYE') {
+                            $lowerRound->blue_label = 'BYE';
+                            $lowerRound->is_bye = true;
+                            $lowerRoundUpdated = true;
+                        }
+                        if ($upper1->is_bye && $lowerRound->red_label !== 'BYE') {
+                            $lowerRound->red_label = 'BYE';
+                            $lowerRound->is_bye = true;
+                            $lowerRoundUpdated = true;
+                        }
+                        if ($lowerRoundUpdated) {
+                            $lowerRound->save();
+                        }
+
+                        // Check if competitive upper match has completed:
+                        $competitiveUpper = $upper1->is_bye ? $upper2 : $upper1;
+                        $corner = $upper1->is_bye ? 'blue' : 'red';
+                        if ($competitiveUpper->status === 'completed' && ! empty($lowerRound->{$corner.'_entry_id'})) {
+                            $loser = data_get($lowerRound->metadata, $corner);
+                            if ($loser) {
+                                $lowerRoundMeta = $lowerRound->metadata ?? [];
+                                $lowerRoundMeta['placeholder'] = false;
+                                $lowerRound->update([
+                                    'status' => 'completed',
+                                    'call_status' => 'completed',
+                                    'is_bye' => true,
+                                    'metadata' => $lowerRoundMeta,
+                                ]);
+
+                                $lowerFinal = $matches->firstWhere('round_label', 'Final Lower Bracket');
+                                if ($lowerFinal && empty($lowerFinal->red_entry_id)) {
+                                    $lowerFinalMeta = $lowerFinal->metadata ?? [];
+                                    $lowerFinalMeta['red'] = $loser;
+                                    $lowerFinalMeta['placeholder'] = ! isset($lowerFinalMeta['red'], $lowerFinalMeta['blue']);
+                                    $lowerFinal->update([
+                                        'red_entry_id' => $loser['entry_id'] ?? null,
+                                        'red_label' => $loser['label'] ?? 'Peserta',
+                                        'metadata' => $lowerFinalMeta,
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return;
+        }
+
+        // 2. Single Elimination
+        foreach ($matches->where('is_bye', true) as $byeMatch) {
+            if ($byeMatch->status !== 'completed') {
+                $byeMatch->update([
+                    'status' => 'completed',
+                    'call_status' => 'completed',
+                ]);
+            }
+            if ($byeMatch->nextMatch) {
+                $advancing = data_get($byeMatch->metadata, 'red') ?? data_get($byeMatch->metadata, 'blue');
+                if ($advancing) {
+                    $nextMatch = $byeMatch->nextMatch;
+                    $sources = $nextMatch->sourceMatches()->orderBy('match_sequence')->pluck('id')->values();
+                    $corner = $sources->search($byeMatch->id) === 1 ? 'blue' : 'red';
+                    if (empty($nextMatch->{$corner.'_entry_id'})) {
+                        $nextMeta = $nextMatch->metadata ?? [];
+                        $nextMeta[$corner] = $advancing;
+                        $nextMeta['placeholder'] = ! isset($nextMeta['red'], $nextMeta['blue']);
+                        $nextMatch->update([
+                            $corner.'_entry_id' => $advancing['entry_id'] ?? null,
+                            $corner.'_label' => $advancing['label'] ?? 'Peserta',
+                            'metadata' => $nextMeta,
+                        ]);
+                    }
+                }
+            }
+        }
     }
 }

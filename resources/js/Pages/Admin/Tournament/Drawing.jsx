@@ -5,6 +5,7 @@ import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import Input from '@/Components/UI/Forms/Input';
 import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
+import RandoriBracketTree from '@/Pages/Admin/Panitera/Partials/RandoriBracketTree';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 
@@ -19,8 +20,8 @@ const statusMeta = {
 
 const formatLabels = {
     round_robin: 'Setengah Kompetisi (Round Robin)',
-    single_elimination: 'Sistem gugur tunggal',
-    double_elimination: 'Sistem gugur ganda',
+    double_elimination: 'Sistem Gugur Ganda (Double Elimination)',
+    single_elimination: 'Sistem Gugur Tunggal (Single Elimination)',
     embu_direct_final: 'Embu satu pool + final',
     embu_2_pools: 'Embu 2 pool · 4 terbaik/pool',
     embu_3_pools: 'Embu 3 pool · 3 terbaik/pool',
@@ -282,7 +283,7 @@ function BracketSection({ title, description, icon, rounds, tone = 'neutral' }) 
     );
 }
 
-function BracketView({ category, drawing, matches }) {
+function BracketView({ category, drawing, matches, activeEvent }) {
     if (!drawing) {
         return <EmptyState icon="fa-diagram-project" title="Bagan kategori ini belum dibuat" description="Jalankan Generate Semua atau buat ulang kategori ini untuk membentuk node pertandingan." />;
     }
@@ -308,78 +309,81 @@ function BracketView({ category, drawing, matches }) {
     }
 
     const rounds = groupBy(matches, (match) => match.round_label);
-
-    if (drawing.format === 'round_robin') {
-        return (
-            <div className="space-y-4">
-                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
-                    <i className="fa-solid fa-arrows-rotate mt-0.5 text-amber-600" />
-                    <div>
-                        <p className="text-sm font-bold">Format Setengah Kompetisi (Round Robin)</p>
-                        <p className="mt-1 text-xs leading-relaxed text-amber-800">
-                            Setiap kenshi saling berhadapan dalam beberapa putaran pertandingan. Peringkat juara dan perolehan medali dihitung dari akumulasi kemenangan seluruh partai.
-                        </p>
-                    </div>
-                </div>
-                <BracketSection
-                    title="Jadwal Putaran Setengah Kompetisi"
-                    description="Seluruh partai per putaran pertandingan antar-atlet nomor ini."
-                    icon="fa-arrows-rotate"
-                    rounds={rounds}
-                    tone="upper"
-                />
-            </div>
-        );
-    }
-
-    if (drawing.format === 'double_elimination') {
-        const upperRounds = groupBy(
-            matches.filter((match) => match.round_label.includes('Upper Bracket')),
-            (match) => match.round_label,
-        );
-        const lowerRounds = groupBy(
-            matches.filter((match) => match.round_label.includes('Lower Bracket')),
-            (match) => match.round_label,
-        );
-        const grandFinalRounds = groupBy(
-            matches.filter((match) => match.round_label.includes('Grand Final')),
-            (match) => match.round_label,
-        );
-
-        return (
-            <div className="space-y-5">
-                <BracketSection
-                    title="Bagan Pemenang (Upper Bracket)"
-                    description="Pemenang setiap partai melanjutkan perjalanan pada bagan utama. Baca urutan babak dari atas ke bawah."
-                    icon="fa-sitemap"
-                    rounds={upperRounds}
-                    tone="upper"
-                />
-                <BracketSection
-                    title="Bagan Harapan (Lower Bracket)"
-                    description="Atlet yang kalah pada bagan utama mendapat kesempatan berikutnya melalui bagan harapan."
-                    icon="fa-arrow-rotate-left"
-                    rounds={lowerRounds}
-                    tone="lower"
-                />
-                <BracketSection
-                    title="Grand Final"
-                    description="Pemenang upper bracket dan lower bracket bertemu pada pertandingan penentuan."
-                    icon="fa-crown"
-                    rounds={grandFinalRounds}
-                    tone="final"
-                />
-            </div>
-        );
-    }
+    const isDoubleElim = (drawing.format || category?.format) === 'double_elimination';
+    const isRoundRobin = (drawing.format || category?.format) === 'round_robin';
 
     return (
-        <BracketSection
-            title="Bagan Eliminasi Tunggal"
-            description="Setiap babak ditampilkan berurutan dari atas ke bawah hingga pertandingan final."
-            icon="fa-diagram-project"
-            rounds={rounds}
-        />
+        <div className="space-y-6">
+            {/* Interactive Visual Tree (Upper on Top, Lower on Bottom, Grand Final right, Podium right) */}
+            <RandoriBracketTree
+                matches={matches}
+                activeEvent={activeEvent}
+                categoryName={category?.name}
+                categoryFormat={drawing.format || category?.format}
+                canManage={false}
+            />
+
+            {/* Section match details */}
+            <div className="border-t border-[#e8e1d8] pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#746b63] flex items-center gap-1.5">
+                        <i className="fa-solid fa-list-check text-[#9a6b20]" />
+                        Rincian Kartu Partai per Babak
+                    </h4>
+                    <span className="text-xs text-[#8c827a]">{matches.length} total partai</span>
+                </div>
+
+                {isRoundRobin ? (
+                    <BracketSection
+                        title="Jadwal Putaran Setengah Kompetisi"
+                        description="Seluruh partai per putaran pertandingan antar-atlet nomor ini."
+                        icon="fa-arrows-rotate"
+                        rounds={rounds}
+                        tone="upper"
+                    />
+                ) : isDoubleElim ? (
+                    <div className="space-y-4">
+                        <BracketSection
+                            title="Bagan Pemenang (Upper Bracket)"
+                            description="Pemenang setiap partai melanjutkan perjalanan pada bagan utama."
+                            icon="fa-sitemap"
+                            rounds={groupBy(
+                                matches.filter((match) => match.round_label?.includes('Upper Bracket')),
+                                (match) => match.round_label,
+                            )}
+                            tone="upper"
+                        />
+                        <BracketSection
+                            title="Bagan Harapan (Lower Bracket)"
+                            description="Atlet yang kalah pada bagan utama mendapat kesempatan berikutnya melalui bagan harapan."
+                            icon="fa-arrow-rotate-left"
+                            rounds={groupBy(
+                                matches.filter((match) => match.round_label?.includes('Lower Bracket')),
+                                (match) => match.round_label,
+                            )}
+                            tone="lower"
+                        />
+                        <BracketSection
+                            title="Grand Final"
+                            description="Pemenang upper bracket dan lower bracket bertemu pada pertandingan penentuan."
+                            icon="fa-crown"
+                            rounds={groupBy(
+                                matches.filter((match) => match.round_label?.includes('Grand Final')),
+                                (match) => match.round_label,
+                            )}
+                            tone="final"
+                        />
+                    </div>
+                ) : (
+                    <BracketSection
+                        title="Bagan Eliminasi Tunggal"
+                        description="Setiap babak ditampilkan berurutan dari atas ke bawah hingga pertandingan final."
+                        icon="fa-diagram-project"
+                        rounds={rounds}
+                    />
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -887,7 +891,7 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                                     </div>
                                     {canManageDrawing && !isLocked && <Button variant="unstyled" size="none" type="button" onClick={() => post(`/admin/pertandingan/drawing/category/${category.id}/generate`, { bracket_type: selectedFormat || undefined }, 'category')} disabled={!!processing || !category.is_eligible} className="shrink-0 rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef] disabled:cursor-not-allowed disabled:opacity-45"><i className={`fa-solid ${processing === 'category' ? 'fa-spinner animate-spin' : 'fa-shuffle'} mr-1.5`} />Drawing Ulang Kategori</Button>}
                                 </div>
-                                <BracketView category={category} drawing={drawing} matches={matches} />
+                                <BracketView category={category} drawing={drawing} matches={matches} activeEvent={activeEvent} />
                             </> : <EmptyState icon="fa-list-check" title="Nomor pertandingan belum tersedia" description="Aktifkan nomor pertandingan di Detail Event terlebih dahulu." />}
                         </main>
                     </div>

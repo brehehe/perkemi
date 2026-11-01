@@ -31,9 +31,15 @@ class EmbuJudgeScoreUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCo
      */
     public function broadcastOn(): array
     {
-        return [
+        $channels = [
             new PrivateChannel("tournament-match.{$this->matchId}"),
         ];
+
+        if (! empty($this->courtId)) {
+            $channels[] = new PrivateChannel("event-court.{$this->courtId}");
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string

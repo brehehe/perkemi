@@ -36,7 +36,7 @@ class PaniteraMatchController extends Controller
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
 
         $tournamentMatch->load([
-            'matchCategory:id,name,type',
+            'matchCategory:id,name,type,scoring_locked_at,scoring_locked_by',
             'court.assignments',
             'court.refereeAttendances' => fn ($query) => $query
                 ->whereBelongsTo($event)
@@ -142,6 +142,14 @@ class PaniteraMatchController extends Controller
             ->first(fn (TournamentMatch $match): bool => ! ($match->metadata['placeholder'] ?? false));
 
         $serverNow = now();
+        $isCategoryChange = $nextMatch && $nextMatch->event_match_category_id !== $tournamentMatch->event_match_category_id;
+        $currentCategoryRemainingMatches = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->where('event_match_category_id', $tournamentMatch->event_match_category_id)
+            ->where('is_bye', false)
+            ->where('id', '!=', $tournamentMatch->id)
+            ->where('status', '!=', 'completed')
+            ->count();
 
         return Inertia::render('Admin/Panitera/MatchDetail', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date', 'tts_announcer_enabled']),
@@ -151,12 +159,23 @@ class PaniteraMatchController extends Controller
             'judgeProgress' => $judgeProgress,
             'nextMatch' => $nextMatch ? [
                 'id' => $nextMatch->id,
+                'category_id' => $nextMatch->event_match_category_id,
                 'category_name' => $nextMatch->matchCategory?->name,
                 'category_type' => $nextMatch->matchCategory?->type,
                 'round_label' => $nextMatch->round_label,
                 'sequence' => $nextMatch->match_sequence,
                 'scheduled_at' => $nextMatch->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                'is_category_change' => $isCategoryChange,
+                'previous_category_name' => $tournamentMatch->matchCategory?->name,
             ] : null,
+            'categorySummary' => [
+                'id' => $tournamentMatch->event_match_category_id,
+                'name' => $tournamentMatch->matchCategory?->name,
+                'is_locked' => (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+                'locked_at' => $tournamentMatch->matchCategory?->scoring_locked_at?->translatedFormat('d M Y, H:i'),
+                'remaining_matches' => $currentCategoryRemainingMatches,
+                'is_last_match_in_category' => $currentCategoryRemainingMatches === 0,
+            ],
             'canManage' => $eventContext->canManage($request, $event),
             'serverNow' => $serverNow->toIso8601String(),
             'serverNowMs' => $serverNow->getTimestampMs(),
@@ -192,6 +211,8 @@ class PaniteraMatchController extends Controller
             'category_id' => $match->event_match_category_id,
             'category_name' => $match->matchCategory?->name,
             'category_type' => $type,
+            'category_is_locked' => (bool) $match->matchCategory?->scoring_locked_at,
+            'category_locked_at' => $match->matchCategory?->scoring_locked_at?->translatedFormat('d M Y, H:i'),
             'phase' => $match->phase,
             'round_label' => $match->round_label,
             'pool' => $match->pool,

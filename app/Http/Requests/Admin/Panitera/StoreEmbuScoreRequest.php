@@ -16,6 +16,23 @@ class StoreEmbuScoreRequest extends FormRequest
     }
 
     /**
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('judge_scores') && is_array($this->input('judge_scores'))) {
+            $filtered = array_values(array_filter(
+                $this->input('judge_scores'),
+                fn ($val) => $val !== null && $val !== ''
+            ));
+
+            $this->merge([
+                'judge_scores' => $filtered,
+            ]);
+        }
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
@@ -24,7 +41,7 @@ class StoreEmbuScoreRequest extends FormRequest
     {
         return [
             'event_id' => ['required', 'uuid'],
-            'judge_scores' => ['required', 'array', 'size:5'],
+            'judge_scores' => ['required', 'array', 'min:1', 'max:5'],
             'judge_scores.*' => ['required', 'numeric', 'between:0,100'],
             'duration_seconds' => ['nullable', 'integer', 'between:0,600'],
             'penalty_override' => ['nullable', 'numeric', 'between:0,100'],
@@ -38,7 +55,9 @@ class StoreEmbuScoreRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'judge_scores.size' => 'Nilai lima juri wajib diisi lengkap.',
+            'judge_scores.required' => 'Minimal satu nilai juri wajib diisi.',
+            'judge_scores.min' => 'Minimal satu nilai juri wajib diisi.',
+            'judge_scores.max' => 'Maksimal lima nilai juri dapat dimasukkan.',
             'judge_scores.*.between' => 'Nilai setiap juri harus berada pada rentang 0 sampai 100.',
             'duration_seconds.between' => 'Durasi pertandingan harus berada pada rentang 0 sampai 600 detik.',
         ];

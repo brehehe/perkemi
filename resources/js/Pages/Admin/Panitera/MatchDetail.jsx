@@ -302,7 +302,7 @@ function EmbuPenaltyEditor({ activeEventId, canManage, penaltyState }) {
     );
 }
 
-export default function MatchDetail({ activeEvent, events = [], match: initialMatch, judgeProgress = [], nextMatch, canManage = false, serverNowMs, timerStateUrl }) {
+export default function MatchDetail({ activeEvent, events = [], match: initialMatch, judgeProgress = [], nextMatch, categorySummary = {}, canManage = false, serverNowMs, timerStateUrl }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [workflowErrors, setWorkflowErrors] = useState({});
     const refreshLiveData = useCallback(() => {
@@ -351,11 +351,14 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
     const displayedSeconds = displayedTimerSeconds(match.timer, elapsedMilliseconds);
     const timerExpired = match.timer.direction === 'down' && elapsedSeconds >= Number(match.timer.duration_seconds);
     const stage = currentStage(match);
-    const workflowDisabled = !canManage || !match.court || match.is_placeholder || match.status === 'completed' || match.timer.is_finished;
-    const callDisabled = !canManage || !match.court || match.is_placeholder;
+    const isCategoryLocked = Boolean(match.category_is_locked);
+    const workflowDisabled = !canManage || !match.court || match.is_placeholder || match.status === 'completed' || match.timer.is_finished || isCategoryLocked;
+    const callDisabled = !canManage || !match.court || match.is_placeholder || isCategoryLocked;
     const timerWorkflowDisabled = workflowDisabled;
-    const canOpenScore = canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
+    const canOpenScore = !isCategoryLocked && canManage && !match.is_placeholder && (match.call_status === 'participants_called' || match.status === 'in_progress' || match.status === 'completed');
     const resultIndexUrl = `/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(match.category_id)}`;
+    const categoryListUrl = `/admin/panitera/scoring?category_id=${match.category_id}&event_id=${encodeURIComponent(activeEvent.id)}`;
+    const dashboardBoxesUrl = `/admin/panitera/scoring?category_id=&event_id=${encodeURIComponent(activeEvent.id)}`;
 
     const [voiceEnabled, setVoiceEnabled] = useState(activeEvent.tts_announcer_enabled ?? true);
 
@@ -441,9 +444,10 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
         }
     };
 
-    const saveEmbuResult = () => {
+    const saveEmbuResult = (returnToList = true) => {
         router.post(`/admin/panitera/scoring/matches/${match.id}/embu-result`, {
             event_id: activeEvent.id,
+            ...(returnToList ? { redirect_to: categoryListUrl } : {}),
         }, {
             preserveScroll: true,
             onStart: () => setProcessingAction('save_result'),
@@ -480,16 +484,99 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                 <FlashMessage flash={flash} errors={{ ...errors, ...workflowErrors }} />
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <Link href={`/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] sm:min-h-10">
-                        <i className="fa-solid fa-arrow-left" aria-hidden="true" />
-                        Kembali ke Daftar
-                    </Link>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link href={dashboardBoxesUrl} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c0392b] sm:min-h-10">
+                            <i className="fa-solid fa-grip" aria-hidden="true" />
+                            Kotak Nomor Pertandingan
+                        </Link>
+                        <Link
+                            href={categoryListUrl}
+                            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-2xs sm:min-h-10"
+                        >
+                            <i className="fa-solid fa-list text-[11px]" />
+                            Daftar Partai Nomor Ini
+                        </Link>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {match.category_is_locked && (
+                            <Badge variant="green">
+                                <i className="fa-solid fa-lock mr-1" /> Nomor Terkunci (Hanya Lihat)
+                            </Badge>
+                        )}
                         <Badge variant={match.category_type === 'embu' ? 'blue' : 'red'}>{match.category_type.toUpperCase()}</Badge>
                         <Badge variant={statusVariants[match.status] || 'gray'}>{match.status_label}</Badge>
                         <Badge variant={match.call_status === 'waiting' ? 'gray' : 'gold'}>{match.call_status_label}</Badge>
                     </div>
                 </div>
+
+                {/* Banner Status Kunci Nomor Pertandingan */}
+                {match.category_is_locked && (
+                    <div className="rounded-2xl border-2 border-emerald-400 bg-emerald-50/95 p-4 sm:p-5 text-emerald-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm">
+                        <div className="flex items-start sm:items-center gap-3">
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-black text-xl shadow-sm">
+                                <i className="fa-solid fa-lock" />
+                            </span>
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full bg-emerald-700 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                                        Mode Hanya Lihat
+                                    </span>
+                                    <span className="text-xs font-bold text-emerald-800">
+                                        Dikunci pada {match.category_locked_at}
+                                    </span>
+                                </div>
+                                <p className="mt-1 text-sm sm:text-base font-black text-emerald-950">
+                                    Nomor Pertandingan {match.category_name} telah dikunci resmi.
+                                </p>
+                                <p className="text-xs text-emerald-800">
+                                    Partai ini berada dalam mode hanya lihat (read-only). Nilai wasit, waktu tanding, dan status tidak dapat diubah.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <Link
+                                href={dashboardBoxesUrl}
+                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-2xs"
+                            >
+                                <i className="fa-solid fa-arrow-left text-[11px]" />
+                                Kembali ke Kotak
+                            </Link>
+                            <Link
+                                as="button"
+                                method="post"
+                                href={`/admin/panitera/scoring/categories/${match.category_id}/unlock`}
+                                data={{ redirect_to: `/admin/panitera/scoring/matches/${match.id}?event_id=${encodeURIComponent(activeEvent.id)}` }}
+                                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-600 bg-white px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-xs"
+                            >
+                                <i className="fa-solid fa-lock-open" /> Buka Kunci Nomor
+                            </Link>
+                        </div>
+                    </div>
+                )}
+
+                {/* Banner Saran Kunci jika Semua Partai di Nomor ini Selesai */}
+                {match.status === 'completed' && categorySummary?.is_last_match_in_category && !match.category_is_locked && (
+                    <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-50 to-amber-100/60 p-4 text-amber-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-slate-950 font-black text-lg shadow-sm">
+                                <i className="fa-solid fa-trophy" />
+                            </span>
+                            <div>
+                                <p className="text-xs font-black uppercase tracking-wider text-amber-900">Seluruh Partai Nomor Ini Telah Selesai</p>
+                                <p className="text-sm font-bold text-amber-950">Semua partai pada nomor {match.category_name} telah rampung. Kunci nomor ini untuk kembali ke daftar kotak nomor pertandingan.</p>
+                            </div>
+                        </div>
+                        <Link
+                            as="button"
+                            method="post"
+                            href={`/admin/panitera/scoring/categories/${match.category_id}/lock`}
+                            data={{ redirect_to: dashboardBoxesUrl }}
+                            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-4 py-2 text-xs font-bold text-white shadow-sm transition"
+                        >
+                            <i className="fa-solid fa-lock" /> Kunci Nomor Ini & Kembali
+                        </Link>
+                    </div>
+                )}
 
                 <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
                     <div className="border-b border-[#ede9e1] bg-[#fbfaf8] p-5">
@@ -796,15 +883,31 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                             </Button>
                         ) : match.category_type === 'embu' && match.embu_verification?.is_saved ? (
                             <div className="flex flex-col gap-2 sm:flex-row">
-                                <Button
-                                    variant="danger"
-                                    iconLeft={<i className="fa-solid fa-lock-open" aria-hidden="true" />}
-                                    disabled={!canManage}
-                                    loading={processingAction === 'reopen_result'}
-                                    onClick={() => setReopenResultConfirmationOpen(true)}
+                                {!isCategoryLocked && (
+                                    <Button
+                                        variant="danger"
+                                        iconLeft={<i className="fa-solid fa-lock-open" aria-hidden="true" />}
+                                        disabled={!canManage}
+                                        loading={processingAction === 'reopen_result'}
+                                        onClick={() => setReopenResultConfirmationOpen(true)}
+                                    >
+                                        Buka Ulang Form Wasit
+                                    </Button>
+                                )}
+                                <Link
+                                    href={dashboardBoxesUrl}
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white shadow-xs transition-colors hover:bg-slate-800"
                                 >
-                                    Buka Ulang Form Wasit
-                                </Button>
+                                    <i className="fa-solid fa-grip" aria-hidden="true" />
+                                    Kotak Nomor Pertandingan
+                                </Link>
+                                <Link
+                                    href={categoryListUrl}
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50"
+                                >
+                                    <i className="fa-solid fa-list" aria-hidden="true" />
+                                    Daftar Partai Nomor Ini
+                                </Link>
                                 <Link href={resultIndexUrl} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
                                     <i className="fa-solid fa-ranking-star" aria-hidden="true" />
                                     Lihat di Hasil Embu
@@ -840,12 +943,49 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                 )}
 
                 {nextMatch && (
-                    <section className="rounded-2xl border border-[#d4a843]/40 bg-[#fffaf0] p-4 shadow-sm">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div><p className="text-[10px] font-bold uppercase tracking-wider text-[#9a6b20]">Antrean berikutnya di court ini</p><h2 className="mt-1 font-bold text-[#17120f]">{nextMatch.category_name}</h2><p className="mt-1 text-xs text-[#7a746e]">Partai #{nextMatch.sequence} · {nextMatch.round_label} · {nextMatch.scheduled_at || 'Belum dijadwalkan'}</p></div>
-                            <Link href={`/admin/panitera/scoring/matches/${nextMatch.id}?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#d4a843] bg-white px-4 text-xs font-bold text-[#9a6b20] hover:bg-[#fff4cf] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:w-auto sm:min-h-10">Buka Partai Berikutnya <i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link>
-                        </div>
-                    </section>
+                    nextMatch.is_category_change ? (
+                        <section className="rounded-2xl border-2 border-indigo-500 bg-gradient-to-r from-indigo-50 via-white to-amber-50 p-5 shadow-md">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm animate-pulse">
+                                            <i className="fa-solid fa-flag-checkered text-[11px]" /> PERGANTIAN NOMOR PERTANDINGAN
+                                        </span>
+                                        <span className="rounded-full bg-amber-100 text-amber-900 px-2.5 py-0.5 text-xs font-bold border border-amber-300">
+                                            Beralih Kategori
+                                        </span>
+                                    </div>
+                                    <h2 className="mt-2 text-lg font-black text-slate-900 md:text-xl">
+                                        Berikutnya: {nextMatch.category_name} ({nextMatch.category_type?.toUpperCase()})
+                                    </h2>
+                                    <p className="text-xs text-slate-600 font-medium">
+                                        Selesai dari: <span className="font-bold text-slate-800">{nextMatch.previous_category_name}</span> ➔ Memulai: Partai #{nextMatch.sequence} · {nextMatch.round_label} ({nextMatch.scheduled_at || 'Belum dijadwalkan'})
+                                    </p>
+                                    <div className="mt-2 rounded-xl bg-indigo-50/80 border border-indigo-200 p-2.5 text-xs text-indigo-950 font-medium flex items-center gap-2">
+                                        <i className="fa-solid fa-circle-exclamation text-indigo-600 text-sm shrink-0" />
+                                        <span>Pemberitahuan Panitera: Harap pastikan wasit/juri dan atlet yang dipanggil sudah sesuai dengan nomor baru ini sebelum memulai partai berikutnya.</span>
+                                    </div>
+                                </div>
+                                <Link
+                                    href={`/admin/panitera/scoring/matches/${nextMatch.id}?event_id=${encodeURIComponent(activeEvent.id)}`}
+                                    className="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-5 text-xs font-black text-white shadow-md transition hover:scale-[1.02] sm:w-auto"
+                                >
+                                    Buka Partai Nomor Baru <i className="fa-solid fa-arrow-right" />
+                                </Link>
+                            </div>
+                        </section>
+                    ) : (
+                        <section className="rounded-2xl border border-[#d4a843]/40 bg-[#fffaf0] p-4 shadow-sm">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#9a6b20]">Antrean berikutnya di court ini</p>
+                                    <h2 className="mt-1 font-bold text-[#17120f]">{nextMatch.category_name}</h2>
+                                    <p className="mt-1 text-xs text-[#7a746e]">Partai #{nextMatch.sequence} · {nextMatch.round_label} · {nextMatch.scheduled_at || 'Belum dijadwalkan'}</p>
+                                </div>
+                                <Link href={`/admin/panitera/scoring/matches/${nextMatch.id}?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#d4a843] bg-white px-4 text-xs font-bold text-[#9a6b20] hover:bg-[#fff4cf] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:w-auto sm:min-h-10">Buka Partai Berikutnya <i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link>
+                            </div>
+                        </section>
+                    )
                 )}
 
                 <AlertConfirm

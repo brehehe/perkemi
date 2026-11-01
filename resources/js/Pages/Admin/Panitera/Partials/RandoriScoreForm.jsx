@@ -64,7 +64,7 @@ function ScoreFields({ corner, label, values, errors, onChange, disabled = false
 export default function RandoriScoreForm({ activeEvent, match }) {
     const existingScore = match.result || match.score;
     const draft = match.randori_draft || {};
-    const isLocked = Boolean(existingScore?.is_locked);
+    const isLocked = Boolean(match.category_is_locked) || Boolean(existingScore?.is_locked);
     const clientIdRef = useRef(createSyncClientId());
     const persistedSignatures = normalizeSignatures(draft.signatures || existingScore?.signatures);
     const hasCompletePersistedSignatures = signatureLabels.every(([key]) => Boolean(persistedSignatures[key]));
@@ -94,7 +94,6 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     const draftQueueRef = useRef(Promise.resolve());
     const pendingChangesRef = useRef({});
     const lastVersionRef = useRef(Number(draft.version) || 0);
-    const [requiresResignature, setRequiresResignature] = useState(Boolean(existingScore && !hasCompletePersistedSignatures));
     const [saveConfirmationOpen, setSaveConfirmationOpen] = useState(false);
     const [lockConfirmationOpen, setLockConfirmationOpen] = useState(false);
     const [syncStatus, setSyncStatus] = useState(typeof window !== 'undefined' && window.Echo ? 'ready' : 'offline');
@@ -290,13 +289,10 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         const nextData = {
             ...formDataRef.current,
             [corner]: { ...formDataRef.current[corner], [key]: value },
-            signatures: emptySignatures(),
         };
         setDataAndSync(nextData, {
             [corner]: { [key]: value },
-            signatures: emptySignatures(),
         });
-        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
     };
 
     const changeNotes = (value) => {
@@ -306,10 +302,8 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         const nextData = {
             ...formDataRef.current,
             notes: value,
-            signatures: emptySignatures(),
         };
-        setDataAndSync(nextData, { notes: value, signatures: emptySignatures() });
-        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+        setDataAndSync(nextData, { notes: value });
     };
 
     const changeSignature = (key, value) => {
@@ -344,10 +338,8 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         const nextData = {
             ...formDataRef.current,
             decision_override: nextOverride,
-            signatures: emptySignatures(),
         };
-        setDataAndSync(nextData, { decision_override: nextOverride, signatures: emptySignatures() });
-        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+        setDataAndSync(nextData, { decision_override: nextOverride });
     };
 
     const changeOverrideField = (field, value) => {
@@ -365,10 +357,8 @@ export default function RandoriScoreForm({ activeEvent, match }) {
         const nextData = {
             ...formDataRef.current,
             decision_override: nextOverride,
-            signatures: emptySignatures(),
         };
-        setDataAndSync(nextData, { decision_override: nextOverride, signatures: emptySignatures() });
-        setRequiresResignature(Boolean(existingScore) || signedCount > 0);
+        setDataAndSync(nextData, { decision_override: nextOverride });
     };
 
     const requestSaveConfirmation = (event) => {
@@ -395,12 +385,17 @@ export default function RandoriScoreForm({ activeEvent, match }) {
             onSuccess: () => {
                 form.setDefaults();
                 setSaveConfirmationOpen(false);
-                setRequiresResignature(false);
             },
         });
     };
 
+    const categoryListUrl = `/admin/panitera/scoring?category_id=${match.category_id || match.event_match_category_id}&event_id=${encodeURIComponent(activeEvent.id)}`;
+
     const lockScore = () => {
+        lockForm.transform((data) => ({
+            ...data,
+            redirect_to: categoryListUrl,
+        }));
         lockForm.post(`/admin/panitera/scoring/randori-result/${match.id}/lock`, {
             preserveScroll: true,
             onSuccess: () => setLockConfirmationOpen(false),
@@ -587,8 +582,7 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                         <p className="max-w-2xl text-xs leading-5 text-[#746b63]">Masing-masing pihak membubuhkan tanda tangan digital sendiri sebelum hasil disahkan.</p>
                         <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase ${signaturesComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>{signedCount}/6 ditandatangani</span>
                     </div>
-                    {existingScore && !requiresResignature && signaturesComplete && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900">Enam tanda tangan pengesahan sudah tersimpan. Tanda tangan hanya akan dikosongkan jika skor atau catatan diubah.</p>}
-                    {requiresResignature && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Skor atau catatan berubah. Enam pihak perlu menandatangani ulang sebelum hasil dapat disimpan.</p>}
+                    {existingScore && signaturesComplete && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900">Enam tanda tangan pengesahan sudah tersimpan dan tetap aman dipertahankan saat Anda mengubah nilai atau catatan.</p>}
                     {form.errors.signatures && <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{form.errors.signatures}</p>}
                     <div className="mt-4 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {signatureLabels.map(([key, label], index) => (

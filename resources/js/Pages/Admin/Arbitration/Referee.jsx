@@ -127,14 +127,16 @@ export default function ArbitrationReferee({ referees = [], availableReferees = 
         };
 
         if (editingReferee?.mode === 'edit') {
-            form.transform((data) => ({ ...data, _method: 'put' })).post(`/admin/arbitrase/wasit/${editingReferee.referee.id}?event_id=${encodeURIComponent(eventId)}`, {
+            form.transform((data) => ({ ...data, _method: 'put' }));
+            form.post(`/admin/arbitrase/wasit/${editingReferee.referee.id}?event_id=${encodeURIComponent(eventId)}`, {
                 ...options,
                 forceFormData: true,
             });
             return;
         }
 
-        form.transform((data) => data).post(`/admin/arbitrase/wasit?event_id=${encodeURIComponent(eventId)}`, {
+        form.transform((data) => data);
+        form.post(`/admin/arbitrase/wasit?event_id=${encodeURIComponent(eventId)}`, {
             ...options,
             forceFormData: true,
         });

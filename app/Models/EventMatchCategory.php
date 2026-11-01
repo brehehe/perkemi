@@ -47,6 +47,8 @@ class EventMatchCategory extends Model
         'is_exhibition',
         'weigh_in_locked_at',
         'weigh_in_locked_by',
+        'scoring_locked_at',
+        'scoring_locked_by',
     ];
 
     /**
@@ -66,6 +68,7 @@ class EventMatchCategory extends Model
             'is_active' => 'boolean',
             'is_exhibition' => 'boolean',
             'weigh_in_locked_at' => 'datetime',
+            'scoring_locked_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
     }
@@ -136,5 +139,15 @@ class EventMatchCategory extends Model
     public function weighInLockedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'weigh_in_locked_by');
+    }
+
+    public function scoringLockedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'scoring_locked_by');
+    }
+
+    public function isScoringLocked(): bool
+    {
+        return $this->scoring_locked_at !== null;
     }
 }

@@ -1,4 +1,5 @@
 import ParticipantRulesForm from './ParticipantRulesForm';
+import EventDataSyncForm from './EventDataSyncForm';
 import EventRefereeImport from '@/Components/Admin/EventRefereeImport';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
@@ -199,6 +200,30 @@ export default function EventDetail({
     const [selectedEventUserRole, setSelectedEventUserRole] = useState('responsible');
     const [generalSaveFeedback, setGeneralSaveFeedback] = useState(null);
     const [accessSaveFeedback, setAccessSaveFeedback] = useState(null);
+
+    // 6. Event Package Import Modal
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const importFileInputRef = useRef(null);
+    const importPackageForm = useForm({
+        package_file: null,
+    });
+
+    const handleImportPackageSubmit = (e) => {
+        e.preventDefault();
+        if (!importPackageForm.data.package_file) {
+            return;
+        }
+        importPackageForm.post('/admin/master/event/import-package', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setIsImportModalOpen(false);
+                importPackageForm.reset();
+                if (importFileInputRef.current) {
+                    importFileInputRef.current.value = '';
+                }
+            },
+        });
+    };
 
     // ══════════════════════════════════════════════════════════════
     // INERTIA FORMS
@@ -933,9 +958,9 @@ export default function EventDetail({
                             </p>
                         </div>
 
-                        {/* Event Switcher Dropdown */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 min-w-[280px]">
-                            <div className="w-full">
+                        {/* Event Switcher Dropdown & Action Buttons */}
+                        <div className="flex flex-col items-stretch lg:items-end gap-3 shrink-0 max-w-full">
+                            <div className="w-full sm:w-80">
                                 <label className="text-[11px] font-semibold text-white/60 mb-1 block uppercase tracking-wider">
                                     Pindah Event:
                                 </label>
@@ -949,12 +974,44 @@ export default function EventDetail({
                                     className="w-full text-gray-900"
                                 />
                             </div>
-                            <div className="sm:pt-5">
+
+                            {/* Tombol Aksi: Ekspor, Impor, Menu Sync, Daftar Event */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <a
+                                    href={`/admin/master/event/${event.id}/export-package`}
+                                    download
+                                    title="Unduh seluruh data pertandingan, nilai wasit, dan hasil juara event ini (.json)"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3.5 py-2 text-xs transition-colors whitespace-nowrap shadow-sm"
+                                >
+                                    <i className="fa-solid fa-download text-xs" />
+                                    <span>Ekspor (.json)</span>
+                                </a>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setIsImportModalOpen(true)}
+                                    title="Impor paket data event dari laptop offline (.json)"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3.5 py-2 text-xs transition-colors whitespace-nowrap shadow-sm"
+                                >
+                                    <i className="fa-solid fa-cloud-arrow-up text-xs" />
+                                    <span>Impor (.json)</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('sync')}
+                                    title="Buka panel lengkap sinkronisasi offline-online"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-2 text-xs border border-white/20 transition-colors whitespace-nowrap"
+                                >
+                                    <i className="fa-solid fa-arrows-rotate text-xs" />
+                                    <span>Menu Sync</span>
+                                </button>
+
                                 <Link href="/admin/master/event">
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30 whitespace-nowrap"
+                                        className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30 whitespace-nowrap"
                                     >
                                         <i className="fa-solid fa-list mr-1.5 text-xs"></i>
                                         Daftar Event
@@ -1067,6 +1124,12 @@ export default function EventDetail({
                                 id: 'fees',
                                 label: 'Biaya Kontingen',
                                 icon: 'fa-money-bill-wave',
+                            },
+                            {
+                                id: 'sync',
+                                label: 'Ekspor & Impor (Sync Offline)',
+                                icon: 'fa-cloud-arrow-up',
+                                badgeColor: 'bg-emerald-100 text-emerald-800',
                             },
                         ].map((tab) => {
                             const isActive = activeTab === tab.id;
@@ -2724,7 +2787,89 @@ export default function EventDetail({
                         </form>
                     </div>
                 )}
+
+                {/* ════ TAB: SINKRONISASI & BACKUP EVENT (OFFLINE / ONLINE) ════ */}
+                {activeTab === 'sync' && (
+                    <EventDataSyncForm
+                        event={event}
+                        counts={counts}
+                        tournamentSummary={tournamentSummary}
+                    />
+                )}
             </div>
+
+            {/* ════ MODAL: IMPOR PAKET DATA EVENT (.JSON) ════ */}
+            <Modal
+                isOpen={isImportModalOpen}
+                onClose={() => {
+                    if (!importPackageForm.processing) {
+                        setIsImportModalOpen(false);
+                    }
+                }}
+                title="Impor Paket Data Event (.json)"
+                description="Unggah file paket JSON data event yang diekspor dari sistem offline / laptop lokal ke server ini."
+                footer={
+                    <div className="flex items-center justify-end gap-2 w-full">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsImportModalOpen(false)}
+                            disabled={importPackageForm.processing}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="primary"
+                            onClick={handleImportPackageSubmit}
+                            loading={importPackageForm.processing}
+                            disabled={!importPackageForm.data.package_file || importPackageForm.processing}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                        >
+                            <i className="fa-solid fa-cloud-arrow-up mr-1.5" />
+                            Mulai Impor Data Event
+                        </Button>
+                    </div>
+                }
+            >
+                <form onSubmit={handleImportPackageSubmit} className="space-y-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-black font-black">
+                                <i className="fa-solid fa-triangle-exclamation" />
+                            </span>
+                            <div className="space-y-1">
+                                <p className="font-bold text-sm text-amber-950 dark:text-amber-100">
+                                    Perhatian Sinkronisasi Data Offline ⇄ Online:
+                                </p>
+                                <p className="leading-relaxed">
+                                    Seluruh data pertandingan, atlet, kontingen, nilai wasit (5 juri), skor Randori, dan hasil juara dari file paket <code>.json</code> akan disinkronkan ke event <strong>{event.name}</strong> ini.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">
+                            Pilih File Paket JSON (.json) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            disabled={importPackageForm.processing}
+                            onChange={(e) => importPackageForm.setData('package_file', e.target.files?.[0] || null)}
+                            className="block w-full text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer border border-slate-300 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-900"
+                        />
+                        {importPackageForm.errors.package_file && (
+                            <p className="mt-1.5 text-xs font-semibold text-red-600">{importPackageForm.errors.package_file}</p>
+                        )}
+                        <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            Ukuran maksimal 50 MB. Pastikan file merupakan hasil unduhan dari tombol <strong>Ekspor (.json)</strong>.
+                        </p>
+                    </div>
+                </form>
+            </Modal>
 
             {/* ══════════════════════════════════════════════════════════════ */}
             {/* MODAL 1: KELOMPOK UMUR (CREATE / EDIT)                        */}

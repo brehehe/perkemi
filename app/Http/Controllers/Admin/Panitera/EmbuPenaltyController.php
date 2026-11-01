@@ -28,6 +28,11 @@ class EmbuPenaltyController extends Controller
             404,
         );
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan tidak dapat diubah.',
+        );
         $operator = $request->user();
         abort_unless($operator instanceof User, 403);
 

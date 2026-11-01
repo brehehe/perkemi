@@ -28,9 +28,15 @@ class RandoriScoreStateUpdated implements ShouldBroadcastNow, ShouldRescue
     /** @return list<PrivateChannel> */
     public function broadcastOn(): array
     {
-        return [
+        $channels = [
             new PrivateChannel("tournament-match.{$this->matchId}"),
         ];
+
+        if (! empty($this->courtId)) {
+            $channels[] = new PrivateChannel("event-court.{$this->courtId}");
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string
@@ -41,13 +47,21 @@ class RandoriScoreStateUpdated implements ShouldBroadcastNow, ShouldRescue
     /** @return array<string, mixed> */
     public function broadcastWith(): array
     {
+        $sanitizedChanges = $this->changes;
+        if (isset($sanitizedChanges['signatures']) && is_array($sanitizedChanges['signatures'])) {
+            $sanitizedChanges['signatures'] = array_map(
+                fn ($val) => ! empty($val),
+                $sanitizedChanges['signatures']
+            );
+        }
+
         return [
             'event_id' => $this->eventId,
             'match_id' => $this->matchId,
             'court_id' => $this->courtId,
             'action' => $this->action,
             'version' => $this->version,
-            'changes' => $this->changes,
+            'changes' => $sanitizedChanges,
             'client_id' => $this->clientId,
             'updated_at' => $this->updatedAt,
         ];

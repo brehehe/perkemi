@@ -26,6 +26,11 @@ class PaniteraMatchWorkflowController extends Controller
         $eventContext->ensureCanManage($request, $event);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
         $courtAccess->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        abort_if(
+            (bool) $tournamentMatch->matchCategory?->scoring_locked_at,
+            422,
+            'Nomor pertandingan telah dikunci dan berada dalam mode hanya lihat.',
+        );
 
         $validated = $request->validated();
         $updatedMatch = $workflow->update(

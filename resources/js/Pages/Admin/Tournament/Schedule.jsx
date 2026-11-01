@@ -47,7 +47,7 @@ function EmptyState({ icon, title, description }) {
     );
 }
 
-function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onDragStart, onDragEnd }) {
+function MatchCard({ match, canManage, isSelected, isProcessing, onSelect, onUnschedule, onDragStart, onDragEnd }) {
     const isEmbu = match.category_type === 'embu';
 
     return (

@@ -16,6 +16,8 @@ use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
 use App\Services\Admin\Master\EventDetailViewService;
+use App\Services\Panitera\RandoriResultService;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -640,4 +642,76 @@ test('event tournament settings and match session window can be saved', function
         'is_match_session' => 1,
         'end_time' => '2026-10-01 11:30:00',
     ]);
+});
+
+test('double elimination automatically advances bye winner to upper final and resolves lower round bye', function () {
+    $user = User::factory()->create();
+    $event = createDrawingEvent($user, 'Kejurda Double Elimination 2026');
+    $category = createDrawingCategory($event, 'Randori Double Elimination', 'randori', 1);
+    $category->update(['preferred_bracket_type' => 'double_elimination']);
+
+    // 3 participants
+    $athletes = collect();
+    foreach ([1, 2, 3] as $number) {
+        $contingent = createVerifiedDrawingContingent($event, $user, 20 + $number);
+        $athlete = Athlete::create(['contingent_id' => $contingent->id, 'name' => "Atlet Double {$number}", 'gender' => 'L']);
+        $entry = AthleteMatchCategoryEntry::create(['event_id' => $event->id, 'athlete_id' => $athlete->id, 'event_match_category_id' => $category->id]);
+        $athletes->push(['athlete' => $athlete, 'entry' => $entry]);
+    }
+
+    $generator = app(TournamentDrawingGenerator::class);
+    $generator->generate($event, $category);
+
+    $matches = TournamentMatch::where('event_match_category_id', $category->id)
+        ->orderBy('match_sequence')
+        ->get();
+
+    expect($matches)->toHaveCount(7);
+
+    $upperMatches = $matches->where('round_label', 'Upper Bracket')->values();
+    expect($upperMatches)->toHaveCount(2);
+
+    $upper1 = $upperMatches->get(0);
+    $upper2 = $upperMatches->get(1);
+
+    expect($upper1->is_bye)->toBeFalse()
+        ->and($upper2->is_bye)->toBeTrue()
+        ->and($upper2->status)->toBe('completed');
+
+    $upperFinal = $matches->firstWhere('round_label', 'Final Upper Bracket');
+    expect($upperFinal)->not->toBeNull()
+        ->and($upperFinal->blue_entry_id)->toBe($upper2->red_entry_id)
+        ->and($upperFinal->blue_label)->toBe($upper2->red_label);
+
+    $lowerRound = $matches->firstWhere('round_label', 'Lower Bracket · Babak 1');
+    expect($lowerRound)->not->toBeNull()
+        ->and($lowerRound->is_bye)->toBeTrue()
+        ->and($lowerRound->blue_label)->toBe('BYE');
+
+    // Simulate Upper 1 completion
+    $winnerParticipant = $upper1->metadata['red'];
+    $loserParticipant = $upper1->metadata['blue'];
+
+    $randoriService = app(RandoriResultService::class);
+    $reflector = new ReflectionClass($randoriService);
+    $routeMethod = $reflector->getMethod('routeResult');
+    $routeMethod->setAccessible(true);
+    $routeMethod->invoke($randoriService, $upper1->fresh(['drawing', 'nextMatch']), $winnerParticipant, $loserParticipant);
+
+    // Verify Upper Final has both participants and is ready
+    $upperFinalFresh = $upperFinal->fresh();
+    expect($upperFinalFresh->red_entry_id)->toBe($winnerParticipant['entry_id'])
+        ->and($upperFinalFresh->blue_entry_id)->toBe($upper2->red_entry_id)
+        ->and($upperFinalFresh->metadata['placeholder'])->toBeFalse();
+
+    // Verify Lower Round 1 was resolved as completed BYE
+    $lowerRoundFresh = $lowerRound->fresh();
+    expect($lowerRoundFresh->status)->toBe('completed')
+        ->and($lowerRoundFresh->is_bye)->toBeTrue()
+        ->and($lowerRoundFresh->red_entry_id)->toBe($loserParticipant['entry_id']);
+
+    // Verify Final Lower Bracket has the loser in red corner
+    $lowerFinal = $matches->firstWhere('round_label', 'Final Lower Bracket')->fresh();
+    expect($lowerFinal->red_entry_id)->toBe($loserParticipant['entry_id'])
+        ->and($lowerFinal->red_label)->toBe($loserParticipant['label']);
 });

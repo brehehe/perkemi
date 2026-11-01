@@ -107,24 +107,66 @@ body {
 
 /* Court monitor keeps the broadcast look in dark mode and gains a high-contrast light mode. */
 html:not(.dark) .court-monitor {
-    background: #f3f0eb;
-    color: #17120f;
+    background: #f8f6f2;
+    color: #0f172a;
 }
 
 html:not(.dark) .court-monitor :is([class*='bg-[#151210]'], [class*='bg-[#090807]']) {
     background-color: #ffffff;
+    border-color: #e2dbcf;
 }
 
-html:not(.dark) .court-monitor :is([class*='bg-white/'], [class*='bg-black/']) {
-    background-color: #f5f1eb;
+html:not(.dark) .court-monitor :is([class*='bg-white/'], [class*='bg-black/']):not([class*='bg-red']):not([class*='bg-rose']):not([class*='bg-emerald']):not([class*='bg-amber']):not([class*='bg-blue']) {
+    background-color: #f1ede6;
 }
 
 html:not(.dark) .court-monitor [class*='border-white/'] {
-    border-color: #ddd5ca;
+    border-color: #e2dbcf;
 }
 
-html:not(.dark) .court-monitor :is([class*='text-white/'], [class~='text-white']) {
-    color: #6d665f;
+html:not(.dark) .court-monitor :is([class*='text-white/20'], [class*='text-white/30'], [class*='text-white/40'], [class*='text-white/45'], [class*='text-white/50'], [class*='text-white/55'], [class*='text-white/60'], [class*='text-white/70']):not(.force-white):not([data-force-white='true']) {
+    color: #64748b;
+}
+
+/* On light surfaces, unforced text-white becomes crisp dark slate */
+html:not(.dark) .court-monitor [class~='text-white']:not(.force-white):not([data-force-white='true']):not(.corner-aka):not(.corner-aka *):not([class*='bg-red'] *):not([class*='bg-rose'] *):not([class*='bg-emerald'] *):not([class*='bg-blue'] *):not([class*='bg-slate-900'] *):not([class*='bg-black'] *) {
+    color: #0f172a;
+}
+
+/* Force pure white on Sudut AKA red card and dark/saturated backgrounds */
+.court-monitor .corner-aka,
+.court-monitor .corner-aka *,
+html:not(.dark) .court-monitor .corner-aka,
+html:not(.dark) .court-monitor .corner-aka *,
+html:not(.dark) .court-monitor .corner-aka h1,
+html:not(.dark) .court-monitor .corner-aka h2,
+html:not(.dark) .court-monitor .corner-aka h3,
+html:not(.dark) .court-monitor .corner-aka p,
+html:not(.dark) .court-monitor .force-white,
+html:not(.dark) .court-monitor [data-force-white='true'],
+html:not(.dark) .court-monitor [class~='text-white'].force-white {
+    color: #ffffff !important;
+}
+
+/* AKA red background preservation */
+.court-monitor .corner-aka,
+html:not(.dark) .court-monitor .corner-aka {
+    background-color: #dc2626 !important;
+    border-color: #b91c1c !important;
+}
+
+/* SHIRO white card preservation in light mode */
+html:not(.dark) .court-monitor .corner-shiro {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Saturated colored badges and cards keep pure white text */
+html:not(.dark) .court-monitor :is(.bg-red-600, .bg-rose-600, .bg-emerald-600, .bg-blue-600, .bg-slate-900) {
+    color: #ffffff !important;
+}
+html:not(.dark) .court-monitor :is(.bg-red-600, .bg-rose-600, .bg-emerald-600, .bg-blue-600, .bg-slate-900) * {
+    color: #ffffff !important;
 }
 
 html:not(.dark) .court-monitor .theme-toggle {
