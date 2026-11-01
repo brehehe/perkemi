@@ -1,6 +1,6 @@
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
 import {
     Card,
@@ -41,6 +41,30 @@ export default function EventIndex({
     const [deletingEvent, setDeletingEvent] = useState(null);
     const [activeTab, setActiveTab] = useState('general'); // 'general' | 'schedule' | 'fees'
     const [isHomepageModalOpen, setIsHomepageModalOpen] = useState(false);
+
+    // Event Package Import Modal
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const importFileInputRef = useRef(null);
+    const importPackageForm = useForm({
+        package_file: null,
+    });
+
+    const handleImportPackageSubmit = (e) => {
+        e.preventDefault();
+        if (!importPackageForm.data.package_file) {
+            return;
+        }
+        importPackageForm.post('/admin/master/event/import-package', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setIsImportModalOpen(false);
+                importPackageForm.reset();
+                if (importFileInputRef.current) {
+                    importFileInputRef.current.value = '';
+                }
+            },
+        });
+    };
 
     const homepageForm = useForm({
         home_landing_mode: homepageSettings.home_landing_mode || 'default',
@@ -282,6 +306,15 @@ export default function EventIndex({
                         <i className="fa-solid fa-sliders text-xs"></i>
                         <span>Pengaturan & Detail Event</span>
                     </Link>
+                    <Button variant="unstyled" size="none"
+                        type="button"
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs md:text-sm border border-emerald-200 shadow-sm transition-all cursor-pointer"
+                        title="Impor paket data event dari file JSON (sinkronisasi offline/online)"
+                    >
+                        <i className="fa-solid fa-cloud-arrow-up text-emerald-600 text-xs"></i>
+                        <span>Impor Event (.json)</span>
+                    </Button>
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
@@ -753,6 +786,14 @@ export default function EventIndex({
                                                 >
                                                     <i className="fa-solid fa-sliders text-xs"></i>
                                                 </Link>
+                                                <a
+                                                    href={`/admin/master/event/${event.id}/export-package`}
+                                                    download
+                                                    className="w-7 h-7 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-700 flex items-center justify-center transition-all cursor-pointer"
+                                                    title="Ekspor Paket Data Event (.json)"
+                                                >
+                                                    <i className="fa-solid fa-cloud-arrow-down text-xs"></i>
+                                                </a>
                                                 <Button variant="unstyled" size="none"
                                                     type="button"
                                                     onClick={() => setDetailEvent(event)}
@@ -921,6 +962,14 @@ export default function EventIndex({
                                     >
                                         <i className="fa-solid fa-sliders text-xs"></i>
                                     </Link>
+                                    <a
+                                        href={`/admin/master/event/${event.id}/export-package`}
+                                        download
+                                        className="w-8 h-8 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-700 flex items-center justify-center transition-colors cursor-pointer"
+                                        title="Ekspor Paket Data Event (.json)"
+                                    >
+                                        <i className="fa-solid fa-cloud-arrow-down text-xs"></i>
+                                    </a>
                                     <Button variant="unstyled" size="none"
                                         type="button"
                                         onClick={() => setDetailEvent(event)}
@@ -1441,6 +1490,91 @@ export default function EventIndex({
                         </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* ════ MODAL IMPOR PAKET DATA EVENT (.JSON) ════ */}
+            <Modal
+                isOpen={isImportModalOpen}
+                onClose={() => {
+                    if (!importPackageForm.processing) {
+                        setIsImportModalOpen(false);
+                    }
+                }}
+                title="Impor Paket Data Event (.json)"
+                subtitle="Unggah file paket JSON data event yang diekspor dari sistem offline / laptop lokal ke server ini."
+                size="md"
+                footer={
+                    <div className="flex items-center justify-end gap-2 w-full">
+                        <Button
+                            variant="unstyled"
+                            size="none"
+                            type="button"
+                            onClick={() => setIsImportModalOpen(false)}
+                            disabled={importPackageForm.processing}
+                            className="px-4 py-2 rounded-xl border border-[#ede9e1] bg-white text-xs font-semibold text-[#706860] hover:bg-[#f7f4ef] transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            variant="unstyled"
+                            size="none"
+                            type="button"
+                            onClick={handleImportPackageSubmit}
+                            disabled={!importPackageForm.data.package_file || importPackageForm.processing}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {importPackageForm.processing ? (
+                                <>
+                                    <i className="fa-solid fa-spinner fa-spin text-xs" />
+                                    <span>Mengimpor Data...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <i className="fa-solid fa-cloud-arrow-up text-xs" />
+                                    <span>Mulai Impor Data Event</span>
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                }
+            >
+                <form onSubmit={handleImportPackageSubmit} className="space-y-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-black font-black">
+                                <i className="fa-solid fa-triangle-exclamation" />
+                            </span>
+                            <div className="space-y-1">
+                                <p className="font-bold text-sm text-amber-950">
+                                    Perhatian Sinkronisasi Data Offline ⇄ Online:
+                                </p>
+                                <p className="leading-relaxed text-[#706860]">
+                                    File paket <code>.json</code> berisi data lengkap event, nomor pertandingan, kontingen, atlet, bagan pertandingan, nilai wasit (W1 - W5), timer randori, dan hasil juara. Jika event sudah ada di sistem, data akan disinkronkan dan diperbarui secara otomatis.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-[#0f0d0b] mb-2">
+                            Pilih File Paket JSON (.json) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            disabled={importPackageForm.processing}
+                            onChange={(e) => importPackageForm.setData('package_file', e.target.files?.[0] || null)}
+                            className="block w-full text-xs text-[#706860] file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer border border-[#ded8ce] rounded-xl p-2 bg-[#fcfbfa]"
+                        />
+                        {importPackageForm.errors.package_file && (
+                            <p className="mt-1.5 text-xs font-semibold text-red-600">{importPackageForm.errors.package_file}</p>
+                        )}
+                        <p className="mt-2 text-[11px] text-[#8c827a]">
+                            Ukuran maksimal 50 MB. Pastikan file merupakan hasil unduhan dari tombol <strong>Ekspor (.json)</strong>.
+                        </p>
+                    </div>
+                </form>
             </Modal>
 
             {/* ════ MODAL DELETE CONFIRMATION ════ */}

@@ -175,15 +175,15 @@
 .event-bracket-round:not(.event-bracket-first) .event-bracket-match-slot::before { left: -24px; }
 .event-bracket-round:not(.event-bracket-last) .event-bracket-match-slot::after { right: -24px; }
 .event-bracket-pair-line { position: absolute; top: 50%; right: -24px; z-index: 1; height: var(--event-connector-span); border-right: 2px solid var(--event-bracket-line); }
-.event-bracket-match { position: relative; z-index: 2; overflow: hidden; border: 1px solid var(--event-border); border-radius: 7px; background: var(--event-surface); box-shadow: 0 4px 12px rgb(24 39 54 / 5%); }
+.event-bracket-match { position: relative; z-index: 2; overflow: hidden; border: 1px solid var(--event-border); border-radius: 7px; background: var(--event-surface); color: var(--event-ink); box-shadow: 0 4px 12px rgb(24 39 54 / 5%); }
 .event-bracket-bye .event-bracket-match { border-style: dashed; }
-.event-bracket-match > div { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-bottom: 1px solid var(--event-border); font-size: 12px; }
-.event-bracket-match > div span { max-width: 198px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.event-bracket-match > div strong { flex: 0 0 auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.event-bracket-match > div { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-bottom: 1px solid var(--event-border); font-size: 12px; color: var(--event-ink); }
+.event-bracket-match > div span { max-width: 198px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+.event-bracket-match > div strong { flex: 0 0 auto; font-size: 11px; font-variant-numeric: tabular-nums; color: inherit; }
 .event-bracket-match > div.event-bracket-winner { background: #e6f7ef; color: #176b4d; font-weight: 700; }
 .dark .event-bracket-match > div.event-bracket-winner { background: #20392c; color: #9bd5b4; }
 .event-bracket-match > p { display: flex; min-height: 30px; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; color: var(--event-muted); font-size: 9px; }
-.event-bracket-match > p > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-bracket-match > p > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--event-muted); }
 .event-bye-badge { flex: 0 0 auto; padding: 2px 6px; border-radius: 999px; background: #fff0c2; color: #7b5814; font-size: 8px; letter-spacing: .08em; }
 .dark .event-bye-badge { background: #47391c; color: #f4d47e; }
 

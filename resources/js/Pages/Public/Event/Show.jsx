@@ -78,37 +78,137 @@ function PublicMatchCard({ match }) {
     const shiroAdvancesByBye = match.is_bye && match.shiro?.toUpperCase() !== 'BYE';
     const isAkaWinner = match.winner === 'aka' || akaAdvancesByBye;
     const isShiroWinner = match.winner === 'shiro' || shiroAdvancesByBye;
+    const isGf2Skipped =
+        match.metadata?.gf2_status === 'skipped' ||
+        match.metadata?.notes?.includes('dilewati') ||
+        (match.is_bye && (match.round_label?.includes('GF2') || match.round_label?.includes('Grand Final Ulang')));
+
+    const isPlaceholderAka = !match.aka || match.aka.toLowerCase().startsWith('pemenang') || match.aka.toLowerCase().startsWith('kalah') || match.aka.toLowerCase().includes('menunggu');
+    const isPlaceholderShiro = !match.shiro || match.shiro.toLowerCase().startsWith('pemenang') || match.shiro.toLowerCase().startsWith('kalah') || match.shiro.toLowerCase().includes('menunggu');
 
     return (
-        <div className={`event-bracket-match ${match.is_bye ? 'event-bracket-bye' : ''} w-68 shrink-0`}>
-            <div className="flex items-center justify-between border-b px-3 py-1 text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold">
-                <span>Partai #{match.sequence}</span>
-                <span>{match.court || 'Court —'}</span>
-            </div>
-            <div className={isAkaWinner ? 'event-bracket-winner' : ''}>
-                <span className="flex items-center gap-1.5 truncate">
-                    <span className="rounded bg-rose-600 px-1 py-0.5 text-[8px] font-black text-white shrink-0">AKA</span>
-                    <span className="truncate">{match.aka}</span>
+        <div
+            className={`event-bracket-match ${
+                match.is_bye ? 'event-bracket-bye' : ''
+            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 w-68 shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
+        >
+            {/* Header: Partai & Court */}
+            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700/80 !bg-stone-100 dark:!bg-stone-800/90 px-3 py-1.5 text-[10px] font-bold !text-stone-800 dark:!text-stone-200">
+                <span className="flex items-center gap-1.5">
+                    <span className="rounded bg-stone-800 dark:bg-white text-white dark:text-stone-900 px-1 py-0.2 text-[9px] font-mono font-black">
+                        #{match.sequence}
+                    </span>
+                    <span>Partai #{match.sequence}</span>
                 </span>
-                <strong>{akaAdvancesByBye ? 'Lolos' : match.aka_score ?? '—'}</strong>
-            </div>
-            <div className={isShiroWinner ? 'event-bracket-winner' : ''}>
-                <span className="flex items-center gap-1.5 truncate">
-                    <span className="rounded bg-slate-700 px-1 py-0.5 text-[8px] font-black text-white shrink-0">SHIRO</span>
-                    <span className="truncate">{match.shiro}</span>
+                <span className="!text-stone-600 dark:!text-stone-400 font-medium">
+                    {match.court || 'Court —'}
                 </span>
-                <strong>{shiroAdvancesByBye ? 'Lolos' : match.shiro_score ?? '—'}</strong>
             </div>
-            <p>
-                <span>{match.scheduled_at || 'Jadwal fleksibel'}</span>
-                {match.is_bye ? (
+
+            {/* AKA Competitor */}
+            <div
+                className={`flex items-center justify-between border-b border-stone-100 dark:border-stone-800/80 px-3 py-2 text-xs transition-colors ${
+                    isAkaWinner
+                        ? '!bg-emerald-50 dark:!bg-emerald-950/60 !text-emerald-950 dark:!text-emerald-200 font-bold'
+                        : match.is_bye && match.aka?.toUpperCase() === 'BYE'
+                        ? '!bg-stone-50/60 dark:!bg-stone-900/40 !text-stone-400 italic'
+                        : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
+                }`}
+            >
+                <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                    <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
+                        AKA
+                    </span>
+                    <span
+                        className={`truncate text-xs ${
+                            isAkaWinner
+                                ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
+                                : isPlaceholderAka
+                                ? 'font-medium !text-stone-600 dark:!text-stone-300'
+                                : 'font-semibold !text-stone-900 dark:!text-stone-100'
+                        }`}
+                        title={match.aka}
+                    >
+                        {match.aka || 'Menunggu peserta'}
+                    </span>
+                    {isAkaWinner && (
+                        <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
+                    )}
+                </div>
+                <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
+                    {akaAdvancesByBye ? (
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Lolos</span>
+                    ) : (
+                        match.aka_score ?? '—'
+                    )}
+                </strong>
+            </div>
+
+            {/* SHIRO Competitor */}
+            <div
+                className={`flex items-center justify-between border-b border-stone-100 dark:border-stone-800/80 px-3 py-2 text-xs transition-colors ${
+                    isShiroWinner
+                        ? '!bg-emerald-50 dark:!bg-emerald-950/60 !text-emerald-950 dark:!text-emerald-200 font-bold'
+                        : match.is_bye && match.shiro?.toUpperCase() === 'BYE'
+                        ? '!bg-stone-50/60 dark:!bg-stone-900/40 !text-stone-400 italic'
+                        : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
+                }`}
+            >
+                <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                    <span className="shrink-0 rounded bg-slate-700 dark:bg-slate-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
+                        SHIRO
+                    </span>
+                    <span
+                        className={`truncate text-xs ${
+                            isShiroWinner
+                                ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
+                                : isPlaceholderShiro
+                                ? 'font-medium !text-stone-600 dark:!text-stone-300'
+                                : 'font-semibold !text-stone-900 dark:!text-stone-100'
+                        }`}
+                        title={match.shiro}
+                    >
+                        {match.shiro || 'Menunggu peserta'}
+                    </span>
+                    {isShiroWinner && (
+                        <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
+                    )}
+                </div>
+                <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
+                    {shiroAdvancesByBye ? (
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Lolos</span>
+                    ) : (
+                        match.shiro_score ?? '—'
+                    )}
+                </strong>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between !bg-stone-50 dark:!bg-stone-800/60 px-3 py-1.5 text-[10px] !text-stone-600 dark:!text-stone-400 border-t border-stone-100 dark:border-stone-800">
+                <span className="truncate">
+                    {match.scheduled_at ? (
+                        <>
+                            <i className="fa-regular fa-clock mr-1 text-[9px]" />
+                            {match.scheduled_at}
+                        </>
+                    ) : (
+                        'Jadwal fleksibel'
+                    )}
+                </span>
+                {isGf2Skipped ? (
+                    <span className="inline-flex items-center rounded bg-stone-200 dark:bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-stone-700 dark:text-stone-300" title="Tidak diperlukan karena Juara Upper Bracket memenangkan Grand Final">
+                        DILEWATI
+                    </span>
+                ) : match.is_bye ? (
                     <strong className="event-bye-badge">BYE</strong>
                 ) : match.status === 'completed' || match.winner ? (
-                    <span className="text-emerald-700 font-bold">Selesai</span>
+                    <span className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-400">
+                        <i className="fa-solid fa-check text-[9px]" /> Selesai
+                    </span>
                 ) : (
-                    <span>Menunggu</span>
+                    <span className="!text-stone-600 dark:!text-stone-300 font-medium">Menunggu</span>
                 )}
-            </p>
+            </div>
         </div>
     );
 }
@@ -351,27 +451,12 @@ function RandoriBracket({ bracket }) {
                                 <h4>{round.name}</h4>
                                 <div className="event-bracket-matches">
                                     {round.matches.map((match, matchIndex) => {
-                                        const akaAdvancesByBye = match.is_bye && match.aka?.toUpperCase() !== 'BYE';
-                                        const shiroAdvancesByBye = match.is_bye && match.shiro?.toUpperCase() !== 'BYE';
                                         const startsPair = !isLastRound && matchIndex % 2 === 0 && matchIndex + 1 < round.matches.length;
 
                                         return (
                                             <div key={match.id} className={`event-bracket-match-slot ${match.is_bye ? 'event-bracket-bye' : ''}`}>
                                                 {startsPair && <span className="event-bracket-pair-line" aria-hidden="true" />}
-                                                <div className="event-bracket-match">
-                                                    <div className={match.winner === 'aka' || akaAdvancesByBye ? 'event-bracket-winner' : ''}>
-                                                        <span>{match.aka}</span>
-                                                        <strong>{akaAdvancesByBye ? 'Lolos' : match.aka_score ?? '—'}</strong>
-                                                    </div>
-                                                    <div className={match.winner === 'shiro' || shiroAdvancesByBye ? 'event-bracket-winner' : ''}>
-                                                        <span>{match.shiro}</span>
-                                                        <strong>{shiroAdvancesByBye ? 'Lolos' : match.shiro_score ?? '—'}</strong>
-                                                    </div>
-                                                    <p>
-                                                        <span>Partai #{match.sequence}{match.court ? ` · ${match.court}` : ''}{match.scheduled_at ? ` · ${match.scheduled_at}` : ''}</span>
-                                                        {match.is_bye && <strong className="event-bye-badge">BYE</strong>}
-                                                    </p>
-                                                </div>
+                                                <PublicMatchCard match={match} />
                                             </div>
                                         );
                                     })}

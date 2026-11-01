@@ -3,6 +3,7 @@
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
+use App\Models\Referee;
 use App\Models\Role;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Services\Admin\Event\EventDataSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -171,4 +173,75 @@ test('export and import cli commands work successfully', function () {
     if (file_exists($outputPath)) {
         unlink($outputPath);
     }
+});
+
+test('import handles existing staff with different uuid and maps relationships safely', function () {
+    $existingReferee = Referee::query()->create([
+        'name' => 'Wasit Uji Coba',
+        'gender' => 'male',
+        'license_number' => 'TEST.LIC.001',
+        'is_active' => true,
+    ]);
+
+    $existingEvent = Event::query()->create([
+        'name' => 'Event Target DB',
+        'slug' => 'event-sync-slug',
+        'city' => 'Surabaya',
+        'venue' => 'GOR Kertajaya',
+        'start_date' => now(),
+        'end_date' => now()->addDays(2),
+        'is_active' => true,
+    ]);
+
+    $differentEventId = (string) Str::uuid();
+    $differentRefereeId = (string) Str::uuid();
+
+    $package = [
+        'format' => EventDataSyncService::ExportFormat,
+        'version' => EventDataSyncService::Version,
+        'data' => [
+            'event' => [
+                'id' => $differentEventId,
+                'name' => 'Event Target DB (Updated)',
+                'slug' => 'event-sync-slug',
+                'city' => 'Surabaya',
+                'venue' => 'GOR Kertajaya',
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addDays(2)->toDateString(),
+                'is_active' => true,
+            ],
+            'referees' => [
+                [
+                    'id' => $differentRefereeId,
+                    'name' => 'Wasit Uji Coba (Export)',
+                    'gender' => 'male',
+                    'license_number' => 'TEST.LIC.001',
+                    'is_active' => true,
+                ],
+            ],
+            'event_referee' => [
+                [
+                    'event_id' => $differentEventId,
+                    'referee_id' => $differentRefereeId,
+                    'role' => 'wasit_tatami',
+                    'is_active' => true,
+                ],
+            ],
+        ],
+    ];
+
+    $syncService = app(EventDataSyncService::class);
+    $result = $syncService->importEvent($package);
+
+    expect($result['event_id'])->toBe($existingEvent->id);
+
+    $this->assertDatabaseHas('events', [
+        'id' => $existingEvent->id,
+        'name' => 'Event Target DB (Updated)',
+    ]);
+
+    $this->assertDatabaseHas('event_referee', [
+        'event_id' => $existingEvent->id,
+        'referee_id' => $existingReferee->id,
+    ]);
 });

@@ -389,6 +389,8 @@ class PublicEventPageService
             'winner' => $score?->winner_corner,
             'status' => $match->status,
             'is_bye' => $match->is_bye,
+            'round_label' => $match->round_label,
+            'metadata' => $match->metadata,
         ];
     }
 }
