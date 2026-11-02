@@ -33,23 +33,56 @@ function ClassificationBadge({ isExhibition, participantCount, hasDrawing = true
     );
 }
 
-function ChampionPreview({ candidates }) {
+// Komponen Medali Juara dengan Nama Atlet & Nama Kontingen
+function ChampionMedalsList({ champions }) {
+    if (!champions || champions.length === 0) return null;
+
     return (
-        <div className="mt-3 grid gap-2 border-t border-current/10 pt-3 sm:grid-cols-2">
-            {candidates.map((candidate) => {
-                const rank = rankDetails[candidate.rank] || rankDetails[3];
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            {champions.map((champ) => {
+                const rankNum = Number(champ.rank);
+                const rank = rankDetails[rankNum] || rankDetails[3];
+                const isGold = rankNum === 1;
+                const isSilver = rankNum === 2;
 
                 return (
-                    <div key={candidate.rank} className={`rounded-xl border p-3 ${rank.color}`}>
-                        <div className="flex items-center gap-2">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-xs">
-                                <i className={`fa-solid ${rank.icon}`} aria-hidden="true" />
+                    <div
+                        key={champ.id || champ.rank}
+                        className={`rounded-xl border p-3.5 shadow-2xs transition-all ${
+                            isGold
+                                ? 'border-amber-300 bg-amber-50/70'
+                                : isSilver
+                                ? 'border-slate-300 bg-slate-50/70'
+                                : 'border-orange-200 bg-orange-50/50'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black uppercase ${
+                                isGold
+                                    ? 'bg-amber-500 text-slate-950'
+                                    : isSilver
+                                    ? 'bg-slate-300 text-slate-800'
+                                    : 'bg-amber-700 text-white'
+                            }`}>
+                                <i className={`fa-solid ${rank.icon} text-[9px]`} />
+                                {champ.rank_label || rank.label} · {rank.medal}
                             </span>
-                            <div className="min-w-0">
-                                <p className="text-[9px] font-black uppercase tracking-wide">{rank.label} · {rank.medal}</p>
-                                <p className="mt-0.5 break-words text-xs font-black leading-5 text-[#17120f]">{candidate.label}</p>
-                            </div>
+                            <span className="text-xs font-black text-slate-400">#{rankNum}</span>
                         </div>
+                        <p className="font-bold text-slate-900 text-xs sm:text-sm leading-snug break-words">
+                            {champ.label}
+                        </p>
+                        {champ.contingent_name && (
+                            <p className="mt-1 text-[11px] font-medium text-slate-600 flex items-center gap-1 truncate" title={champ.contingent_name}>
+                                <i className="fa-solid fa-shield-halved text-[9px] text-slate-400 shrink-0" />
+                                {champ.contingent_name}
+                            </p>
+                        )}
+                        {champ.basis && (
+                            <p className="mt-1 text-[10px] text-amber-800/80 italic">
+                                {champ.basis}
+                            </p>
+                        )}
                     </div>
                 );
             })}
@@ -57,111 +90,12 @@ function ChampionPreview({ candidates }) {
     );
 }
 
-function CategoryDirectory({ activeEvent, categories, selectedCategory, canManage, errors, onSelect }) {
-    const [generateTarget, setGenerateTarget] = useState(null);
-    const [generatingId, setGeneratingId] = useState(null);
-
-    const generateChampions = () => {
-        if (!generateTarget) return;
-
-        setGeneratingId(generateTarget.id);
-        router.post(`/admin/panitera/scoring/champions/${generateTarget.id}/generate`, { event_id: activeEvent.id }, {
-            preserveScroll: true,
-            onSuccess: () => setGenerateTarget(null),
-            onFinish: () => setGeneratingId(null),
-        });
-    };
-
-    return (
-        <>
-            <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm" aria-labelledby="all-categories-title">
-                <div className="border-b border-[#e9e2d8] bg-[#faf8f5] p-4 sm:p-5">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <h2 id="all-categories-title" className="text-lg font-black text-[#17120f]">Semua Nomor Pertandingan</h2>
-                            <p className="mt-1 max-w-3xl text-xs leading-5 text-[#746b63]">Seluruh kategori aktif event ditampilkan sekaligus. Generate hanya aktif setelah hasil resmi memenuhi flow Embu atau bagan akhir Randori.</p>
-                        </div>
-                        <Badge variant="gold" className="w-fit">{categories.length} kategori</Badge>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 rounded-xl border border-[#e8e1d8] bg-white p-4 sm:grid-cols-2">
-                        <div className="flex gap-3"><span className="mt-0.5 h-3 w-3 shrink-0 rounded-full bg-amber-500" aria-hidden="true" /><div><p className="text-xs font-black text-amber-800">Kuning · Ekshibisi</p><p className="mt-1 text-[11px] leading-5 text-[#6f665e]">Nomor pertandingan dengan maksimal 3 peserta.</p></div></div>
-                        <div className="flex gap-3"><span className="mt-0.5 h-3 w-3 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" /><div><p className="text-xs font-black text-emerald-800">Hijau · Non-ekshibisi</p><p className="mt-1 text-[11px] leading-5 text-[#6f665e]">Nomor pertandingan dengan lebih dari 3 peserta.</p></div></div>
-                    </div>
-                </div>
-
-                {categories.length > 0 ? (
-                    <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 2xl:grid-cols-3">
-                        {categories.map((category, index) => {
-                            const isSelected = category.id === selectedCategory;
-                            const status = category.is_confirmed
-                                ? { label: 'Sudah dikonfirmasi', variant: 'green', icon: 'fa-circle-check' }
-                                : category.generation_ready
-                                    ? { label: 'Siap generate', variant: 'blue', icon: 'fa-wand-magic-sparkles' }
-                                    : { label: 'Menunggu hasil', variant: 'yellow', icon: 'fa-clock' };
-
-                            return (
-                                <article key={category.id} className={`flex min-w-0 flex-col rounded-2xl border p-4 transition-shadow ${isSelected ? 'border-[#d4a843] bg-[#fffaf0] shadow-md ring-2 ring-[#d4a843]/15' : 'border-[#e5ded4] bg-white shadow-xs hover:shadow-md'}`}>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#9a6b20]">Nomor {index + 1}</p>
-                                            <h3 className="mt-1 break-words text-sm font-black leading-5 text-[#17120f]">{category.name}</h3>
-                                        </div>
-                                        <Badge variant={category.type === 'embu' ? 'blue' : 'red'} size="sm">{category.type.toUpperCase()}</Badge>
-                                    </div>
-
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                        <ClassificationBadge isExhibition={category.is_exhibition} participantCount={category.participant_count} hasDrawing={category.has_drawing} />
-                                        <Badge variant={status.variant} size="sm"><i className={`fa-solid ${status.icon} mr-1`} aria-hidden="true" />{status.label}</Badge>
-                                    </div>
-
-                                    <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                                        <div className="rounded-xl bg-[#fbfaf8] p-3"><dt className="text-[9px] font-black uppercase text-[#8b8178]">Peserta</dt><dd className="mt-1 font-black text-[#17120f]">{category.participant_count}</dd></div>
-                                        <div className="rounded-xl bg-[#fbfaf8] p-3"><dt className="text-[9px] font-black uppercase text-[#8b8178]">Posisi Juara</dt><dd className="mt-1 font-black text-[#17120f]">{category.required_champion_count}</dd></div>
-                                    </dl>
-
-                                    <div className={`mt-3 rounded-xl border p-3 text-[11px] leading-5 ${category.generation_ready ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                                        <p className="font-bold">{category.generation_message}</p>
-                                        {category.generation_candidates?.length > 0 && (
-                                            <ChampionPreview candidates={category.generation_candidates} />
-                                        )}
-                                    </div>
-
-                                    <div className="mt-auto grid gap-2 pt-4 sm:grid-cols-2">
-                                        <Button variant="outline" className="w-full" disabled={generatingId !== null} iconLeft={<i className="fa-solid fa-sliders" aria-hidden="true" />} onClick={() => onSelect(category.id)}>{isSelected ? 'Sedang Dibuka' : 'Lihat & Atur'}</Button>
-                                        <Button variant="gold" className="w-full" disabled={!canManage || !category.generation_ready || generatingId !== null} loading={generatingId === category.id} iconLeft={<i className="fa-solid fa-trophy" aria-hidden="true" />} onClick={() => setGenerateTarget(category)}>{category.is_confirmed ? 'Generate Ulang' : 'Generate Juara'}</Button>
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <p className="p-10 text-center text-sm text-[#7a746e]">Belum ada nomor pertandingan aktif pada event ini.</p>
-                )}
-            </section>
-
-            <AlertConfirm
-                isOpen={Boolean(generateTarget)}
-                title={`Generate juara ${generateTarget?.name || ''}?`}
-                message={generateTarget?.type === 'embu'
-                    ? 'Sistem akan menyimpan peringkat dari akumulasi Penyisihan + Final serta aturan tie-break Juri 1. Hasil lama kategori ini akan diganti.'
-                    : 'Sistem akan menyimpan Juara 1–4 dari hasil akhir bagan Randori. Hasil lama kategori ini akan diganti.'}
-                confirmText="Generate & Simpan Juara"
-                cancelText="Periksa Lagi"
-                variant="warning"
-                isLoading={generatingId !== null}
-                error={errors.category || ''}
-                onCancel={() => setGenerateTarget(null)}
-                onConfirm={generateChampions}
-            />
-        </>
-    );
-}
-
 function ChampionEditor({ activeEvent, championship, canManage }) {
     const { errors = {} } = usePage().props;
     const [confirmation, setConfirmation] = useState(null);
     const [generating, setGenerating] = useState(false);
+    const [isManualExpanded, setIsManualExpanded] = useState(championship.current_champions.length === 0);
+
     const draftByRank = useMemo(() => Object.fromEntries((championship.draft_champions || []).map((champion) => [Number(champion.rank), champion.participant_key])), [championship.draft_champions]);
     const initialChampions = Array.from({ length: championship.required_champion_count }, (_, index) => ({
         rank: index + 1,
@@ -202,93 +136,216 @@ function ChampionEditor({ activeEvent, championship, canManage }) {
 
     return (
         <>
-            <section id="champion-editor" className="scroll-mt-4 overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
+            <section id="champion-editor" className="scroll-mt-4 overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm space-y-0">
+                {/* Header Nomor Pertandingan (Fokus 1 Nomor) */}
                 <div className="border-b border-[#e8dfd2] bg-[linear-gradient(135deg,#17120f,#33261f)] p-4 text-white sm:p-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <Badge variant={championship.type === 'embu' ? 'blue' : 'red'}>{championship.type.toUpperCase()}</Badge>
                                 <ClassificationBadge isExhibition={championship.is_exhibition} participantCount={championship.participant_count} hasDrawing={championship.has_drawing} />
+                                {championship.format && (
+                                    <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-bold text-white/80">
+                                        {championship.format?.replaceAll('_', ' ').toUpperCase()}
+                                    </span>
+                                )}
                             </div>
                             <h2 className="mt-3 text-xl font-black sm:text-2xl">{championship.name}</h2>
-                            <p className="mt-1 text-xs text-white/65">{championship.format?.replaceAll('_', ' ') || 'Format belum tersedia'} · {championship.current_champions.length ? 'Hasil sudah dikonfirmasi dan masih dapat disesuaikan' : 'Belum ada hasil juara tersimpan'}</p>
+                            <p className="mt-1 text-xs text-white/65">
+                                {championship.format?.replaceAll('_', ' ') || 'Format belum tersedia'} · {championship.current_champions.length ? 'Hasil juara resmi telah tersimpan di sistem' : 'Belum ada hasil juara tersimpan'}
+                            </p>
                         </div>
-                        <Badge variant={championship.current_champions.length ? 'green' : 'yellow'} className="w-fit">{championship.current_champions.length ? 'Terkonfirmasi' : 'Belum dikonfirmasi'}</Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={championship.current_champions.length ? 'green' : 'yellow'} className="w-fit">
+                                <i className={`fa-solid ${championship.current_champions.length ? 'fa-circle-check' : 'fa-clock'} mr-1.5`} />
+                                {championship.current_champions.length ? 'Sudah Dikonfirmasi' : 'Belum Dikonfirmasi'}
+                            </Badge>
+                        </div>
                     </div>
                 </div>
 
-                <div className="space-y-5 p-4 sm:p-5">
-                    <div className={`rounded-xl border p-4 text-xs leading-5 ${championship.generation.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                        <p className="font-black"><i className={`fa-solid ${championship.generation.ready ? 'fa-circle-check' : 'fa-triangle-exclamation'} mr-2`} aria-hidden="true" />Status generate otomatis</p>
-                        <p className="mt-1">{championship.generation.message}</p>
-                    </div>
-
-                    {championship.generation.champions.length > 0 && (
-                        <div>
-                            <h3 className="text-sm font-black text-[#17120f]">Kandidat dari hasil pertandingan</h3>
-                            <p className="mt-1 text-xs text-[#7a746e]">Gunakan sebagai acuan. Panitera tetap dapat memilih ulang susunan di bawah sebelum menyimpan.</p>
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                {championship.generation.champions.map((champion) => {
-                                    const rank = rankDetails[champion.rank];
-                                    return (
-                                        <article key={champion.rank} className={`rounded-xl border p-3 ${rank.color}`}>
-                                            <p className="text-[10px] font-black uppercase"><i className={`fa-solid ${rank.icon} mr-1.5`} aria-hidden="true" />{rank.label} · {rank.medal}</p>
-                                            <p className="mt-2 text-sm font-black text-[#17120f]">{champion.label}</p>
-                                            <p className="mt-1 text-[10px] font-semibold opacity-80">{champion.basis}</p>
-                                        </article>
-                                    );
-                                })}
+                <div className="space-y-5 p-4 sm:p-6">
+                    {/* BAGIAN 1: HASIL JUARA RESMI JIKA SUDAH TERSIMPAN */}
+                    {championship.current_champions.length > 0 && (
+                        <div className="rounded-2xl border border-amber-300/80 bg-gradient-to-r from-amber-50 via-yellow-50/50 to-white p-4 sm:p-5 shadow-xs space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200/70 pb-3">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-slate-950 font-black shadow-xs">
+                                        <i className="fa-solid fa-trophy" />
+                                    </span>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                                            Juara Resmi Telah Ditetapkan
+                                            <Badge variant="green" size="xs">Resmi</Badge>
+                                        </h3>
+                                        <p className="text-xs text-slate-600">
+                                            Berikut susunan pemenang medali resmi untuk nomor {championship.name}.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {canManage && championship.generation.ready && (
+                                        <Button
+                                            size="xs"
+                                            variant="outline"
+                                            onClick={() => setConfirmation('generate')}
+                                            disabled={generating}
+                                            className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                                            iconLeft={<i className="fa-solid fa-arrows-rotate" />}
+                                        >
+                                            Generate Ulang dari Hasil
+                                        </Button>
+                                    )}
+                                    <Button
+                                        size="xs"
+                                        variant="outline"
+                                        onClick={() => setIsManualExpanded(!isManualExpanded)}
+                                        iconLeft={<i className={`fa-solid ${isManualExpanded ? 'fa-chevron-up' : 'fa-pen-to-square'}`} />}
+                                    >
+                                        {isManualExpanded ? 'Tutup Koreksi Manual' : 'Koreksi Susunan Manual'}
+                                    </Button>
+                                </div>
                             </div>
+
+                            <ChampionMedalsList champions={championship.current_champions} />
                         </div>
                     )}
 
-                    <div className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                                <h3 className="font-black text-[#17120f]">Susunan Juara yang Disimpan</h3>
-                                <p className="mt-1 text-xs leading-5 text-[#7a746e]">Pilih peserta secara manual bila hasil generate perlu diperbaiki. Setiap peserta hanya dapat dipilih satu kali.</p>
-                            </div>
-                            <span className="text-[10px] font-bold uppercase text-[#9a6b20]">{championship.required_champion_count} posisi juara</span>
-                        </div>
-
-                        {(form.errors.champions || errors.category) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{form.errors.champions || errors.category}</p>}
-
-                        <div className="mt-4 grid gap-4">
-                            {form.data.champions.map((champion) => {
-                                const rank = rankDetails[champion.rank];
-                                return (
-                                    <div key={champion.rank} className={`rounded-xl border p-3 ${rank.color}`}>
-                                        <p className="mb-3 text-xs font-black uppercase"><i className={`fa-solid ${rank.icon} mr-1.5`} aria-hidden="true" />{rank.label} · {rank.medal}</p>
-                                        <Combobox
-                                            ariaLabel={`Pilih peserta ${rank.label}`}
-                                            value={champion.participant_key}
-                                            options={optionsForRank(champion.rank)}
-                                            onChange={(value) => updateParticipant(champion.rank, value)}
-                                            placeholder="Pilih peserta"
-                                            searchPlaceholder="Cari atlet, tim, atau kontingen..."
-                                            clearable
-                                            disabled={!canManage || form.processing || generating}
-                                            error={form.errors[`champions.${champion.rank - 1}.participant_key`]}
-                                        />
+                    {/* BAGIAN 2: JIKA BELUM DIKONFIRMASI TAPI SUDAH SIAP GENERATE */}
+                    {championship.current_champions.length === 0 && championship.generation.ready && (
+                        <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/10 via-amber-400/20 to-amber-500/10 p-4 sm:p-5 shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div className="flex items-start sm:items-center gap-3">
+                                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-slate-950 font-black text-lg shadow-sm">
+                                        <i className="fa-solid fa-crown" />
+                                    </span>
+                                    <div>
+                                        <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
+                                            Seluruh Pertandingan Selesai — Siap Generate Hasil Juara!
+                                        </h3>
+                                        <p className="text-xs text-slate-700 mt-0.5">
+                                            {championship.generation.message || 'Seluruh partai telah tuntas. Klik tombol di samping untuk mengunci susunan juara.'}
+                                        </p>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                                </div>
+                                {canManage && (
+                                    <Button
+                                        variant="gold"
+                                        size="md"
+                                        onClick={() => setConfirmation('generate')}
+                                        disabled={generating}
+                                        className="shrink-0 shadow-sm font-black"
+                                        iconLeft={<i className="fa-solid fa-crown" />}
+                                    >
+                                        {generating ? 'Men-generate Juara...' : 'Generate Hasil Juara'}
+                                    </Button>
+                                )}
+                            </div>
 
-                    <div className="flex flex-col-reverse gap-3 border-t border-[#eee8e0] pt-4 sm:flex-row sm:justify-end">
-                        <Button variant="outline" className="w-full sm:w-auto" disabled={!canManage || !championship.generation.ready || generating || form.processing} loading={generating} onClick={() => setConfirmation('generate')} iconLeft={<i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />}>Generate Otomatis dari Hasil</Button>
-                        <Button variant="gold" className="w-full sm:w-auto" disabled={!canManage || !isComplete || generating} loading={form.processing} onClick={() => setConfirmation('save')} iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}>Simpan Penyesuaian Juara</Button>
-                    </div>
+                            {championship.generation.champions.length > 0 && (
+                                <div className="pt-3 border-t border-amber-300/60">
+                                    <p className="text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-2">
+                                        Kandidat Pemenang Medali dari Hasil Pertandingan:
+                                    </p>
+                                    <ChampionMedalsList champions={championship.generation.champions} />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* BAGIAN 3: STATUS JIKA PERTANDINGAN BELUM SELESAI */}
+                    {!championship.generation.ready && championship.current_champions.length === 0 && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                            <p className="font-black flex items-center gap-2 text-sm">
+                                <i className="fa-solid fa-triangle-exclamation text-amber-600" />
+                                Pertandingan Belum Selesai
+                            </p>
+                            <p className="mt-1 text-slate-700">{championship.generation.message}</p>
+                        </div>
+                    )}
+
+                    {/* BAGIAN 4: PANEL KOREKSI / PENYESUAIAN MANUAL (BISA DITUTUP/DIBUKA) */}
+                    {isManualExpanded && (
+                        <div className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5 space-y-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between border-b border-[#ede7df] pb-3">
+                                <div>
+                                    <h3 className="font-black text-[#17120f] flex items-center gap-2">
+                                        <i className="fa-solid fa-sliders text-[#9a6b20]" />
+                                        Penyesuaian Manual Susunan Juara
+                                    </h3>
+                                    <p className="mt-1 text-xs leading-5 text-[#7a746e]">
+                                        Pilih peserta secara manual bila susunan juara perlu disesuaikan (misal ada keputusan arbitrase/wasit).
+                                    </p>
+                                </div>
+                                <span className="text-[10px] font-bold uppercase text-[#9a6b20] bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+                                    {championship.required_champion_count} posisi juara
+                                </span>
+                            </div>
+
+                            {(form.errors.champions || errors.category) && (
+                                <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
+                                    {form.errors.champions || errors.category}
+                                </p>
+                            )}
+
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                {form.data.champions.map((champion) => {
+                                    const rank = rankDetails[champion.rank];
+                                    return (
+                                        <div key={champion.rank} className={`rounded-xl border p-3 ${rank.color}`}>
+                                            <p className="mb-2 text-xs font-black uppercase flex items-center gap-1.5">
+                                                <i className={`fa-solid ${rank.icon}`} aria-hidden="true" />
+                                                {rank.label} · {rank.medal}
+                                            </p>
+                                            <Combobox
+                                                ariaLabel={`Pilih peserta ${rank.label}`}
+                                                value={champion.participant_key}
+                                                options={optionsForRank(champion.rank)}
+                                                onChange={(value) => updateParticipant(champion.rank, value)}
+                                                placeholder="Pilih peserta"
+                                                searchPlaceholder="Cari atlet atau kontingen..."
+                                                clearable
+                                                disabled={!canManage || form.processing || generating}
+                                                error={form.errors[`champions.${champion.rank - 1}.participant_key`]}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="flex flex-col-reverse gap-3 border-t border-[#eee8e0] pt-4 sm:flex-row sm:justify-end">
+                                <Button
+                                    variant="outline"
+                                    className="w-full sm:w-auto"
+                                    disabled={!canManage || !championship.generation.ready || generating || form.processing}
+                                    loading={generating}
+                                    onClick={() => setConfirmation('generate')}
+                                    iconLeft={<i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />}
+                                >
+                                    Generate Otomatis dari Hasil
+                                </Button>
+                                <Button
+                                    variant="gold"
+                                    className="w-full sm:w-auto font-black"
+                                    disabled={!canManage || !isComplete || generating}
+                                    loading={form.processing}
+                                    onClick={() => setConfirmation('save')}
+                                    iconLeft={<i className="fa-solid fa-floppy-disk" aria-hidden="true" />}
+                                >
+                                    Simpan Penyesuaian Juara
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </section>
 
             <AlertConfirm
                 isOpen={confirmation === 'generate'}
-                title="Generate ulang hasil juara?"
-                message="Susunan juara yang tersimpan pada nomor pertandingan ini akan diganti dengan hasil otomatis terbaru dari klasemen atau bagan pertandingan. Setelah itu hasil masih dapat disesuaikan manual."
+                title="Generate hasil juara otomatis?"
+                message="Susunan juara yang tersimpan pada nomor pertandingan ini akan diganti dengan hasil otomatis terbaru dari klasemen atau bagan pertandingan."
                 confirmText="Generate & Simpan"
-                cancelText="Periksa Lagi"
+                cancelText="Batal"
                 variant="warning"
                 isLoading={generating}
                 error={errors.category || ''}
@@ -300,7 +357,7 @@ function ChampionEditor({ activeEvent, championship, canManage }) {
                 title="Simpan penyesuaian juara?"
                 message="Susunan peringkat pada nomor pertandingan ini akan menggantikan hasil juara sebelumnya dan langsung memperbarui data perolehan medali."
                 confirmText="Simpan Susunan"
-                cancelText="Periksa Lagi"
+                cancelText="Batal"
                 variant="warning"
                 isLoading={form.processing}
                 error={form.errors.champions || ''}
@@ -311,42 +368,396 @@ function ChampionEditor({ activeEvent, championship, canManage }) {
     );
 }
 
-export default function ChampionResults({ activeEvent, events = [], categories = [], selectedCategory, championship, summary = {}, canManage = false }) {
+// Mode Tampilan Daftar Seluruh Nomor (1 per 1 Memanjang, BUKAN 2-2)
+function CategoryListStacked({ activeEvent, categories, selectedCategory, canManage, errors, onSelect }) {
+    const [generateTarget, setGenerateTarget] = useState(null);
+    const [generatingId, setGeneratingId] = useState(null);
+
+    const generateChampions = () => {
+        if (!generateTarget) return;
+
+        setGeneratingId(generateTarget.id);
+        router.post(`/admin/panitera/scoring/champions/${generateTarget.id}/generate`, { event_id: activeEvent.id }, {
+            preserveScroll: true,
+            onSuccess: () => setGenerateTarget(null),
+            onFinish: () => setGeneratingId(null),
+        });
+    };
+
+    return (
+        <>
+            <section className="space-y-4" aria-labelledby="all-categories-title">
+                {categories.length > 0 ? (
+                    categories.map((category, index) => {
+                        const isSelected = category.id === selectedCategory;
+                        const status = category.is_confirmed
+                            ? { label: 'Sudah dikonfirmasi', variant: 'green', icon: 'fa-circle-check' }
+                            : category.generation_ready
+                                ? { label: 'Siap generate', variant: 'blue', icon: 'fa-wand-magic-sparkles' }
+                                : { label: 'Menunggu hasil', variant: 'yellow', icon: 'fa-clock' };
+
+                        return (
+                            <article
+                                key={category.id}
+                                className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-xs ${
+                                    isSelected
+                                        ? 'border-[#d4a843] bg-[#fffaf0] ring-2 ring-[#d4a843]/20 shadow-md'
+                                        : 'border-[#e5ded4] bg-white hover:border-slate-400'
+                                }`}
+                            >
+                                {/* Header Baris Nomor Pertandingan */}
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-[#f0eae1] pb-3">
+                                    <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-slate-900 text-[10px] font-black text-white">
+                                                #{index + 1}
+                                            </span>
+                                            <h3 className="text-base font-black text-slate-900">{category.name}</h3>
+                                            <Badge variant={category.type === 'embu' ? 'blue' : 'red'} size="xs">{category.type.toUpperCase()}</Badge>
+                                            <ClassificationBadge isExhibition={category.is_exhibition} participantCount={category.participant_count} hasDrawing={category.has_drawing} />
+                                            <Badge variant={status.variant} size="xs">
+                                                <i className={`fa-solid ${status.icon} mr-1`} />
+                                                {status.label}
+                                            </Badge>
+                                        </div>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            {category.format?.replaceAll('_', ' ').toUpperCase() || 'BAGAN'} · {category.participant_count} Peserta · Kuota {category.required_champion_count} Posisi Juara
+                                        </p>
+                                    </div>
+
+                                    {/* Tombol Aksi */}
+                                    <div className="flex flex-wrap items-center gap-2 self-start sm:self-center shrink-0">
+                                        <Button
+                                            size="sm"
+                                            variant={isSelected ? 'primary' : 'outline'}
+                                            iconLeft={<i className="fa-solid fa-eye" />}
+                                            onClick={() => onSelect(category.id)}
+                                        >
+                                            {isSelected ? 'Sedang Dibuka' : 'Buka 1 Nomor'}
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="gold"
+                                            disabled={!canManage || !category.generation_ready || generatingId !== null}
+                                            loading={generatingId === category.id}
+                                            iconLeft={<i className="fa-solid fa-crown" />}
+                                            onClick={() => setGenerateTarget(category)}
+                                        >
+                                            {category.is_confirmed ? 'Generate Ulang' : 'Generate Juara'}
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* HASIL JUARA LANGSUNG KELIHATAN PADA SETIAP NOMOR */}
+                                <div className="mt-3">
+                                    {category.is_confirmed && category.saved_champions?.length > 0 ? (
+                                        <div className="space-y-1.5">
+                                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">
+                                                <i className="fa-solid fa-trophy mr-1 text-amber-600" />
+                                                Pemenang Medali Resmi:
+                                            </p>
+                                            <ChampionMedalsList champions={category.saved_champions} />
+                                        </div>
+                                    ) : category.generation_ready && category.generation_candidates?.length > 0 ? (
+                                        <div className="space-y-1.5">
+                                            <p className="text-[10px] font-black uppercase tracking-wider text-blue-800">
+                                                <i className="fa-solid fa-wand-magic-sparkles mr-1 text-blue-600" />
+                                                Kandidat Juara (Siap Generate):
+                                            </p>
+                                            <ChampionMedalsList champions={category.generation_candidates} />
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 text-xs text-amber-900 flex items-center gap-2">
+                                            <i className="fa-solid fa-clock text-amber-600 shrink-0" />
+                                            <span>{category.generation_message || 'Pertandingan masih berjalan.'}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </article>
+                        );
+                    })
+                ) : (
+                    <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-12 text-center text-sm text-[#7a746e]">
+                        Tidak ada nomor pertandingan yang sesuai dengan filter yang dipilih.
+                    </div>
+                )}
+            </section>
+
+            <AlertConfirm
+                isOpen={Boolean(generateTarget)}
+                title={`Generate juara ${generateTarget?.name || ''}?`}
+                message={generateTarget?.type === 'embu'
+                    ? 'Sistem akan menyimpan peringkat dari akumulasi Penyisihan + Final serta aturan tie-break Juri 1. Hasil lama kategori ini akan diganti.'
+                    : 'Sistem akan menyimpan Juara 1–4 dari hasil akhir bagan Randori. Hasil lama kategori ini akan diganti.'}
+                confirmText="Generate & Simpan Juara"
+                cancelText="Batal"
+                variant="warning"
+                isLoading={generatingId !== null}
+                error={errors.category || ''}
+                onCancel={() => setGenerateTarget(null)}
+                onConfirm={generateChampions}
+            />
+        </>
+    );
+}
+
+export default function ChampionResults({
+    activeEvent,
+    events = [],
+    categories = [],
+    selectedCategory,
+    championship,
+    filters = {},
+    summary = {},
+    canManage = false,
+}) {
     const { flash = {}, errors = {} } = usePage().props;
-    const changeCategory = (value) => router.get('/admin/panitera/scoring/champions', { event_id: activeEvent.id, category: value }, {
-        preserveState: false,
-        preserveScroll: true,
-        onSuccess: () => requestAnimationFrame(() => document.getElementById('champion-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })),
-    });
+    const [typeFilter, setTypeFilter] = useState(filters.type || 'all'); // 'all' | 'randori' | 'embu'
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'confirmed' | 'ready' | 'pending'
+    const [viewMode, setViewMode] = useState('single'); // 'single' (1 per 1 fokus) | 'list' (semua nomor 1 per 1 memanjang)
+
+    // Filter categories sesuai tab Randori / Embu & status
+    const filteredCategories = useMemo(() => {
+        return categories.filter((cat) => {
+            if (typeFilter !== 'all' && cat.type !== typeFilter) return false;
+            if (statusFilter === 'confirmed' && !cat.is_confirmed) return false;
+            if (statusFilter === 'ready' && (!cat.generation_ready || cat.is_confirmed)) return false;
+            if (statusFilter === 'pending' && (cat.is_confirmed || cat.generation_ready)) return false;
+            return true;
+        });
+    }, [categories, typeFilter, statusFilter]);
+
+    // Opsi combobox untuk memilih nomor pertandingan
+    const categoryOptions = useMemo(() => {
+        return filteredCategories.map((c) => ({
+            value: c.id,
+            label: c.name,
+            sublabel: `${c.type.toUpperCase()} · ${c.participant_count} Peserta · ${c.is_confirmed ? '✓ Dikonfirmasi' : c.generation_ready ? '⚡ Siap Generate' : 'Menunggu'}`,
+        }));
+    }, [filteredCategories]);
+
+    const changeCategory = (value) => {
+        router.get('/admin/panitera/scoring/champions', {
+            event_id: activeEvent.id,
+            category: value,
+            type: typeFilter,
+        }, {
+            preserveState: false,
+            preserveScroll: true,
+        });
+    };
+
+    // Navigasi nomor sebelumnya & berikutnya
+    const currentCategoryIndex = filteredCategories.findIndex((c) => c.id === selectedCategory);
+    const hasPrev = currentCategoryIndex > 0;
+    const hasNext = currentCategoryIndex >= 0 && currentCategoryIndex < filteredCategories.length - 1;
+
+    const goToPrevCategory = () => {
+        if (hasPrev) {
+            changeCategory(filteredCategories[currentCategoryIndex - 1].id);
+        }
+    };
+
+    const goToNextCategory = () => {
+        if (hasNext) {
+            changeCategory(filteredCategories[currentCategoryIndex + 1].id);
+        }
+    };
+
+    const randoriCount = categories.filter((c) => c.type === 'randori').length;
+    const embuCount = categories.filter((c) => c.type === 'embu').length;
 
     return (
         <AdminLayout title="Hasil Juara">
             <Head title="Hasil Juara | Smart Perkemi" />
             <div className="space-y-5">
-                <PaniteraHeader title="Hasil Juara per Nomor Pertandingan" description="Generate juara dari hasil resmi Embu atau Randori, periksa kandidat, lalu sesuaikan manual bila routing atau hasil pertandingan perlu dikoreksi." activeEvent={activeEvent} events={events} path="/admin/panitera/scoring/champions" icon="fa-trophy" />
+                <PaniteraHeader
+                    title="Hasil Juara per Nomor Pertandingan"
+                    description="Pantau dan tetapkan pemenang medali per nomor pertandingan secara berurutan dan tertib."
+                    activeEvent={activeEvent}
+                    events={events}
+                    path="/admin/panitera/scoring/champions"
+                    icon="fa-trophy"
+                />
                 <FlashMessage flash={flash} errors={errors} />
 
+                {/* Ringkasan Statistik */}
                 <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Ringkasan hasil juara">
                     {[
-                        ['total_categories', 'Nomor Pertandingan', 'fa-list-ol', 'bg-slate-100 text-slate-700'],
+                        ['total_categories', 'Total Nomor', 'fa-list-ol', 'bg-slate-100 text-slate-700'],
                         ['ready_categories', 'Siap Generate', 'fa-wand-magic-sparkles', 'bg-blue-100 text-blue-700'],
                         ['confirmed_categories', 'Sudah Dikonfirmasi', 'fa-circle-check', 'bg-emerald-100 text-emerald-700'],
                         ['exhibition_categories', 'Ekshibisi', 'fa-star', 'bg-amber-100 text-amber-800'],
                         ['non_exhibition_categories', 'Non-ekshibisi', 'fa-trophy', 'bg-emerald-100 text-emerald-700'],
                     ].map(([key, label, icon, color]) => (
                         <article key={key} className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm">
-                            <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-black uppercase tracking-wide text-[#7a746e]">{label}</p><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${color}`}><i className={`fa-solid ${icon}`} aria-hidden="true" /></span></div>
+                            <div className="flex items-center justify-between gap-3">
+                                <p className="text-[10px] font-black uppercase tracking-wide text-[#7a746e]">{label}</p>
+                                <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${color}`}>
+                                    <i className={`fa-solid ${icon}`} aria-hidden="true" />
+                                </span>
+                            </div>
                             <p className="mt-3 text-3xl font-black text-[#17120f]">{summary[key] || 0}</p>
                         </article>
                     ))}
                 </section>
 
-                <CategoryDirectory activeEvent={activeEvent} categories={categories} selectedCategory={selectedCategory} canManage={canManage} errors={errors} onSelect={changeCategory} />
+                {/* FILTER CARD UTAMA: Jenis (Semua / Randori / Embu), Dropdown Nomor Pertandingan, & Mode Tampilan */}
+                <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 sm:p-5 shadow-sm space-y-4">
+                    {/* Baris 1: Filter Jenis Randori vs Embu */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#f0eae1] pb-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-600 mr-1">Jenis Pertandingan:</span>
+                            <div className="inline-flex rounded-xl bg-[#f5f1eb] p-1 border border-[#e5ded4]">
+                                <button
+                                    type="button"
+                                    onClick={() => setTypeFilter('all')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                                        typeFilter === 'all'
+                                            ? 'bg-slate-900 text-white shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    Semua ({categories.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTypeFilter('randori')}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                                        typeFilter === 'randori'
+                                            ? 'bg-rose-600 text-white shadow-xs'
+                                            : 'text-rose-700 hover:text-rose-900'
+                                    }`}
+                                >
+                                    <span>⚔️ Randori</span>
+                                    <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-mono">
+                                        {randoriCount}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTypeFilter('embu')}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                                        typeFilter === 'embu'
+                                            ? 'bg-blue-600 text-white shadow-xs'
+                                            : 'text-blue-700 hover:text-blue-900'
+                                    }`}
+                                >
+                                    <span>🥋 Embu</span>
+                                    <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-mono">
+                                        {embuCount}
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
 
-                {championship ? (
-                    <ChampionEditor key={`${championship.id}-${championship.current_champions.map((champion) => champion.id).join('-') || 'baru'}`} activeEvent={activeEvent} championship={championship} canManage={canManage} />
+                        {/* Mode Switcher: Fokus 1 Nomor vs Daftar 1 per 1 */}
+                        <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 self-start sm:self-center">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('single')}
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                                    viewMode === 'single'
+                                        ? 'bg-white text-slate-900 shadow-xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                <i className="fa-solid fa-square-check text-xs" />
+                                <span>Fokus 1 Nomor</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('list')}
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                                    viewMode === 'list'
+                                        ? 'bg-white text-slate-900 shadow-xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                <i className="fa-solid fa-list-ul text-xs" />
+                                <span>Daftar Semua (1 per 1)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Baris 2: Dropdown Pilihan Nomor Pertandingan & Navigasi */}
+                    <div className="grid gap-3 md:grid-cols-12 items-end">
+                        <div className="md:col-span-8">
+                            <Combobox
+                                label="Pilih Nomor Pertandingan"
+                                value={selectedCategory || ''}
+                                onChange={changeCategory}
+                                clearable={false}
+                                options={categoryOptions}
+                                placeholder="Pilih nomor pertandingan..."
+                                searchPlaceholder="Cari nama nomor pertandingan..."
+                            />
+                        </div>
+                        <div className="md:col-span-4 flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={goToPrevCategory}
+                                disabled={!hasPrev}
+                                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-all shadow-2xs min-h-10 ${
+                                    hasPrev
+                                        ? 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                }`}
+                                title="Nomor Sebelumnya"
+                            >
+                                <i className="fa-solid fa-chevron-left text-[11px]" />
+                                <span>Sebelumnya</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={goToNextCategory}
+                                disabled={!hasNext}
+                                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-all shadow-2xs min-h-10 ${
+                                    hasNext
+                                        ? 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                }`}
+                                title="Nomor Berikutnya"
+                            >
+                                <span>Berikutnya</span>
+                                <i className="fa-solid fa-chevron-right text-[11px]" />
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                {/* KONTEN UTAMA: BERDASARKAN MODE TAMPILAN */}
+                {viewMode === 'single' ? (
+                    /* ══════════════════════════════════════════════════════════
+                       MODE 1: FOKUS 1 NOMOR PERTANDINGAN (1 PER 1)
+                       ══════════════════════════════════════════════════════════ */
+                    championship ? (
+                        <ChampionEditor
+                            key={`${championship.id}-${championship.current_champions.map((c) => c.id).join('-') || 'draft'}`}
+                            activeEvent={activeEvent}
+                            championship={championship}
+                            canManage={canManage}
+                        />
+                    ) : (
+                        <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-12 text-center text-sm text-[#7a746e]">
+                            Pilih nomor pertandingan dari dropdown di atas untuk melihat dan mengelola susunan juara.
+                        </div>
+                    )
                 ) : (
-                    <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-10 text-center text-sm text-[#7a746e]">Pilih nomor pertandingan dari daftar untuk melihat detail susunan juara.</div>
+                    /* ══════════════════════════════════════════════════════════
+                       MODE 2: DAFTAR SEMUA NOMOR (1 PER 1 MEMANJANG, BUKAN 2-2)
+                       ══════════════════════════════════════════════════════════ */
+                    <CategoryListStacked
+                        activeEvent={activeEvent}
+                        categories={filteredCategories}
+                        selectedCategory={selectedCategory}
+                        canManage={canManage}
+                        errors={errors}
+                        onSelect={(id) => {
+                            changeCategory(id);
+                            setViewMode('single');
+                        }}
+                    />
                 )}
             </div>
         </AdminLayout>

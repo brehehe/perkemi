@@ -38,13 +38,16 @@ class ChampionResultController extends Controller
 
         $savedResults = TournamentResult::query()
             ->whereBelongsTo($event)
-            ->get(['id', 'event_match_category_id', 'match_category']);
+            ->with('athlete:id,name')
+            ->orderBy('rank')
+            ->get();
         $championship = $selectedCategory ? $champions->categoryData($event, $selectedCategory) : null;
         $categoryRows = $categories->map(function (EventMatchCategory $category) use ($savedResults, $champions, $championship): array {
             $drawing = $category->tournamentDrawing;
             $participantCount = (int) ($drawing?->participant_count ?? 0);
-            $resultCount = $savedResults->filter(fn (TournamentResult $result): bool => $result->event_match_category_id === $category->id
-                || ($result->event_match_category_id === null && $result->match_category === $category->name))->count();
+            $categorySavedResults = $savedResults->filter(fn (TournamentResult $result): bool => $result->event_match_category_id === $category->id
+                || ($result->event_match_category_id === null && $result->match_category === $category->name))->values();
+            $resultCount = $categorySavedResults->count();
             $requiredChampionCount = min(4, $participantCount);
             $generation = $championship && $championship['id'] === $category->id
                 ? $championship['generation']
@@ -54,6 +57,7 @@ class ChampionResultController extends Controller
                 'id' => $category->id,
                 'name' => $category->name,
                 'type' => $category->type,
+                'gender' => $category->gender,
                 'format' => $drawing?->bracket_type,
                 'drawing_status' => $drawing?->status,
                 'has_drawing' => $drawing !== null,
@@ -65,14 +69,26 @@ class ChampionResultController extends Controller
                 'required_champion_count' => $requiredChampionCount,
                 'result_count' => $resultCount,
                 'is_confirmed' => $requiredChampionCount > 0 && $resultCount >= $requiredChampionCount,
+                'saved_champions' => $categorySavedResults->map(fn (TournamentResult $res): array => [
+                    'id' => $res->id,
+                    'rank' => $res->rank->value,
+                    'rank_label' => $res->rank->label(),
+                    'label' => $res->athlete?->name ?: $res->contingent_name,
+                    'contingent_name' => $res->contingent_name,
+                ])->values(),
                 'generation_ready' => $generation['ready'],
                 'generation_message' => $generation['message'],
                 'generation_candidates' => collect($generation['champions'])->map(fn (array $candidate): array => [
                     'rank' => $candidate['rank'],
                     'label' => $candidate['label'],
+                    'contingent_name' => $candidate['contingent_name'] ?? null,
+                    'basis' => $candidate['basis'] ?? null,
                 ])->values(),
             ];
         })->values();
+
+        $requestedType = $request->string('type')->toString();
+        $type = in_array($requestedType, ['embu', 'randori'], true) ? $requestedType : 'all';
 
         return Inertia::render('Admin/Panitera/ChampionResults', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
@@ -80,6 +96,10 @@ class ChampionResultController extends Controller
             'categories' => $categoryRows,
             'selectedCategory' => $selectedCategory?->id,
             'championship' => $championship,
+            'filters' => [
+                'type' => $type,
+                'category' => $selectedCategory?->id,
+            ],
             'summary' => [
                 'total_categories' => $categoryRows->count(),
                 'ready_categories' => $categoryRows->whereStrict('generation_ready', true)->count(),

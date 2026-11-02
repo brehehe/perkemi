@@ -1234,9 +1234,14 @@ export default function EventShow({
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2 min-h-[2.5rem]">
+                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2">
                                                                 {court.active_match.aka_label || 'Sudut Merah'}
                                                             </p>
+                                                            {court.active_match.aka_contingent && (
+                                                                <p className="mt-0.5 text-xs text-rose-800/80 dark:text-rose-300/80 font-medium truncate">
+                                                                    {court.active_match.aka_contingent}
+                                                                </p>
+                                                            )}
                                                             <div className="mt-2 flex items-baseline justify-end">
                                                                 <span className="text-4xl font-black tabular-nums text-red-600 dark:text-red-400">
                                                                     {court.active_match.aka_score ?? 0}
@@ -1257,9 +1262,14 @@ export default function EventShow({
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2 min-h-[2.5rem]">
+                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2">
                                                                 {court.active_match.shiro_label || 'Sudut Putih'}
                                                             </p>
+                                                            {court.active_match.shiro_contingent && (
+                                                                <p className="mt-0.5 text-xs text-sky-800/80 dark:text-sky-300/80 font-medium truncate">
+                                                                    {court.active_match.shiro_contingent}
+                                                                </p>
+                                                            )}
                                                             <div className="mt-2 flex items-baseline justify-end">
                                                                 <span className="text-4xl font-black tabular-nums text-sky-600 dark:text-sky-400">
                                                                     {court.active_match.shiro_score ?? 0}

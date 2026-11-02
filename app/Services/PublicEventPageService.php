@@ -136,6 +136,8 @@ class PublicEventPageService
                         'sequence' => $activeMatch->match_sequence,
                         'aka_label' => $activeMatch->red_label,
                         'shiro_label' => $activeMatch->blue_label,
+                        'aka_contingent' => $activeMatch->metadata['red']['contingent_name'] ?? $activeMatch->metadata['red']['city'] ?? $activeMatch->redEntry?->athlete?->contingent?->name,
+                        'shiro_contingent' => $activeMatch->metadata['blue']['contingent_name'] ?? $activeMatch->metadata['blue']['city'] ?? $activeMatch->blueEntry?->athlete?->contingent?->name,
                         'participant' => $activeMatch->participant_label ?: implode(' vs ', array_filter([$activeMatch->red_label, $activeMatch->blue_label])),
                         'score_display' => $isRandori
                             ? "{$akaScore} - {$shiroScore}"
