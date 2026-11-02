@@ -73,7 +73,7 @@ function EmbuScoreCard({ score }) {
     );
 }
 
-function PublicMatchCard({ match }) {
+function PublicMatchCard({ match, className = '' }) {
     const akaAdvancesByBye = match.is_bye && match.aka?.toUpperCase() !== 'BYE';
     const shiroAdvancesByBye = match.is_bye && match.shiro?.toUpperCase() !== 'BYE';
     const isAkaWinner = match.winner === 'aka' || akaAdvancesByBye;
@@ -103,7 +103,7 @@ function PublicMatchCard({ match }) {
         <div
             className={`event-bracket-match ${
                 match.is_bye ? 'event-bracket-bye' : ''
-            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 w-72 shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
+            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 ${className || 'w-72'} shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
         >
             {/* Header: Partai & Court */}
             <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700/80 !bg-stone-100 dark:!bg-stone-800/90 px-3 py-1.5 text-[10px] font-bold !text-stone-800 dark:!text-stone-200">
@@ -333,7 +333,7 @@ function RandoriBracket({ bracket }) {
                         </div>
 
                         {/* Grand Final on Right */}
-                        <div className="rounded-2xl border border-stone-800 bg-gradient-to-b from-stone-900 to-black text-white p-5 shrink-0 self-center shadow-xl min-w-[280px]">
+                        <div className="rounded-2xl border border-stone-800 bg-gradient-to-b from-stone-900 to-black text-white p-4 sm:p-5 shrink-0 self-center shadow-xl w-[340px] max-w-full overflow-hidden">
                             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/10">
                                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400 text-stone-900 text-xs font-black">
                                     <i className="fa-solid fa-crown" />
@@ -347,9 +347,9 @@ function RandoriBracket({ bracket }) {
                                     </p>
                                 </div>
                             </div>
-                            <div className="space-y-4">
+                            <div className="space-y-4 w-full">
                                 {grandFinalRounds.flatMap((r) => r.matches).map((match) => (
-                                    <PublicMatchCard key={match.id} match={match} />
+                                    <PublicMatchCard key={match.id} match={match} className="w-full" />
                                 ))}
                             </div>
                             {champion && (

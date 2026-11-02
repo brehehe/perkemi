@@ -65,6 +65,7 @@ function BracketMatchCard({
     canManage = false,
     isMonitor = false,
     isActive = false,
+    className = '',
 }) {
     const isCompleted = Boolean(match.score);
     const winnerCorner = match.score?.winner_corner;
@@ -112,7 +113,7 @@ function BracketMatchCard({
     };
 
     return (
-        <div className="relative flex flex-col justify-center my-2.5 w-76 shrink-0 group">
+        <div className={`relative flex flex-col justify-center shrink-0 group ${className || 'my-2.5 w-76'}`}>
             {/* Main Match Container */}
             <div
                 className={`overflow-hidden rounded-xl border transition-all duration-200 shadow-xs hover:shadow-md ${
@@ -314,7 +315,7 @@ function BracketRoundColumn({
 }
 
 // Winner Podium / Champion Display at the end of the bracket
-function BracketChampionPodium({ matches, isMonitor = false }) {
+function BracketChampionPodium({ matches, isMonitor = false, className = '' }) {
     const finalMatch =
         matches.find((m) => m.phase === 'final' || m.round_label?.toLowerCase().includes('final')) ||
         matches[matches.length - 1];
@@ -343,7 +344,7 @@ function BracketChampionPodium({ matches, isMonitor = false }) {
     if (!championName) return null;
 
     return (
-        <div className="flex flex-col items-center justify-center shrink-0 w-72 ml-4 my-auto self-center">
+        <div className={`flex flex-col items-center justify-center shrink-0 my-auto self-center ${className || 'w-72 ml-4'}`}>
             <div className="w-full rounded-2xl border-2 border-amber-300 dark:border-amber-500/40 bg-gradient-to-b from-amber-50 dark:from-amber-950/40 to-amber-100/60 dark:to-amber-950/20 p-5 text-center shadow-lg">
                 <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#17120f] dark:bg-amber-400 text-amber-400 dark:text-slate-950 shadow-md ring-4 ring-amber-400/20">
                     <i className="fa-solid fa-trophy text-2xl" />
@@ -769,9 +770,9 @@ export default function RandoriBracketTree({
                             </div>
 
                             {/* Right Column: Grand Final & Podium */}
-                            <div className="flex flex-col gap-5 self-center">
-                                <div className="rounded-2xl border-2 border-amber-400 dark:border-amber-500/50 bg-[#17120f] dark:bg-[#151210] text-white p-5 shadow-xl w-80">
-                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/15">
+                            <div className="flex flex-col items-center gap-5 self-center shrink-0">
+                                <div className="rounded-2xl border-2 border-amber-400 dark:border-amber-500/50 bg-[#17120f] dark:bg-[#151210] text-white p-4 sm:p-5 shadow-xl w-[350px] max-w-full overflow-hidden">
+                                    <div className="flex items-center gap-2.5 mb-3.5 pb-2.5 border-b border-white/15">
                                         <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-400 text-slate-950 text-xs font-black shadow-xs">
                                             <i className="fa-solid fa-crown" />
                                         </span>
@@ -785,7 +786,7 @@ export default function RandoriBracketTree({
                                         </div>
                                     </div>
 
-                                    <div className="space-y-3">
+                                    <div className="space-y-3.5 w-full">
                                         {grandFinalMatches.map((match) => (
                                             <BracketMatchCard
                                                 key={match.id}
@@ -794,12 +795,13 @@ export default function RandoriBracketTree({
                                                 canManage={canManage}
                                                 isMonitor={isMonitor}
                                                 isActive={activeMatchId && String(match.id) === String(activeMatchId)}
+                                                className="w-full my-0"
                                             />
                                         ))}
                                     </div>
                                 </div>
 
-                                <BracketChampionPodium matches={matches} isMonitor={isMonitor} />
+                                <BracketChampionPodium matches={matches} isMonitor={isMonitor} className="w-[350px] max-w-full ml-0" />
                             </div>
                         </div>
                     ) : isDoubleElim && doubleElimTab === 'upper' ? (
