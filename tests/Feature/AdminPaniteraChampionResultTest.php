@@ -425,3 +425,52 @@ test('Panitera cannot change champion results belonging to another event', funct
         ])
         ->assertNotFound();
 });
+
+test('Panitera page provides match details: matches for randori and embuData for embu', function () {
+    $event = createChampionResultEvent('Event Detail Pertandingan Juara');
+    $user = createChampionResultUser($event);
+
+    [$randoriCat, $randoriDrawing] = createChampionResultCategory(
+        $event,
+        'Randori Putra 55kg',
+        'randori',
+        'single_elimination',
+        2,
+    );
+
+    [$embuCat, $embuDrawing] = createChampionResultCategory(
+        $event,
+        'Embu Tandoku',
+        'embu',
+        'embu_direct_final',
+        2,
+    );
+
+    $p1 = championResultParticipant(1);
+    $p2 = championResultParticipant(2);
+    createChampionRandoriMatch($event, $randoriCat, $randoriDrawing, 'Grand Final', 1, $p1, $p2);
+    createChampionEmbuParticipantMatch($event, $embuCat, $embuDrawing, 1);
+    createChampionEmbuParticipantMatch($event, $embuCat, $embuDrawing, 2);
+
+    // Check Randori shows matches
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/champions?event_id={$event->id}&category={$randoriCat->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/ChampionResults')
+            ->where('selectedCategory', $randoriCat->id)
+            ->has('matches', 1)
+            ->where('embuData', null)
+        );
+
+    // Check Embu shows embuData
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/champions?event_id={$event->id}&category={$embuCat->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Panitera/ChampionResults')
+            ->where('selectedCategory', $embuCat->id)
+            ->where('matches', [])
+            ->has('embuData.final_rankings')
+        );
+});

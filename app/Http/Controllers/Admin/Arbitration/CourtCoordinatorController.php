@@ -113,6 +113,7 @@ class CourtCoordinatorController extends Controller
         $selectedCourt = $selectedCourtId ? $allCourts->firstWhere('id', $selectedCourtId) : null;
 
         $panelData = [];
+        $reservesData = [];
         $categoriesData = [];
         $dutyCountsByReferee = collect();
         $today = now()->toDateString();

@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Admin\Panitera;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Panitera\UpdateChampionResultRequest;
 use App\Models\EventMatchCategory;
+use App\Models\TournamentMatch;
 use App\Models\TournamentResult;
 use App\Services\Panitera\ChampionResultService;
+use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EventContext;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -90,12 +93,81 @@ class ChampionResultController extends Controller
         $requestedType = $request->string('type')->toString();
         $type = in_array($requestedType, ['embu', 'randori'], true) ? $requestedType : 'all';
 
+        $selectedMatches = collect();
+        $embuData = null;
+
+        if ($selectedCategory) {
+            if ($selectedCategory->type === 'randori') {
+                app(TournamentDrawingGenerator::class)->syncCategoryByes($selectedCategory);
+                $drawing = $selectedCategory->tournamentDrawing;
+                $matchQuery = $drawing
+                    ? $drawing->matches()
+                    : TournamentMatch::query()->where('event_match_category_id', $selectedCategory->id);
+
+                $selectedMatches = $matchQuery
+                    ->with([
+                        'randoriScore',
+                        'court:id,name',
+                        'redEntry.athlete.contingent:id,name',
+                        'blueEntry.athlete.contingent:id,name',
+                    ])
+                    ->orderBy('match_sequence')
+                    ->get()
+                    ->map(fn (TournamentMatch $match): array => [
+                        'id' => $match->id,
+                        'phase' => $match->phase,
+                        'round_label' => $match->round_label,
+                        'sequence' => $match->match_sequence,
+                        'court_id' => $match->event_court_id,
+                        'bracket_position' => (int) ($match->bracket_position ?? 1),
+                        'next_match_id' => $match->next_match_id,
+                        'aka_label' => $match->red_label,
+                        'shiro_label' => $match->blue_label,
+                        'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
+                        'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                        'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
+                        'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
+                        'metadata' => $match->metadata,
+                        'court' => $match->court?->name,
+                        'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                        'status' => $match->status,
+                        'is_bye' => (bool) $match->is_bye,
+                        'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                        'score' => $match->randoriScore ? [
+                            'aka_breakdown' => $match->randoriScore->aka_breakdown,
+                            'shiro_breakdown' => $match->randoriScore->shiro_breakdown,
+                            'aka_total' => $match->randoriScore->aka_total,
+                            'shiro_total' => $match->randoriScore->shiro_total,
+                            'winner_corner' => $match->randoriScore->winner_corner,
+                            'is_locked' => $match->randoriScore->locked_at !== null,
+                            'locked_at' => $match->randoriScore->locked_at?->translatedFormat('d M Y, H:i'),
+                            'verified_at' => $match->randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
+                            'notes' => $match->randoriScore->notes,
+                            'decision_override' => data_get($match->metadata, 'result.decision_override'),
+                            'win_method' => data_get($match->metadata, 'result.win_method'),
+                        ] : null,
+                    ])->values();
+            } elseif ($selectedCategory->type === 'embu') {
+                $embuService = app(EmbuResultService::class);
+                $finalRankings = $embuService->finalRankings($selectedCategory)->values();
+                $embuData = [
+                    'preliminary_rankings' => $embuService->preliminaryRankings($selectedCategory)->map(fn ($rows) => $rows->values())->all(),
+                    'final_rankings' => $finalRankings,
+                    'boundary_ties' => $embuService->boundaryTies($selectedCategory)->values(),
+                    'quota_per_pool' => $embuService->quotaPerPool($selectedCategory),
+                    'has_top_four_tie' => $embuService->hasTopFourTie($finalRankings),
+                ];
+            }
+        }
+
         return Inertia::render('Admin/Panitera/ChampionResults', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date']),
             'events' => $eventContext->accessibleEvents($request),
             'categories' => $categoryRows,
             'selectedCategory' => $selectedCategory?->id,
             'championship' => $championship,
+            'matches' => $selectedMatches,
+            'embuData' => $embuData,
             'filters' => [
                 'type' => $type,
                 'category' => $selectedCategory?->id,

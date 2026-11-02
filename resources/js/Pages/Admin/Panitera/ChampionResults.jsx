@@ -5,6 +5,8 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import AdminLayout from '@/Layouts/AdminLayout';
 import FlashMessage from './Partials/FlashMessage';
 import PaniteraHeader from './Partials/PaniteraHeader';
+import EmbuRankingsView from './Partials/EmbuRankingsView';
+import RandoriBracketTree from './Partials/RandoriBracketTree';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
@@ -90,7 +92,7 @@ function ChampionMedalsList({ champions }) {
     );
 }
 
-function ChampionEditor({ activeEvent, championship, canManage }) {
+function ChampionEditor({ activeEvent, championship, canManage, matches = [], embuData = null }) {
     const { errors = {} } = usePage().props;
     const [confirmation, setConfirmation] = useState(null);
     const [generating, setGenerating] = useState(false);
@@ -337,6 +339,55 @@ function ChampionEditor({ activeEvent, championship, canManage }) {
                             </div>
                         </div>
                     )}
+
+                    {/* BAGIAN 5: DETAIL PERTANDINGAN (BAGAN RANDORI ATAU KLASEMEN EMBU) */}
+                    <div className="border-t border-[#ede7df] pt-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                                    {championship.type === 'randori' ? (
+                                        <>
+                                            <i className="fa-solid fa-diagram-project text-rose-600" />
+                                            <span>Bagan & Perjalanan Pertandingan Randori</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fa-solid fa-ranking-star text-blue-600" />
+                                            <span>Rekapitulasi Penilaian & Klasemen Embu</span>
+                                        </>
+                                    )}
+                                </h3>
+                                <p className="mt-0.5 text-xs text-slate-600">
+                                    {championship.type === 'randori'
+                                        ? 'Perjalanan eliminasi ganda (Upper & Lower Bracket) atau setengah kompetisi (Round Robin) hingga partai puncak.'
+                                        : 'Hasil nilai 5 wasit juri, denda waktu, dan skor akhir babak penyisihan serta final.'}
+                                </p>
+                            </div>
+                            <span className="self-start sm:self-auto rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                                {championship.type === 'randori' ? `${matches.length} Total Partai` : 'Klasemen Nilai'}
+                            </span>
+                        </div>
+
+                        {championship.type === 'randori' ? (
+                            matches.length > 0 ? (
+                                <RandoriBracketTree
+                                    matches={matches}
+                                    activeEvent={activeEvent}
+                                    categoryName={championship.name}
+                                    categoryFormat={championship.format}
+                                    canManage={false}
+                                />
+                            ) : (
+                                <div className="rounded-xl border border-dashed border-[#dcd4ca] bg-[#faf8f5] p-8 text-center text-xs text-[#746c64]">
+                                    <i className="fa-solid fa-diagram-project mb-2 text-2xl text-[#b5afa6]" />
+                                    <p className="font-semibold">Bagan Pertandingan Belum Dibuat</p>
+                                    <p className="mt-1 text-slate-500">Jalankan drawing pertandingan terlebih dahulu untuk membentuk bagan.</p>
+                                </div>
+                            )
+                        ) : (
+                            <EmbuRankingsView embuData={embuData} categoryName={championship.name} />
+                        )}
+                    </div>
                 </div>
             </section>
 
@@ -507,6 +558,8 @@ export default function ChampionResults({
     categories = [],
     selectedCategory,
     championship,
+    matches = [],
+    embuData = null,
     filters = {},
     summary = {},
     canManage = false,
@@ -737,6 +790,8 @@ export default function ChampionResults({
                             activeEvent={activeEvent}
                             championship={championship}
                             canManage={canManage}
+                            matches={matches}
+                            embuData={embuData}
                         />
                     ) : (
                         <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-12 text-center text-sm text-[#7a746e]">

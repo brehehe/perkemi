@@ -1053,3 +1053,28 @@ test('old url admin/arbitrase/court-coordinator redirects to new url admin/koord
 
     $response->assertRedirect(route('admin.koordinator-court.index', ['event_id' => $event->id]));
 });
+
+test('court coordinator index renders successfully when user is not assigned to any court', function () {
+    $user = User::factory()->create();
+    $user->assignRole('Court');
+
+    $event = Event::query()->create([
+        'name' => 'POPDA XV Jatim 2026',
+        'slug' => 'popda-xv-jatim-2026',
+        'venue' => 'SMKN 1 Geneng',
+        'city' => 'Ngawi',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->get(route('admin.koordinator-court.index', ['event_id' => $event->id]));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('Admin/Arbitration/CourtCoordinator')
+        ->where('isAssigned', false)
+        ->where('reserves', [])
+        ->where('panel', [])
+    );
+});
