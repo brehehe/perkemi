@@ -9,7 +9,9 @@ use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
 use App\Models\RefereeAttendance;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\PaniteraTimerState;
+use App\Services\Panitera\RandoriScoreDraftStore;
 use App\Services\Var\VarReviewService;
 
 class CourtMonitorDataService
@@ -17,6 +19,8 @@ class CourtMonitorDataService
     public function __construct(
         private readonly EmbuParticipantDetails $participantDetails,
         private readonly PaniteraTimerState $timerState,
+        private readonly EmbuScoreCalculator $calculator,
+        private readonly RandoriScoreDraftStore $randoriDrafts,
     ) {}
 
     /** @return array<string, mixed> */
@@ -167,6 +171,7 @@ class CourtMonitorDataService
                 ->whereBelongsTo($court, 'court')
                 ->with([
                     'embuScores',
+                    'embuJudgeScores.referee:id,name',
                     'court:id,name',
                 ])
                 ->orderBy('match_sequence');
@@ -180,6 +185,7 @@ class CourtMonitorDataService
                     ->where('is_bye', false)
                     ->with([
                         'embuScores',
+                        'embuJudgeScores.referee:id,name',
                         'court:id,name',
                     ])
                     ->orderBy('match_sequence')
@@ -218,9 +224,106 @@ class CourtMonitorDataService
             $isActive = $activeMatch && $match->id === $activeMatch->id;
             $athletes = [];
 
+            $embuResult = null;
             if ($category->type === 'embu') {
                 $participantData = $this->participantDetails->forMatch($event, $match);
                 $athletes = collect($participantData['athletes'] ?? [])->pluck('name')->all();
+
+                $judgeScores = $match->relationLoaded('embuJudgeScores')
+                    ? $match->embuJudgeScores->where('tiebreak_round', 0)->sortBy('judge_number')->keyBy('judge_number')
+                    : collect();
+
+                $liveJudgeScores = [];
+                $liveJudgeScoreValues = [];
+                for ($j = 1; $j <= 5; $j++) {
+                    $js = $judgeScores->get($j);
+                    $val = $js && (float) $js->total_score > 0 ? (float) $js->total_score : null;
+                    if ($val !== null) {
+                        $liveJudgeScoreValues[] = $val;
+                    }
+                    $liveJudgeScores[] = [
+                        'judge_number' => $j,
+                        'referee_name' => $js?->referee?->name ?? 'Juri '.$j,
+                        'score' => $val,
+                        'completed_items' => $js ? (int) $js->completed_items : 0,
+                        'technique_subtotal' => $js ? (float) $js->technique_subtotal : 0,
+                        'expression_subtotal' => $js ? (float) $js->expression_subtotal : 0,
+                        'status' => $js?->status ?? 'waiting',
+                        'is_submitted' => $js?->status === 'submitted',
+                    ];
+                }
+
+                if ($embuScore && $embuScore->status === 'verified') {
+                    $embuResult = [
+                        'final_score' => (float) $embuScore->final_score,
+                        'judge_scores' => is_array($embuScore->judge_scores) && ! empty($embuScore->judge_scores)
+                            ? $embuScore->judge_scores
+                            : $liveJudgeScoreValues,
+                        'live_judges' => $liveJudgeScores,
+                        'time_penalty' => (float) $embuScore->time_penalty,
+                        'violation_penalty' => (float) $embuScore->violation_penalty,
+                        'total_penalty' => $embuScore->effectiveTotalPenalty(),
+                        'duration_seconds' => (int) $embuScore->duration_seconds,
+                        'is_disqualified' => (bool) $embuScore->is_disqualified,
+                        'disqualification_reason' => $embuScore->disqualification_reason,
+                        'status' => 'verified',
+                        'is_live' => false,
+                    ];
+                } elseif ($embuScore || ! empty($liveJudgeScoreValues)) {
+                    $finalScore = null;
+                    if ($embuScore && (float) $embuScore->final_score > 0) {
+                        $finalScore = (float) $embuScore->final_score;
+                    } elseif (count($liveJudgeScoreValues) >= 3) {
+                        $tentative = $this->calculator->calculate(
+                            $liveJudgeScoreValues,
+                            $embuScore?->duration_seconds,
+                            (string) $category->name,
+                        );
+                        $finalScore = (float) $tentative['final_score'];
+                    }
+
+                    $embuResult = [
+                        'final_score' => $finalScore,
+                        'judge_scores' => ! empty($embuScore?->judge_scores) ? $embuScore->judge_scores : $liveJudgeScoreValues,
+                        'live_judges' => $liveJudgeScores,
+                        'time_penalty' => (float) ($embuScore?->time_penalty ?? 0),
+                        'violation_penalty' => (float) ($embuScore?->violation_penalty ?? 0),
+                        'total_penalty' => $embuScore ? $embuScore->effectiveTotalPenalty() : 0.0,
+                        'duration_seconds' => $embuScore?->duration_seconds,
+                        'is_disqualified' => (bool) ($embuScore?->is_disqualified ?? false),
+                        'disqualification_reason' => $embuScore?->disqualification_reason,
+                        'status' => $embuScore?->status ?? 'scoring',
+                        'is_live' => true,
+                    ];
+                }
+            }
+
+            $randoriResult = null;
+            if ($category->type === 'randori') {
+                if ($randoriScore) {
+                    $randoriResult = [
+                        'aka_label' => $match->red_label,
+                        'shiro_label' => $match->blue_label,
+                        'aka_total' => (int) $randoriScore->aka_total,
+                        'shiro_total' => (int) $randoriScore->shiro_total,
+                        'winner_corner' => $randoriScore->winner_corner,
+                        'status' => $randoriScore->status,
+                        'is_live' => $randoriScore->status !== 'completed',
+                    ];
+                } elseif ($isActive || $match->status === 'in_progress') {
+                    $randoriDraft = $this->randoriDrafts->get($match);
+                    if ($randoriDraft && (($randoriDraft['aka']['total'] ?? 0) > 0 || ($randoriDraft['shiro']['total'] ?? 0) > 0)) {
+                        $randoriResult = [
+                            'aka_label' => $match->red_label,
+                            'shiro_label' => $match->blue_label,
+                            'aka_total' => (int) ($randoriDraft['aka']['total'] ?? 0),
+                            'shiro_total' => (int) ($randoriDraft['shiro']['total'] ?? 0),
+                            'winner_corner' => $randoriDraft['decision_override']['winner_corner'] ?? null,
+                            'status' => 'in_progress',
+                            'is_live' => true,
+                        ];
+                    }
+                }
             }
 
             return [
@@ -251,32 +354,9 @@ class CourtMonitorDataService
                 'is_completed' => $match->status === 'completed',
                 'rank' => $ranksByMatchId[$match->id] ?? null,
                 'scheduled_at' => $match->scheduled_start_at?->translatedFormat('H:i'),
-                'embu_result' => $embuScore ? [
-                    'final_score' => (float) $embuScore->final_score,
-                    'judge_scores' => is_array($embuScore->judge_scores) ? $embuScore->judge_scores : [],
-                    'time_penalty' => (float) $embuScore->time_penalty,
-                    'violation_penalty' => (float) $embuScore->violation_penalty,
-                    'total_penalty' => $embuScore->effectiveTotalPenalty(),
-                    'duration_seconds' => (int) $embuScore->duration_seconds,
-                    'is_disqualified' => (bool) $embuScore->is_disqualified,
-                    'disqualification_reason' => $embuScore->disqualification_reason,
-                    'status' => $embuScore->status,
-                ] : null,
-                'randori_result' => $randoriScore ? [
-                    'aka_label' => $match->red_label,
-                    'shiro_label' => $match->blue_label,
-                    'aka_total' => (int) $randoriScore->aka_total,
-                    'shiro_total' => (int) $randoriScore->shiro_total,
-                    'winner_corner' => $randoriScore->winner_corner,
-                    'status' => $randoriScore->status,
-                ] : null,
-                'score' => $randoriScore ? [
-                    'aka_total' => (int) $randoriScore->aka_total,
-                    'shiro_total' => (int) $randoriScore->shiro_total,
-                    'winner_corner' => $randoriScore->winner_corner,
-                    'is_locked' => $randoriScore->locked_at !== null,
-                    'status' => $randoriScore->status,
-                ] : null,
+                'embu_result' => $embuResult,
+                'randori_result' => $randoriResult,
+                'score' => $randoriResult,
             ];
         })->values()->all();
 
@@ -319,7 +399,7 @@ class CourtMonitorDataService
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
             'timer' => $this->timerState->timer($match),
             'result' => $type === 'embu'
-                ? $this->embuResultData($embuScore)
+                ? ($this->embuResultData($embuScore) ?? $this->liveEmbuResultData($match))
                 : ($randoriScore ? [
                     'aka_total' => $randoriScore->aka_total,
                     'shiro_total' => $randoriScore->shiro_total,
@@ -389,6 +469,49 @@ class CourtMonitorDataService
             'final_score' => (float) $score->final_score,
             'duration_seconds' => $score->duration_seconds,
             'verified_at' => $score->verified_at?->translatedFormat('d M Y, H:i'),
+            'is_live' => $score->status !== 'verified',
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    public function liveEmbuResultData(TournamentMatch $match): ?array
+    {
+        if (! $match->relationLoaded('embuJudgeScores') || $match->embuJudgeScores->isEmpty()) {
+            return null;
+        }
+
+        $judgeScores = $match->embuJudgeScores
+            ->where('tiebreak_round', 0)
+            ->sortBy('judge_number');
+
+        $totals = [];
+        foreach (range(1, 5) as $j) {
+            $js = $judgeScores->firstWhere('judge_number', $j);
+            $totals[] = $js && (float) $js->total_score > 0 ? (float) $js->total_score : 0.0;
+        }
+
+        $nonZero = array_filter($totals, fn ($v) => $v > 0);
+        if (empty($nonZero)) {
+            return null;
+        }
+
+        $calc = $this->calculator->calculate(
+            $totals,
+            null,
+            (string) $match->matchCategory?->name,
+        );
+
+        return [
+            'judge_scores' => $totals,
+            'time_penalty' => 0.0,
+            'violation_penalty' => 0.0,
+            'total_penalty' => 0.0,
+            'is_disqualified' => false,
+            'disqualification_reason' => null,
+            'final_score' => count($nonZero) >= 3 ? (float) $calc['final_score'] : null,
+            'duration_seconds' => null,
+            'verified_at' => null,
+            'is_live' => true,
         ];
     }
 

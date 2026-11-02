@@ -197,11 +197,13 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         },
     });
     const { connected: realtimeConnected, httpConnected } = liveTimer;
-    const activeMatch = snapshot.active_match?.id === liveTimer.state?.match_id ? {
+    const activeMatch = snapshot.active_match ? {
         ...snapshot.active_match,
-        status: liveTimer.state.match_status,
-        call_status: liveTimer.state.call_status,
-        timer: liveTimer.state.timer,
+        ...(snapshot.active_match.id === liveTimer.state?.match_id ? {
+            status: liveTimer.state.match_status,
+            call_status: liveTimer.state.call_status,
+            timer: liveTimer.state.timer,
+        } : {}),
     } : null;
 
     useEffect(() => () => refreshController.current?.abort(), []);
@@ -250,12 +252,15 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         channel.listen('.randori.score-state.updated', refreshSnapshot);
 
         let matchChannel = null;
-        if (activeMatch?.id) {
-            matchChannel = window.Echo.private(`tournament-match.${activeMatch.id}`);
+        const currentMatchId = activeMatch?.id || snapshot.active_match?.id;
+        if (currentMatchId) {
+            matchChannel = window.Echo.private(`tournament-match.${currentMatchId}`);
             matchChannel.listen('.embu.judge-score.updated', refreshSnapshot);
+            matchChannel.listen('.embu.penalties.updated', refreshSnapshot);
             matchChannel.listen('.score.updated', refreshSnapshot);
             matchChannel.listen('.var.updated', refreshSnapshot);
             matchChannel.listen('.panitera.match-state.updated', refreshSnapshot);
+            matchChannel.listen('.randori.score-state.updated', refreshSnapshot);
         }
 
         return () => {
@@ -268,12 +273,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             channel.stopListening('.randori.score-state.updated');
             if (matchChannel) {
                 matchChannel.stopListening('.embu.judge-score.updated');
+                matchChannel.stopListening('.embu.penalties.updated');
                 matchChannel.stopListening('.score.updated');
                 matchChannel.stopListening('.var.updated');
                 matchChannel.stopListening('.panitera.match-state.updated');
+                matchChannel.stopListening('.randori.score-state.updated');
             }
         };
-    }, [court.id, activeMatch?.id, refreshSnapshot]);
+    }, [court.id, activeMatch?.id, snapshot.active_match?.id, refreshSnapshot]);
 
     const activeVarUrl = varUrlInput.trim() || activeMatch?.var_stream_url || 'https://var.smart-perkemi.id';
 
@@ -895,28 +902,88 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                                         {/* Highlight Partai Aktif bila sedang bertanding */}
                                         {activeMatch && (
-                                            <div className="mt-5 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-blue-950/40 p-4 text-slate-950 dark:text-white shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-pulse">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-sm">
-                                                        <i className="fa-solid fa-play" />
-                                                    </span>
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="rounded-full bg-blue-600 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
-                                                                SEDANG BERTANDING DI COURT
-                                                            </span>
-                                                            <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
-                                                                Partai #{activeMatch.sequence} · {activeMatch.round_label}
-                                                            </span>
+                                            <div className="mt-5 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-blue-950/40 p-4 text-slate-950 dark:text-white shadow-sm">
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-sm">
+                                                            <i className="fa-solid fa-play" />
+                                                        </span>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="rounded-full bg-blue-600 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                                                                    SEDANG BERTANDING DI COURT
+                                                                </span>
+                                                                <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
+                                                                    Partai #{activeMatch.sequence} · {activeMatch.round_label}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-base font-black text-slate-950 dark:text-white mt-0.5">
+                                                                {activeMatch.participant_label || `${activeMatch.aka_label} vs ${activeMatch.shiro_label}`}
+                                                            </p>
                                                         </div>
-                                                        <p className="text-base font-black text-slate-950 dark:text-white mt-0.5">
-                                                            {activeMatch.participant_label || `${activeMatch.aka_label} vs ${activeMatch.shiro_label}`}
-                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="rounded-xl bg-white dark:bg-black/40 border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-mono font-black text-blue-800 dark:text-blue-300">
+                                                            Status: {activeMatch.status_label}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                                <span className="rounded-xl bg-white dark:bg-black/40 border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-mono font-black text-blue-800 dark:text-blue-300">
-                                                    Status: {activeMatch.status_label}
-                                                </span>
+
+                                                {/* Live Panel Wasit Nilai Embu */}
+                                                {activeMatch.category_type === 'embu' && (
+                                                    <div className="mt-3.5 border-t border-blue-200/80 dark:border-blue-900/60 pt-3">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <span className="text-xs font-black uppercase tracking-wider text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                                                                Live Nilai 5 Juri (Real-Time Reverb)
+                                                            </span>
+                                                            <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300">
+                                                                Nilai muncul otomatis saat juri mengisi
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                                                            {[1, 2, 3, 4, 5].map((jNum) => {
+                                                                const jScore = activeMatch.judge_scores?.find((s) => s.judge_number === jNum);
+                                                                const verifiedScore = activeMatch.result?.judge_scores?.[jNum - 1];
+                                                                const hasScore = verifiedScore !== undefined || (jScore && Number(jScore.total_score) > 0);
+                                                                const scoreVal = verifiedScore !== undefined
+                                                                    ? Number(verifiedScore).toFixed(2)
+                                                                    : jScore?.total_score ? Number(jScore.total_score).toFixed(2) : '—';
+                                                                const isSubmitted = jScore?.status === 'submitted' || verifiedScore !== undefined;
+
+                                                                return (
+                                                                    <div
+                                                                        key={jNum}
+                                                                        className={`rounded-xl border p-2.5 text-center transition-all ${
+                                                                            hasScore
+                                                                                ? 'border-emerald-400 bg-white dark:bg-emerald-950/40 shadow-xs'
+                                                                                : 'border-blue-200/80 bg-white/70 dark:border-white/10 dark:bg-white/5'
+                                                                        }`}
+                                                                    >
+                                                                        <div className="flex items-center justify-between text-[10px] font-bold">
+                                                                            <span className="text-slate-600 dark:text-white/70">Juri {jNum}</span>
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                                                                isSubmitted
+                                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                                                                    : hasScore
+                                                                                        ? 'bg-amber-100 text-amber-800'
+                                                                                        : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60'
+                                                                            }`}>
+                                                                                {isSubmitted ? 'Terkirim' : hasScore ? 'Mengisi' : 'Menilai'}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="mt-1 font-mono text-xl sm:text-2xl font-black text-slate-950 dark:text-white">
+                                                                            {scoreVal}
+                                                                        </p>
+                                                                        <p className="text-[10px] text-slate-500 dark:text-white/50 truncate mt-0.5">
+                                                                            {jScore?.referee_name || `Juri ${jNum}`}
+                                                                        </p>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1078,17 +1145,34 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                     {/* Nilai 5 Juri */}
                                                                     <td className="px-4 py-4 text-center align-middle">
                                                                         {score?.judge_scores?.length > 0 ? (
-                                                                            <div className="flex flex-wrap items-center justify-center gap-1">
-                                                                                {score.judge_scores.map((jScore, jIdx) => (
-                                                                                    <span
-                                                                                        key={jIdx}
-                                                                                        className="rounded-md border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-800 dark:text-white"
-                                                                                        title={`Juri ${jIdx + 1}: ${Number(jScore).toFixed(2)}`}
-                                                                                    >
-                                                                                        {Number(jScore).toFixed(1)}
+                                                                            <div className="flex flex-col items-center gap-1">
+                                                                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                                                                    {score.judge_scores.map((jScore, jIdx) => (
+                                                                                        <span
+                                                                                            key={jIdx}
+                                                                                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-bold ${
+                                                                                                score.is_live
+                                                                                                    ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 shadow-2xs'
+                                                                                                    : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-white'
+                                                                                            }`}
+                                                                                            title={`Juri ${jIdx + 1}: ${Number(jScore).toFixed(2)}`}
+                                                                                        >
+                                                                                            {Number(jScore).toFixed(1)}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                                {score.is_live && (
+                                                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                                                                                        Live Wasit ({score.judge_scores.length}/5)
                                                                                     </span>
-                                                                                ))}
+                                                                                )}
                                                                             </div>
+                                                                        ) : isRowActive ? (
+                                                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 animate-pulse">
+                                                                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+                                                                                Sedang dinilai...
+                                                                            </span>
                                                                         ) : (
                                                                             <span className="text-slate-400 dark:text-white/30 font-mono text-xs">Belum dinilai</span>
                                                                         )}
@@ -1107,17 +1191,28 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                                                                     {/* Durasi */}
                                                                     <td className="px-4 py-4 text-center align-middle font-mono text-xs font-bold text-slate-700 dark:text-white/70">
-                                                                        {score?.duration_seconds ? formatTimer(score.duration_seconds) : '-'}
+                                                                        {score?.duration_seconds ? formatTimer(score.duration_seconds) : isRowActive && elapsedSeconds > 0 ? formatTimer(elapsedSeconds) : '-'}
                                                                     </td>
 
                                                                     {/* Nilai Akhir */}
                                                                     <td className="px-4 py-4 text-right align-middle">
                                                                         {score?.is_disqualified ? (
                                                                             <span className="text-red-600 font-bold text-xs uppercase">Diskualifikasi</span>
-                                                                        ) : score?.final_score !== undefined && score?.final_score !== null && isCompleted ? (
-                                                                            <span className="font-mono text-lg md:text-xl font-black text-emerald-700 dark:text-emerald-400">
-                                                                                {Number(score.final_score).toFixed(2)}
-                                                                            </span>
+                                                                        ) : score?.final_score !== undefined && score?.final_score !== null ? (
+                                                                            <div>
+                                                                                <span className={`font-mono text-lg md:text-xl font-black ${
+                                                                                    score.is_live
+                                                                                        ? 'text-amber-600 dark:text-amber-400'
+                                                                                        : 'text-emerald-700 dark:text-emerald-400'
+                                                                                }`}>
+                                                                                    {Number(score.final_score).toFixed(2)}
+                                                                                </span>
+                                                                                {score.is_live && (
+                                                                                    <span className="block text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                                                                                        (Sementara)
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
                                                                         ) : (
                                                                             <span className="text-slate-400 dark:text-white/30 font-mono text-sm">-</span>
                                                                         )}
@@ -1127,11 +1222,16 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                     <td className="px-4 py-4 text-center align-middle">
                                                                         {isRowActive ? (
                                                                             <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider animate-pulse shadow-xs">
-                                                                                <span className="h-1.5 w-1.5 rounded-full bg-white" /> SEDANG TAMPIL
+                                                                                <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                                                                {score?.is_live ? 'DINILAI WASIT' : 'SEDANG TAMPIL'}
                                                                             </span>
                                                                         ) : isCompleted ? (
                                                                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 text-[10.5px] font-bold border border-emerald-300 dark:border-emerald-700">
                                                                                 <i className="fa-solid fa-check text-[9px]" /> Selesai
+                                                                            </span>
+                                                                        ) : score?.is_live ? (
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold border border-amber-300 dark:border-amber-700">
+                                                                                Menunggu Simpan
                                                                             </span>
                                                                         ) : (
                                                                             <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white/60 px-2 py-0.5 text-[10px] font-semibold">

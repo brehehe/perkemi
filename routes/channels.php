@@ -15,11 +15,11 @@ Broadcast::channel('tournament-match.{matchId}', function ($user, string $matchI
         return false;
     }
 
-    if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+    if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan', 'Arbitrase'])) {
         return true;
     }
 
-    return $user->hasAnyRole(['Panitera', 'Wasit'])
+    return $user->hasAnyRole(['Panitera', 'Wasit', 'Court', 'Koordinator Lapangan'])
         && $user->accessibleEvents()->whereKey($match->event_id)->exists();
 });
 
@@ -30,10 +30,10 @@ Broadcast::channel('event-court.{courtId}', function ($user, string $courtId): b
         return false;
     }
 
-    if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+    if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan', 'Arbitrase'])) {
         return true;
     }
 
-    return $user->hasAnyRole(['Panitera', 'Wasit'])
+    return $user->hasAnyRole(['Panitera', 'Wasit', 'Court', 'Koordinator Lapangan'])
         && $user->accessibleEvents()->whereKey($court->event_id)->exists();
 });
