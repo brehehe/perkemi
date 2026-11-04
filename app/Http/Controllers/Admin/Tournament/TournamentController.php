@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Tournament;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Tournament\MoveCategoryScheduleCourtRequest;
 use App\Http\Requests\Admin\Tournament\StoreCombinedEventMatchCategoryMergeRequest;
 use App\Http\Requests\Admin\Tournament\StoreEventMatchCategoryMergeRequest;
 use App\Http\Requests\Admin\Tournament\UpdateTournamentScheduleRequest;
@@ -12,9 +13,13 @@ use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\TournamentMatchVarReview;
 use App\Models\TournamentResult;
+use App\Services\Tournament\TournamentDrawingViewService;
+use App\Services\Tournament\TournamentScheduleViewService;
 use App\Services\TournamentDrawingGenerator;
+use App\Services\TournamentScheduleGenerator;
 use App\Services\TournamentScheduleUpdater;
 use App\Services\TournamentScheduleWorkbook;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,299 +36,32 @@ class TournamentController extends Controller
     /**
      * Display tournament drawing and match brackets.
      */
-    public function drawing(Request $request, TournamentDrawingGenerator $generator): Response
+    public function drawing(Request $request, TournamentDrawingViewService $viewService): Response
     {
         $activeEvent = $this->eventForRequest($request);
-        $prechecks = $activeEvent instanceof Event ? $generator->precheck($activeEvent) : collect();
-        $drawings = $activeEvent instanceof Event
-            ? $activeEvent->tournamentDrawings()->get()->keyBy('event_match_category_id')
-            : collect();
-        $categories = $prechecks->map(function (array $check) use ($drawings): array {
-            $drawing = $drawings->get($check['id']);
 
-            return [
-                ...collect($check)->except('participants')->all(),
-                'type_label' => ucfirst($check['type']),
-                'quota' => $check['capacity'],
-                'drawing_status' => $drawing?->status ?? 'draft',
-                'drawing_id' => $drawing?->id,
-            ];
-        })->values();
-
-        $selectedCategoryId = $request->string('category')->toString() ?: $categories->first()['id'] ?? null;
-        $selectedCategory = $activeEvent instanceof Event && $selectedCategoryId
-            ? $activeEvent->matchCategories()->where('is_active', true)->find($selectedCategoryId)
-            : null;
-        $participants = $selectedCategory instanceof EventMatchCategory
-            ? $generator->participantsFor($activeEvent, $selectedCategory)
-            : collect();
-        $contestants = $participants->map(fn (array $participant, int $index) => [
-            'id' => $participant['key'],
-            'entry_id' => $participant['entry_id'],
-            'seed' => $index + 1,
-            'name' => $participant['label'],
-            'contingent' => $participant['contingent_name'],
-            'city' => $participant['city'],
-            'members' => $participant['members'] ?? [],
-        ])->values();
-        if ($selectedCategory && $selectedCategory->type === 'randori') {
-            $generator->syncCategoryByes($selectedCategory);
-        }
-
-        $selectedDrawing = $selectedCategory
-            ? TournamentDrawing::query()
-                ->whereBelongsTo($activeEvent)
-                ->where('event_match_category_id', $selectedCategory->id)
-                ->with([
-                    'matches.court:id,name',
-                    'matches.rundown:id,name',
-                    'matches.randoriScore',
-                    'matches.redEntry.athlete.contingent:id,name',
-                    'matches.blueEntry.athlete.contingent:id,name',
-                ])
-                ->first()
-            : null;
-        $matches = $selectedDrawing?->matches->map(fn ($match) => [
-            'id' => $match->id,
-            'phase' => $match->phase,
-            'round_label' => $match->round_label,
-            'pool' => $match->pool,
-            'sequence' => $match->match_sequence,
-            'position' => $match->bracket_position,
-            'red_label' => $match->red_label,
-            'blue_label' => $match->blue_label,
-            'aka_label' => $match->red_label,
-            'shiro_label' => $match->blue_label,
-            'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
-            'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
-            'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
-            'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
-            'participant_label' => $match->participant_label,
-            'is_bye' => (bool) $match->is_bye,
-            'is_ready' => ! ($match->metadata['placeholder'] ?? false),
-            'status' => $match->status,
-            'court' => $match->court?->name,
-            'session' => $match->rundown?->name,
-            'scheduled_start' => $match->scheduled_start_at?->format('Y-m-d H:i'),
-            'scheduled_start_formatted' => $match->scheduled_start_at?->translatedFormat('d M, H:i'),
-            'scheduled_end_formatted' => $match->scheduled_end_at?->format('H:i'),
-            'metadata' => $match->metadata,
-            'score' => $match->randoriScore ? [
-                'winner_corner' => $match->randoriScore->winner_corner,
-                'aka_total' => $match->randoriScore->aka_total,
-                'shiro_total' => $match->randoriScore->shiro_total,
-                'is_locked' => $match->randoriScore->locked_at !== null,
-            ] : null,
-        ])->values() ?? collect();
-        $scheduleCourts = $activeEvent instanceof Event
-            ? $activeEvent->courts()->where('is_active', true)->get(['id', 'name'])->map(fn ($court) => [
-                'id' => $court->id,
-                'name' => $court->name,
-            ])->values()
-            : collect();
-        $scheduleSessions = $activeEvent instanceof Event
-            ? $activeEvent->rundowns()->where('is_match_session', true)->orderBy('date')->get()->map(fn ($session) => [
-                'id' => $session->id,
-                'name' => $session->name,
-                'date' => $session->date?->format('Y-m-d'),
-                'date_formatted' => $session->date?->translatedFormat('d F Y'),
-                'start_time' => $session->date?->format('H:i'),
-                'end_time' => $session->end_time?->format('H:i'),
-            ])->values()
-            : collect();
-        $eventSchedule = $activeEvent instanceof Event
-            ? $activeEvent->tournamentMatches()
-                ->whereNotNull('scheduled_start_at')
-                ->with([
-                    'matchCategory:id,name,type',
-                    'court:id,name',
-                    'rundown:id,name',
-                    'redEntry.athlete.contingent:id,name',
-                    'blueEntry.athlete.contingent:id,name',
-                ])
-                ->orderBy('scheduled_start_at')
-                ->orderBy('match_sequence')
-                ->get()
-                ->map(fn ($match) => [
-                    'id' => $match->id,
-                    'category_id' => $match->event_match_category_id,
-                    'category_name' => $match->matchCategory?->name,
-                    'category_type' => $match->matchCategory?->type,
-                    'court_id' => $match->event_court_id,
-                    'court' => $match->court?->name,
-                    'session_id' => $match->rundown_id,
-                    'session' => $match->rundown?->name,
-                    'phase' => $match->phase,
-                    'round_label' => $match->round_label,
-                    'sequence' => $match->match_sequence,
-                    'red_label' => $match->red_label,
-                    'blue_label' => $match->blue_label,
-                    'aka_label' => $match->red_label,
-                    'shiro_label' => $match->blue_label,
-                    'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
-                    'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
-                    'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->metadata['red']['city'] ?? $match->redEntry?->athlete?->contingent?->name,
-                    'blue_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->metadata['blue']['city'] ?? $match->blueEntry?->athlete?->contingent?->name,
-                    'participant_label' => $match->participant_label,
-                    'is_bye' => $match->is_bye,
-                    'scheduled_start' => $match->scheduled_start_at?->format('Y-m-d H:i'),
-                    'scheduled_date_formatted' => $match->scheduled_start_at?->translatedFormat('d M Y'),
-                    'scheduled_start_formatted' => $match->scheduled_start_at?->format('H:i'),
-                    'scheduled_start_input' => $match->scheduled_start_at?->format('H:i'),
-                    'scheduled_end_formatted' => $match->scheduled_end_at?->format('H:i'),
-                ])->values()
-            : collect();
-        $workflowStatus = match (true) {
-            $drawings->contains(fn (TournamentDrawing $drawing) => $drawing->status === 'in_progress') => 'in_progress',
-            $drawings->contains(fn (TournamentDrawing $drawing) => $drawing->status === 'completed') => 'completed',
-            $drawings->contains(fn (TournamentDrawing $drawing) => $drawing->status === 'published') => 'published',
-            $drawings->contains(fn (TournamentDrawing $drawing) => $drawing->status === 'generated') => 'generated',
-            default => 'draft',
-        };
-
-        return Inertia::render('Admin/Tournament/Drawing', [
-            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
-            'events' => $this->accessibleEvents($request),
-            'categories' => $categories,
-            'selectedCategory' => $selectedCategory?->id,
-            'contestants' => $contestants,
-            'drawing' => $selectedDrawing ? [
-                'id' => $selectedDrawing->id,
-                'status' => $selectedDrawing->status,
-                'format' => $selectedDrawing->bracket_type,
-                'participant_count' => $selectedDrawing->participant_count,
-                'contingent_count' => $selectedDrawing->contingent_count,
-                'skip_reason' => $selectedDrawing->skip_reason,
-            ] : null,
-            'matches' => $matches,
-            'scheduleCourts' => $scheduleCourts,
-            'scheduleSessions' => $scheduleSessions,
-            'eventSchedule' => $eventSchedule,
-            'workflow' => [
-                'status' => $workflowStatus,
-                'total_categories' => $categories->count(),
-                'ready_categories' => $categories->where('is_eligible', true)->count(),
-                'merge_categories' => $categories->where('is_eligible', false)->count(),
-                'generated_categories' => $drawings->whereIn('status', ['generated', 'published', 'in_progress', 'completed'])->count(),
-                'skipped_categories' => $drawings->where('status', 'skipped')->count(),
-                'total_matches' => $activeEvent?->tournamentMatches()->count() ?? 0,
-            ],
-            'settings' => $activeEvent ? [
-                'match_duration_minutes' => (int) $activeEvent->match_duration_minutes,
-                'minimum_rest_minutes' => (int) $activeEvent->minimum_rest_minutes,
-                'minimum_entries_per_category' => (int) $activeEvent->minimum_entries_per_category,
-                'minimum_contingents_per_category' => (int) $activeEvent->minimum_contingents_per_category,
-                'courts_count' => $activeEvent->courts()->where('is_active', true)->count(),
-                'sessions_count' => $activeEvent->rundowns()->where('is_match_session', true)->count(),
-            ] : null,
-            'canManageDrawing' => $this->canManageTournament($request, $activeEvent),
-        ]);
+        return Inertia::render('Admin/Tournament/Drawing', $viewService->buildViewData(
+            $request,
+            $activeEvent,
+            $this->accessibleEvents($request),
+            $this->canManageTournament($request, $activeEvent)
+        ));
     }
 
     /**
      * Display the draggable schedule board for one event.
      */
-    public function schedule(Request $request): Response
+    public function schedule(Request $request, TournamentScheduleViewService $viewService): Response
     {
         $activeEvent = $this->eventForRequest($request);
-        $courts = $activeEvent instanceof Event
-            ? $activeEvent->courts()
-                ->where('is_active', true)
-                ->orderBy('order')
-                ->get(['id', 'name', 'order'])
-                ->map(fn ($court) => [
-                    'id' => $court->id,
-                    'name' => $court->name,
-                    'order' => (int) $court->order,
-                ])->values()
-            : collect();
-        $sessions = $activeEvent instanceof Event
-            ? $activeEvent->rundowns()
-                ->where('is_match_session', true)
-                ->orderBy('date')
-                ->orderBy('order')
-                ->get()
-                ->map(fn ($session) => [
-                    'id' => $session->id,
-                    'name' => $session->name,
-                    'date' => $session->date?->format('Y-m-d'),
-                    'date_formatted' => $session->date?->translatedFormat('d F Y'),
-                    'start_time' => $session->date?->format('H:i'),
-                    'end_time' => $session->end_time?->format('H:i'),
-                    'order' => (int) $session->order,
-                ])->values()
-            : collect();
-        $scheduledMatches = $activeEvent instanceof Event
-            ? $activeEvent->tournamentMatches()
-                ->where('is_bye', false)
-                ->whereNotNull('scheduled_start_at')
-                ->with(['matchCategory:id,name,type,order', 'court:id,name,order', 'rundown:id,name'])
-                ->orderBy('scheduled_start_at')
-                ->orderBy('match_sequence')
-                ->get()
-            : collect();
-        $matches = $scheduledMatches->map(fn (TournamentMatch $match) => [
-            'id' => $match->id,
-            'category_id' => $match->event_match_category_id,
-            'category_name' => $match->matchCategory?->name,
-            'category_type' => $match->matchCategory?->type,
-            'court_id' => $match->event_court_id,
-            'court' => $match->court?->name,
-            'session_id' => $match->rundown_id,
-            'session' => $match->rundown?->name,
-            'round_label' => $match->round_label,
-            'sequence' => $match->match_sequence,
-            'participant' => $match->participant_label
-                ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
-            'status' => $match->status,
-            'scheduled_date' => $match->scheduled_start_at?->format('Y-m-d'),
-            'scheduled_date_formatted' => $match->scheduled_start_at?->translatedFormat('d M Y'),
-            'scheduled_start' => $match->scheduled_start_at?->format('H:i'),
-            'scheduled_end' => $match->scheduled_end_at?->format('H:i'),
-        ])->values();
-        $drawingsPublished = $activeEvent?->tournamentDrawings()
-            ->whereIn('status', ['published', 'in_progress', 'completed'])
-            ->exists() ?? false;
         $canManageSchedule = $activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent);
 
-        $unscheduledMatchesList = $activeEvent?->tournamentMatches()
-            ->where('is_bye', false)
-            ->whereNull('scheduled_start_at')
-            ->with(['matchCategory:id,name,type'])
-            ->orderBy('match_sequence')
-            ->get()
-            ->map(fn (TournamentMatch $match): array => [
-                'id' => $match->id,
-                'category_id' => $match->event_match_category_id,
-                'category_name' => $match->matchCategory?->name,
-                'category_type' => $match->matchCategory?->type,
-                'round_label' => $match->round_label,
-                'sequence' => $match->match_sequence,
-                'participant' => $match->participant_label
-                    ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
-            ])->values() ?? collect();
-
-        return Inertia::render('Admin/Tournament/Schedule', [
-            'activeEvent' => $activeEvent?->only(['id', 'name', 'venue', 'city', 'start_date', 'end_date', 'status', 'is_active']),
-            'events' => $this->accessibleEvents($request),
-            'courts' => $courts,
-            'sessions' => $sessions,
-            'matches' => $matches,
-            'unscheduledMatches' => $unscheduledMatchesList,
-            'settings' => $activeEvent ? [
-                'match_duration_minutes' => (int) $activeEvent->match_duration_minutes,
-                'minimum_rest_minutes' => (int) $activeEvent->minimum_rest_minutes,
-            ] : null,
-            'summary' => [
-                'scheduled_matches' => $matches->count(),
-                'unscheduled_matches' => $unscheduledMatchesList->count(),
-                'categories' => $scheduledMatches->pluck('event_match_category_id')->unique()->count(),
-                'courts' => $courts->count(),
-            ],
-            'drawingsPublished' => $drawingsPublished,
-            'scheduleIsLocked' => false,
-            'canManageSchedule' => $canManageSchedule,
-        ]);
+        return Inertia::render('Admin/Tournament/Schedule', $viewService->buildViewData(
+            $request,
+            $activeEvent,
+            $this->accessibleEvents($request),
+            $canManageSchedule
+        ));
     }
 
     public function exportSchedule(Request $request, TournamentScheduleWorkbook $workbook): HttpResponse
@@ -337,6 +75,165 @@ class TournamentController extends Controller
             'Cache-Control' => 'private, no-store, no-cache, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    public function exportSchedulePdf(Request $request): HttpResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canAccessTournament($request, $activeEvent), 403);
+
+        $query = $activeEvent->tournamentMatches()
+            ->where('is_bye', false)
+            ->whereNotNull('scheduled_start_at')
+            ->with([
+                'matchCategory:id,name,type,order',
+                'court:id,name,order',
+                'rundown:id,name,date,end_time,order',
+                'redEntry.athlete.contingent:id,name',
+                'blueEntry.athlete.contingent:id,name',
+            ]);
+
+        if ($courtId = $request->input('court_id')) {
+            $query->where('event_court_id', $courtId);
+        }
+
+        if ($date = $request->input('date')) {
+            $query->whereDate('scheduled_start_at', $date);
+        }
+
+        if ($sessionId = $request->input('rundown_id')) {
+            $query->where('rundown_id', $sessionId);
+        }
+
+        $matches = $query->get()
+            ->sortBy(fn (TournamentMatch $match): array => [
+                $match->scheduled_start_at?->timestamp ?? PHP_INT_MAX,
+                $match->court?->order ?? PHP_INT_MAX,
+                $match->match_sequence,
+            ])
+            ->values();
+
+        $wantsHtml = $request->query('format') === 'html' || $request->boolean('preview');
+        $wantsStream = $request->boolean('stream');
+
+        if ($wantsHtml) {
+            return response()->view('reports.tournament-schedule-matches', [
+                'event' => $activeEvent,
+                'matches' => $matches,
+                'isPdf' => false,
+            ]);
+        }
+
+        $pdf = Pdf::loadView('reports.tournament-schedule-matches', [
+            'event' => $activeEvent,
+            'matches' => $matches,
+            'isPdf' => true,
+        ])->setPaper('a4', 'landscape');
+
+        $safeEvent = Str::slug($activeEvent->name ?: 'kejuaraan', '_');
+        $filename = "Jadwal_Pertandingan_{$safeEvent}_".now()->format('Ymd_His').'.pdf';
+
+        if ($wantsStream) {
+            return $pdf->stream($filename);
+        }
+
+        return $pdf->download($filename);
+    }
+
+    public function generateSchedule(Request $request, TournamentScheduleGenerator $generator): RedirectResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
+
+        $duration = $request->input('match_duration_minutes');
+        if ($duration !== null) {
+            $duration = max(1, min(120, (int) $duration));
+            $activeEvent->update(['match_duration_minutes' => $duration]);
+        }
+
+        $generator->schedule($activeEvent);
+
+        $scheduledCount = $activeEvent->tournamentMatches()->whereNotNull('scheduled_start_at')->count();
+
+        return back()->with('success', "Jadwal pertandingan berhasil disusun otomatis ({$scheduledCount} partai teralokasi ke court & sesi).");
+    }
+
+    public function scheduleReport(Request $request, TournamentDrawingViewService $service): HttpResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canAccessTournament($request, $activeEvent), 403);
+
+        $capacityStats = $service->computeScheduleCapacityStats($activeEvent);
+
+        $categories = $activeEvent->matchCategories()
+            ->where('is_active', true)
+            ->with(['tournamentDrawing'])
+            ->orderBy('type')
+            ->orderBy('order')
+            ->get();
+
+        $matches = $activeEvent->tournamentMatches()
+            ->where('is_bye', false)
+            ->whereNotNull('scheduled_start_at')
+            ->with([
+                'court:id,name',
+                'rundown:id,name',
+                'matchCategory:id,name,type',
+                'redEntry.athlete.contingent:id,name',
+                'blueEntry.athlete.contingent:id,name',
+            ])
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->get();
+
+        $categoriesSummary = $categories->map(function ($cat) use ($matches) {
+            $catMatches = $matches->where('event_match_category_id', $cat->id);
+            $first = $catMatches->sortBy('scheduled_start_at')->first();
+            $last = $catMatches->sortBy('scheduled_start_at')->last();
+            $courtNames = $catMatches->pluck('court.name')->unique()->filter()->implode(', ');
+
+            return [
+                'id' => $cat->id,
+                'name' => $cat->name,
+                'type' => ucfirst($cat->type),
+                'format' => $cat->tournamentDrawing?->bracket_type ?? 'Single Elimination',
+                'status' => $cat->tournamentDrawing?->status ?? 'Draft',
+                'total_matches' => $catMatches->count(),
+                'court_names' => $courtNames ?: '-',
+                'first_match' => $first?->scheduled_start_at?->translatedFormat('d M, H:i') ?: '-',
+                'last_match' => $last?->scheduled_start_at?->format('H:i') ?: '-',
+            ];
+        });
+
+        $wantsHtml = $request->query('format') === 'html' || $request->boolean('preview');
+        $wantsStream = $request->boolean('stream');
+
+        if ($wantsHtml) {
+            return response()->view('reports.tournament-schedule-capacity', [
+                'event' => $activeEvent,
+                'capacityStats' => $capacityStats,
+                'categoriesSummary' => $categoriesSummary,
+                'matches' => $matches,
+                'isPdf' => false,
+            ]);
+        }
+
+        $pdf = Pdf::loadView('reports.tournament-schedule-capacity', [
+            'event' => $activeEvent,
+            'capacityStats' => $capacityStats,
+            'categoriesSummary' => $categoriesSummary,
+            'matches' => $matches,
+            'isPdf' => true,
+        ])->setPaper('a4', 'portrait');
+
+        $safeEvent = Str::slug($activeEvent->name ?: 'kejuaraan', '_');
+        $filename = "Laporan_Jadwal_Kapasitas_{$safeEvent}_".now()->format('Ymd_His').'.pdf';
+
+        if ($wantsStream) {
+            return $pdf->stream($filename);
+        }
+
+        return $pdf->download($filename);
     }
 
     public function generate(Request $request, TournamentDrawingGenerator $generator): RedirectResponse
@@ -464,6 +361,20 @@ class TournamentController extends Controller
         }
 
         return back()->with('success', 'Partai berhasil dipindahkan. Partai lainnya tidak berubah.');
+    }
+
+    public function moveCategoryCourt(
+        MoveCategoryScheduleCourtRequest $request,
+        EventMatchCategory $matchCategory,
+        TournamentScheduleUpdater $updater,
+    ): RedirectResponse {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canManageTournament($request, $activeEvent), 403);
+        abort_unless($matchCategory->event_id === $activeEvent->id, 404);
+
+        $movedCount = $updater->moveCategory($activeEvent, $matchCategory, $request->validated());
+
+        return back()->with('success', "Nomor pertandingan {$matchCategory->name} ({$movedCount} partai) berhasil dipindahkan ke gelanggang tujuan dan jadwal disesuaikan secara otomatis.");
     }
 
     public function unscheduleMatch(Request $request, TournamentMatch $tournamentMatch): RedirectResponse

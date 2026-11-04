@@ -238,7 +238,7 @@ function createDrawingDemoEvent(): array
     Rundown::query()->create([
         'event_id' => $event->id,
         'date' => '2026-11-06 08:00:00',
-        'end_time' => '2026-11-06 16:00:00',
+        'end_time' => '2026-11-06 20:00:00',
         'name' => 'Sesi Pertandingan',
         'type' => 'Pertandingan',
         'is_match_session' => true,

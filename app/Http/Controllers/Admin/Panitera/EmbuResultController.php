@@ -70,6 +70,7 @@ class EmbuResultController extends Controller
             'preliminaryRankings' => $preliminaryRankings,
             'finalRankings' => $finalRankings,
             'boundaryTies' => $category ? $results->boundaryTies($category) : collect(),
+            'activeTies' => $category ? $results->activeTies($category) : collect(),
             'quotaPerPool' => $category ? $results->quotaPerPool($category) : null,
             'hasTopFourTie' => $category ? $results->hasTopFourTie($finalRankings) : false,
             'champions' => $champions,
@@ -155,6 +156,22 @@ class EmbuResultController extends Controller
             'result_judge_numbers' => range(1, $judgeCount),
         ];
 
+        if (isset($validated['judge_technique_scores']) && is_array($validated['judge_technique_scores'])) {
+            $techScores = array_map('floatval', $validated['judge_technique_scores']);
+            $metadata['panitera']['judge_technique_scores'] = $techScores;
+
+            $existingJudgeScores = $tournamentMatch->embuJudgeScores()
+                ->where('tiebreak_round', $validated['tiebreak_round'])
+                ->orderBy('judge_number')
+                ->get();
+
+            foreach ($existingJudgeScores as $idx => $js) {
+                if (isset($techScores[$idx])) {
+                    $js->update(['technique_subtotal' => $techScores[$idx]]);
+                }
+            }
+        }
+
         $tournamentMatch->update([
             'status' => 'completed',
             'call_status' => 'completed',
@@ -225,5 +242,50 @@ class EmbuResultController extends Controller
         $results->setManualTiebreakWinner($tournamentMatch, $tiedMatch);
 
         return back()->with('success', "Keputusan manual panitera (Skenario E) berhasil ditetapkan: {$tournamentMatch->participant_label} diputuskan unggul.");
+    }
+
+    public function resolveTiebreakRanks(
+        Request $request,
+        EventMatchCategory $matchCategory,
+        EventContext $eventContext,
+        EmbuResultService $results,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $eventContext->ensureCanManage($request, $event);
+        abort_unless($matchCategory->event_id === $event->id && $matchCategory->type === 'embu', 404);
+
+        $request->validate([
+            'ranks' => ['required', 'array', 'min:1'],
+        ]);
+
+        $results->resolveTiebreakRanks($matchCategory, $request->input('ranks'));
+
+        return back()->with('success', 'Keputusan penetapan urutan tie-break berhasil disimpan.');
+    }
+
+    public function requestTiebreak(
+        Request $request,
+        EventMatchCategory $matchCategory,
+        EventContext $eventContext,
+        EmbuResultService $results,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $eventContext->ensureCanManage($request, $event);
+        abort_unless($matchCategory->event_id === $event->id && $matchCategory->type === 'embu', 404);
+
+        $validated = $request->validate([
+            'match_ids' => ['required', 'array', 'min:2'],
+            'match_ids.*' => ['required', 'string'],
+            'action' => ['nullable', 'string', 'in:request,cancel'],
+        ]);
+
+        $action = $validated['action'] ?? 'request';
+        $results->setTiebreakRequested($matchCategory, $validated['match_ids'], $action === 'request');
+
+        $msg = $action === 'request'
+            ? 'Permintaan penentuan urutan tie-break berhasil dikirim ke panel Wasit Utama.'
+            : 'Permintaan tie-break ke Wasit Utama telah dibatalkan.';
+
+        return back()->with('success', $msg);
     }
 }

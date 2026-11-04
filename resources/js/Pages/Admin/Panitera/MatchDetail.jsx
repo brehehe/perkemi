@@ -590,9 +590,87 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     </div>
                     <div className="p-4 sm:p-5">
                         {match.category_type === 'embu' ? (
-                            <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-5 text-center">
-                                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Peserta / Tim Embu</p>
-                                <p className="mt-2 text-lg font-black text-[#17120f]">{match.participant_label || 'Peserta belum ditentukan'}</p>
+                            <div className="rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-50/70 to-white p-4 sm:p-5 space-y-4">
+                                {/* Header Kontingen & Kategori Tim */}
+                                <div className="text-center">
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200 px-3 py-1 text-[11px] font-black uppercase tracking-wider shadow-2xs">
+                                        <i className="fa-solid fa-users text-[10px] text-blue-700" />
+                                        {match.participant?.kind || 'Tim Embu'}
+                                    </span>
+                                    <p className="mt-2 text-xl font-black text-[#17120f] sm:text-2xl">
+                                        {match.participant_label || 'Peserta belum ditentukan'}
+                                    </p>
+                                    {match.participant?.contingent_name && match.participant_label !== match.participant?.contingent_name && (
+                                        <p className="text-xs font-bold text-slate-500 mt-0.5">
+                                            Kontingen {match.participant.contingent_name}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Informasi Atlet & Teknik Terdaftar */}
+                                <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-blue-200/60">
+                                    {/* Box Daftar Atlet */}
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 shadow-2xs">
+                                        <div className="flex items-center justify-between gap-2 border-b border-amber-200/70 pb-2">
+                                            <h3 className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                                                <i className="fa-solid fa-user-ninja text-amber-600" />
+                                                Nama Atlet Kenshi
+                                            </h3>
+                                            <span className="rounded-md bg-amber-200/70 px-2 py-0.5 text-[10px] font-black text-amber-950">
+                                                {match.participant?.athletes?.length || 0} Atlet
+                                            </span>
+                                        </div>
+                                        <ol className="mt-2.5 divide-y divide-amber-100">
+                                            {match.participant?.athletes?.length > 0 ? (
+                                                match.participant.athletes.map((athlete, idx) => (
+                                                    <li key={athlete.id || idx} className="py-2 flex items-center gap-2.5">
+                                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-2xs">
+                                                            {idx + 1}
+                                                        </span>
+                                                        <span className="text-xs sm:text-sm font-bold text-slate-900 break-words">
+                                                            {athlete.name}
+                                                        </span>
+                                                    </li>
+                                                ))
+                                            ) : (
+                                                <li className="py-3 text-center text-xs text-slate-500 italic">
+                                                    Nama atlet belum tersedia pada data pendaftaran ini.
+                                                </li>
+                                            )}
+                                        </ol>
+                                    </div>
+
+                                    {/* Box Daftar Teknik Terdaftar */}
+                                    <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5 shadow-2xs">
+                                        <div className="flex items-center justify-between gap-2 border-b border-blue-200/70 pb-2">
+                                            <h3 className="text-xs font-black uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
+                                                <i className="fa-solid fa-scroll text-blue-600" />
+                                                Teknik Terdaftar
+                                            </h3>
+                                            <span className="rounded-md bg-blue-200/70 px-2 py-0.5 text-[10px] font-black text-blue-950">
+                                                {match.participant?.techniques?.length || 0} Teknik
+                                            </span>
+                                        </div>
+                                        <ol className="mt-2.5 divide-y divide-blue-100 max-h-48 overflow-y-auto pr-1">
+                                            {match.participant?.techniques?.length > 0 ? (
+                                                match.participant.techniques.map((tech, idx) => (
+                                                    <li key={tech.id || idx} className="py-1.5 flex items-center gap-2.5">
+                                                        <span className="flex h-5 w-6 shrink-0 items-center justify-center rounded-md bg-blue-200/80 text-blue-950 text-[10px] font-mono font-black">
+                                                            {String(tech.order || idx + 1).padStart(2, '0')}
+                                                        </span>
+                                                        <span className="text-xs font-semibold text-slate-800 break-words">
+                                                            {tech.name}
+                                                        </span>
+                                                    </li>
+                                                ))
+                                            ) : (
+                                                <li className="py-3 text-center text-xs text-slate-500 italic">
+                                                    Belum ada teknik yang didaftarkan pada tim ini.
+                                                </li>
+                                            )}
+                                        </ol>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch overflow-hidden rounded-2xl border border-[#e5ded4]">

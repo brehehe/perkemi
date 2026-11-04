@@ -1454,6 +1454,17 @@ test('legacy chief penalties are preserved when omitted and cleared only when ex
     'empty array clears penalty from old form' => [['violation_penalties' => []], 0],
 ]);
 
+test('referee accessing scoring without court assignment is redirected to wasit portal instead of 403', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('no-assignment');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    createEventReferee($event, 1, $user);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id]))
+        ->assertRedirect(route('wasit.portal', ['event_id' => $event->id]))
+        ->assertSessionHas('error', 'Anda belum memiliki penugasan court pada event ini.');
+});
+
 /** @return array{Event, Collection<int, EventCourt>} */
 function createRefereeWorkflowEvent(?string $identifier = null): array
 {

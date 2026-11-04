@@ -1,6 +1,7 @@
 import Button from '@/Components/UI/Elements/Button';
 import SignaturePad from '@/Components/UI/Forms/SignaturePad';
 import AdminLayout from '@/Layouts/AdminLayout';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -532,7 +533,7 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
     );
 }
 
-export default function ArbitrationScoring({ activeEvent, refereeSession = null }) {
+export default function ArbitrationScoring({ activeEvent, refereeSession = null, embuTies = [] }) {
     const [scoreBusy, setScoreBusy] = useState(false);
     const activeMatch = refereeSession?.active_match;
     const isEmbu = activeMatch?.category_type?.toLowerCase() === 'embu';
@@ -551,7 +552,7 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
             if (!['save_result', 'reopen_result'].includes(event.action)) return;
 
             router.reload({
-                only: ['refereeSession', 'flash'],
+                only: ['refereeSession', 'flash', 'embuTies'],
                 preserveScroll: true,
                 preserveState: false,
             });
@@ -571,15 +572,42 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
             channel.listen('.embu.penalties.updated', refreshPenalties);
         }
 
-        return () => window.Echo.leave(channelName);
+        return () => {
+            channel.stopListening('.panitera.match-state.updated', refreshMatchState);
+            if (activeMatch?.id) {
+                channel.stopListening('.embu.penalties.updated', refreshPenalties);
+            }
+        };
     }, [activeEvent.id, activeMatch?.id, refereeSession?.court_id]);
+
+    // Sinkronisasi Real-Time (Reverb / Echo) untuk tie-break Wasit Utama
+    useEffect(() => {
+        if (!window.Echo || !activeEvent?.id) return undefined;
+
+        const channelName = `event.${activeEvent.id}`;
+        const eventChannel = window.Echo.private(channelName);
+        const handleTiebreakUpdate = (event) => {
+            if (event.event_id !== activeEvent.id) return;
+            router.reload({
+                only: ['refereeSession', 'flash', 'embuTies'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        eventChannel.listen('.embu.tiebreak.updated', handleTiebreakUpdate);
+
+        return () => {
+            eventChannel.stopListening('.embu.tiebreak.updated', handleTiebreakUpdate);
+        };
+    }, [activeEvent?.id]);
 
     useEffect(() => {
         if (scoreBusy) return undefined;
 
         const interval = window.setInterval(() => {
             if (document.visibilityState === 'visible') {
-                router.reload({ only: ['refereeSession'], preserveScroll: true, preserveState: true });
+                router.reload({ only: ['refereeSession', 'embuTies'], preserveScroll: true, preserveState: true });
             }
         }, activeMatch ? 5000 : 2500);
 
@@ -591,6 +619,11 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null 
             <Head title="Penilaian Wasit Embu | Smart Perkemi" />
 
             <div className="space-y-5">
+                {/* Panel Keputusan Tie-Break Wasit Utama & Dewan Arbitrase (Parameter 5) */}
+                {embuTies && embuTies.length > 0 && (
+                    <EmbuTiebreakPanel ties={embuTies} isArbitration={true} />
+                )}
+
                 {refereeSession?.is_checked_in && !refereeSession?.is_taken_over && activeMatch && isEmbu ? (
                     <EmbuScoreForm
                         key={`${activeMatch.id}-${refereeSession.judge_number}`}

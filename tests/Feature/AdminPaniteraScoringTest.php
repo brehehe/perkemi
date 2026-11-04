@@ -325,6 +325,7 @@ test('an assigned clerk opens one scoped match detail', function () {
             ->where('activeEvent.id', $event->id)
             ->where('match.id', $match->id)
             ->where('match.category_type', 'embu')
+            ->has('match.participant')
         );
 
     $this->actingAs($user)

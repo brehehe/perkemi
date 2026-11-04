@@ -421,7 +421,7 @@ class CourtMonitorDataService
                         'total_score' => (float) $score->total_score,
                         'completed_items' => (int) $score->completed_items,
                         'status' => $score->status,
-                        'is_signed' => filled($score->signed_at),
+                        'is_signed' => filled($score->signature) || filled($score->signed_at),
                     ])
                     ->values()
                     ->all()

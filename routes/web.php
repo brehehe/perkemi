@@ -280,6 +280,7 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
 // Pertandingan
 Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name('admin.pertandingan.')->group(function () {
     Route::get('drawing', [TournamentController::class, 'drawing'])->name('drawing');
+    Route::get('drawing/laporan-jadwal', [TournamentController::class, 'scheduleReport'])->name('drawing.report');
     Route::post('drawing/generate', [TournamentController::class, 'generate'])->name('drawing.generate');
     Route::post('drawing/category/{matchCategory}/generate', [TournamentController::class, 'redrawCategory'])->name('drawing.category.generate');
     Route::put('drawing/category/{matchCategory}/format', [TournamentController::class, 'updateCategoryFormat'])->name('drawing.category.format');
@@ -292,6 +293,9 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::delete('drawing/reset', [TournamentController::class, 'reset'])->name('drawing.reset');
     Route::get('jadwal', [TournamentController::class, 'schedule'])->name('schedule');
     Route::get('jadwal/export', [TournamentController::class, 'exportSchedule'])->name('schedule.export');
+    Route::get('jadwal/pdf', [TournamentController::class, 'exportSchedulePdf'])->name('schedule.pdf');
+    Route::post('jadwal/generate', [TournamentController::class, 'generateSchedule'])->name('schedule.generate');
+    Route::post('jadwal/categories/{matchCategory}/move-court', [TournamentController::class, 'moveCategoryCourt'])->name('schedule.categories.move-court');
     Route::put('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'updateSchedule'])->name('schedule.matches.update');
     Route::delete('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'unscheduleMatch'])->name('schedule.matches.destroy');
     Route::get('wasit', [EventRefereeController::class, 'index'])->name('wasit.index');
@@ -332,6 +336,7 @@ Route::prefix('admin/arbitrase')->middleware(['auth', 'event.tenant'])->name('ad
     Route::get('scoring/print/embu/{embuJudgeScore}', [ArbitrationScorePrintController::class, 'embu'])->name('scoring.print.embu');
     Route::get('scoring/print/randori/{randoriScore}', [ArbitrationScorePrintController::class, 'randori'])->name('scoring.print.randori');
     Route::put('scoring/embu/{tournamentMatch}', [EmbuJudgeScoreController::class, 'update'])->name('scoring.embu.update');
+    Route::post('scoring/embu-tiebreak/{matchCategory}', [ArbitrationController::class, 'resolveEmbuTiebreak'])->name('scoring.embu.tiebreak');
     Route::get('evaluasi', [ArbitrationEvaluationController::class, 'index'])->name('evaluation');
     Route::get('evaluasi/export', [ArbitrationEvaluationController::class, 'export'])->name('evaluation.export');
 
@@ -374,6 +379,8 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::post('scoring/embu-result/{matchCategory}/advance-finalists', [EmbuResultController::class, 'advanceFinalists'])->name('embu-result.advance-finalists');
     Route::post('scoring/embu-result/{matchCategory}/confirm-champions', [EmbuResultController::class, 'confirmChampions'])->name('embu-result.confirm-champions');
     Route::post('scoring/embu-result/{tournamentMatch}/manual-tiebreak', [EmbuResultController::class, 'resolveManualTiebreak'])->name('embu-result.manual-tiebreak');
+    Route::post('scoring/embu-result/{matchCategory}/resolve-tiebreak-ranks', [EmbuResultController::class, 'resolveTiebreakRanks'])->name('embu-result.resolve-tiebreak-ranks');
+    Route::post('scoring/embu-result/{matchCategory}/request-tiebreak', [EmbuResultController::class, 'requestTiebreak'])->name('embu-result.request-tiebreak');
     Route::get('scoring/randori-result', [RandoriResultController::class, 'index'])->name('randori-result.index');
     Route::put('scoring/randori-result/{tournamentMatch}/draft', [RandoriResultController::class, 'updateDraft'])->name('randori-result.draft.update');
     Route::post('scoring/randori-result/{tournamentMatch}', [RandoriResultController::class, 'store'])->name('randori-result.store');

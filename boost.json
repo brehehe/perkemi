@@ -13,6 +13,8 @@
         "infer-conventions",
         "laravel-best-practices",
         "testing-best-practices",
+        "inertia-react-development",
+        "echo-development",
         "tailwindcss-development",
         "deploying-laravel-cloud"
     ]

@@ -43,6 +43,8 @@ class StoreEmbuScoreRequest extends FormRequest
             'event_id' => ['required', 'uuid'],
             'judge_scores' => ['required', 'array', 'min:1', 'max:5'],
             'judge_scores.*' => ['required', 'numeric', 'between:0,100'],
+            'judge_technique_scores' => ['nullable', 'array', 'max:5'],
+            'judge_technique_scores.*' => ['nullable', 'numeric', 'between:0,60'],
             'duration_seconds' => ['nullable', 'integer', 'between:0,600'],
             'penalty_override' => ['nullable', 'numeric', 'between:0,100'],
             'tiebreak_round' => ['required', 'integer', 'between:0,20'],

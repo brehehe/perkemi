@@ -1,4 +1,5 @@
 import SignaturePad from '@/Components/UI/Forms/SignaturePad';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { Head, Link, router } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../../../../css/referee-scoring.css';
@@ -421,7 +422,7 @@ function JudgedAthletesTable({ scores = [] }) {
     );
 }
 
-export default function ScoringNew({ activeEvent, refereeSession = null, completedCategoryScores = [], refereePortalUrl }) {
+export default function ScoringNew({ activeEvent, refereeSession = null, completedCategoryScores = [], refereePortalUrl, embuTies = [] }) {
     const [busy, setBusy] = useState(false);
     const [liveScore, setLiveScore] = useState(null);
     const activeMatch = refereeSession?.active_match;
@@ -440,7 +441,7 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
     useEffect(() => {
         if (busy) return undefined;
         const refresh = () => {
-            if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession', 'completedCategoryScores'], preserveScroll: true, preserveState: true });
+            if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession', 'completedCategoryScores', 'embuTies'], preserveScroll: true, preserveState: true });
         };
         const interval = window.setInterval(refresh, activeMatch ? 5000 : 2500);
         const channelName = activeMatch?.id ? `tournament-match.${activeMatch.id}` : refereeSession?.court_id ? `event-court.${refereeSession.court_id}` : null;
@@ -449,9 +450,17 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
             if (event.event_id === activeEvent?.id && ['save_result', 'reopen_result'].includes(event.action)) refresh();
         };
         channel?.listen('.panitera.match-state.updated', refreshMatch);
+
+        const eventChannel = activeEvent?.id && window.Echo ? window.Echo.private(`event.${activeEvent.id}`) : null;
+        const refreshTiebreak = (event) => {
+            if (event.event_id === activeEvent?.id) router.reload({ only: ['refereeSession', 'completedCategoryScores', 'embuTies', 'flash'], preserveScroll: true, preserveState: false });
+        };
+        eventChannel?.listen('.embu.tiebreak.updated', refreshTiebreak);
+
         return () => {
             window.clearInterval(interval);
             channel?.stopListening('.panitera.match-state.updated', refreshMatch);
+            eventChannel?.stopListening('.embu.tiebreak.updated', refreshTiebreak);
         };
     }, [busy, activeEvent?.id, activeMatch?.id, refereeSession?.court_id]);
 
@@ -470,6 +479,13 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
                         <span className="referee-badge-judge">Juri {refereeSession?.judge_number ?? '—'}</span>
                     </div>
                 </header>
+
+                {/* Panel Tiebreak Parameter 5 untuk Wasit Utama / Dewan Arbitrase */}
+                {embuTies && embuTies.length > 0 && (
+                    <div className="p-4">
+                        <EmbuTiebreakPanel ties={embuTies} isArbitration={true} />
+                    </div>
+                )}
 
                 {canScore ? (
                     <>

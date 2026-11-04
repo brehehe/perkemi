@@ -241,6 +241,7 @@ class ChampionResultService
                 'participant_key' => $participant['key'],
                 'label' => $participant['label'],
                 'contingent_name' => $participant['contingent_name'] ?? null,
+                'members' => $participant['members'] ?? [],
                 'basis' => 'Akumulasi '.number_format((float) $row['total_score'], 2, ',', '.'),
             ] : null;
         })->filter()->values();

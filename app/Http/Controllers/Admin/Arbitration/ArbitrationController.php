@@ -11,6 +11,7 @@ use App\Models\EmbuJudgeScore;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\EventMatchCategory;
 use App\Models\RandoriScore;
 use App\Models\Referee;
 use App\Models\RefereeAttendance;
@@ -19,6 +20,7 @@ use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use App\Services\Panitera\EmbuPenaltyCatalog;
 use App\Services\Panitera\EmbuPenaltyState;
+use App\Services\Panitera\EmbuResultService;
 use App\Services\Referee\RefereeIdentity;
 use App\Services\Reports\ReportWorkbook;
 use App\Services\Reports\ScoreReportFormatter;
@@ -292,7 +294,7 @@ class ArbitrationController extends Controller
         EmbuPenaltyCatalog $penaltyCatalog,
         EmbuPenaltyState $penaltyState,
         ScoreReportFormatter $scoreReportFormatter,
-    ): Response {
+    ): Response|RedirectResponse {
         $activeEvent = $this->eventForRequest($request);
         $refereeSession = null;
         $user = $request->user();
@@ -301,170 +303,322 @@ class ArbitrationController extends Controller
             return $this->scoreReport($request, $activeEvent, $scoreReportFormatter);
         }
 
-        if ($activeEvent) {
-            $referee = $refereeIdentity->forEvent($user, $activeEvent);
-            abort_unless($referee, 403);
-            $courtIds = $activeEvent->courts()->pluck('id');
-            $requestedCourtId = $request->string('court_id')->toString();
-            $assignment = EventCourtAssignment::query()
+        if (! $activeEvent) {
+            return redirect()->route('wasit.portal')
+                ->with('error', 'Event tidak ditemukan atau belum dipilih.');
+        }
+
+        $referee = $refereeIdentity->forEvent($user, $activeEvent);
+        if (! $referee) {
+            return redirect()->route('wasit.portal', array_filter(['event_id' => $activeEvent->id]))
+                ->with('error', 'Akun login belum ditautkan ke master Wasit pada event ini.');
+        }
+
+        $courtIds = $activeEvent->courts()->pluck('id');
+        $requestedCourtId = $request->string('court_id')->toString();
+        $assignment = EventCourtAssignment::query()
+            ->whereIn('event_court_id', $courtIds)
+            ->where('staff_type', 'referee')
+            ->where('staff_id', $referee->id)
+            ->when($requestedCourtId !== '', fn ($query) => $query->where('event_court_id', $requestedCourtId))
+            ->first();
+
+        // Jika requested court_id tidak ditemukan, namun wasit memiliki penugasan di court lain pada event ini, arahkan ke court tersebut
+        if (! $assignment && $requestedCourtId !== '') {
+            $fallbackAssignment = EventCourtAssignment::query()
                 ->whereIn('event_court_id', $courtIds)
                 ->where('staff_type', 'referee')
                 ->where('staff_id', $referee->id)
-                ->when($requestedCourtId !== '', fn ($query) => $query->where('event_court_id', $requestedCourtId))
                 ->first();
-            abort_unless($assignment, 403, 'Anda belum memiliki penugasan court pada event ini.');
-            $role = RefereeCourtRole::tryFrom($assignment->role);
-            abort_unless($role, 403, 'Posisi juri pada court belum valid.');
-            $court = $activeEvent->courts()->findOrFail($assignment->event_court_id);
-            $activeMatch = TournamentMatch::query()
-                ->whereBelongsTo($activeEvent)
-                ->whereBelongsTo($court, 'court')
-                ->whereIn('status', ['ready', 'in_progress'])
-                ->where('call_status', 'participants_called')
-                ->with('matchCategory:id,name,type')
-                ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
-                ->orderByRaw('scheduled_start_at IS NULL')
-                ->orderBy('scheduled_start_at')
-                ->orderBy('match_sequence')
-                ->first();
-            $judgeScore = $activeMatch?->matchCategory?->type === 'embu'
-                ? $activeMatch->embuJudgeScores()
-                    ->where('tiebreak_round', 0)
-                    ->where('judge_number', $role->judgeNumber())
-                    ->first()
-                : null;
-            $sharedPenaltyState = $role === RefereeCourtRole::Chief && $activeMatch
-                ? $penaltyState->resolve($activeMatch, $judgeScore)
-                : ['values' => [], 'points' => 0.0, 'source' => null, 'updated_by' => null, 'updated_at' => null];
 
-            $lockKey = "referee_session_lock:court_{$court->id}:role_{$role->value}";
-            $currentSessionHolder = Cache::get($lockKey);
-            $currentSessionId = $request->session()->getId();
-
-            $isTakenOver = false;
-            if ($currentSessionHolder && $currentSessionHolder !== $currentSessionId) {
-                if ($request->boolean('takeover')) {
-                    Cache::put($lockKey, $currentSessionId, now()->addHours(6));
-                } else {
-                    $isTakenOver = true;
-                }
-            } else {
-                Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+            if ($fallbackAssignment) {
+                return redirect()->route('admin.arbitrase.scoring', [
+                    'event_id' => $activeEvent->id,
+                    'court_id' => $fallbackAssignment->event_court_id,
+                ]);
             }
+        }
 
-            $refereeSession = [
-                'referee_name' => $referee->name,
-                'court_id' => $court->id,
-                'court_name' => $court->name,
-                'role_key' => $assignment->role,
-                'role' => $role->label(),
-                'judge_number' => $role->judgeNumber(),
-                'is_taken_over' => $isTakenOver,
-                'takeover_url' => request()->fullUrlWithQuery(['takeover' => 1]),
-                'can_manage_penalties' => $role === RefereeCourtRole::Chief,
-                'penalty_state' => $sharedPenaltyState,
-                'is_checked_in' => RefereeAttendance::query()
-                    ->whereBelongsTo($activeEvent)
-                    ->whereBelongsTo($referee)
-                    ->whereDate('attendance_date', now()->toDateString())
-                    ->where('is_present', true)
-                    ->exists()
-                    && RefereeCourtAttendance::query()
-                        ->whereBelongsTo($activeEvent)
-                        ->whereBelongsTo($court, 'court')
-                        ->whereBelongsTo($referee)
-                        ->whereDate('attendance_date', now()->toDateString())
-                        ->exists(),
-                'active_match' => $activeMatch ? [
-                    'id' => $activeMatch->id,
-                    'category_name' => $activeMatch->matchCategory?->name,
-                    'category_type' => $activeMatch->matchCategory?->type,
-                    'sequence' => $activeMatch->match_sequence,
-                    'round_label' => $activeMatch->round_label,
-                    'participant_label' => $activeMatch->participant_label,
-                    'red_label' => $activeMatch->red_label,
-                    'blue_label' => $activeMatch->blue_label,
-                    'scheduled_at' => $activeMatch->scheduled_start_at?->translatedFormat('d M Y, H:i'),
-                    'status' => $activeMatch->status,
-                    'call_status' => $activeMatch->call_status,
-                    'participant' => $participantDetails->forMatch($activeEvent, $activeMatch),
-                    'automatic_penalty_rules' => $role === RefereeCourtRole::Chief
-                        ? $penaltyCatalog->automaticRules()
-                        : [],
-                    'penalty_options' => $role === RefereeCourtRole::Chief
-                        ? $penaltyCatalog->options((string) $activeMatch->matchCategory?->name)
-                        : [],
-                    'score_update_url' => route('admin.arbitrase.scoring.embu.update', $activeMatch, false),
-                ] : null,
-                'score' => $judgeScore ? [
-                    'id' => $judgeScore->id,
-                    'aspect_scores' => $judgeScore->aspect_scores,
-                    'completed_items' => $judgeScore->completed_items,
-                    'technique_subtotal' => (float) $judgeScore->technique_subtotal,
-                    'expression_subtotal' => (float) $judgeScore->expression_subtotal,
-                    'total_score' => (float) $judgeScore->total_score,
-                    'violation_penalties' => $sharedPenaltyState['values'],
-                    'violation_penalty' => $sharedPenaltyState['points'],
-                    'violation_penalty_source' => $sharedPenaltyState['source'],
-                    'status' => $judgeScore->status,
-                    'signature' => $judgeScore->signature,
-                    'notes' => $judgeScore->notes,
-                    'signed_at' => $judgeScore->signed_at?->toIso8601String(),
-                    'updated_at' => $judgeScore->updated_at?->toIso8601String(),
-                ] : null,
-            ];
+        if (! $assignment) {
+            return redirect()->route('wasit.portal', array_filter(['event_id' => $activeEvent->id]))
+                ->with('error', 'Anda belum memiliki penugasan court pada event ini.');
+        }
 
-            $completedCategoryScores = EmbuJudgeScore::query()
+        $role = RefereeCourtRole::tryFrom($assignment->role);
+        if (! $role) {
+            return redirect()->route('wasit.portal', array_filter(['event_id' => $activeEvent->id]))
+                ->with('error', 'Posisi juri pada court belum valid.');
+        }
+
+        $court = $activeEvent->courts()->findOrFail($assignment->event_court_id);
+        $activeMatch = TournamentMatch::query()
+            ->whereBelongsTo($activeEvent)
+            ->whereBelongsTo($court, 'court')
+            ->whereIn('status', ['ready', 'in_progress'])
+            ->where('call_status', 'participants_called')
+            ->with('matchCategory:id,name,type')
+            ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
+            ->orderByRaw('scheduled_start_at IS NULL')
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->first();
+        $judgeScore = $activeMatch?->matchCategory?->type === 'embu'
+            ? $activeMatch->embuJudgeScores()
+                ->where('tiebreak_round', 0)
+                ->where('judge_number', $role->judgeNumber())
+                ->first()
+            : null;
+        $sharedPenaltyState = $role === RefereeCourtRole::Chief && $activeMatch
+            ? $penaltyState->resolve($activeMatch, $judgeScore)
+            : ['values' => [], 'points' => 0.0, 'source' => null, 'updated_by' => null, 'updated_at' => null];
+
+        $lockKey = "referee_session_lock:court_{$court->id}:role_{$role->value}";
+        $currentSessionHolder = Cache::get($lockKey);
+        $currentSessionId = $request->session()->getId();
+
+        $isTakenOver = false;
+        if ($currentSessionHolder && $currentSessionHolder !== $currentSessionId) {
+            if ($request->boolean('takeover')) {
+                Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+            } else {
+                $isTakenOver = true;
+            }
+        } else {
+            Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+        }
+
+        $refereeSession = [
+            'referee_name' => $referee->name,
+            'court_id' => $court->id,
+            'court_name' => $court->name,
+            'role_key' => $assignment->role,
+            'role' => $role->label(),
+            'judge_number' => $role->judgeNumber(),
+            'is_taken_over' => $isTakenOver,
+            'takeover_url' => request()->fullUrlWithQuery(['takeover' => 1]),
+            'can_manage_penalties' => $role === RefereeCourtRole::Chief,
+            'penalty_state' => $sharedPenaltyState,
+            'is_checked_in' => RefereeAttendance::query()
                 ->whereBelongsTo($activeEvent)
                 ->whereBelongsTo($referee)
-                ->where('completed_items', '>', 0)
-                ->with([
-                    'court:id,name',
-                    'tournamentMatch.matchCategory:id,name',
-                    'tournamentMatch' => fn ($q) => $q->select([
-                        'id', 'event_id', 'event_match_category_id', 'event_court_id', 'round_label', 'match_sequence', 'participant_label', 'metadata', 'participant_entry_id',
-                    ]),
-                ])
-                ->latest('updated_at')
-                ->get()
-                ->map(function (EmbuJudgeScore $score) use ($activeEvent, $participantDetails): array {
-                    $match = $score->tournamentMatch;
-                    $details = $match ? $participantDetails->forMatch($activeEvent, $match) : [];
-                    $athleteNames = ! empty($details['athletes'])
-                        ? collect($details['athletes'])->pluck('name')->join(' · ')
-                        : ($match?->participant_label ?? '—');
+                ->whereDate('attendance_date', now()->toDateString())
+                ->where('is_present', true)
+                ->exists()
+                && RefereeCourtAttendance::query()
+                    ->whereBelongsTo($activeEvent)
+                    ->whereBelongsTo($court, 'court')
+                    ->whereBelongsTo($referee)
+                    ->whereDate('attendance_date', now()->toDateString())
+                    ->exists(),
+            'active_match' => $activeMatch ? [
+                'id' => $activeMatch->id,
+                'category_name' => $activeMatch->matchCategory?->name,
+                'category_type' => $activeMatch->matchCategory?->type,
+                'sequence' => $activeMatch->match_sequence,
+                'round_label' => $activeMatch->round_label,
+                'participant_label' => $activeMatch->participant_label,
+                'red_label' => $activeMatch->red_label,
+                'blue_label' => $activeMatch->blue_label,
+                'scheduled_at' => $activeMatch->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+                'status' => $activeMatch->status,
+                'call_status' => $activeMatch->call_status,
+                'participant' => $participantDetails->forMatch($activeEvent, $activeMatch),
+                'automatic_penalty_rules' => $role === RefereeCourtRole::Chief
+                    ? $penaltyCatalog->automaticRules()
+                    : [],
+                'penalty_options' => $role === RefereeCourtRole::Chief
+                    ? $penaltyCatalog->options((string) $activeMatch->matchCategory?->name)
+                    : [],
+                'score_update_url' => route('admin.arbitrase.scoring.embu.update', $activeMatch, false),
+            ] : null,
+            'score' => $judgeScore ? [
+                'id' => $judgeScore->id,
+                'aspect_scores' => $judgeScore->aspect_scores,
+                'completed_items' => $judgeScore->completed_items,
+                'technique_subtotal' => (float) $judgeScore->technique_subtotal,
+                'expression_subtotal' => (float) $judgeScore->expression_subtotal,
+                'total_score' => (float) $judgeScore->total_score,
+                'violation_penalties' => $sharedPenaltyState['values'],
+                'violation_penalty' => $sharedPenaltyState['points'],
+                'violation_penalty_source' => $sharedPenaltyState['source'],
+                'status' => $judgeScore->status,
+                'signature' => $judgeScore->signature,
+                'notes' => $judgeScore->notes,
+                'signed_at' => $judgeScore->signed_at?->toIso8601String(),
+                'updated_at' => $judgeScore->updated_at?->toIso8601String(),
+            ] : null,
+        ];
 
-                    return [
-                        'id' => $score->id,
-                        'match_id' => $score->tournament_match_id,
-                        'sequence' => $match?->match_sequence,
-                        'category_name' => $match?->matchCategory?->name ?? '—',
-                        'round_label' => $match?->round_label ?? '',
-                        'court_name' => $score->court?->name ?? $match?->court?->name ?? '—',
-                        'athlete_names' => $athleteNames,
-                        'contingent_name' => $details['contingent_name'] ?? '—',
-                        'technique_subtotal' => (float) $score->technique_subtotal,
-                        'expression_subtotal' => (float) $score->expression_subtotal,
-                        'total_score' => (float) $score->total_score,
-                        'completed_items' => $score->completed_items,
-                        'status' => $score->status,
-                    ];
-                })
-                ->all();
+        $completedCategoryScores = EmbuJudgeScore::query()
+            ->whereBelongsTo($activeEvent)
+            ->whereBelongsTo($referee)
+            ->where('completed_items', '>', 0)
+            ->with([
+                'court:id,name',
+                'tournamentMatch.matchCategory:id,name',
+                'tournamentMatch' => fn ($q) => $q->select([
+                    'id', 'event_id', 'event_match_category_id', 'event_court_id', 'round_label', 'match_sequence', 'participant_label', 'metadata', 'participant_entry_id',
+                ]),
+            ])
+            ->latest('updated_at')
+            ->get()
+            ->map(function (EmbuJudgeScore $score) use ($activeEvent, $participantDetails): array {
+                $match = $score->tournamentMatch;
+                $details = $match ? $participantDetails->forMatch($activeEvent, $match) : [];
+                $athleteNames = ! empty($details['athletes'])
+                    ? collect($details['athletes'])->pluck('name')->join(' · ')
+                    : ($match?->participant_label ?? '—');
 
-            $refereeSession['completed_category_scores'] = $completedCategoryScores;
-        }
+                return [
+                    'id' => $score->id,
+                    'match_id' => $score->tournament_match_id,
+                    'sequence' => $match?->match_sequence,
+                    'category_name' => $match?->matchCategory?->name ?? '—',
+                    'round_label' => $match?->round_label ?? '',
+                    'court_name' => $score->court?->name ?? $match?->court?->name ?? '—',
+                    'athlete_names' => $athleteNames,
+                    'contingent_name' => $details['contingent_name'] ?? '—',
+                    'technique_subtotal' => (float) $score->technique_subtotal,
+                    'expression_subtotal' => (float) $score->expression_subtotal,
+                    'total_score' => (float) $score->total_score,
+                    'completed_items' => $score->completed_items,
+                    'status' => $score->status,
+                ];
+            })
+            ->all();
+
+        $refereeSession['completed_category_scores'] = $completedCategoryScores;
 
         $scoringPage = config('app.wasit_scoring_version') === 'new'
             ? 'Admin/Arbitration/ScoringNew'
             : 'Admin/Arbitration/Scoring';
 
+        $isChiefJudge = $this->isChiefJudge($request, $activeEvent, $refereeSession);
+
+        $embuResults = app(EmbuResultService::class);
+        $embuTies = collect();
+
+        // ONLY Wasit Utama (or Super Admin / Dewan Arbitrase) sees the tie-break decision panel!
+        if ($isChiefJudge && $activeEvent) {
+            $isSuperAdmin = (bool) $request->user()?->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase']);
+            $assignedCourtId = $refereeSession['court_id'] ?? null;
+
+            $embuTies = $activeEvent->matchCategories()
+                ->where('type', 'embu')
+                ->where('is_active', true)
+                ->get()
+                ->flatMap(fn (EventMatchCategory $cat) => $embuResults->activeTies($cat))
+                ->filter(function ($tieGroup) use ($isSuperAdmin, $assignedCourtId) {
+                    if (! $isSuperAdmin) {
+                        // 1. Kasus harus sudah direquest oleh Panitera
+                        if (empty($tieGroup['is_requested'])) {
+                            return false;
+                        }
+
+                        // 2. ISOLASI COURT KETAT:
+                        // Wasit Utama HANYA melihat kasus tie-break pada court penugasannya!
+                        if ($assignedCourtId) {
+                            $matchCourtIds = collect($tieGroup['matches'])->pluck('court_id')->filter()->all();
+                            $groupCourtId = $tieGroup['court_id'] ?? null;
+
+                            $isCourtMatch = ($groupCourtId && (string) $groupCourtId === (string) $assignedCourtId)
+                                || in_array((string) $assignedCourtId, array_map('strval', $matchCourtIds), true);
+
+                            if (! empty($matchCourtIds) && ! $isCourtMatch) {
+                                return false;
+                            }
+                        }
+                    }
+
+                    return true;
+                })
+                ->values();
+        }
+
         return Inertia::render($scoringPage, [
             'activeEvent' => $activeEvent,
-            'refereeSession' => $refereeSession,
+            'refereeSession' => $refereeSession ? [
+                ...$refereeSession,
+                'is_chief_judge' => $isChiefJudge,
+            ] : null,
             'completedCategoryScores' => $refereeSession['completed_category_scores'] ?? [],
             'refereePortalUrl' => route('wasit.portal', ['event_id' => $activeEvent?->id], false),
+            'embuTies' => $embuTies,
         ]);
+    }
+
+    public function resolveEmbuTiebreak(
+        Request $request,
+        EventMatchCategory $matchCategory,
+        EmbuResultService $results,
+    ): RedirectResponse {
+        $event = $this->eventForRequest($request);
+        abort_unless($event && $matchCategory->event_id === $event->id && $matchCategory->type === 'embu', 404);
+
+        abort_unless($this->isChiefJudge($request, $event), 403, 'Hanya Wasit Utama atau Dewan Arbitrase yang berhak menentukan urutan tie-break.');
+
+        $request->validate([
+            'ranks' => ['required', 'array', 'min:1'],
+        ]);
+
+        $user = $request->user();
+        $isSuperAdmin = (bool) $user?->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase']);
+
+        if (! $isSuperAdmin) {
+            $referee = app(RefereeIdentity::class)->forEvent($user, $event);
+            $assignedCourtIds = EventCourtAssignment::query()
+                ->whereIn('event_court_id', $event->courts()->pluck('id'))
+                ->where('staff_type', 'referee')
+                ->where('staff_id', $referee?->id)
+                ->where('role', 'chief')
+                ->pluck('event_court_id')
+                ->all();
+
+            $matchIds = array_keys($request->input('ranks'));
+            $matchCourtIds = TournamentMatch::query()
+                ->whereIn('id', $matchIds)
+                ->pluck('event_court_id')
+                ->filter()
+                ->unique()
+                ->all();
+
+            if (! empty($matchCourtIds) && empty(array_intersect($matchCourtIds, $assignedCourtIds))) {
+                abort(403, 'Anda hanya berhak menetapkan tie-break untuk partai pada court penugasan Anda.');
+            }
+        }
+
+        $results->resolveTiebreakRanks($matchCategory, $request->input('ranks'));
+
+        return back()->with('success', 'Keputusan penetapan urutan tie-break Wasit Utama/Arbitrase berhasil disimpan.');
+    }
+
+    private function isChiefJudge(Request $request, ?Event $event, ?array $refereeSession = null): bool
+    {
+        $user = $request->user();
+        if ($user?->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase'])) {
+            return true;
+        }
+
+        if ($refereeSession) {
+            return ($refereeSession['role_key'] ?? '') === 'chief'
+                || ($refereeSession['judge_number'] ?? 0) === 1
+                || ($refereeSession['can_manage_penalties'] ?? false);
+        }
+
+        if ($user?->hasRole('Wasit') && $event) {
+            $referee = app(RefereeIdentity::class)->forEvent($user, $event);
+            if ($referee) {
+                $assignment = EventCourtAssignment::query()
+                    ->whereIn('event_court_id', $event->courts()->pluck('id'))
+                    ->where('staff_type', 'referee')
+                    ->where('staff_id', $referee->id)
+                    ->first();
+
+                return $assignment && $assignment->role === 'chief';
+            }
+        }
+
+        return false;
     }
 
     private function eventForRequest(Request $request): ?Event
@@ -623,6 +777,16 @@ class ArbitrationController extends Controller
 
         $submittedQuery = (clone $scoreQuery)->where('status', $type === 'randori' ? 'verified' : 'submitted');
 
+        $embuResults = app(EmbuResultService::class);
+        $embuTies = $event
+            ? $event->matchCategories()
+                ->where('type', 'embu')
+                ->where('is_active', true)
+                ->get()
+                ->flatMap(fn (EventMatchCategory $cat) => $embuResults->activeTies($cat))
+                ->values()
+            : collect();
+
         return Inertia::render('Admin/Arbitration/ScoreReport', [
             'activeEvent' => $event->only(['id', 'name']),
             'events' => $this->eventOptions($request),
@@ -636,6 +800,7 @@ class ArbitrationController extends Controller
                 'randori' => RandoriScore::query()->whereBelongsTo($event)->count(),
             ],
             'scores' => $scores,
+            'embuTies' => $embuTies,
         ]);
     }
 

@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Models\Event;
+use App\Models\EventCourt;
+use App\Models\EventMatchCategory;
+use App\Models\Rundown;
 use App\Models\TournamentMatch;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -101,6 +104,132 @@ class TournamentScheduleUpdater
             $this->ensureMovedSchedulesFitSessions($event, $movedSchedules);
             $this->ensureScheduleIntegrity($proposedSchedules, (int) $event->minimum_rest_minutes);
             $this->persistSchedule($eventMatches, $movedSchedules);
+        }, attempts: 3);
+    }
+
+    /**
+     * Move all active matches of a category to another court and automatically adjust their schedule.
+     *
+     * @param  array{event_court_id: string, target_rundown_id?: string|null, target_start_time?: string|null, placement_mode?: string|null}  $payload
+     * @return int Number of matches moved and scheduled
+     */
+    public function moveCategory(Event $event, EventMatchCategory $category, array $payload): int
+    {
+        if ($category->event_id !== $event->id) {
+            throw ValidationException::withMessages([
+                'category' => 'Nomor pertandingan tidak terdaftar pada event ini.',
+            ]);
+        }
+
+        $targetCourt = $event->courts()
+            ->where('is_active', true)
+            ->find($payload['event_court_id']);
+
+        if (! $targetCourt instanceof EventCourt) {
+            throw ValidationException::withMessages([
+                'event_court_id' => 'Court tujuan tidak tersedia atau tidak aktif pada event ini.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($category, $event, $payload, $targetCourt): int {
+            $eventMatches = $event->tournamentMatches()
+                ->where('is_bye', false)
+                ->with(['drawing:id,status', 'matchCategory:id,name,type,order'])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $categoryMatches = $eventMatches
+                ->where('event_match_category_id', $category->id)
+                ->sortBy('match_sequence')
+                ->values();
+
+            if ($categoryMatches->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'category' => 'Tidak ada partai yang dapat dijadwalkan pada nomor pertandingan ini.',
+                ]);
+            }
+
+            $matchesToMove = $categoryMatches->where('status', '!=', 'completed')->values();
+
+            if ($matchesToMove->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'category' => 'Seluruh partai pada nomor pertandingan ini sudah selesai dipertandingkan.',
+                ]);
+            }
+
+            $sessions = $event->rundowns()
+                ->where('is_match_session', true)
+                ->orderBy('date')
+                ->orderBy('order')
+                ->orderBy('id')
+                ->get();
+
+            if ($sessions->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Belum ada sesi pertandingan (rundown) yang aktif pada event ini.',
+                ]);
+            }
+
+            $duration = max(1, (int) $event->match_duration_minutes);
+            $minimumRest = max(0, (int) $event->minimum_rest_minutes);
+
+            $allCourtSlots = $this->buildCourtSlots($sessions, $targetCourt->id, $duration);
+
+            if ($allCourtSlots->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Tidak ada slot waktu pertandingan yang tersedia pada sesi yang ada.',
+                ]);
+            }
+
+            $matchesBeingMovedIds = $matchesToMove->pluck('id')->all();
+            $otherMatchesOnTargetCourt = $eventMatches
+                ->where('event_court_id', $targetCourt->id)
+                ->reject(fn (TournamentMatch $m): bool => in_array($m->id, $matchesBeingMovedIds, true))
+                ->filter(fn (TournamentMatch $m): bool => $m->scheduled_start_at !== null && $m->scheduled_end_at !== null)
+                ->values();
+
+            $targetRundownId = $payload['target_rundown_id'] ?? null;
+            $targetStartTime = $payload['target_start_time'] ?? null;
+            $placementMode = $payload['placement_mode'] ?? 'auto';
+
+            $assignedSlots = $this->allocateCategorySlots(
+                $event,
+                $matchesToMove,
+                $allCourtSlots,
+                $otherMatchesOnTargetCourt,
+                $eventMatches,
+                $targetRundownId,
+                $targetStartTime,
+                $placementMode,
+                $minimumRest,
+            );
+
+            if ($assignedSlots === null || $assignedSlots->count() !== $matchesToMove->count()) {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Tidak tersedia slot waktu yang cukup pada court tujuan tanpa bentrok jadwal atau jeda istirahat atlet.',
+                ]);
+            }
+
+            $movedSchedules = $matchesToMove->map(function (TournamentMatch $match, int $index) use ($assignedSlots): array {
+                $slot = $assignedSlots->get($index);
+
+                return [
+                    'id' => $match->id,
+                    'court_id' => $slot['court_id'],
+                    'rundown_id' => $slot['rundown_id'],
+                    'start' => $slot['start'],
+                    'end' => $slot['end'],
+                ];
+            });
+
+            $proposedSchedules = $this->proposedEventSchedules($eventMatches, $movedSchedules);
+
+            $this->ensureMovedSchedulesFitSessions($event, $movedSchedules);
+            $this->ensureScheduleIntegrity($proposedSchedules, $minimumRest);
+            $this->persistSchedule($eventMatches, $movedSchedules);
+
+            return $matchesToMove->count();
         }, attempts: 3);
     }
 
@@ -286,9 +415,10 @@ class TournamentScheduleUpdater
         $movedSchedulesById = $movedSchedules->keyBy('id');
 
         return $eventMatches
-            ->filter(fn (TournamentMatch $eventMatch): bool => $eventMatch->scheduled_start_at !== null
+            ->filter(fn (TournamentMatch $eventMatch): bool => ($eventMatch->scheduled_start_at !== null
                 && $eventMatch->scheduled_end_at !== null
                 && $eventMatch->event_court_id !== null)
+                || $movedSchedulesById->has($eventMatch->id))
             ->map(function (TournamentMatch $eventMatch) use ($movedSchedulesById): array {
                 $movedSchedule = $movedSchedulesById->get($eventMatch->id);
 
@@ -296,15 +426,14 @@ class TournamentScheduleUpdater
                     'id' => $eventMatch->id,
                     'category_id' => $eventMatch->event_match_category_id,
                     'category_type' => $eventMatch->matchCategory?->type,
+                    'phase' => $eventMatch->phase,
+                    'next_match_id' => $eventMatch->next_match_id,
                     'sequence' => (int) $eventMatch->match_sequence,
                     'court_id' => $movedSchedule['court_id'] ?? $eventMatch->event_court_id,
                     'rundown_id' => $movedSchedule['rundown_id'] ?? $eventMatch->rundown_id,
                     'start' => $movedSchedule['start'] ?? CarbonImmutable::instance($eventMatch->scheduled_start_at),
                     'end' => $movedSchedule['end'] ?? CarbonImmutable::instance($eventMatch->scheduled_end_at),
-                    'athlete_ids' => collect($eventMatch->metadata['athlete_ids'] ?? [])
-                        ->filter(fn (mixed $athleteId): bool => is_string($athleteId) && $athleteId !== '')
-                        ->unique()
-                        ->values(),
+                    'athlete_ids' => $this->athleteIds($eventMatch),
                 ];
             })
             ->values();
@@ -321,16 +450,44 @@ class TournamentScheduleUpdater
         $this->ensureEmbuBeforeRandori($schedules);
     }
 
-    /** @param Collection<int, array{category_id: string, sequence: int, start: CarbonImmutable, end: CarbonImmutable}> $schedules */
+    /**
+     * Ensure bracket progression integrity:
+     * - A match must finish before its subsequent match (next_match_id) begins.
+     * - Preliminary matches must finish before final matches in the same category.
+     *
+     * Matches in the same round or without prerequisite dependencies can be freely scheduled
+     * in any order, moved to any empty slot, or swapped.
+     *
+     * @param  Collection<int, array{id: string, category_id: string, sequence: int, phase: string|null, next_match_id: string|null, start: CarbonImmutable, end: CarbonImmutable}>  $schedules
+     */
     private function ensureCategorySequence(Collection $schedules): void
     {
-        foreach ($schedules->groupBy('category_id') as $categorySchedules) {
-            $ordered = $categorySchedules->sortBy('sequence')->values();
+        $schedulesById = $schedules->keyBy('id');
 
-            foreach ($ordered->sliding(2) as $pair) {
-                if ($pair->last()['start']->lessThan($pair->first()['end'])) {
+        // 1. Check next_match_id dependencies (pemenang babak sebelumnya)
+        foreach ($schedules as $schedule) {
+            $nextMatchId = $schedule['next_match_id'] ?? null;
+            if ($nextMatchId && $nextSchedule = $schedulesById->get($nextMatchId)) {
+                if ($schedule['end']->greaterThan($nextSchedule['start'])) {
                     throw ValidationException::withMessages([
-                        'schedule' => 'Urutan waktu harus tetap mengikuti urutan partai pada nomor pertandingan.',
+                        'schedule' => "Partai babak sebelumnya (#{$schedule['sequence']}) harus selesai sebelum partai babak berikutnya (#{$nextSchedule['sequence']}) dimulai.",
+                    ]);
+                }
+            }
+        }
+
+        // 2. Check preliminary vs final phase in the same category
+        foreach ($schedules->groupBy('category_id') as $categorySchedules) {
+            $preliminaryMatches = $categorySchedules->where('phase', 'preliminary');
+            $finalMatches = $categorySchedules->where('phase', 'final');
+
+            if ($preliminaryMatches->isNotEmpty() && $finalMatches->isNotEmpty()) {
+                $lastPrelimEnd = $preliminaryMatches->max('end');
+                $firstFinalStart = $finalMatches->min('start');
+
+                if ($lastPrelimEnd && $firstFinalStart && $lastPrelimEnd->greaterThan($firstFinalStart)) {
+                    throw ValidationException::withMessages([
+                        'schedule' => 'Partai babak penyisihan harus selesai sebelum babak final pada nomor pertandingan yang sama.',
                     ]);
                 }
             }
@@ -426,5 +583,205 @@ class TournamentScheduleUpdater
                 ]);
             }
         }
+    }
+
+    /**
+     * @param  EloquentCollection<int, Rundown>  $sessions
+     * @return Collection<int, array{court_id: string, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>
+     */
+    private function buildCourtSlots(Collection $sessions, string $courtId, int $duration): Collection
+    {
+        $slots = collect();
+
+        foreach ($sessions as $session) {
+            $start = CarbonImmutable::instance($session->date);
+            $end = $session->end_time
+                ? CarbonImmutable::instance($session->end_time)
+                : $start->addHours(4);
+
+            for ($cursor = $start; $cursor->addMinutes($duration)->lessThanOrEqualTo($end); $cursor = $cursor->addMinutes($duration)) {
+                $slots->push([
+                    'court_id' => $courtId,
+                    'rundown_id' => $session->id,
+                    'start' => $cursor,
+                    'end' => $cursor->addMinutes($duration),
+                ]);
+            }
+        }
+
+        return $slots;
+    }
+
+    /**
+     * @param  Collection<int, TournamentMatch>  $matchesToMove
+     * @param  Collection<int, array{court_id: string, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>  $allCourtSlots
+     * @param  Collection<int, TournamentMatch>  $otherMatchesOnTargetCourt
+     * @param  EloquentCollection<int, TournamentMatch>  $eventMatches
+     * @return Collection<int, array{court_id: string, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>|null
+     */
+    private function allocateCategorySlots(
+        Event $event,
+        Collection $matchesToMove,
+        Collection $allCourtSlots,
+        Collection $otherMatchesOnTargetCourt,
+        EloquentCollection $eventMatches,
+        ?string $targetRundownId,
+        ?string $targetStartTime,
+        string $placementMode,
+        int $minimumRestMinutes,
+    ): ?Collection {
+        $requiredCount = $matchesToMove->count();
+        $totalSlots = $allCourtSlots->count();
+
+        if ($totalSlots < $requiredCount) {
+            return null;
+        }
+
+        $startingIndex = 0;
+
+        if ($targetRundownId !== null && $targetStartTime !== null) {
+            $foundIndex = $allCourtSlots->search(fn (array $slot): bool => $slot['rundown_id'] === $targetRundownId
+                && $slot['start']->format('H:i') === $targetStartTime);
+
+            if ($foundIndex !== false) {
+                $startingIndex = (int) $foundIndex;
+            }
+        } elseif ($placementMode === 'append') {
+            $latestEnd = $otherMatchesOnTargetCourt
+                ->map(fn (TournamentMatch $m): CarbonImmutable => CarbonImmutable::instance($m->scheduled_end_at))
+                ->sortByDesc(fn (CarbonImmutable $c): int => $c->getTimestamp())
+                ->first();
+
+            if ($latestEnd instanceof CarbonImmutable) {
+                $foundIndex = $allCourtSlots->search(fn (array $slot): bool => $slot['start']->greaterThanOrEqualTo($latestEnd));
+
+                if ($foundIndex !== false) {
+                    $startingIndex = (int) $foundIndex;
+                }
+            }
+        }
+
+        $matchesBeingMovedIds = $matchesToMove->pluck('id')->all();
+        $otherScheduledEventMatches = $eventMatches
+            ->reject(fn (TournamentMatch $m): bool => in_array($m->id, $matchesBeingMovedIds, true))
+            ->filter(fn (TournamentMatch $m): bool => $m->scheduled_start_at !== null && $m->scheduled_end_at !== null)
+            ->values();
+
+        $categoryType = $matchesToMove->first()?->matchCategory?->type;
+
+        $otherEmbuMatches = $otherScheduledEventMatches->filter(fn (TournamentMatch $m): bool => $m->matchCategory?->type === 'embu');
+        $otherRandoriMatches = $otherScheduledEventMatches->filter(fn (TournamentMatch $m): bool => $m->matchCategory?->type === 'randori');
+
+        $latestOtherEmbuEnd = $otherEmbuMatches
+            ->map(fn (TournamentMatch $m): CarbonImmutable => CarbonImmutable::instance($m->scheduled_end_at))
+            ->sortByDesc(fn (CarbonImmutable $c): int => $c->getTimestamp())
+            ->first();
+
+        $earliestOtherRandoriStart = $otherRandoriMatches
+            ->map(fn (TournamentMatch $m): CarbonImmutable => CarbonImmutable::instance($m->scheduled_start_at))
+            ->sortBy(fn (CarbonImmutable $c): int => $c->getTimestamp())
+            ->first();
+
+        $athleteBusyIntervals = collect();
+        foreach ($otherScheduledEventMatches as $otherMatch) {
+            $otherAthleteIds = $this->athleteIds($otherMatch);
+            if ($otherAthleteIds->isEmpty()) {
+                continue;
+            }
+
+            $oStart = CarbonImmutable::instance($otherMatch->scheduled_start_at);
+            $oEnd = CarbonImmutable::instance($otherMatch->scheduled_end_at);
+
+            foreach ($otherAthleteIds as $athleteId) {
+                if (! isset($athleteBusyIntervals[$athleteId])) {
+                    $athleteBusyIntervals[$athleteId] = collect();
+                }
+                $athleteBusyIntervals[$athleteId]->push([
+                    'category_id' => $otherMatch->event_match_category_id,
+                    'start' => $oStart,
+                    'end' => $oEnd,
+                ]);
+            }
+        }
+
+        $occupiedIntervals = $otherMatchesOnTargetCourt->map(fn (TournamentMatch $m): array => [
+            'start' => CarbonImmutable::instance($m->scheduled_start_at),
+            'end' => CarbonImmutable::instance($m->scheduled_end_at),
+        ]);
+
+        for ($i = $startingIndex; $i <= $totalSlots - $requiredCount; $i++) {
+            $candidateBlock = $allCourtSlots->slice($i, $requiredCount)->values();
+
+            $isConsecutive = $candidateBlock->sliding(2)->every(
+                fn (Collection $pair): bool => $pair->last()['start']->greaterThanOrEqualTo($pair->first()['end']),
+            );
+
+            if (! $isConsecutive) {
+                continue;
+            }
+
+            $hasCourtOverlap = $candidateBlock->contains(function (array $slot) use ($occupiedIntervals): bool {
+                return $occupiedIntervals->contains(function (array $occ) use ($slot): bool {
+                    return $slot['start']->lessThan($occ['end']) && $slot['end']->greaterThan($occ['start']);
+                });
+            });
+
+            if ($hasCourtOverlap) {
+                continue;
+            }
+
+            if ($categoryType === 'embu' && $earliestOtherRandoriStart instanceof CarbonImmutable) {
+                if ($candidateBlock->last()['end']->greaterThan($earliestOtherRandoriStart)) {
+                    continue;
+                }
+            } elseif ($categoryType === 'randori' && $latestOtherEmbuEnd instanceof CarbonImmutable) {
+                if ($candidateBlock->first()['start']->lessThan($latestOtherEmbuEnd)) {
+                    continue;
+                }
+            }
+
+            $hasAthleteRestViolation = false;
+            foreach ($matchesToMove as $matchIndex => $match) {
+                $slot = $candidateBlock->get($matchIndex);
+                $matchAthletes = $this->athleteIds($match);
+
+                foreach ($matchAthletes as $athleteId) {
+                    $intervals = $athleteBusyIntervals->get($athleteId);
+                    if ($intervals === null) {
+                        continue;
+                    }
+
+                    foreach ($intervals as $interval) {
+                        $slotStart = $slot['start'];
+                        $slotEnd = $slot['end'];
+                        $intStart = $interval['start'];
+                        $intEnd = $interval['end'];
+
+                        if ($slotStart->lessThan($intEnd->addMinutes($minimumRestMinutes))
+                            && $intStart->lessThan($slotEnd->addMinutes($minimumRestMinutes))) {
+                            $hasAthleteRestViolation = true;
+                            break 3;
+                        }
+                    }
+                }
+            }
+
+            if ($hasAthleteRestViolation) {
+                continue;
+            }
+
+            return $candidateBlock;
+        }
+
+        return null;
+    }
+
+    /** @return Collection<int, string> */
+    private function athleteIds(TournamentMatch $match): Collection
+    {
+        return collect($match->metadata['athlete_ids'] ?? [])
+            ->filter(fn (mixed $athleteId): bool => is_string($athleteId) && $athleteId !== '')
+            ->unique()
+            ->values();
     }
 }

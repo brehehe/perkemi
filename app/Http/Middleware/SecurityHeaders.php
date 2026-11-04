@@ -32,6 +32,11 @@ class SecurityHeaders
         // Restrict sensitive browser permissions (allow camera on same-origin for QR code scanning)
         $response->headers->set('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=()');
 
+        // Enforce HTTPS HSTS when connection is secure or FORCE_HTTPS is enabled
+        if ($request->isSecure() || filter_var(env('FORCE_HTTPS', false), FILTER_VALIDATE_BOOLEAN)) {
+            $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+        }
+
         return $response;
     }
 }

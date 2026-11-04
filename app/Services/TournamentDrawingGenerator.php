@@ -714,6 +714,7 @@ class TournamentDrawingGenerator
         }
 
         $matches = TournamentMatch::query()
+            ->where('tournament_drawing_id', $drawing->id)
             ->where('event_match_category_id', $category->id)
             ->orderBy('match_sequence')
             ->get();

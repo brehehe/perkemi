@@ -48,7 +48,9 @@ function EmbuRankingTable({ rows = [], quota = null, isFinal = false }) {
                         <th className="px-4 py-2.5">Court & Jadwal</th>
                         <th className="px-4 py-2.5">Nilai 5 Wasit</th>
                         <th className="px-4 py-2.5">Denda</th>
-                        <th className="px-4 py-2.5">{isFinal ? 'Akumulasi Nilai' : 'Nilai Akhir'}</th>
+                        <th className="px-4 py-2.5">{isFinal ? 'P1: Akumulasi' : 'P1: Nilai Akhir'}</th>
+                        <th className="px-4 py-2.5">P2: Teknik 3 Wasit</th>
+                        <th className="px-4 py-2.5">P3-P4: Wasit 1 (W1)</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ede9e1]">
@@ -56,6 +58,7 @@ function EmbuRankingTable({ rows = [], quota = null, isFinal = false }) {
                         const qualified = quota && quota !== 999 && index < quota;
                         const rankNum = index + 1;
                         const isMedalist = isFinal && rankNum <= 4;
+                        const middleJudgesText = row.middle_judge_numbers?.length ? `W${row.middle_judge_numbers.join(', W')}` : '3 Wasit Tengah';
 
                         return (
                             <tr
@@ -103,7 +106,7 @@ function EmbuRankingTable({ rows = [], quota = null, isFinal = false }) {
                                         )}
                                         {row.manual_tiebreak_winner && (
                                             <Badge variant="gold" size="xs">
-                                                Unggul Skenario E
+                                                P5: Unggul Manual
                                             </Badge>
                                         )}
                                     </div>
@@ -147,12 +150,28 @@ function EmbuRankingTable({ rows = [], quota = null, isFinal = false }) {
                                         </span>
                                     )}
                                 </td>
+                                <td data-label="P2: Teknik 3 Wasit" className="whitespace-nowrap px-4 py-3">
+                                    <p className="font-bold text-[#17120f] font-mono">
+                                        {formatScore(isFinal ? (row.final_middle_technique_sum ?? row.middle_technique_sum) : (row.param2_technique ?? row.middle_technique_sum))}
+                                    </p>
+                                    <p className="text-[10px] text-[#7a746e]" title={middleJudgesText}>
+                                        {middleJudgesText}
+                                    </p>
+                                </td>
+                                <td data-label="P3-P4: Wasit 1" className="whitespace-nowrap px-4 py-3 text-xs">
+                                    <p className="font-semibold text-slate-800">
+                                        Total: <strong className="font-mono">{formatScore(isFinal ? (row.final_chief_judge_total ?? row.chief_judge_total) : (row.param3_chief_total ?? row.chief_judge_total))}</strong>
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e]">
+                                        Teknik: <strong className="font-mono text-slate-700">{formatScore(isFinal ? (row.final_chief_judge_technique ?? row.chief_judge_technique) : (row.param4_chief_technique ?? row.chief_judge_technique))}</strong>
+                                    </p>
+                                </td>
                             </tr>
                         );
                     })}
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-[#7a746e] italic">
+                            <td colSpan={8} className="px-4 py-8 text-center text-[#7a746e] italic">
                                 Belum ada peserta pada babak ini.
                             </td>
                         </tr>

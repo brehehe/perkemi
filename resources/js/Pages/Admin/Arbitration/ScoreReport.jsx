@@ -3,8 +3,9 @@ import Tabs from '@/Components/UI/Navigation/Tabs';
 import Modal from '@/Components/UI/Overlays/Modal';
 import { Button, Input } from '@/Components/UI';
 import AdminLayout from '@/Layouts/AdminLayout';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const scoreLabels = {
     mujoken: 'Mujoken Kachi',
@@ -53,7 +54,7 @@ function ScoreDetail({ score }) {
     return <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-[#e5ded4] bg-[#fbfaf8] p-4"><p className="text-[10px] font-black uppercase text-[#8a631c]">Atlet</p><ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">{score.participant_details?.athletes?.length ? score.participant_details.athletes.map((athlete) => <li key={athlete.id || athlete.name}>{athlete.name}</li>) : <li>Belum tercatat</li>}</ol></div><div className="rounded-xl border border-[#e5ded4] bg-[#fbfaf8] p-4"><p className="text-[10px] font-black uppercase text-[#8a631c]">Teknik Terdaftar</p><ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">{score.participant_details?.techniques?.length ? score.participant_details.techniques.map((technique) => <li key={technique.id}>{technique.name}</li>) : <li>Belum tercatat</li>}</ol></div></div><div className="grid gap-2 sm:grid-cols-2">{Object.entries(score.aspect_labels || {}).map(([key, label], index) => <div key={key} className="flex items-center justify-between gap-3 rounded-xl border border-[#eee7de] px-3 py-2"><span className="text-xs"><strong className="mr-2 text-[#8a631c]">{index + 1}.</strong>{label}</span><strong className="font-mono text-lg">{score.aspect_scores?.[key] ?? '-'}</strong></div>)}</div><EmbuPenaltySummary score={score} /><div className="rounded-xl border border-[#e5ded4] bg-[#fbfaf8] p-4 text-center"><p className="text-xs font-bold">Tanda Tangan · {score.referee_name}</p>{score.signature ? <img src={score.signature} alt={`Tanda tangan ${score.referee_name}`} className="mx-auto mt-2 h-28 max-w-full object-contain" /> : <p className="mt-4 text-xs text-[#8d857e]">Belum ada tanda tangan.</p>}</div></div>;
 }
 
-export default function ScoreReport({ activeEvent, events = [], filters = {}, summary = {}, scores = {} }) {
+export default function ScoreReport({ activeEvent, events = [], filters = {}, summary = {}, scores = {}, embuTies = [] }) {
     const [search, setSearch] = useState(filters.search || '');
     const [detail, setDetail] = useState(null);
     const activeStatus = filters.status || 'all';
@@ -62,7 +63,32 @@ export default function ScoreReport({ activeEvent, events = [], filters = {}, su
     const visitFilters = (next = {}) => router.get('/admin/arbitrase/scoring', { event_id: activeEvent?.id, search, status: activeStatus, type: activeType, ...next }, { preserveScroll: true, preserveState: true, replace: true });
     const statusTabs = [{ key: 'all', label: 'Semua Nilai', count: summary.total ?? 0 }, { key: 'submitted', label: activeType === 'embu' ? 'Sudah Dikirim' : 'Sudah Disahkan', count: summary.submitted ?? 0 }, { key: 'draft', label: 'Draft', count: summary.drafts ?? 0 }];
 
+    useEffect(() => {
+        if (!window.Echo || !activeEvent?.id) return undefined;
+
+        const channelName = `event.${activeEvent.id}`;
+        const eventChannel = window.Echo.private(channelName);
+        const handleTiebreakUpdate = (event) => {
+            if (event.event_id !== activeEvent.id) return;
+            router.reload({
+                only: ['embuTies', 'scores', 'summary'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        eventChannel.listen('.embu.tiebreak.updated', handleTiebreakUpdate);
+
+        return () => {
+            eventChannel.stopListening('.embu.tiebreak.updated', handleTiebreakUpdate);
+        };
+    }, [activeEvent?.id]);
+
     return <AdminLayout title="Laporan Hasil Penilaian"><Head title="Laporan Hasil Penilaian | Smart Perkemi" /><div className="space-y-5 pb-8 sm:space-y-6"><section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0f0d0b] via-[#211b16] to-[#0f0d0b] p-5 text-white shadow-xl sm:p-6"><div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#d4a843]/15 blur-3xl" /><div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between"><div className="max-w-3xl"><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-[#e1b94e]"><i className="fa-solid fa-chart-column" aria-hidden="true" /> Arbitrase & Wasit</p><h1 className="mt-2 text-2xl font-bold md:text-3xl">Laporan Hasil Penilaian</h1><p className="mt-2 text-sm leading-6 text-white/70">Nilai Embu per Wasit dan hasil Randori lengkap dengan atlet, teknik, rincian skor, serta tanda tangan.</p></div><Combobox label="Event dipilih" labelClassName="text-white/60" containerClassName="w-full xl:w-96" value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/arbitrase/scoring', { event_id: value, type: activeType })} clearable={false} options={events.map((event) => ({ value: event.id, label: event.name, sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · ') }))} /></div></section>
+
+    {embuTies && embuTies.length > 0 && (
+        <EmbuTiebreakPanel ties={embuTies} isArbitration={true} />
+    )}
 
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 sm:gap-4"><SummaryCard icon="fa-clipboard-list" label={`Nilai ${activeType === 'embu' ? 'Embu' : 'Randori'}`} value={summary.total ?? 0} helper="seluruh rekaman" /><SummaryCard icon="fa-circle-check" label="Sudah Resmi" value={summary.submitted ?? 0} helper="dikirim / disahkan" tone="emerald" /><SummaryCard icon="fa-pen-ruler" label="Draft" value={summary.drafts ?? 0} helper="belum final" tone="amber" /><SummaryCard icon="fa-user-shield" label={activeType === 'embu' ? 'Wasit Menilai' : 'Panitera Menginput'} value={summary.actors ?? 0} helper="petugas unik" tone="blue" /></section>
 

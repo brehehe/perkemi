@@ -3,7 +3,7 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
 const statusClass = {
@@ -301,6 +301,7 @@ function QrScannerModal({ target, onClose }) {
 }
 
 export default function RefereePortal({ activeEvent, events = [], referee, attendance, assignments = [], activeMatch = null, evaluatedMatches = [], matches = [] }) {
+    const { flash = {} } = usePage().props;
     const listScores = evaluatedMatches.length ? evaluatedMatches : matches;
     const eventQuery = activeEvent?.id ? `?event_id=${encodeURIComponent(activeEvent.id)}` : '';
     const [scannerTarget, setScannerTarget] = useState(null);
@@ -342,6 +343,19 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
         <AdminLayout title="Portal Wasit">
             <Head title="Portal Wasit | Smart Perkemi" />
             <div className="space-y-5 pb-8 sm:space-y-6 sm:pb-10">
+                {flash?.error && (
+                    <div
+                        role="alert"
+                        aria-live="polite"
+                        className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-xs"
+                    >
+                        <i className="fa-solid fa-circle-exclamation mt-0.5 text-base text-rose-600" aria-hidden="true" />
+                        <div>
+                            <p className="font-bold text-rose-950">Perhatian</p>
+                            <p className="mt-0.5 text-xs text-rose-800">{flash.error}</p>
+                        </div>
+                    </div>
+                )}
                 <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0f0d0b] via-[#211b16] to-[#0f0d0b] p-5 text-white shadow-xl md:p-6">
                     <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#d4a843]/15 blur-3xl" />
                     <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">

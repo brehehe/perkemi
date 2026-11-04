@@ -22,6 +22,7 @@ class EmbuJudgeScoreUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCo
         public float $violationPenalty,
         public string $status,
         public string $updatedAt,
+        public bool $isSigned = false,
     ) {}
 
     /**
@@ -60,6 +61,7 @@ class EmbuJudgeScoreUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCo
             'violation_penalty' => $this->violationPenalty,
             'status' => $this->status,
             'updated_at' => $this->updatedAt,
+            'is_signed' => $this->isSigned,
         ];
     }
 }

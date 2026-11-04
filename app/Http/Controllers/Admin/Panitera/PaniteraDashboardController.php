@@ -8,6 +8,7 @@ use App\Models\EventCourtAssignment;
 use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\ChampionResultService;
+use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\TournamentDrawingGenerator;
@@ -265,6 +266,7 @@ class PaniteraDashboardController extends Controller
 
         $randoriMatches = [];
         $championship = null;
+        $embuData = null;
         if ($selectedCategoryId !== '') {
             $selectedCategoryModel = $categoryOptions->firstWhere('id', $selectedCategoryId);
             if ($selectedCategoryModel) {
@@ -309,6 +311,23 @@ class PaniteraDashboardController extends Controller
                                 'notes' => $match->randoriScore->notes,
                             ] : null,
                         ])->values()->all();
+                } elseif ($selectedCategoryModel->type === 'embu') {
+                    $embuService = app(EmbuResultService::class);
+                    $prelimRankings = $embuService->preliminaryRankings($selectedCategoryModel)
+                        ->map(fn ($rows) => $rows->values());
+                    $finalRankings = $embuService->finalRankings($selectedCategoryModel)->values();
+                    $quotaPerPool = $embuService->quotaPerPool($selectedCategoryModel);
+                    $boundaryTies = $embuService->boundaryTies($selectedCategoryModel);
+                    $activeTies = $embuService->activeTies($selectedCategoryModel);
+
+                    $embuData = [
+                        'preliminary_rankings' => $prelimRankings,
+                        'final_rankings' => $finalRankings,
+                        'quota_per_pool' => $quotaPerPool,
+                        'boundary_ties' => $boundaryTies,
+                        'active_ties' => $activeTies,
+                        'has_top_four_tie' => $embuService->hasTopFourTie($finalRankings),
+                    ];
                 }
 
                 $champData = app(ChampionResultService::class)->categoryData($event, $selectedCategoryModel);
@@ -342,6 +361,7 @@ class PaniteraDashboardController extends Controller
             'matches' => $matches,
             'randoriMatches' => $randoriMatches,
             'championship' => $championship,
+            'embuData' => $embuData,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -402,6 +422,14 @@ class PaniteraDashboardController extends Controller
             }
         }
 
+        $athleteNames = [];
+        if ($categoryType === 'embu') {
+            $members = data_get($match->metadata, 'members', []);
+            if (! empty($members) && is_array($members)) {
+                $athleteNames = array_values(array_filter($members));
+            }
+        }
+
         return [
             'id' => $match->id,
             'category_id' => $match->event_match_category_id,
@@ -416,6 +444,8 @@ class PaniteraDashboardController extends Controller
             'round_label' => $match->round_label,
             'sequence' => $match->match_sequence,
             'participant' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
+            'athlete_names' => $athleteNames,
+            'athlete_name' => ! empty($athleteNames) ? implode(' & ', $athleteNames) : null,
             'red_label' => $match->red_label,
             'blue_label' => $match->blue_label,
             'aka_label' => $match->red_label,

@@ -6,11 +6,12 @@ import Input from '@/Components/UI/Forms/Input';
 import Pagination from '@/Components/UI/Navigation/Pagination';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState, useEffect } from 'react';
 import { CourtMonitorButtons } from './Partials/CourtMonitorLinks';
 import FlashMessage from './Partials/FlashMessage';
 import PaniteraHeader from './Partials/PaniteraHeader';
 import RandoriBracketTree from './Partials/RandoriBracketTree';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 
 const statCards = [
     ['total_matches', 'Total Partai', 'fa-list-ol', 'blue'],
@@ -25,6 +26,127 @@ const statusVariants = {
     in_progress: 'purple',
     completed: 'green',
 };
+
+function EmbuPoolStandingTable({ standings = [], quota = null, isFinal = false }) {
+    if (!standings || standings.length === 0) return null;
+
+    return (
+        <div className="overflow-x-auto border-b border-[#ede9e1] bg-[#fdfcfb]">
+            <table className="w-full text-left text-xs">
+                <thead className="bg-[#f8f5f0] text-[10px] uppercase tracking-wide text-[#7a746e] border-b border-[#eee8e0]">
+                    <tr>
+                        <th className="px-3.5 py-2 font-bold">Peringkat</th>
+                        <th className="px-3.5 py-2 font-bold">Peserta / Kontingen</th>
+                        <th className="px-3.5 py-2 font-bold">{isFinal ? 'P1: Akumulasi' : 'P1: Nilai Akhir'}</th>
+                        <th className="px-3.5 py-2 font-bold">P2: Teknik 3 Wasit</th>
+                        <th className="px-3.5 py-2 font-bold">P3: W1 Total</th>
+                        <th className="px-3.5 py-2 font-bold">P4: W1 Teknik</th>
+                        <th className="px-3.5 py-2 font-bold">Status</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-[#ede9e1]">
+                    {standings.map((row, idx) => {
+                        const rankNum = idx + 1;
+                        const qualified = quota && quota !== 999 && idx < quota;
+                        const isMedalist = isFinal && rankNum <= 4;
+                        const middleJudges = row.middle_judge_numbers?.length ? `W${row.middle_judge_numbers.join(', W')}` : '3 Wasit';
+
+                        return (
+                            <tr
+                                key={row.match_id || idx}
+                                className={`transition-colors ${
+                                    isMedalist
+                                        ? rankNum === 1
+                                            ? 'bg-amber-50/60'
+                                            : rankNum === 2
+                                            ? 'bg-slate-50/70'
+                                            : 'bg-orange-50/50'
+                                        : qualified
+                                        ? 'bg-emerald-50/50'
+                                        : 'hover:bg-white'
+                                }`}
+                            >
+                                <td className="px-3.5 py-2 font-black whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded text-[11px] ${
+                                            isFinal && rankNum === 1
+                                                ? 'bg-amber-500 text-slate-950 font-black'
+                                                : isFinal && rankNum === 2
+                                                ? 'bg-slate-300 text-slate-800 font-black'
+                                                : isFinal && rankNum <= 4
+                                                ? 'bg-amber-700 text-white font-black'
+                                                : 'bg-slate-200 text-slate-700 font-bold'
+                                        }`}>
+                                            #{rankNum}
+                                        </span>
+                                        {isFinal && rankNum === 1 && <span className="text-[10px] font-bold text-amber-800">🥇 Emas</span>}
+                                        {isFinal && rankNum === 2 && <span className="text-[10px] font-bold text-slate-700">🥈 Perak</span>}
+                                        {isFinal && (rankNum === 3 || rankNum === 4) && <span className="text-[10px] font-bold text-orange-800">🥉 Perunggu</span>}
+                                    </div>
+                                </td>
+                                <td className="px-3.5 py-2">
+                                    <p className="font-bold text-slate-900 leading-tight">{row.participant_label}</p>
+                                    {row.metadata?.members && row.metadata.members.length > 0 && (
+                                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800 mt-1">
+                                            <span className="inline-flex items-center justify-center rounded bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[9px] font-bold border border-slate-200">
+                                                <i className="fa-solid fa-user-ninja mr-1 text-[8px] text-slate-500" />
+                                                Kenshi
+                                            </span>
+                                            <span className="text-slate-800">{row.metadata.members.join(' & ')}</span>
+                                        </div>
+                                    )}
+                                    {row.metadata?.contingent_name && row.metadata.contingent_name !== row.participant_label && (
+                                        <p className="text-[10px] text-slate-500 truncate mt-0.5">{row.metadata.contingent_name}</p>
+                                    )}
+                                </td>
+                                <td className="px-3.5 py-2 whitespace-nowrap">
+                                    {isFinal ? (
+                                        <div>
+                                            <span className="font-mono text-xs font-black text-amber-900">{Number(row.total_score || 0).toFixed(2)}</span>
+                                            <span className="block text-[9.5px] text-slate-400">P:{Number(row.preliminary_score || 0).toFixed(2)} + F:{Number(row.final_round_score || 0).toFixed(2)}</span>
+                                        </div>
+                                    ) : (
+                                        <span className="font-mono text-xs font-black text-amber-900">{Number(row.score?.final_score || row.param1_score || 0).toFixed(2)}</span>
+                                    )}
+                                </td>
+                                <td className="px-3.5 py-2 whitespace-nowrap">
+                                    <span className="font-mono text-xs font-bold text-slate-800">{Number((isFinal ? (row.final_middle_technique_sum ?? row.middle_technique_sum) : (row.param2_technique ?? row.middle_technique_sum)) || 0).toFixed(2)}</span>
+                                    <span className="block text-[9px] text-slate-400">{middleJudges}</span>
+                                </td>
+                                <td className="px-3.5 py-2 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                                    {Number((isFinal ? (row.final_chief_judge_total ?? row.chief_judge_total) : (row.param3_chief_total ?? row.chief_judge_total)) || 0).toFixed(2)}
+                                </td>
+                                <td className="px-3.5 py-2 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                                    {Number((isFinal ? (row.final_chief_judge_technique ?? row.chief_judge_technique) : (row.param4_chief_technique ?? row.chief_judge_technique)) || 0).toFixed(2)}
+                                </td>
+                                <td className="px-3.5 py-2 whitespace-nowrap">
+                                    {qualified ? (
+                                        <span className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.5 text-[9.5px] font-black border border-emerald-300">
+                                            <i className="fa-solid fa-check text-[8px]" /> Tiket Final
+                                        </span>
+                                    ) : isMedalist ? (
+                                        <span className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 px-1.5 py-0.5 text-[9.5px] font-black border border-amber-300">
+                                            <i className="fa-solid fa-medal text-[8px]" /> Podium
+                                        </span>
+                                    ) : row.score ? (
+                                        <span className="text-[10px] font-medium text-slate-500">Selesai</span>
+                                    ) : (
+                                        <span className="text-[10px] text-slate-400 italic">Menunggu</span>
+                                    )}
+                                    {row.manual_tiebreak_winner && (
+                                        <span className="ml-1 inline-flex items-center rounded bg-amber-200 text-amber-900 px-1 py-0.5 text-[9px] font-bold">
+                                            P5: Manual
+                                        </span>
+                                    )}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
 function MatchSectionTable({ matches, activeEvent, isLocked }) {
     return (
@@ -116,7 +238,19 @@ function MatchSectionTable({ matches, activeEvent, isLocked }) {
                                         </div>
                                     ) : (
                                         <div>
-                                            <p className="font-medium text-[#17120f]">{match.participant || 'Peserta belum ditentukan'}</p>
+                                            <p className="font-bold text-[#17120f]">{match.participant || 'Peserta belum ditentukan'}</p>
+                                            {match.athlete_names && match.athlete_names.length > 0 && (
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1">
+                                                    <span className="inline-flex items-center justify-center rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[9.5px] font-bold border border-blue-200">
+                                                        <i className="fa-solid fa-user-ninja mr-1 text-[8.5px] text-blue-600" />
+                                                        Kenshi
+                                                    </span>
+                                                    <span className="text-slate-800">{match.athlete_names.join(' & ')}</span>
+                                                </div>
+                                            )}
+                                            {match.contingent_name && match.contingent_name !== match.participant && (
+                                                <p className="text-[11px] text-[#7a746e] mt-0.5">{match.contingent_name}</p>
+                                            )}
                                             {match.result && match.result.type === 'embu' && (
                                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                                     <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300/80 bg-emerald-100/90 px-2 py-0.5 text-[10.5px] font-bold text-emerald-900 shadow-2xs">
@@ -279,7 +413,19 @@ function TimelineMatchTable({ matches, activeEvent, onSelectCategory }) {
                                         </div>
                                     </td>
                                     <td data-label="Peserta" className="min-w-64 px-4 py-3 align-top text-[#5f574f]">
-                                        <p className="font-medium text-[#17120f]">{match.participant || 'Peserta belum ditentukan'}</p>
+                                        <p className="font-bold text-[#17120f]">{match.participant || 'Peserta belum ditentukan'}</p>
+                                        {match.athlete_names && match.athlete_names.length > 0 && (
+                                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1">
+                                                <span className="inline-flex items-center justify-center rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[9.5px] font-bold border border-blue-200">
+                                                    <i className="fa-solid fa-user-ninja mr-1 text-[8.5px] text-blue-600" />
+                                                    Kenshi
+                                                </span>
+                                                <span className="text-slate-800">{match.athlete_names.join(' & ')}</span>
+                                            </div>
+                                        )}
+                                        {match.contingent_name && match.contingent_name !== match.participant && (
+                                            <p className="text-[11px] text-[#7a746e] mt-0.5">{match.contingent_name}</p>
+                                        )}
                                     </td>
                                     <td data-label="Status" className="min-w-48 px-4 py-3 align-top">
                                         <div className="flex flex-wrap gap-1.5">
@@ -313,6 +459,7 @@ export default function PaniteraDashboard({
     matches = { data: [] },
     randoriMatches = [],
     championship = null,
+    embuData = null,
     canManage = false,
     filters = {},
     isCourtRestricted = false,
@@ -333,6 +480,45 @@ export default function PaniteraDashboard({
         filters.court_id ||
         (filters.sort_by && filters.sort_by !== 'schedule')
     );
+
+    // Sinkronisasi Real-Time (Reverb / Echo) untuk penetapan tie-break dari Wasit Utama
+    useEffect(() => {
+        if (!window.Echo || !activeEvent?.id) return undefined;
+
+        const channelName = `event.${activeEvent.id}`;
+        const eventChannel = window.Echo.private(channelName);
+        const handleTiebreakUpdate = (event) => {
+            if (event.event_id !== activeEvent.id) return;
+            router.reload({
+                only: ['embuData', 'matches', 'stats', 'championship', 'flash'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        eventChannel.listen('.embu.tiebreak.updated', handleTiebreakUpdate);
+
+        return () => {
+            window.Echo.leave(channelName);
+        };
+    }, [activeEvent?.id]);
+
+    // Polling fallback jika ada kasus tie-break aktif
+    useEffect(() => {
+        if (!embuData?.active_ties || embuData.active_ties.length === 0) return undefined;
+
+        const interval = window.setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                router.reload({
+                    only: ['embuData', 'matches', 'stats', 'championship'],
+                    preserveScroll: true,
+                    preserveState: true,
+                });
+            }
+        }, 5000);
+
+        return () => window.clearInterval(interval);
+    }, [embuData?.active_ties?.length]);
 
     const visit = (changes = {}, page = 1) => router.get('/admin/panitera/scoring', {
         event_id: activeEvent.id,
@@ -393,6 +579,25 @@ export default function PaniteraDashboard({
         });
     };
 
+    const handleConfirmChampions = () => {
+        if (!selectedCategory) return;
+        if (confirm(`Simpan dan kunci hasil juara resmi (Emas, Perak, Perunggu 1 & 2) untuk nomor "${selectedCategory.name}"?`)) {
+            router.post(
+                `/admin/panitera/scoring/embu-result/${selectedCategory.id}/confirm-champions`,
+                { event_id: activeEvent.id },
+                { preserveScroll: true }
+            );
+        }
+    };
+
+    const handleResolveTiebreakRanks = (categoryId, ranks) => {
+        router.post(
+            `/admin/panitera/scoring/embu-result/${categoryId}/resolve-tiebreak-ranks`,
+            { event_id: activeEvent.id, ranks },
+            { preserveScroll: true }
+        );
+    };
+
     // Filter categories for the initial boxes view
     const filteredCategories = categories.filter((c) => {
         if (search) {
@@ -409,10 +614,46 @@ export default function PaniteraDashboard({
         return true;
     });
 
-    // Partition matches into Penyisihan and Final when a single category is opened
+    // Partition matches into Preliminary pools and Final when a single category is opened
     const allCategoryMatches = matches.data || [];
     const matchesPenyisihan = allCategoryMatches.filter((m) => m.phase !== 'final');
     const matchesFinal = allCategoryMatches.filter((m) => m.phase === 'final');
+
+    const preliminaryPools = useMemo(() => {
+        const map = {};
+        if (embuData?.preliminary_rankings) {
+            Object.keys(embuData.preliminary_rankings).forEach((poolKey) => {
+                map[poolKey] = {
+                    key: poolKey,
+                    label: `Pool ${poolKey}`,
+                    matches: [],
+                    standings: embuData.preliminary_rankings[poolKey] || [],
+                };
+            });
+        }
+        matchesPenyisihan.forEach((m) => {
+            const p = m.pool || 'A';
+            if (!map[p]) {
+                map[p] = {
+                    key: p,
+                    label: `Pool ${p}`,
+                    matches: [],
+                    standings: embuData?.preliminary_rankings?.[p] || [],
+                };
+            }
+            map[p].matches.push(m);
+        });
+
+        return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
+    }, [matchesPenyisihan, embuData]);
+
+    const preliminaryTies = useMemo(() => {
+        return (embuData?.active_ties || []).filter((t) => t.phase === 'preliminary');
+    }, [embuData?.active_ties]);
+
+    const finalTies = useMemo(() => {
+        return (embuData?.active_ties || []).filter((t) => t.phase === 'final');
+    }, [embuData?.active_ties]);
 
     return (
         <AdminLayout title="Pusat Kendali Panitera">
@@ -787,7 +1028,13 @@ export default function PaniteraDashboard({
                                                             <span>{cand.rank === 1 ? '🥇 Juara 1 (Emas)' : cand.rank === 2 ? '🥈 Juara 2 (Perak)' : cand.rank === 3 ? '🥉 Juara 3 (Perunggu)' : '🥉 Juara 3 Bersama'}</span>
                                                         </div>
                                                         <p className="mt-1 font-semibold text-slate-900 truncate">{cand.label}</p>
-                                                        {cand.contingent_name && (
+                                                        {cand.members && cand.members.length > 0 && (
+                                                            <p className="text-[11px] font-semibold text-slate-700 flex items-center gap-1 mt-0.5 truncate">
+                                                                <i className="fa-solid fa-user-ninja text-[9px] text-slate-400" />
+                                                                {cand.members.join(' & ')}
+                                                            </p>
+                                                        )}
+                                                        {cand.contingent_name && cand.contingent_name !== cand.label && (
                                                             <p className="text-[11px] text-slate-500 truncate">{cand.contingent_name}</p>
                                                         )}
                                                         {cand.basis && (
@@ -1061,39 +1308,145 @@ export default function PaniteraDashboard({
                                         )}
                                     </div>
                                 ) : (
-                                    /* SEKSI EMBU: BABAK PENYISIHAN & BABAK FINAL */
-                                    <>
-                                        {/* SEKSI 1: BABAK PENYISIHAN */}
+                                    /* SEKSI EMBU: BABAK PENYISIHAN (TERPISAH PER POOL) & BABAK FINAL */
+                                    <div className="space-y-6">
+                                        {/* PANEL TIE-BREAK PARAMETER 5 BABAK PENYISIHAN */}
+                                        {preliminaryTies.length > 0 && (
+                                            <EmbuTiebreakPanel
+                                                ties={preliminaryTies}
+                                                isArbitration={false}
+                                            />
+                                        )}
+
+                                        {/* SEKSI 1: BABAK PENYISIHAN (TERPISAH PER POOL A, POOL B, DST) */}
+                                        {preliminaryPools.length > 0 && preliminaryPools.map((pool) => {
+                                            const poolCompleted = pool.matches.filter((m) => m.status === 'completed').length;
+                                            const poolTotal = pool.matches.length;
+                                            const isPoolDone = poolTotal > 0 && poolCompleted === poolTotal;
+
+                                            return (
+                                                <div key={pool.key} className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-xs">
+                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50/70 to-indigo-50/50 p-4">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-xs shadow-2xs">
+                                                                <i className="fa-solid fa-users" />
+                                                            </span>
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <h3 className="font-black text-slate-900 text-sm sm:text-base">
+                                                                        Babak Penyisihan — {pool.label}
+                                                                    </h3>
+                                                                    <Badge variant="blue">{poolTotal} Partai</Badge>
+                                                                    {isPoolDone && <Badge variant="green">Selesai</Badge>}
+                                                                </div>
+                                                                <p className="text-[11px] text-slate-600 mt-0.5">
+                                                                    Kuota Lolos Final: Top {embuData?.quota_per_pool && embuData.quota_per_pool !== 999 ? embuData.quota_per_pool : 4} dari {pool.label}. Penentuan peringkat sesuai 5 Parameter PB PERKEMI.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 self-start sm:self-center">
+                                                            <span className="text-xs font-bold text-blue-900">
+                                                                Progres: {poolCompleted}/{poolTotal} Selesai
+                                                            </span>
+                                                            <Link
+                                                                href={`/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(selectedCategory.id)}`}
+                                                                className="inline-flex items-center gap-1 text-xs font-bold text-blue-800 hover:text-blue-950 underline ml-2"
+                                                            >
+                                                                <i className="fa-solid fa-table-list text-[10px]" /> Rekap Lengkap
+                                                            </Link>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* TABEL KLASEMEN SEMENTARA POOL INI */}
+                                                    {pool.standings && pool.standings.length > 0 && (
+                                                        <div className="border-b border-slate-100">
+                                                            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-200/60 flex items-center justify-between text-xs font-bold text-slate-700">
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <i className="fa-solid fa-ranking-star text-amber-600" />
+                                                                    Klasemen Sementara {pool.label} (5 Parameter PB PERKEMI)
+                                                                </span>
+                                                                <span className="text-[11px] font-normal text-slate-500">
+                                                                    P1: Nilai Akhir · P2: Teknik 3 Wasit · P3: W1 Total · P4: W1 Teknik · P5: Unggul Manual
+                                                                </span>
+                                                            </div>
+                                                            <EmbuPoolStandingTable
+                                                                standings={pool.standings}
+                                                                quota={embuData?.quota_per_pool}
+                                                                isFinal={false}
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    {/* TABEL PARTAI PERTANDINGAN POOL */}
+                                                    <MatchSectionTable
+                                                        matches={pool.matches}
+                                                        activeEvent={activeEvent}
+                                                        isLocked={selectedCategory.is_locked}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* AKSI KUNCI & LOLOSKAN KE FINAL DARI KLASEMEN PENYISIHAN */}
                                         {matchesPenyisihan.length > 0 && (
-                                            <div className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-xs">
-                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50/70 to-indigo-50/50 p-4">
-                                                    <div className="flex items-center gap-2.5">
-                                                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-xs shadow-2xs">
-                                                            <i className="fa-solid fa-users" />
+                                            <div className={`rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${
+                                                selectedCategory.prelim_all_done && selectedCategory.has_placeholders
+                                                    ? 'border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50/40 to-white'
+                                                    : 'border-slate-200 bg-slate-50/60'
+                                            }`}>
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                    <div className="flex items-start sm:items-center gap-3">
+                                                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-black text-sm shadow-2xs ${
+                                                            selectedCategory.prelim_all_done
+                                                                ? 'bg-emerald-600 text-white'
+                                                                : 'bg-slate-300 text-slate-700'
+                                                        }`}>
+                                                            <i className={`fa-solid ${selectedCategory.prelim_all_done ? 'fa-circle-check' : 'fa-hourglass-half'}`} />
                                                         </span>
                                                         <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <h3 className="font-black text-slate-900 text-sm sm:text-base">Babak Penyisihan</h3>
-                                                                <Badge variant="blue">{matchesPenyisihan.length} Partai</Badge>
-                                                            </div>
-                                                            <p className="text-[11px] text-slate-600 mt-0.5">
-                                                                Partai babak penyisihan untuk menentukan ranking dan kontingen yang lolos ke babak final.
+                                                            <h4 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                                                                Kunci & Loloskan Peserta ke Babak Final
+                                                                {selectedCategory.prelim_all_done ? (
+                                                                    <Badge variant="green" size="xs">Penyisihan Lengkap</Badge>
+                                                                ) : (
+                                                                    <Badge variant="gray" size="xs">Penyisihan Berjalan</Badge>
+                                                                )}
+                                                            </h4>
+                                                            <p className="text-xs text-slate-600 mt-0.5">
+                                                                {selectedCategory.prelim_all_done
+                                                                    ? selectedCategory.has_placeholders
+                                                                        ? 'Semua pool penyisihan telah dinilai lengkap. Klik tombol di samping untuk mengunci ranking dan memasukkan atlet yang lolos ke slot Babak Final.'
+                                                                        : 'Peserta babak final telah berhasil diloloskan dari klasemen penyisihan.'
+                                                                    : `Menunggu penyisihan selesai (${matchesPenyisihan.filter(m => m.status === 'completed').length}/${matchesPenyisihan.length} partai dinilai).`}
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <span className="text-xs font-bold text-blue-900 self-start sm:self-center">
-                                                        Progres: {matchesPenyisihan.filter((m) => m.status === 'completed').length}/{matchesPenyisihan.length} Selesai
-                                                    </span>
+
+                                                    {selectedCategory.can_advance_finalists && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant={selectedCategory.prelim_all_done ? 'gold' : 'outline'}
+                                                            onClick={handleAdvanceFinalists}
+                                                            disabled={selectedCategory.is_locked || !selectedCategory.prelim_all_done}
+                                                            iconLeft={<i className="fa-solid fa-bolt" />}
+                                                            className="shrink-0 font-black"
+                                                        >
+                                                            Kunci & Loloskan ke Babak Final
+                                                        </Button>
+                                                    )}
                                                 </div>
-                                                <MatchSectionTable
-                                                    matches={matchesPenyisihan}
-                                                    activeEvent={activeEvent}
-                                                    isLocked={selectedCategory.is_locked}
-                                                />
                                             </div>
                                         )}
 
-                                        {/* SEKSI 2: BABAK FINAL + TOMBOL GENERATE FINALIS DARI KLASEMEN */}
+                                        {/* PANEL TIE-BREAK PARAMETER 5 BABAK FINAL */}
+                                        {finalTies.length > 0 && (
+                                            <EmbuTiebreakPanel
+                                                ties={finalTies}
+                                                isArbitration={false}
+                                            />
+                                        )}
+
+                                        {/* SEKSI 2: BABAK FINAL + TOMBOL SIMPAN & KUNCI JUARA */}
                                         {(matchesFinal.length > 0 || selectedCategory.can_advance_finalists) && (
                                             <div className="overflow-hidden rounded-2xl border border-amber-300 bg-white shadow-xs">
                                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/40 p-4">
@@ -1105,38 +1458,34 @@ export default function PaniteraDashboard({
                                                             <div className="flex items-center gap-2">
                                                                 <h3 className="font-black text-slate-900 text-sm sm:text-base">Babak Final</h3>
                                                                 <Badge variant="gold">{matchesFinal.length} Partai</Badge>
+                                                                {matchesFinal.length > 0 && matchesFinal.every((m) => m.status === 'completed') && (
+                                                                    <Badge variant="green">Final Tuntas</Badge>
+                                                                )}
                                                             </div>
                                                             <p className="text-[11px] text-slate-600 mt-0.5">
-                                                                Partai perebutan gelar juara dan medali. Nilai final akan diakumulasi dengan penyisihan.
+                                                                Partai perebutan gelar juara dan medali. Nilai akumulasi (Penyisihan + Final) dievaluasi dengan 5 Parameter PB PERKEMI.
                                                             </p>
                                                         </div>
                                                     </div>
 
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        {selectedCategory.can_advance_finalists && (
+                                                        {matchesFinal.length > 0 && matchesFinal.every((m) => m.status === 'completed') && !selectedCategory.is_locked && (
                                                             <Button
                                                                 size="sm"
                                                                 variant="gold"
-                                                                onClick={handleAdvanceFinalists}
-                                                                disabled={selectedCategory.is_locked || !selectedCategory.prelim_all_done}
-                                                                iconLeft={<i className="fa-solid fa-bolt" />}
-                                                                title={
-                                                                    selectedCategory.is_locked
-                                                                        ? 'Nomor pertandingan telah dikunci.'
-                                                                        : !selectedCategory.prelim_all_done
-                                                                            ? 'Selesaikan seluruh partai babak penyisihan terlebih dahulu untuk menentukan finalis.'
-                                                                            : 'Klik untuk mengisi slot partai final secara otomatis dari hasil klasemen penyisihan'
-                                                                }
+                                                                onClick={handleConfirmChampions}
+                                                                iconLeft={<i className="fa-solid fa-crown" />}
+                                                                className="font-black shadow-xs"
                                                             >
-                                                                Generate Finalis dari Klasemen
+                                                                Simpan & Kunci Juara
                                                             </Button>
                                                         )}
                                                         <Link
-                                                            href={`/admin/panitera/scoring/embu-result?event_id=${encodeURIComponent(activeEvent.id)}&category=${encodeURIComponent(selectedCategory.id)}`}
+                                                            href={`/admin/panitera/scoring/champions?category=${selectedCategory.id}&event_id=${encodeURIComponent(activeEvent.id)}`}
                                                             className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-50 transition shadow-2xs"
                                                         >
-                                                            <i className="fa-solid fa-ranking-star text-[11px]" />
-                                                            Rekap Klasemen
+                                                            <i className="fa-solid fa-medal text-[11px]" />
+                                                            Buku Juara
                                                         </Link>
                                                     </div>
                                                 </div>
@@ -1152,6 +1501,25 @@ export default function PaniteraDashboard({
                                                                 ✓ Babak penyisihan selesai. Siap di-generate!
                                                             </span>
                                                         )}
+                                                    </div>
+                                                )}
+
+                                                {/* TABEL KLASEMEN HASIL BABAK FINAL */}
+                                                {embuData?.final_rankings && embuData.final_rankings.length > 0 && (
+                                                    <div className="border-b border-amber-100">
+                                                        <div className="px-4 py-2 bg-amber-50/60 border-b border-amber-200/60 flex items-center justify-between text-xs font-bold text-amber-950">
+                                                            <span className="flex items-center gap-1.5">
+                                                                <i className="fa-solid fa-trophy text-amber-600" />
+                                                                Klasemen Akhir & Peringkat Podium Juara (5 Parameter PB PERKEMI)
+                                                            </span>
+                                                            <span className="text-[11px] font-normal text-amber-800">
+                                                                Akumulasi = Nilai Penyisihan + Nilai Final
+                                                            </span>
+                                                        </div>
+                                                        <EmbuPoolStandingTable
+                                                            standings={embuData.final_rankings}
+                                                            isFinal={true}
+                                                        />
                                                     </div>
                                                 )}
 
@@ -1176,7 +1544,7 @@ export default function PaniteraDashboard({
                                                 />
                                             </div>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         )}

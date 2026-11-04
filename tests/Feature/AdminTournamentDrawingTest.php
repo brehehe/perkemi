@@ -307,3 +307,42 @@ test('drawing matches include aka and shiro contingent names', function () {
             ->where('matches.0.aka_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda'))
             ->where('matches.0.shiro_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda')));
 });
+
+test('admin can download tournament schedule and capacity report as pdf directly', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Event Laporan Jadwal',
+        'slug' => 'event-laporan-jadwal',
+        'venue' => 'GOR Pertandingan',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    // Direct visit downloads PDF directly
+    $response = $this->actingAs($admin)
+        ->get(route('admin.pertandingan.drawing.report', ['event_id' => $event->id]));
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+
+    expect($response->headers->get('content-disposition'))->toContain('attachment; filename=Laporan_Jadwal_Kapasitas_');
+
+    // With ?format=html renders web HTML view
+    $this->actingAs($admin)
+        ->get(route('admin.pertandingan.drawing.report', ['event_id' => $event->id, 'format' => 'html']))
+        ->assertOk()
+        ->assertViewIs('reports.tournament-schedule-capacity')
+        ->assertViewHas('capacityStats');
+
+    // With ?stream=1 streams inline PDF
+    $streamResponse = $this->actingAs($admin)
+        ->get(route('admin.pertandingan.drawing.report', ['event_id' => $event->id, 'stream' => 1]));
+
+    $streamResponse->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+    expect($streamResponse->headers->get('content-disposition'))->toContain('inline; filename=Laporan_Jadwal_Kapasitas_');
+});

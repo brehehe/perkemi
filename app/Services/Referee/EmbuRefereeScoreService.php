@@ -102,6 +102,15 @@ class EmbuRefereeScoreService
                 ? 'submitted'
                 : 'draft';
 
+            $existingScore = EmbuJudgeScore::query()
+                ->where('tournament_match_id', $lockedMatch->id)
+                ->where('tiebreak_round', 0)
+                ->where('judge_number', $role->judgeNumber())
+                ->first();
+
+            $effectiveSignature = $signature ?: $existingScore?->signature;
+            $isSigned = filled($effectiveSignature);
+
             $judgeScore = EmbuJudgeScore::query()->updateOrCreate(
                 [
                     'tournament_match_id' => $lockedMatch->id,
@@ -122,10 +131,10 @@ class EmbuRefereeScoreService
                     'violation_penalties' => $normalizedPenalties,
                     'violation_penalty' => $violationPenalty,
                     'status' => $resolvedStatus,
-                    'signature' => $signature,
-                    'notes' => $notes,
-                    'signed_at' => $resolvedStatus === 'submitted' ? now() : null,
-                    'submitted_at' => $resolvedStatus === 'submitted' ? now() : null,
+                    'signature' => $effectiveSignature,
+                    'notes' => $notes ?? $existingScore?->notes,
+                    'signed_at' => $isSigned ? ($existingScore?->signed_at ?? now()) : ($resolvedStatus === 'submitted' ? now() : null),
+                    'submitted_at' => $resolvedStatus === 'submitted' ? ($existingScore?->submitted_at ?? now()) : null,
                 ],
             );
 
@@ -153,6 +162,7 @@ class EmbuRefereeScoreService
             violationPenalty: (float) $score->violation_penalty,
             status: $score->status,
             updatedAt: $score->updated_at->toIso8601String(),
+            isSigned: filled($score->signature) || $score->signed_at !== null,
         );
 
         return $score;

@@ -8,8 +8,9 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import FlashMessage from './Partials/FlashMessage';
 import CourtMonitorLinks from './Partials/CourtMonitorLinks';
 import PaniteraHeader from './Partials/PaniteraHeader';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const formatScore = (value) => value === null || value === undefined ? '—' : Number(value).toFixed(2);
 
@@ -53,36 +54,81 @@ function RankingTable({ rows, quota = null, onScore, canManage, canInputScore = 
             <table className="responsive-data-table responsive-data-table--cards min-w-full text-left text-xs">
                 <thead className="bg-[#f7f4ef] text-[10px] uppercase tracking-wide text-[#7a746e]">
                     <tr>
-                        <th className="px-4 py-3">Peringkat</th>
-                        <th className="px-4 py-3">Peserta / Kontingen</th>
-                        <th className="px-4 py-3">Court & Jadwal</th>
-                        <th className="px-4 py-3">Nilai Wasit</th>
-                        <th className="px-4 py-3">Denda</th>
-                        <th className="px-4 py-3">{final ? 'Akumulasi' : 'Nilai Akhir'}</th>
-                        {canInputScore && <th className="px-4 py-3 text-right">Aksi</th>}
+                        <th className="px-3.5 py-3">Peringkat</th>
+                        <th className="px-3.5 py-3">Peserta / Kontingen</th>
+                        <th className="px-3.5 py-3">Nilai Wasit</th>
+                        <th className="px-3.5 py-3">{final ? 'P1: Akumulasi' : 'P1: Nilai Akhir'}</th>
+                        <th className="px-3.5 py-3">P2: Teknik 3 Wasit</th>
+                        <th className="px-3.5 py-3">P3: W1 Total</th>
+                        <th className="px-3.5 py-3">P4: W1 Teknik</th>
+                        <th className="px-3.5 py-3">Status</th>
+                        {canInputScore && <th className="px-3.5 py-3 text-right">Aksi</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ede9e1]">
                     {rows.map((row, index) => {
                         const qualified = quota && quota !== 999 && index < quota;
+                        const middleJudges = row.middle_judge_numbers?.length ? `W${row.middle_judge_numbers.join(', W')}` : '3 Wasit';
+                        const p2Technique = final ? (row.final_middle_technique_sum ?? row.middle_technique_sum) : (row.param2_technique ?? row.middle_technique_sum);
+                        const p3ChiefTotal = final ? (row.final_chief_judge_total ?? row.chief_judge_total) : (row.param3_chief_total ?? row.chief_judge_total);
+                        const p4ChiefTechnique = final ? (row.final_chief_judge_technique ?? row.chief_judge_technique) : (row.param4_chief_technique ?? row.chief_judge_technique);
+
                         return (
                             <tr key={row.match_id} className={qualified ? 'bg-emerald-50/40' : ''}>
-                                <td data-label="Peringkat" className="whitespace-nowrap px-4 py-3">
-                                    <span className="text-base font-black">#{index + 1}</span>
-                                    {qualified && <Badge variant="green" size="sm" className="ml-2">Tiket Final</Badge>}
-                                    {row.manual_tiebreak_winner && <Badge variant="gold" size="sm" className="ml-2">Unggul Skenario E</Badge>}
+                                <td data-label="Peringkat" className="whitespace-nowrap px-3.5 py-3">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-base font-black">#{index + 1}</span>
+                                        {final && index === 0 && <span className="text-[11px] font-bold text-amber-700">🥇</span>}
+                                        {final && index === 1 && <span className="text-[11px] font-bold text-slate-600">🥈</span>}
+                                        {final && (index === 2 || index === 3) && <span className="text-[11px] font-bold text-orange-700">🥉</span>}
+                                    </div>
                                 </td>
-                                <td data-label="Peserta / Kontingen" className="min-w-64 px-4 py-3"><p className="font-bold text-[#17120f]">{row.participant_label}</p><p className="mt-0.5 text-[#7a746e]">{row.metadata?.members?.join(', ') || row.metadata?.contingent_name || 'Data peserta'}</p></td>
-                                <td data-label="Court & Jadwal" className="min-w-40 px-4 py-3"><p className="font-semibold text-[#17120f]">{row.court || 'Belum diplot'}</p><p className="mt-0.5 text-[#7a746e]">{row.scheduled_at || 'Belum dijadwalkan'}</p></td>
-                                <td data-label="Nilai Wasit" className="min-w-80 px-4 py-3"><JudgeScores score={row.score} /></td>
-                                <td data-label="Denda" className="whitespace-nowrap px-4 py-3 font-semibold text-rose-700">{row.score ? `-${formatScore(row.score.total_penalty ?? row.score.time_penalty)}` : '—'}</td>
-                                <td data-label={final ? 'Akumulasi' : 'Nilai Akhir'} className="whitespace-nowrap px-4 py-3">
+                                <td data-label="Peserta / Kontingen" className="min-w-56 px-3.5 py-3">
+                                    <p className="font-bold text-[#17120f]">{row.participant_label}</p>
+                                    <p className="mt-0.5 text-[#7a746e] text-[11px]">{row.metadata?.members?.join(', ') || row.metadata?.contingent_name || 'Data peserta'}</p>
+                                    <p className="mt-0.5 text-[10px] text-slate-400">{row.court || 'Court belum diplot'} · {row.scheduled_at || 'Jadwal belum ditentukan'}</p>
+                                </td>
+                                <td data-label="Nilai Wasit" className="min-w-64 px-3.5 py-3">
+                                    <JudgeScores score={row.score} />
+                                    {row.score && Number(row.score.total_penalty ?? row.score.time_penalty ?? 0) > 0 && (
+                                        <span className="mt-1 inline-block text-[10px] font-semibold text-rose-700">
+                                            Denda -{formatScore(row.score.total_penalty ?? row.score.time_penalty)}
+                                        </span>
+                                    )}
+                                </td>
+                                <td data-label={final ? 'P1: Akumulasi' : 'P1: Nilai Akhir'} className="whitespace-nowrap px-3.5 py-3">
                                     {final ? (
-                                        <div><p className="text-[11px] text-[#7a746e]">P {formatScore(row.preliminary_score)} + F {formatScore(row.final_round_score)}</p><p className="mt-0.5 text-lg font-black text-[#9a6b20]">{formatScore(row.total_score)}</p></div>
-                                    ) : <span className="text-lg font-black text-[#9a6b20]">{formatScore(row.score?.final_score)}</span>}
+                                        <div>
+                                            <p className="font-mono text-base font-black text-[#9a6b20]">{formatScore(row.total_score)}</p>
+                                            <p className="text-[10px] text-[#7a746e]">P:{formatScore(row.preliminary_score)} + F:{formatScore(row.final_round_score)}</p>
+                                        </div>
+                                    ) : (
+                                        <span className="font-mono text-base font-black text-[#9a6b20]">{formatScore(row.score?.final_score)}</span>
+                                    )}
+                                </td>
+                                <td data-label="P2: Teknik 3 Wasit" className="whitespace-nowrap px-3.5 py-3">
+                                    <span className="font-mono text-xs font-bold text-slate-800">{formatScore(p2Technique)}</span>
+                                    <span className="block text-[9px] text-slate-400">{middleJudges}</span>
+                                </td>
+                                <td data-label="P3: W1 Total" className="whitespace-nowrap px-3.5 py-3 font-mono text-xs font-semibold text-slate-700">
+                                    {formatScore(p3ChiefTotal)}
+                                </td>
+                                <td data-label="P4: W1 Teknik" className="whitespace-nowrap px-3.5 py-3 font-mono text-xs font-semibold text-slate-700">
+                                    {formatScore(p4ChiefTechnique)}
+                                </td>
+                                <td data-label="Status" className="whitespace-nowrap px-3.5 py-3">
+                                    {qualified && <Badge variant="green" size="sm">Tiket Final</Badge>}
+                                    {row.manual_tiebreak_winner && (
+                                        <Badge variant="gold" size="sm" className="ml-1">
+                                            P5: Wasit/Arbitrase
+                                        </Badge>
+                                    )}
+                                    {!qualified && !row.manual_tiebreak_winner && (
+                                        <span className="text-[11px] text-slate-400">{row.score ? 'Selesai' : 'Menunggu'}</span>
+                                    )}
                                 </td>
                                 {canInputScore && (
-                                    <td data-label="Aksi" className="whitespace-nowrap px-4 py-3 text-right">
+                                    <td data-label="Aksi" className="whitespace-nowrap px-3.5 py-3 text-right">
                                         {row.score ? (
                                             canOverrideScore && (
                                                 <Button
@@ -110,7 +156,7 @@ function RankingTable({ rows, quota = null, onScore, canManage, canInputScore = 
                             </tr>
                         );
                     })}
-                    {rows.length === 0 && <tr><td colSpan={canInputScore ? 7 : 6} className="px-4 py-10 text-center text-[#7a746e]">Belum ada peserta pada babak ini.</td></tr>}
+                    {rows.length === 0 && <tr><td colSpan={canInputScore ? 9 : 8} className="px-4 py-10 text-center text-[#7a746e]">Belum ada peserta pada babak ini.</td></tr>}
                 </tbody>
             </table>
         </TableContainer>
@@ -127,6 +173,7 @@ export default function EmbuResult({
     preliminaryRankings = {},
     finalRankings = [],
     boundaryTies = [],
+    activeTies = [],
     quotaPerPool,
     hasTopFourTie = false,
     champions = [],
@@ -139,6 +186,12 @@ export default function EmbuResult({
 }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [selectedMatch, setSelectedMatch] = useState(null);
+    const preliminaryTies = useMemo(() => {
+        return (activeTies || []).filter((t) => t.phase === 'preliminary');
+    }, [activeTies]);
+    const finalTies = useMemo(() => {
+        return (activeTies || []).filter((t) => t.phase === 'final');
+    }, [activeTies]);
     const focusHandled = useRef(false);
     const category = categories.find((item) => item.id === selectedCategory);
     const form = useForm({ event_id: activeEvent.id, judge_scores: ['', '', '', '', ''], duration_seconds: '', penalty_override: '', tiebreak_round: 0, notes: '', return_to_match: Boolean(focusMatchId) });
@@ -190,6 +243,46 @@ export default function EmbuResult({
             tied_match_id: tiedMatchId,
         }, { preserveScroll: true });
     };
+
+    // Sinkronisasi Real-Time (Reverb / Echo) untuk tie-break Embu
+    useEffect(() => {
+        if (!window.Echo || !activeEvent?.id) return undefined;
+
+        const channelName = `event.${activeEvent.id}`;
+        const eventChannel = window.Echo.private(channelName);
+        const handleTiebreakUpdate = (event) => {
+            if (event.event_id !== activeEvent.id) return;
+            router.reload({
+                only: ['preliminaryRankings', 'finalRankings', 'activeTies', 'boundaryTies', 'champions', 'flash'],
+                preserveScroll: true,
+                preserveState: false,
+            });
+        };
+
+        eventChannel.listen('.embu.tiebreak.updated', handleTiebreakUpdate);
+
+        return () => {
+            window.Echo.leave(channelName);
+        };
+    }, [activeEvent?.id]);
+
+    // Polling fallback jika ada kasus tie-break aktif
+    useEffect(() => {
+        if (!activeTies || activeTies.length === 0) return undefined;
+
+        const interval = window.setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                router.reload({
+                    only: ['preliminaryRankings', 'finalRankings', 'activeTies', 'boundaryTies', 'champions'],
+                    preserveScroll: true,
+                    preserveState: true,
+                });
+            }
+        }, 5000);
+
+        return () => window.clearInterval(interval);
+    }, [activeTies?.length]);
+
     const selectedCategoryData = categories.find((category) => category.id === selectedCategory);
     const requiredChampionCount = Math.min(4, selectedCategoryData?.participant_count || 4);
 
@@ -393,6 +486,13 @@ export default function EmbuResult({
                             </div>
                         )}
 
+                        {preliminaryTies.length > 0 && (
+                            <EmbuTiebreakPanel
+                                ties={preliminaryTies}
+                                isArbitration={false}
+                            />
+                        )}
+
                         {Object.entries(preliminaryRankings).map(([pool, rows]) => (
                             <section key={pool} className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
                                 <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">Klasemen Penyisihan · Pool {pool}</h2><p className="mt-0.5 text-xs text-[#7a746e]">Urutan tie-break PB Perkemi: Nilai Akhir (A), Wasit 1 (B), Total Juri (C), Wasit 2 (D), Keputusan Manual (E).</p></div><Badge variant="blue" className="w-fit">{quotaPerPool === 999 ? 'Final langsung' : `${quotaPerPool} lolos`}</Badge></div>
@@ -402,6 +502,13 @@ export default function EmbuResult({
 
                         {canManage && category?.format !== 'embu_direct_final' && (
                             <div className="flex justify-end"><Button className="w-full sm:w-auto" onClick={advanceFinalists} disabled={boundaryTies.length > 0} iconLeft={<i className="fa-solid fa-arrow-right" />}>Generate Finalis dari Klasemen</Button></div>
+                        )}
+
+                        {finalTies.length > 0 && (
+                            <EmbuTiebreakPanel
+                                ties={finalTies}
+                                isArbitration={false}
+                            />
                         )}
 
                         <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">

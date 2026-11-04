@@ -5,9 +5,10 @@ namespace App\Events;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 
-class RandoriScoreStateUpdated implements ShouldBroadcastNow, ShouldRescue
+class RandoriScoreStateUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

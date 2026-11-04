@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\SafeEncrypted;
 use App\Enums\RegistrationStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -72,6 +73,8 @@ class Athlete extends Model
             'weight' => 'decimal:2',
             'height' => 'decimal:2',
             'deleted_at' => 'datetime',
+            'home_address' => SafeEncrypted::class,
+            'bpjs_number' => SafeEncrypted::class,
         ];
     }
 

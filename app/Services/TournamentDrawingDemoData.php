@@ -185,6 +185,7 @@ class TournamentDrawingDemoData
                 ->count();
             $drawingCount = $event->tournamentDrawings()->count();
 
+            $event->tournamentMatches()->delete();
             $event->tournamentDrawings()->delete();
             $contingents->each->forceDelete();
             $users->each->forceDelete();

@@ -539,3 +539,94 @@ test('completed matches cannot be rescheduled to preserve match score integrity'
 
     expect($fixture['match']->fresh()->event_court_id)->toBe($fixture['court']->id);
 });
+
+test('admin can swap two matches within the same category without sequence order violation', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'same-category-swap');
+
+    // Create match #1 at 08:00 and match #2 at 08:10 in the same round/phase
+    $fixture['match']->update([
+        'scheduled_start_at' => '2026-11-07 08:00:00',
+        'scheduled_end_at' => '2026-11-07 08:10:00',
+        'round_label' => 'Final',
+        'phase' => 'final',
+        'match_sequence' => 1,
+    ]);
+
+    $match2 = TournamentMatch::create([
+        'tournament_drawing_id' => $fixture['drawing']->id,
+        'event_id' => $fixture['event']->id,
+        'event_match_category_id' => $fixture['category']->id,
+        'event_court_id' => $fixture['court']->id,
+        'rundown_id' => $fixture['session']->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 2,
+        'bracket_position' => 2,
+        'red_label' => 'Atlet Merah 2',
+        'blue_label' => 'Atlet Biru 2',
+        'scheduled_start_at' => '2026-11-07 08:10:00',
+        'scheduled_end_at' => '2026-11-07 08:20:00',
+        'status' => 'pending',
+        'is_bye' => false,
+        'metadata' => ['athlete_ids' => []],
+    ]);
+
+    // Swap Match 2 (08:10) with Match 1 (08:00)
+    $this->actingAs($user)
+        ->put('/admin/pertandingan/jadwal/matches/'.$match2->id, [
+            'event_id' => $fixture['event']->id,
+            'event_court_id' => $fixture['court']->id,
+            'rundown_id' => $fixture['session']->id,
+            'start_time' => '08:00',
+            'swap_with_match_id' => $fixture['match']->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success', 'Dua partai berhasil ditukar. Partai lainnya tidak berubah.');
+
+    expect($match2->fresh()->scheduled_start_at->format('H:i'))->toBe('08:00')
+        ->and($fixture['match']->fresh()->scheduled_start_at->format('H:i'))->toBe('08:10');
+});
+
+test('admin can export match schedule as pdf directly', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'pdf-export');
+
+    // Direct visit downloads PDF
+    $response = $this->actingAs($user)
+        ->get('/admin/pertandingan/jadwal/pdf?event_id='.$fixture['event']->id);
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+
+    expect($response->headers->get('content-disposition'))->toContain('attachment; filename=Jadwal_Pertandingan_');
+
+    // With ?format=html renders web HTML view
+    $this->actingAs($user)
+        ->get('/admin/pertandingan/jadwal/pdf?event_id='.$fixture['event']->id.'&format=html')
+        ->assertOk()
+        ->assertViewIs('reports.tournament-schedule-matches')
+        ->assertViewHas('matches');
+
+    // With ?stream=1 streams inline PDF
+    $streamResponse = $this->actingAs($user)
+        ->get('/admin/pertandingan/jadwal/pdf?event_id='.$fixture['event']->id.'&stream=1');
+
+    $streamResponse->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+    expect($streamResponse->headers->get('content-disposition'))->toContain('inline; filename=Jadwal_Pertandingan_');
+});
+
+test('admin can trigger automatic match schedule generation from schedule page', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'generate-sched');
+
+    $this->actingAs($user)
+        ->post('/admin/pertandingan/jadwal/generate', [
+            'event_id' => $fixture['event']->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+});

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin\Panitera;
 
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\EventCourtAssignment;
 use App\Models\TournamentMatch;
+use App\Services\EmbuParticipantDetails;
 use App\Services\Panitera\EmbuPenaltyCatalog;
 use App\Services\Panitera\EmbuPenaltyState;
 use App\Services\Panitera\EventContext;
@@ -30,6 +32,7 @@ class PaniteraMatchController extends Controller
         RandoriScoreDraftStore $randoriDrafts,
         EmbuPenaltyCatalog $penaltyCatalog,
         EmbuPenaltyState $penaltyState,
+        EmbuParticipantDetails $participantDetails,
     ): Response {
         $event = $eventContext->eventFor($request);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
@@ -111,7 +114,7 @@ class PaniteraMatchController extends Controller
                         ? $penaltyCatalog->summaries($sharedPenaltyState['values'], (string) $tournamentMatch->matchCategory?->name)
                         : [],
                     'status' => $score?->status ?? 'waiting',
-                    'is_signed' => $score?->signed_at !== null,
+                    'is_signed' => filled($score?->signature) || $score?->signed_at !== null,
                     'notes' => $score?->notes,
                     'updated_at' => $score?->updated_at?->translatedFormat('H:i:s'),
                 ];
@@ -154,7 +157,7 @@ class PaniteraMatchController extends Controller
         return Inertia::render('Admin/Panitera/MatchDetail', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date', 'tts_announcer_enabled']),
             'events' => $eventContext->accessibleEvents($request),
-            'match' => $this->matchData($tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState),
+            'match' => $this->matchData($event, $tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState, $participantDetails),
             'staff' => $staff,
             'judgeProgress' => $judgeProgress,
             'nextMatch' => $nextMatch ? [
@@ -185,10 +188,12 @@ class PaniteraMatchController extends Controller
 
     /** @return array<string, mixed> */
     private function matchData(
+        Event $event,
         TournamentMatch $match,
         RandoriScoreDraftStore $randoriDrafts,
         EmbuPenaltyCatalog $penaltyCatalog,
         EmbuPenaltyState $penaltyState,
+        EmbuParticipantDetails $participantDetails,
     ): array {
         $type = $match->matchCategory?->type;
         $embuScore = $match->embuScores->first();
@@ -223,6 +228,7 @@ class PaniteraMatchController extends Controller
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
             'scheduled_end_at' => $match->scheduled_end_at?->translatedFormat('H:i'),
             'participant_label' => $match->participant_label,
+            'participant' => $type === 'embu' ? $participantDetails->forMatch($event, $match) : null,
             'aka_label' => $match->red_label,
             'shiro_label' => $match->blue_label,
             'status' => $match->status,

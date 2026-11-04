@@ -993,6 +993,17 @@ class RegistrationController extends Controller
                 ->get()
                 ->keyBy('id');
 
+            // Pre-load all current entries for contingent athletes to eliminate N+1 queries
+            $existingEntries = AthleteMatchCategoryEntry::query()
+                ->whereBelongsTo($event)
+                ->whereIn('athlete_id', $athletes->keys())
+                ->get(['id', 'athlete_id', 'event_match_category_id']);
+
+            $athleteEntriesMap = [];
+            foreach ($existingEntries as $entry) {
+                $athleteEntriesMap[$entry->athlete_id][$entry->event_match_category_id] = true;
+            }
+
             foreach ($categories as $category) {
                 // If specific athlete was chosen for this category:
                 $assignedAthleteId = $assignments->get($category->id);
@@ -1000,20 +1011,12 @@ class RegistrationController extends Controller
 
                 // Auto-match an available athlete from contingent if not explicitly assigned
                 if (! $targetAthlete) {
-                    $targetAthlete = $athletes->first(function (Athlete $athlete) use ($category, $event) {
-                        $alreadyEntered = AthleteMatchCategoryEntry::query()
-                            ->where('athlete_id', $athlete->id)
-                            ->where('event_match_category_id', $category->id)
-                            ->exists();
-
-                        if ($alreadyEntered) {
+                    $targetAthlete = $athletes->first(function (Athlete $athlete) use ($category, $event, &$athleteEntriesMap) {
+                        if (! empty($athleteEntriesMap[$athlete->id][$category->id])) {
                             return false;
                         }
 
-                        $currentCount = AthleteMatchCategoryEntry::query()
-                            ->whereBelongsTo($event)
-                            ->where('athlete_id', $athlete->id)
-                            ->count();
+                        $currentCount = isset($athleteEntriesMap[$athlete->id]) ? count($athleteEntriesMap[$athlete->id]) : 0;
 
                         if ($event->max_match_categories_per_athlete && $currentCount >= $event->max_match_categories_per_athlete) {
                             return false;
@@ -1042,18 +1045,14 @@ class RegistrationController extends Controller
                     $athletes->put($targetAthlete->id, $targetAthlete);
                 }
 
-                $alreadyIn = AthleteMatchCategoryEntry::query()
-                    ->where('athlete_id', $targetAthlete->id)
-                    ->where('event_match_category_id', $category->id)
-                    ->exists();
-
-                if (! $alreadyIn) {
+                if (empty($athleteEntriesMap[$targetAthlete->id][$category->id])) {
                     AthleteMatchCategoryEntry::create([
                         'event_id' => $event->id,
                         'athlete_id' => $targetAthlete->id,
                         'event_match_category_id' => $category->id,
                         'team_number' => 1,
                     ]);
+                    $athleteEntriesMap[$targetAthlete->id][$category->id] = true;
                 }
             }
 
