@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Athlete;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
@@ -9,6 +10,7 @@ use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
@@ -716,4 +718,76 @@ test('admin can move matches freely without embu before randori validation block
         ->assertSessionHas('success');
 
     expect($embuMatch->fresh()->scheduled_start_at->format('H:i'))->toBe('08:30');
+});
+
+test('admin can move or swap matches without 15-minute rest validation blocking manual adjustments', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'athlete-rest-move');
+    $athleteId = (string) Str::uuid();
+
+    // Match 1: Randori at 08:00 - 08:10 on Court 1 with Athlete
+    $fixture['match']->update([
+        'scheduled_start_at' => '2026-11-07 08:00:00',
+        'scheduled_end_at' => '2026-11-07 08:10:00',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 1,
+        'metadata' => ['athlete_ids' => [$athleteId]],
+    ]);
+
+    // Create a second court
+    $court2 = EventCourt::create([
+        'event_id' => $fixture['event']->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    // Match 2: Embu on Court 2 at 08:30 - 08:40 with the SAME Athlete
+    $embuCategory = EventMatchCategory::create([
+        'event_id' => $fixture['event']->id,
+        'name' => 'Embu Tandoku Putri',
+        'type' => 'embu',
+        'gender' => 'female',
+        'capacity' => 16,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $embuDrawing = TournamentDrawing::create([
+        'event_id' => $fixture['event']->id,
+        'event_match_category_id' => $embuCategory->id,
+        'status' => 'generated',
+        'bracket_type' => 'single_elimination',
+    ]);
+    $embuMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $fixture['event']->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $court2->id,
+        'rundown_id' => $fixture['session']->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Pool A',
+        'match_sequence' => 1,
+        'bracket_position' => 1,
+        'red_label' => 'Atlet Embu 1',
+        'scheduled_start_at' => '2026-11-07 08:30:00',
+        'scheduled_end_at' => '2026-11-07 08:40:00',
+        'status' => 'pending',
+        'is_bye' => false,
+        'metadata' => ['athlete_ids' => [$athleteId]],
+    ]);
+
+    // Move Match 2 to 08:20 on Court 2 (only 10 minutes after Match 1 ends at 08:10, less than 15 mins rest).
+    // Previously, this threw "Atlet memerlukan jeda minimal 15 menit dari partai lainnya."
+    $this->actingAs($user)
+        ->put('/admin/pertandingan/jadwal/matches/'.$embuMatch->id, [
+            'event_id' => $fixture['event']->id,
+            'event_court_id' => $court2->id,
+            'rundown_id' => $fixture['session']->id,
+            'start_time' => '08:20',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    expect($embuMatch->fresh()->scheduled_start_at->format('H:i'))->toBe('08:20');
 });

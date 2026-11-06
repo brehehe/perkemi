@@ -34,7 +34,9 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -342,7 +344,9 @@ class EventDetailController extends Controller
             $validated = $request->validate([
                 'create_new' => ['boolean'],
                 'name' => ['required', 'string', 'max:150'],
+                'gender' => ['nullable', 'in:male,female'],
                 'dan_grade' => ['nullable', 'string', 'max:50'],
+                'certification_level' => ['nullable', 'string', 'max:100'],
                 'license_number' => ['nullable', 'string', 'max:100', 'unique:referees,license_number'],
                 'region' => ['nullable', 'string', 'max:100'],
                 'phone' => ['nullable', 'string', 'max:50'],
@@ -353,8 +357,9 @@ class EventDetailController extends Controller
 
             $referee = Referee::create([
                 'name' => $validated['name'],
-                'gender' => 'male',
+                'gender' => $validated['gender'] ?? 'male',
                 'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
                 'license_number' => $validated['license_number'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -391,6 +396,79 @@ class EventDetailController extends Controller
         }
 
         return back()->with('success', "Wasit '{$referee->name}' berhasil ditugaskan ke event.");
+    }
+
+    public function updateEventReferee(
+        Request $request,
+        Event $event,
+        Referee $referee,
+        SyncLoginAccountAction $syncLoginAccount,
+    ): RedirectResponse {
+        $roleRules = ['required', 'in:chief,referee,judge,reserve'];
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'gender' => ['nullable', 'in:male,female'],
+            'dan_grade' => ['nullable', 'string', 'max:50'],
+            'certification_level' => ['nullable', 'string', 'max:100'],
+            'license_number' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('referees', 'license_number')->ignore($referee->id),
+            ],
+            'region' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:150'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
+            'role' => $roleRules,
+        ]);
+
+        $password = $validated['password'] ?? null;
+
+        DB::transaction(function () use ($event, $referee, $validated, $password, $syncLoginAccount): void {
+            $referee->update([
+                'name' => $validated['name'],
+                'gender' => $validated['gender'] ?? $referee->gender ?? 'male',
+                'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
+                'license_number' => $validated['license_number'] ?? null,
+                'region' => $validated['region'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+            ]);
+
+            $user = $syncLoginAccount->execute(
+                $referee->name,
+                $referee->email,
+                $password,
+                'Wasit',
+                $referee->user,
+                phone: $referee->phone,
+            );
+
+            if ($user && Referee::query()->where('user_id', $user->id)->whereKeyNot($referee->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'email' => 'Email login tersebut sudah terhubung ke wasit lain.',
+                ]);
+            }
+
+            if ($user && $referee->user_id !== $user->id) {
+                $referee->update(['user_id' => $user->id]);
+            }
+
+            $event->referees()->updateExistingPivot($referee->id, [
+                'role' => $validated['role'],
+            ]);
+
+            if ($referee->user) {
+                $event->users()->syncWithoutDetaching([
+                    $referee->user->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
+            }
+        });
+
+        return back()->with('success', "Data wasit '{$referee->name}' berhasil diperbarui.");
     }
 
     public function destroyEventReferee(Event $event, Referee $referee): RedirectResponse

@@ -160,6 +160,7 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::get('event/{event}/referee-import/template', [EventRefereeImportController::class, 'template'])->name('event.referee-import.template');
     Route::post('event/{event}/referee-import', [EventRefereeImportController::class, 'store'])->name('event.referee-import.store');
     Route::post('event/{event}/referee', [EventDetailController::class, 'storeEventReferee'])->name('event.referee.store');
+    Route::put('event/{event}/referee/{referee}', [EventDetailController::class, 'updateEventReferee'])->name('event.referee.update');
     Route::delete('event/{event}/referee/{referee}', [EventDetailController::class, 'destroyEventReferee'])->name('event.referee.destroy');
 
     Route::post('event/{event}/clerk', [EventDetailController::class, 'storeEventClerk'])->name('event.clerk.store');

@@ -122,15 +122,18 @@ class EventDetailViewService
                 ->where('is_active', true)
                 ->orWhereIn('id', $selectedRefereeIds))
             ->orderBy('name')
-            ->get(['id', 'name', 'dan_grade', 'license_number', 'certification_level', 'region', 'is_active']);
+            ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active']);
 
         $eventReferees = $event->referees->map(fn (Referee $referee) => [
             'id' => $referee->id,
             'name' => $referee->name,
+            'gender' => $referee->gender ?? 'male',
             'dan_grade' => $referee->dan_grade,
             'license_number' => $referee->license_number,
             'certification_level' => $referee->certification_level,
             'region' => $referee->region,
+            'phone' => $referee->phone,
+            'email' => $referee->email,
             'role' => $referee->pivot->role,
         ]);
 

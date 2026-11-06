@@ -140,6 +140,58 @@ test('admin can add a new referee directly from an event', function () {
         ->and($event->users()->whereKey($login->id)->wherePivot('access_role', Event::AccessRoleStaff)->exists())->toBeTrue();
 });
 
+test('admin can update referee data directly from an event', function () {
+    $user = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Kejurda Wasit Update 2026',
+        'slug' => 'kejurda-wasit-update-2026',
+        'venue' => 'GOR Kertajaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+    ]);
+
+    $referee = Referee::create([
+        'name' => 'Sensei Budi Awal',
+        'gender' => 'male',
+        'dan_grade' => 'III DAN',
+        'certification_level' => 'Wasit Daerah',
+        'license_number' => 'WASIT-UPDATE-001',
+        'region' => 'Jawa Timur',
+        'phone' => '08111111111',
+        'email' => 'budi.awal@example.test',
+        'is_active' => true,
+    ]);
+    $event->referees()->attach($referee->id, ['role' => 'judge']);
+
+    $this->actingAs($user)->put("/admin/master/event/{$event->id}/referee/{$referee->id}", [
+        'name' => 'Sensei Budi Diperbarui',
+        'gender' => 'male',
+        'dan_grade' => 'IV DAN',
+        'certification_level' => 'Wasit Nasional',
+        'license_number' => 'WASIT-UPDATE-001-NEW',
+        'region' => 'Jawa Timur / Surabaya',
+        'phone' => '08222222222',
+        'email' => 'budi.baru@example.test',
+        'role' => 'chief',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $referee->refresh();
+    expect($referee->name)->toBe('Sensei Budi Diperbarui')
+        ->and($referee->dan_grade)->toBe('IV DAN')
+        ->and($referee->certification_level)->toBe('Wasit Nasional')
+        ->and($referee->license_number)->toBe('WASIT-UPDATE-001-NEW')
+        ->and($referee->region)->toBe('Jawa Timur / Surabaya')
+        ->and($referee->phone)->toBe('08222222222')
+        ->and($referee->email)->toBe('budi.baru@example.test');
+
+    $this->assertDatabaseHas('event_referee', [
+        'event_id' => $event->id,
+        'referee_id' => $referee->id,
+        'role' => 'chief',
+    ]);
+});
+
 test('tenant arbitration page shows only referees assigned to its event', function () {
     config()->set('app.tenant_base_domain', 'localhost');
 

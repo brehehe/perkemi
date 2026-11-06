@@ -193,7 +193,9 @@ export default function EventDetail({
     const [deletingRundown, setDeletingRundown] = useState(null);
 
     // 5. Event Referee Modal
-    const [isNewRefereeModalOpen, setIsNewRefereeModalOpen] = useState(false);
+    const [isRefereeModalOpen, setIsRefereeModalOpen] = useState(false);
+    const [editingReferee, setEditingReferee] = useState(null);
+    const [refereeSearch, setRefereeSearch] = useState('');
     const [isNewClerkModalOpen, setIsNewClerkModalOpen] = useState(false);
     const [isNewFieldCoordinatorModalOpen, setIsNewFieldCoordinatorModalOpen] = useState(false);
     const [selectedEventUserId, setSelectedEventUserId] = useState('');
@@ -348,7 +350,19 @@ export default function EventDetail({
     });
 
     const refereeAssignmentForm = useForm({ referee_id: '', role: 'referee' });
-    const newRefereeForm = useForm({ create_new: true, name: '', dan_grade: '', license_number: '', region: '', phone: '', email: '', password: '', password_confirmation: '', role: 'referee' });
+    const refereeForm = useForm({
+        name: '',
+        gender: 'male',
+        dan_grade: '',
+        certification_level: '',
+        license_number: '',
+        region: '',
+        phone: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        role: 'referee',
+    });
     const clerkAssignmentForm = useForm({ clerk_id: '', role: 'operator' });
     const newClerkForm = useForm({ create_new: true, name: '', employee_number: '', certification: '', region: '', phone: '', email: '', password: '', password_confirmation: '', role: 'operator' });
     const fieldCoordinatorAssignmentForm = useForm({ field_coordinator_id: '', assignment_area: 'court' });
@@ -438,15 +452,67 @@ export default function EventDetail({
         });
     };
 
-    const submitNewReferee = (e) => {
-        e.preventDefault();
-        newRefereeForm.post(`/admin/master/event/${event.id}/referee`, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setIsNewRefereeModalOpen(false);
-                newRefereeForm.reset();
-            },
+    const openCreateRefereeModal = () => {
+        setEditingReferee(null);
+        refereeForm.reset();
+        refereeForm.clearErrors();
+        refereeForm.setData({
+            name: '',
+            gender: 'male',
+            dan_grade: '',
+            certification_level: '',
+            license_number: '',
+            region: '',
+            phone: '',
+            email: '',
+            password: '',
+            password_confirmation: '',
+            role: 'referee',
         });
+        setIsRefereeModalOpen(true);
+    };
+
+    const openEditRefereeModal = (referee) => {
+        setEditingReferee(referee);
+        refereeForm.clearErrors();
+        refereeForm.setData({
+            name: referee.name || '',
+            gender: referee.gender || 'male',
+            dan_grade: referee.dan_grade || '',
+            certification_level: referee.certification_level || '',
+            license_number: referee.license_number || '',
+            region: referee.region || '',
+            phone: referee.phone || '',
+            email: referee.email || '',
+            password: '',
+            password_confirmation: '',
+            role: referee.role || 'referee',
+        });
+        setIsRefereeModalOpen(true);
+    };
+
+    const submitReferee = (e) => {
+        e.preventDefault();
+        if (editingReferee) {
+            refereeForm.put(`/admin/master/event/${event.id}/referee/${editingReferee.id}`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsRefereeModalOpen(false);
+                    setEditingReferee(null);
+                    refereeForm.reset();
+                },
+            });
+        } else {
+            refereeForm
+                .transform((data) => ({ ...data, create_new: true }))
+                .post(`/admin/master/event/${event.id}/referee`, {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setIsRefereeModalOpen(false);
+                        refereeForm.reset();
+                    },
+                });
+        }
     };
 
     const removeEventReferee = (referee) => {
@@ -2649,11 +2715,11 @@ export default function EventDetail({
                         <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800">
                             <div>
                                 <h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Wasit & Juri</h3>
-                                <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Pilih perangkat perwasitan dari master data untuk event ini.</p>
+                                <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Pilih perangkat perwasitan dari master data untuk event ini atau edit langsung data wasit.</p>
                             </div>
                             <div className="flex flex-col gap-2 sm:flex-row">
                                 <EventRefereeImport eventId={event.id} />
-                                <Button type="button" onClick={() => setIsNewRefereeModalOpen(true)} className="bg-[#141210] text-amber-400 hover:bg-black"><i className="fa-solid fa-user-plus mr-2" />Tambah Wasit Baru</Button>
+                                <Button type="button" onClick={openCreateRefereeModal} className="bg-[#141210] text-amber-400 hover:bg-black"><i className="fa-solid fa-user-plus mr-2" />Tambah Wasit Baru</Button>
                             </div>
                         </div>
 
@@ -2665,7 +2731,119 @@ export default function EventDetail({
                             </form>
                         </div>
 
-                        {eventReferees.length ? <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">{eventReferees.map((referee) => <div key={referee.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 font-bold text-rose-700"><i className="fa-solid fa-scale-balanced" /></span><div className="min-w-0"><p className="truncate font-semibold text-[#141210] dark:text-white">{referee.name}</p><p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">{[referee.dan_grade, referee.certification_level, referee.region].filter(Boolean).join(' · ') || 'Profil wasit'}</p>{referee.license_number && <p className="mt-0.5 text-xs text-[#8c827a]">Lisensi: {referee.license_number}</p>}</div></div><div className="flex items-center gap-2"><span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">{refereeRoleOptions.find((option) => option.value === referee.role)?.label || referee.role}</span><Button variant="unstyled" size="none" type="button" onClick={() => removeEventReferee(referee)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Hapus ${referee.name} dari event`}><i className="fa-solid fa-trash" /></Button></div></div>)}</div> : <div className="p-8 text-center"><i className="fa-solid fa-scale-balanced text-3xl text-[#d8d0c7]" /><p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada wasit yang ditugaskan</p><p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambahkan wasit baru langsung dari event ini.</p></div>}
+                        {eventReferees.length > 0 && (
+                            <div className="flex items-center justify-between border-b border-[#ede9e1] bg-[#fbfaf8] px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+                                <p className="text-xs font-semibold text-[#706860] dark:text-slate-400">
+                                    Total Ditugaskan: <span className="font-bold text-[#0f0d0b] dark:text-white">{eventReferees.length} Wasit</span>
+                                </p>
+                                <div className="w-full max-w-xs">
+                                    <Input
+                                        placeholder="Cari wasit event..."
+                                        value={refereeSearch}
+                                        onChange={(e) => setRefereeSearch(e.target.value)}
+                                        iconLeft={<i className="fa-solid fa-magnifying-glass text-[#a89f91]" />}
+                                        containerClassName="text-xs"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {(() => {
+                            const filteredReferees = eventReferees.filter((referee) => {
+                                if (!refereeSearch) return true;
+                                const q = refereeSearch.toLowerCase();
+                                return (
+                                    referee.name?.toLowerCase().includes(q) ||
+                                    referee.dan_grade?.toLowerCase().includes(q) ||
+                                    referee.certification_level?.toLowerCase().includes(q) ||
+                                    referee.region?.toLowerCase().includes(q) ||
+                                    referee.license_number?.toLowerCase().includes(q) ||
+                                    referee.email?.toLowerCase().includes(q) ||
+                                    referee.phone?.toLowerCase().includes(q)
+                                );
+                            });
+
+                            if (!eventReferees.length) {
+                                return (
+                                    <div className="p-8 text-center">
+                                        <i className="fa-solid fa-scale-balanced text-3xl text-[#d8d0c7]" />
+                                        <p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada wasit yang ditugaskan</p>
+                                        <p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambahkan wasit baru langsung dari event ini.</p>
+                                    </div>
+                                );
+                            }
+
+                            if (!filteredReferees.length) {
+                                return (
+                                    <div className="p-8 text-center">
+                                        <i className="fa-solid fa-magnifying-glass text-2xl text-[#d8d0c7]" />
+                                        <p className="mt-2 text-sm font-semibold text-[#141210] dark:text-white">Tidak ada wasit yang cocok dengan pencarian "{refereeSearch}"</p>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">
+                                    {filteredReferees.map((referee) => (
+                                        <div key={referee.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
+                                                    <i className="fa-solid fa-scale-balanced" />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="truncate font-semibold text-[#141210] dark:text-white">{referee.name}</p>
+                                                        {referee.dan_grade && (
+                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
+                                                                {referee.dan_grade}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
+                                                        {[referee.certification_level, referee.region, referee.phone].filter(Boolean).join(' · ') || 'Profil wasit'}
+                                                    </p>
+                                                    {(referee.license_number || referee.email) && (
+                                                        <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
+                                                            {[
+                                                                referee.license_number ? `Lisensi: ${referee.license_number}` : null,
+                                                                referee.email ? `Email: ${referee.email}` : null,
+                                                            ].filter(Boolean).join(' · ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
+                                                    {refereeRoleOptions.find((option) => option.value === referee.role)?.label || referee.role}
+                                                </span>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => openEditRefereeModal(referee)}
+                                                    className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                                    aria-label={`Edit ${referee.name}`}
+                                                    title="Edit data wasit langsung"
+                                                >
+                                                    <i className="fa-solid fa-pen-to-square" />
+                                                </Button>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => removeEventReferee(referee)}
+                                                    className="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                                    aria-label={`Hapus ${referee.name} dari event`}
+                                                    title="Hapus wasit dari event"
+                                                >
+                                                    <i className="fa-solid fa-trash" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 
@@ -3536,19 +3714,137 @@ export default function EventDetail({
             />
 
             <Modal
-                isOpen={isNewRefereeModalOpen}
-                onClose={() => setIsNewRefereeModalOpen(false)}
-                title="Tambah Wasit Baru ke Event"
-                footer={<><Button variant="outline" onClick={() => setIsNewRefereeModalOpen(false)}>Batal</Button><Button onClick={submitNewReferee} loading={newRefereeForm.processing}>Simpan & Tugaskan</Button></>}
+                isOpen={isRefereeModalOpen}
+                onClose={() => {
+                    setIsRefereeModalOpen(false);
+                    setEditingReferee(null);
+                }}
+                title={editingReferee ? 'Edit Data Wasit & Penugasan' : 'Tambah Wasit Baru ke Event'}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setIsRefereeModalOpen(false);
+                                setEditingReferee(null);
+                            }}
+                        >
+                            Batal
+                        </Button>
+                        <Button onClick={submitReferee} loading={refereeForm.processing}>
+                            {editingReferee ? 'Simpan Perubahan' : 'Simpan & Tugaskan'}
+                        </Button>
+                    </>
+                }
             >
-                <form onSubmit={submitNewReferee} className="space-y-4">
-                    <Input label="Nama Wasit / Juri" required value={newRefereeForm.data.name} onChange={(e) => newRefereeForm.setData('name', e.target.value)} error={newRefereeForm.errors.name} placeholder="Contoh: Sensei Budi Santoso" />
-                    <div className="grid gap-4 sm:grid-cols-2"><Input label="Tingkatan Dan" value={newRefereeForm.data.dan_grade} onChange={(e) => newRefereeForm.setData('dan_grade', e.target.value)} error={newRefereeForm.errors.dan_grade} placeholder="Contoh: Dan IV" /><Combobox label="Peran di Event" value={newRefereeForm.data.role} onChange={(value) => newRefereeForm.setData('role', value)} options={refereeRoleOptions} clearable={false} error={newRefereeForm.errors.role} /></div>
-                    <div className="grid gap-4 sm:grid-cols-2"><Input label="Nomor Lisensi" value={newRefereeForm.data.license_number} onChange={(e) => newRefereeForm.setData('license_number', e.target.value)} error={newRefereeForm.errors.license_number} /><Input label="Wilayah / Pengda" value={newRefereeForm.data.region} onChange={(e) => newRefereeForm.setData('region', e.target.value)} error={newRefereeForm.errors.region} /></div>
-                    <Input label="Nomor Telepon" value={newRefereeForm.data.phone} onChange={(e) => newRefereeForm.setData('phone', e.target.value)} error={newRefereeForm.errors.phone} />
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Akun login opsional.</strong> Isi ketiga kolom berikut agar Wasit dapat login dan mengakses event ini.</div>
-                    <Input label="Email Login" type="email" value={newRefereeForm.data.email} onChange={(e) => newRefereeForm.setData('email', e.target.value)} error={newRefereeForm.errors.email} autoComplete="username" />
-                    <div className="grid gap-4 sm:grid-cols-2"><Input label="Password" type="password" value={newRefereeForm.data.password} onChange={(e) => newRefereeForm.setData('password', e.target.value)} error={newRefereeForm.errors.password} autoComplete="new-password" /><Input label="Konfirmasi Password" type="password" value={newRefereeForm.data.password_confirmation} onChange={(e) => newRefereeForm.setData('password_confirmation', e.target.value)} autoComplete="new-password" /></div>
+                <form onSubmit={submitReferee} className="space-y-4">
+                    <Input
+                        label="Nama Wasit / Juri"
+                        required
+                        value={refereeForm.data.name}
+                        onChange={(e) => refereeForm.setData('name', e.target.value)}
+                        error={refereeForm.errors.name}
+                        placeholder="Contoh: Sensei Budi Santoso"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Combobox
+                            label="Jenis Kelamin"
+                            value={refereeForm.data.gender}
+                            onChange={(val) => refereeForm.setData('gender', val)}
+                            options={[
+                                { value: 'male', label: 'Laki-laki' },
+                                { value: 'female', label: 'Perempuan' },
+                            ]}
+                            clearable={false}
+                            error={refereeForm.errors.gender}
+                        />
+                        <Combobox
+                            label="Peran di Event"
+                            value={refereeForm.data.role}
+                            onChange={(value) => refereeForm.setData('role', value)}
+                            options={refereeRoleOptions}
+                            clearable={false}
+                            error={refereeForm.errors.role}
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Tingkatan Dan"
+                            value={refereeForm.data.dan_grade}
+                            onChange={(e) => refereeForm.setData('dan_grade', e.target.value)}
+                            error={refereeForm.errors.dan_grade}
+                            placeholder="Contoh: IV DAN"
+                        />
+                        <Input
+                            label="Tingkat Sertifikasi"
+                            value={refereeForm.data.certification_level}
+                            onChange={(e) => refereeForm.setData('certification_level', e.target.value)}
+                            error={refereeForm.errors.certification_level}
+                            placeholder="Contoh: Wasit Nasional / Wasit Daerah"
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Nomor Lisensi"
+                            value={refereeForm.data.license_number}
+                            onChange={(e) => refereeForm.setData('license_number', e.target.value)}
+                            error={refereeForm.errors.license_number}
+                            placeholder="Contoh: 69.1.13.03.99.001"
+                        />
+                        <Input
+                            label="Wilayah / Pengda"
+                            value={refereeForm.data.region}
+                            onChange={(e) => refereeForm.setData('region', e.target.value)}
+                            error={refereeForm.errors.region}
+                            placeholder="Contoh: Jawa Timur"
+                        />
+                    </div>
+
+                    <Input
+                        label="Nomor Telepon"
+                        value={refereeForm.data.phone}
+                        onChange={(e) => refereeForm.setData('phone', e.target.value)}
+                        error={refereeForm.errors.phone}
+                        placeholder="08xxxxxxxxxx"
+                    />
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                        <strong>Akun login {editingReferee ? '(Opsional)' : 'opsional'}.</strong>{' '}
+                        {editingReferee
+                            ? 'Isi email untuk sinkronisasi akun login. Kosongkan kolom password jika tidak ingin mengubah password saat ini.'
+                            : 'Isi email dan password agar Wasit dapat login dan mengakses event ini.'}
+                    </div>
+
+                    <Input
+                        label="Email Login"
+                        type="email"
+                        value={refereeForm.data.email}
+                        onChange={(e) => refereeForm.setData('email', e.target.value)}
+                        error={refereeForm.errors.email}
+                        autoComplete="username"
+                        placeholder="wasit@perkemi.id"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label={editingReferee ? 'Password Baru (Kosongkan jika tetap)' : 'Password'}
+                            type="password"
+                            value={refereeForm.data.password}
+                            onChange={(e) => refereeForm.setData('password', e.target.value)}
+                            error={refereeForm.errors.password}
+                            autoComplete="new-password"
+                        />
+                        <Input
+                            label="Konfirmasi Password"
+                            type="password"
+                            value={refereeForm.data.password_confirmation}
+                            onChange={(e) => refereeForm.setData('password_confirmation', e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
                 </form>
             </Modal>
 

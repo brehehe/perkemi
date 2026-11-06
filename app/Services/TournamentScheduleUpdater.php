@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Athlete;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
@@ -421,6 +422,8 @@ class TournamentScheduleUpdater
                 || $movedSchedulesById->has($eventMatch->id))
             ->map(function (TournamentMatch $eventMatch) use ($movedSchedulesById): array {
                 $movedSchedule = $movedSchedulesById->get($eventMatch->id);
+                $meta = is_array($eventMatch->metadata) ? $eventMatch->metadata : [];
+                $isPlaceholder = ! empty($meta['placeholder']);
 
                 return [
                     'id' => $eventMatch->id,
@@ -433,7 +436,8 @@ class TournamentScheduleUpdater
                     'rundown_id' => $movedSchedule['rundown_id'] ?? $eventMatch->rundown_id,
                     'start' => $movedSchedule['start'] ?? CarbonImmutable::instance($eventMatch->scheduled_start_at),
                     'end' => $movedSchedule['end'] ?? CarbonImmutable::instance($eventMatch->scheduled_end_at),
-                    'athlete_ids' => $this->athleteIds($eventMatch),
+                    'is_placeholder' => $isPlaceholder,
+                    'athlete_ids' => $isPlaceholder ? collect() : $this->athleteIds($eventMatch),
                 ];
             })
             ->values();
@@ -511,7 +515,13 @@ class TournamentScheduleUpdater
         }
     }
 
-    /** @param Collection<int, array{category_id: string, start: CarbonImmutable, end: CarbonImmutable, athlete_ids: Collection<int, string>}> $schedules */
+    /**
+     * Ensure an athlete is not scheduled in two different categories simultaneously.
+     * Rest-time gaps (< 15 mins) are marked as informational warnings (Jeda Mepet) on the schedule board,
+     * allowing coordinators full flexibility to adjust match slots without being blocked.
+     *
+     * @param  Collection<int, array{category_id: string, start: CarbonImmutable, end: CarbonImmutable, athlete_ids: Collection<int, string>}>  $schedules
+     */
     private function ensureAthleteRest(Collection $schedules, int $minimumRestMinutes): void
     {
         $athleteSchedules = $schedules->flatMap(fn (array $schedule): Collection => $schedule['athlete_ids']
@@ -522,16 +532,20 @@ class TournamentScheduleUpdater
                 'end' => $schedule['end'],
             ]));
 
-        foreach ($athleteSchedules->groupBy('athlete_id') as $matches) {
+        foreach ($athleteSchedules->groupBy('athlete_id') as $athleteId => $matches) {
             $ordered = $matches
                 ->sortBy(fn (array $schedule): int => $schedule['start']->getTimestamp())
                 ->values();
 
             foreach ($ordered->sliding(2) as $pair) {
+                // Direct concurrent clash: competing in two courts at the exact same minute
                 if ($pair->last()['category_id'] !== $pair->first()['category_id']
-                    && $pair->last()['start']->lessThan($pair->first()['end']->addMinutes($minimumRestMinutes))) {
+                    && $pair->last()['start']->lessThan($pair->first()['end'])) {
+                    $athlete = Athlete::find($athleteId);
+                    $athleteName = $athlete?->name ? " ({$athlete->name})" : '';
+
                     throw ValidationException::withMessages([
-                        'schedule' => "Atlet memerlukan jeda minimal {$minimumRestMinutes} menit dari partai lainnya.",
+                        'schedule' => "Jadwal bentrok langsung: Atlet{$athleteName} dijadwalkan bertanding bersamaan di gelanggang lain pada jam {$pair->last()['start']->format('H:i')}. Mohon pilih waktu berbeda.",
                     ]);
                 }
             }

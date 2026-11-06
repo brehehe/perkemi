@@ -36,7 +36,10 @@ class TournamentScheduleGenerator
         }
 
         $duration = max(1, (int) $event->match_duration_minutes);
-        $rest = max(0, (int) $event->minimum_rest_minutes);
+        // Sesuai kebutuhan panitia: jangan ada slot kosong di jadwal pertandingan.
+        // Penjadwalan otomatis mengisi setiap slot berurutan tanpa jeda jeda kosong.
+        // Panitia/koordinator tetap dapat menggeser/menukar jadwal secara manual jika diperlukan.
+        $rest = 0;
         $breaks = $this->getEventBreaks($event);
         $slots = $this->slots($courts, $sessions, $duration, $breaks);
 
@@ -352,7 +355,8 @@ class TournamentScheduleGenerator
                 ? $remainingMatches
                     ->where('phase', $firstMatch->phase)
                     ->where('pool', $firstMatch->pool)
-                : $remainingMatches->take(1);
+                : $remainingMatches
+                    ->filter(fn (TournamentMatch $m): bool => ($m->round_label ?? $m->phase) === ($firstMatch->round_label ?? $firstMatch->phase));
             /** @var TournamentMatch|null $match */
             $match = $eligibleMatches->first(fn (TournamentMatch $candidate): bool => $this->athleteIds($candidate)->every(
                 fn (string $athleteId): bool => ! isset($athleteAvailableAt[$athleteId])
@@ -400,6 +404,10 @@ class TournamentScheduleGenerator
     /** @return Collection<int, string> */
     private function athleteIds(TournamentMatch $match): Collection
     {
+        if (! empty($match->metadata['placeholder'])) {
+            return collect();
+        }
+
         return collect($match->metadata['athlete_ids'] ?? [])
             ->filter(fn (mixed $athleteId): bool => is_string($athleteId) && $athleteId !== '')
             ->unique()
