@@ -10,12 +10,33 @@ import RandoriBracketTree from './Partials/RandoriBracketTree';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
-const rankDetails = {
-    1: { label: 'Juara 1', medal: 'Emas', icon: 'fa-trophy', color: 'border-amber-300 bg-amber-50 text-amber-800' },
-    2: { label: 'Juara 2', medal: 'Perak', icon: 'fa-medal', color: 'border-slate-300 bg-slate-50 text-slate-700' },
-    3: { label: 'Juara 3', medal: 'Perunggu', icon: 'fa-medal', color: 'border-orange-300 bg-orange-50 text-orange-800' },
-    4: { label: 'Juara 3 Bersama', medal: 'Perunggu', icon: 'fa-medal', color: 'border-orange-300 bg-orange-50 text-orange-800' },
-};
+function getRankInfo(rankNum, totalFilled = 4, modeRank4 = 'shared_bronze') {
+    if (rankNum === 1) {
+        return { label: 'Juara 1', medal: 'Emas', icon: 'fa-trophy', color: 'border-amber-300 bg-amber-50 text-amber-800' };
+    }
+    if (rankNum === 2) {
+        return { label: 'Juara 2', medal: 'Perak', icon: 'fa-medal', color: 'border-slate-300 bg-slate-50 text-slate-700' };
+    }
+    if (rankNum === 3) {
+        const isShared = totalFilled >= 4 && modeRank4 === 'shared_bronze';
+        return {
+            label: isShared ? 'Juara 3 Bersama' : 'Juara 3',
+            medal: 'Perunggu',
+            icon: 'fa-medal',
+            color: 'border-orange-300 bg-orange-50 text-orange-800',
+        };
+    }
+    if (rankNum === 4) {
+        const isShared = modeRank4 === 'shared_bronze';
+        return {
+            label: isShared ? 'Juara 3 Bersama' : 'Juara 4',
+            medal: isShared ? 'Perunggu' : 'Peringkat 4',
+            icon: isShared ? 'fa-medal' : 'fa-award',
+            color: isShared ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-blue-300 bg-blue-50 text-blue-800',
+        };
+    }
+    return { label: `Peringkat ${rankNum}`, medal: '—', icon: 'fa-award', color: 'border-slate-300 bg-slate-50 text-slate-700' };
+}
 
 function ClassificationBadge({ isExhibition, participantCount, hasDrawing = true }) {
     if (!hasDrawing || isExhibition === null) {
@@ -36,16 +57,17 @@ function ClassificationBadge({ isExhibition, participantCount, hasDrawing = true
 }
 
 // Komponen Medali Juara dengan Nama Atlet & Nama Kontingen
-function ChampionMedalsList({ champions }) {
+function ChampionMedalsList({ champions, modeRank4 = 'shared_bronze' }) {
     if (!champions || champions.length === 0) return null;
 
     return (
         <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             {champions.map((champ) => {
                 const rankNum = Number(champ.rank);
-                const rank = rankDetails[rankNum] || rankDetails[3];
+                const info = getRankInfo(rankNum, champions.length, modeRank4);
                 const isGold = rankNum === 1;
                 const isSilver = rankNum === 2;
+                const displayRankLabel = champ.rank_label || info.label;
 
                 return (
                     <div
@@ -55,6 +77,8 @@ function ChampionMedalsList({ champions }) {
                                 ? 'border-amber-300 bg-amber-50/70'
                                 : isSilver
                                 ? 'border-slate-300 bg-slate-50/70'
+                                : rankNum === 4 && modeRank4 === 'fourth_place'
+                                ? 'border-blue-200 bg-blue-50/50'
                                 : 'border-orange-200 bg-orange-50/50'
                         }`}
                     >
@@ -64,10 +88,12 @@ function ChampionMedalsList({ champions }) {
                                     ? 'bg-amber-500 text-slate-950'
                                     : isSilver
                                     ? 'bg-slate-300 text-slate-800'
+                                    : rankNum === 4 && modeRank4 === 'fourth_place'
+                                    ? 'bg-blue-600 text-white'
                                     : 'bg-amber-700 text-white'
                             }`}>
-                                <i className={`fa-solid ${rank.icon} text-[9px]`} />
-                                {champ.rank_label || rank.label} · {rank.medal}
+                                <i className={`fa-solid ${info.icon} text-[9px]`} />
+                                {displayRankLabel} · {info.medal}
                             </span>
                             <span className="text-xs font-black text-slate-400">#{rankNum}</span>
                         </div>
@@ -97,9 +123,16 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
     const [confirmation, setConfirmation] = useState(null);
     const [generating, setGenerating] = useState(false);
     const [isManualExpanded, setIsManualExpanded] = useState(championship.current_champions.length === 0);
+    const [modeRank4, setModeRank4] = useState('shared_bronze');
 
     const draftByRank = useMemo(() => Object.fromEntries((championship.draft_champions || []).map((champion) => [Number(champion.rank), champion.participant_key])), [championship.draft_champions]);
-    const initialChampions = Array.from({ length: championship.required_champion_count }, (_, index) => ({
+
+    // Selalu tampilkan 4 posisi juara jika bagan tersedia atau peserta >= 3 (Juara 3 Bersama ke-2 opsional)
+    const slotCount = championship.has_drawing || (championship.participant_count ?? 0) >= 3
+        ? 4
+        : (championship.required_champion_count || 4);
+
+    const initialChampions = Array.from({ length: slotCount }, (_, index) => ({
         rank: index + 1,
         participant_key: draftByRank[index + 1] || '',
     }));
@@ -107,18 +140,29 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
         event_id: activeEvent.id,
         champions: initialChampions,
     });
-    const selectedKeys = form.data.champions.map((champion) => champion.participant_key).filter(Boolean);
-    const isComplete = championship.required_champion_count > 0
-        && form.data.champions.every((champion) => champion.participant_key)
-        && new Set(selectedKeys).size === championship.required_champion_count;
+
+    const filledChampions = form.data.champions.filter((champion) => Boolean(champion.participant_key));
+    const selectedKeys = filledChampions.map((champion) => champion.participant_key);
+    const hasDuplicates = new Set(selectedKeys).size !== selectedKeys.length;
+
+    // Minimum yang wajib dipilih: jika peserta >= 3, posisi 1, 2, dan 3 wajib diisi. Posisi 4 opsional.
+    const minRequiredCount = Math.min(3, Math.max(1, championship.participant_count || 3));
+    const requiredRanksFilled = form.data.champions
+        .filter((c) => c.rank <= minRequiredCount)
+        .every((c) => Boolean(c.participant_key));
+
+    const isComplete = !hasDuplicates && requiredRanksFilled && filledChampions.length >= minRequiredCount;
+
     const optionsForRank = (rank) => championship.participants
         .filter((participant) => !selectedKeys.includes(participant.key) || form.data.champions.find((champion) => champion.rank === rank)?.participant_key === participant.key)
         .map((participant) => ({ value: participant.key, label: participant.label, sublabel: participant.sublabel || participant.contingent_name || 'Peserta nomor pertandingan' }));
+
     const updateParticipant = (rank, participantKey) => {
         form.setData('champions', form.data.champions.map((champion) => champion.rank === rank
             ? { ...champion, participant_key: participantKey }
             : champion));
     };
+
     const generateChampions = () => {
         setGenerating(true);
         router.post(`/admin/panitera/scoring/champions/${championship.id}/generate`, { event_id: activeEvent.id }, {
@@ -129,8 +173,12 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
             },
         });
     };
+
     const saveChampions = () => {
-        form.put(`/admin/panitera/scoring/champions/${championship.id}`, {
+        form.transform((data) => ({
+            ...data,
+            champions: data.champions.filter((c) => Boolean(c.participant_key)),
+        })).put(`/admin/panitera/scoring/champions/${championship.id}`, {
             preserveScroll: true,
             onSuccess: () => setConfirmation(null),
         });
@@ -269,19 +317,51 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
                     {/* BAGIAN 4: PANEL KOREKSI / PENYESUAIAN MANUAL (BISA DITUTUP/DIBUKA) */}
                     {isManualExpanded && (
                         <div className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5 space-y-4">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between border-b border-[#ede7df] pb-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#ede7df] pb-3">
                                 <div>
                                     <h3 className="font-black text-[#17120f] flex items-center gap-2">
                                         <i className="fa-solid fa-sliders text-[#9a6b20]" />
                                         Penyesuaian Manual Susunan Juara
                                     </h3>
                                     <p className="mt-1 text-xs leading-5 text-[#7a746e]">
-                                        Pilih peserta secara manual bila susunan juara perlu disesuaikan (misal ada keputusan arbitrase/wasit).
+                                        Pilih peserta secara manual. Posisi ke-4 (Juara 3 Bersama / Juara 4) bersifat opsional dan dapat dikosongkan jika hanya ada 3 juara.
                                     </p>
                                 </div>
-                                <span className="text-[10px] font-bold uppercase text-[#9a6b20] bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
-                                    {championship.required_champion_count} posisi juara
-                                </span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {slotCount >= 4 && (
+                                        <div className="inline-flex rounded-lg border border-[#dcd4ca] bg-white p-0.5 text-[11px] font-bold shadow-2xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => setModeRank4('shared_bronze')}
+                                                className={`rounded-md px-2.5 py-1 transition-all ${
+                                                    modeRank4 === 'shared_bronze'
+                                                        ? 'bg-[#17120f] text-white shadow-xs'
+                                                        : 'text-[#7a746e] hover:text-[#17120f]'
+                                                }`}
+                                            >
+                                                <i className="fa-solid fa-medal text-amber-500 mr-1" />
+                                                Juara 3 Bersama
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setModeRank4('fourth_place')}
+                                                className={`rounded-md px-2.5 py-1 transition-all ${
+                                                    modeRank4 === 'fourth_place'
+                                                        ? 'bg-[#17120f] text-white shadow-xs'
+                                                        : 'text-[#7a746e] hover:text-[#17120f]'
+                                                }`}
+                                            >
+                                                <i className="fa-solid fa-award text-blue-500 mr-1" />
+                                                Juara 3 & Juara 4
+                                            </button>
+                                        </div>
+                                    )}
+                                    <span className="text-[10px] font-bold uppercase text-[#9a6b20] bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+                                        {slotCount >= 4
+                                            ? (filledChampions.length >= 4 ? '4 Juara Dipilih' : '3 Juara Dipilih (Slot 4 Kosong)')
+                                            : `${championship.required_champion_count} posisi juara`}
+                                    </span>
+                                </div>
                             </div>
 
                             {(form.errors.champions || errors.category) && (
@@ -292,24 +372,41 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
 
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 {form.data.champions.map((champion) => {
-                                    const rank = rankDetails[champion.rank];
+                                    const info = getRankInfo(champion.rank, filledChampions.length, modeRank4);
+                                    const isOptional = champion.rank === 4;
+                                    const cardLabel = isOptional
+                                        ? (modeRank4 === 'shared_bronze' ? 'Juara 3 Bersama' : 'Juara 4')
+                                        : info.label;
+
                                     return (
-                                        <div key={champion.rank} className={`rounded-xl border p-3 ${rank.color}`}>
-                                            <p className="mb-2 text-xs font-black uppercase flex items-center gap-1.5">
-                                                <i className={`fa-solid ${rank.icon}`} aria-hidden="true" />
-                                                {rank.label} · {rank.medal}
-                                            </p>
+                                        <div key={champion.rank} className={`rounded-xl border p-3 ${info.color}`}>
+                                            <div className="mb-2 flex items-center justify-between gap-1">
+                                                <p className="text-xs font-black uppercase flex items-center gap-1.5">
+                                                    <i className={`fa-solid ${info.icon}`} aria-hidden="true" />
+                                                    {cardLabel} · {info.medal}
+                                                </p>
+                                                {isOptional && (
+                                                    <span className="rounded bg-orange-200/80 px-1.5 py-0.5 text-[9px] font-black uppercase text-orange-950">
+                                                        Opsional
+                                                    </span>
+                                                )}
+                                            </div>
                                             <Combobox
-                                                ariaLabel={`Pilih peserta ${rank.label}`}
+                                                ariaLabel={`Pilih peserta ${cardLabel}`}
                                                 value={champion.participant_key}
                                                 options={optionsForRank(champion.rank)}
                                                 onChange={(value) => updateParticipant(champion.rank, value)}
-                                                placeholder="Pilih peserta"
+                                                placeholder={isOptional ? `Pilih peserta ${cardLabel} (bisa dikosongkan)` : 'Pilih peserta'}
                                                 searchPlaceholder="Cari atlet atau kontingen..."
                                                 clearable
                                                 disabled={!canManage || form.processing || generating}
                                                 error={form.errors[`champions.${champion.rank - 1}.participant_key`]}
                                             />
+                                            {isOptional && (
+                                                <p className="mt-1.5 text-[10px] text-slate-500 leading-tight">
+                                                    Bisa dikosongkan jika nomor ini hanya menetapkan Juara 1, 2, dan 3.
+                                                </p>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -472,7 +569,7 @@ function CategoryListStacked({ activeEvent, categories, selectedCategory, canMan
                                             </Badge>
                                         </div>
                                         <p className="mt-1 text-xs text-slate-500">
-                                            {category.format?.replaceAll('_', ' ').toUpperCase() || 'BAGAN'} · {category.participant_count} Peserta · Kuota {category.required_champion_count} Posisi Juara
+                                            {category.format?.replaceAll('_', ' ').toUpperCase() || 'BAGAN'} · {category.participant_count} Peserta · Kuota {category.participant_count >= 3 ? '3–4' : category.required_champion_count} Posisi Juara
                                         </p>
                                     </div>
 

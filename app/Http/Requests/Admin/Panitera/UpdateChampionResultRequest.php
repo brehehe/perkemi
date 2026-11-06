@@ -25,9 +25,9 @@ class UpdateChampionResultRequest extends FormRequest
         return [
             'event_id' => ['required', 'uuid'],
             'champions' => ['required', 'array', 'min:1', 'max:4'],
-            'champions.*' => ['required', 'array:rank,participant_key'],
-            'champions.*.rank' => ['required', 'integer', 'between:1,4', 'distinct'],
-            'champions.*.participant_key' => ['required', 'string', 'max:255', 'distinct'],
+            'champions.*' => ['required', 'array'],
+            'champions.*.rank' => ['required', 'integer', 'between:1,4'],
+            'champions.*.participant_key' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -39,9 +39,7 @@ class UpdateChampionResultRequest extends FormRequest
             'champions.min' => 'Minimal satu juara harus dipilih.',
             'champions.max' => 'Maksimal empat juara dapat disimpan.',
             'champions.*.rank.required' => 'Peringkat juara wajib diisi.',
-            'champions.*.rank.distinct' => 'Setiap peringkat hanya boleh digunakan satu kali.',
-            'champions.*.participant_key.required' => 'Peserta untuk setiap peringkat wajib dipilih.',
-            'champions.*.participant_key.distinct' => 'Peserta yang sama tidak boleh menempati dua peringkat.',
+            'champions.*.rank.between' => 'Peringkat juara harus antara 1 sampai 4.',
         ];
     }
 }

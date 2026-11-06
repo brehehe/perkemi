@@ -474,3 +474,67 @@ test('Panitera page provides match details: matches for randori and embuData for
             ->has('embuData.final_rankings')
         );
 });
+
+test('Panitera can choose only 3 champions leaving the optional 4th slot empty for categories with 4 participants', function () {
+    $event = createChampionResultEvent('Event Tiga Juara Opsional');
+    $user = createChampionResultUser($event);
+    [$category, $drawing] = createChampionResultCategory(
+        $event,
+        'Randori 4 Peserta 3 Juara',
+        'randori',
+        'single_elimination',
+        4,
+    );
+
+    $participants = collect(range(1, 4))->mapWithKeys(
+        fn (int $number): array => [$number => championResultParticipant($number)],
+    );
+
+    createChampionRandoriMatch($event, $category, $drawing, 'Semifinal 1', 1, $participants[1], $participants[3]);
+    createChampionRandoriMatch($event, $category, $drawing, 'Semifinal 2', 2, $participants[2], $participants[4]);
+    createChampionRandoriMatch($event, $category, $drawing, 'Grand Final', 3, $participants[1], $participants[2]);
+
+    // Submit only 3 champions (Rank 1, 2, 3), with 4th slot omitted or empty
+    $this->actingAs($user)
+        ->put("/admin/panitera/scoring/champions/{$category->id}", [
+            'event_id' => $event->id,
+            'champions' => [
+                ['rank' => 1, 'participant_key' => 'participant-1'],
+                ['rank' => 2, 'participant_key' => 'participant-2'],
+                ['rank' => 3, 'participant_key' => 'participant-3'],
+                ['rank' => 4, 'participant_key' => ''], // empty optional 4th slot
+            ],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    expect($event->tournamentResults()->where('event_match_category_id', $category->id)->count())->toBe(3);
+    $this->assertDatabaseHas('tournament_results', [
+        'event_match_category_id' => $category->id,
+        'contingent_name' => 'Kontingen 1',
+        'rank' => 1,
+    ]);
+    $this->assertDatabaseHas('tournament_results', [
+        'event_match_category_id' => $category->id,
+        'contingent_name' => 'Kontingen 2',
+        'rank' => 2,
+    ]);
+    $this->assertDatabaseHas('tournament_results', [
+        'event_match_category_id' => $category->id,
+        'contingent_name' => 'Kontingen 3',
+        'rank' => 3,
+    ]);
+    $this->assertDatabaseMissing('tournament_results', [
+        'event_match_category_id' => $category->id,
+        'rank' => 4,
+    ]);
+
+    // Check on the page that it is confirmed
+    $this->actingAs($user)
+        ->get("/admin/panitera/scoring/champions?event_id={$event->id}&category={$category->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('categories.0.is_confirmed', true)
+            ->where('categories.0.result_count', 3)
+            ->has('categories.0.saved_champions', 3)
+        );
+});

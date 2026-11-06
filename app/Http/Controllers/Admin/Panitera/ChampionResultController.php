@@ -51,6 +51,7 @@ class ChampionResultController extends Controller
             $categorySavedResults = $savedResults->filter(fn (TournamentResult $result): bool => $result->event_match_category_id === $category->id
                 || ($result->event_match_category_id === null && $result->match_category === $category->name))->values();
             $resultCount = $categorySavedResults->count();
+            $hasFourthPlace = $categorySavedResults->contains(fn (TournamentResult $r): bool => $r->rank->value === 4);
             $requiredChampionCount = min(4, $participantCount);
             $generation = $championship && $championship['id'] === $category->id
                 ? $championship['generation']
@@ -70,15 +71,27 @@ class ChampionResultController extends Controller
                     ? (((bool) $category->is_exhibition || $participantCount <= 3) ? 'Ekshibisi' : 'Non-ekshibisi')
                     : 'Drawing belum dibuat',
                 'required_champion_count' => $requiredChampionCount,
+                'min_required_champion_count' => min(3, max(1, $participantCount)),
                 'result_count' => $resultCount,
-                'is_confirmed' => $requiredChampionCount > 0 && $resultCount >= $requiredChampionCount,
-                'saved_champions' => $categorySavedResults->map(fn (TournamentResult $res): array => [
-                    'id' => $res->id,
-                    'rank' => $res->rank->value,
-                    'rank_label' => $res->rank->label(),
-                    'label' => $res->athlete?->name ?: $res->contingent_name,
-                    'contingent_name' => $res->contingent_name,
-                ])->values(),
+                'is_confirmed' => $requiredChampionCount > 0 && $resultCount >= min(3, $requiredChampionCount),
+                'saved_champions' => $categorySavedResults->map(function (TournamentResult $res) use ($hasFourthPlace): array {
+                    $rankNum = $res->rank->value;
+                    $rankLabel = match ($rankNum) {
+                        1 => 'Juara 1',
+                        2 => 'Juara 2',
+                        3 => $hasFourthPlace ? 'Juara 3 Bersama' : 'Juara 3',
+                        4 => 'Juara 3 Bersama',
+                        default => $res->rank->label(),
+                    };
+
+                    return [
+                        'id' => $res->id,
+                        'rank' => $rankNum,
+                        'rank_label' => $rankLabel,
+                        'label' => $res->athlete?->name ?: $res->contingent_name,
+                        'contingent_name' => $res->contingent_name,
+                    ];
+                })->values(),
                 'generation_ready' => $generation['ready'],
                 'generation_message' => $generation['message'],
                 'generation_candidates' => collect($generation['champions'])->map(fn (array $candidate): array => [

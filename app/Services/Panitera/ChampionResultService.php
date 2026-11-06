@@ -94,24 +94,28 @@ class ChampionResultService
         $category->loadMissing('tournamentDrawing.matches.randoriScore');
         $participants = $this->participants($category)->keyBy('key');
         $participantCount = (int) ($category->tournamentDrawing?->participant_count ?? 0);
-        $requiredChampionCount = min(4, $participantCount);
+        $minChampionCount = min(3, max(1, $participantCount));
+        $maxChampionCount = min(4, max(1, $participantCount));
+
         $submitted = collect($champions)
             ->map(fn (array $champion): array => [
                 'rank' => (int) $champion['rank'],
-                'participant_key' => (string) $champion['participant_key'],
+                'participant_key' => (string) ($champion['participant_key'] ?? ''),
             ])
+            ->filter(fn (array $champion): bool => $champion['participant_key'] !== '')
             ->sortBy('rank')
             ->values();
 
-        if ($requiredChampionCount < 1 || $submitted->count() !== $requiredChampionCount) {
+        if ($submitted->count() < $minChampionCount || $submitted->count() > $maxChampionCount) {
             throw ValidationException::withMessages([
-                'champions' => "Nomor pertandingan ini membutuhkan {$requiredChampionCount} susunan juara.",
+                'champions' => "Nomor pertandingan ini membutuhkan {$minChampionCount} hingga {$maxChampionCount} susunan juara (Juara 3 Bersama ke-2 bersifat opsional).",
             ]);
         }
 
-        if ($submitted->pluck('rank')->all() !== range(1, $requiredChampionCount)) {
+        $expectedRanks = range(1, $submitted->count());
+        if ($submitted->pluck('rank')->all() !== $expectedRanks) {
             throw ValidationException::withMessages([
-                'champions' => 'Peringkat juara harus berurutan dari 1 sampai '.$requiredChampionCount.'.',
+                'champions' => 'Peringkat juara harus berurutan dari 1 sampai '.$submitted->count().'.',
             ]);
         }
 
@@ -445,21 +449,35 @@ class ChampionResultService
     {
         $participants = $this->participants($category);
 
-        return $this->resultQuery($event, $category)
+        $results = $this->resultQuery($event, $category)
             ->with('athlete:id,name')
             ->orderBy('rank')
-            ->get()
-            ->map(fn (TournamentResult $result): array => [
-                'id' => $result->id,
-                'rank' => $result->rank->value,
-                'rank_label' => $result->rank->label(),
-                'participant_key' => $this->resultParticipantKey($result, $participants),
-                'label' => $participants->firstWhere('key', $result->participant_key)['label']
-                    ?? $result->athlete?->name
-                    ?? $result->contingent_name,
-                'contingent_name' => $result->contingent_name,
-                'is_exhibition' => (bool) $result->is_exhibition,
-            ])
+            ->get();
+        $hasFourthPlace = $results->contains(fn (TournamentResult $r): bool => $r->rank->value === 4);
+
+        return $results
+            ->map(function (TournamentResult $result) use ($participants, $hasFourthPlace): array {
+                $rankNum = $result->rank->value;
+                $rankLabel = match ($rankNum) {
+                    1 => 'Juara 1',
+                    2 => 'Juara 2',
+                    3 => $hasFourthPlace ? 'Juara 3 Bersama' : 'Juara 3',
+                    4 => 'Juara 3 Bersama',
+                    default => $result->rank->label(),
+                };
+
+                return [
+                    'id' => $result->id,
+                    'rank' => $rankNum,
+                    'rank_label' => $rankLabel,
+                    'participant_key' => $this->resultParticipantKey($result, $participants),
+                    'label' => $participants->firstWhere('key', $result->participant_key)['label']
+                        ?? $result->athlete?->name
+                        ?? $result->contingent_name,
+                    'contingent_name' => $result->contingent_name,
+                    'is_exhibition' => (bool) $result->is_exhibition,
+                ];
+            })
             ->filter(fn (array $champion): bool => $champion['participant_key'] !== null)
             ->values();
     }
