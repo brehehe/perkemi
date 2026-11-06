@@ -655,3 +655,65 @@ test('user with role Pertandingan can access schedule, drawing, and generate sch
         ->assertSessionHasNoErrors()
         ->assertSessionHas('success');
 });
+
+test('admin can move matches freely without embu before randori validation blocking', function () {
+    $user = User::factory()->create();
+    $fixture = createTournamentScheduleFixture($user, 'embu-randori-move');
+
+    // Fixture category is randori. Let's schedule it at 08:00 - 08:10 on Court 1
+    $fixture['match']->update([
+        'scheduled_start_at' => '2026-11-07 08:00:00',
+        'scheduled_end_at' => '2026-11-07 08:10:00',
+        'round_label' => 'Penyisihan',
+        'match_sequence' => 1,
+    ]);
+
+    // Create an Embu category and match on Court 1 scheduled at 08:10 - 08:20
+    $embuCategory = EventMatchCategory::create([
+        'event_id' => $fixture['event']->id,
+        'name' => 'Embu Tandoku Putra',
+        'type' => 'embu',
+        'gender' => 'male',
+        'capacity' => 16,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $embuDrawing = TournamentDrawing::create([
+        'event_id' => $fixture['event']->id,
+        'event_match_category_id' => $embuCategory->id,
+        'status' => 'generated',
+        'bracket_type' => 'single_elimination',
+    ]);
+    $embuMatch = TournamentMatch::create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $fixture['event']->id,
+        'event_match_category_id' => $embuCategory->id,
+        'event_court_id' => $fixture['court']->id,
+        'rundown_id' => $fixture['session']->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Pool A',
+        'match_sequence' => 1,
+        'bracket_position' => 1,
+        'red_label' => 'Atlet Embu 1',
+        'scheduled_start_at' => '2026-11-07 08:10:00',
+        'scheduled_end_at' => '2026-11-07 08:20:00',
+        'status' => 'pending',
+        'is_bye' => false,
+        'metadata' => ['athlete_ids' => []],
+    ]);
+
+    // Move Embu match to 08:30 (which is after Randori match at 08:00).
+    // Previously, this threw "Seluruh pertandingan Embu harus selesai sebelum Randori dimulai."
+    $this->actingAs($user)
+        ->put('/admin/pertandingan/jadwal/matches/'.$embuMatch->id, [
+            'event_id' => $fixture['event']->id,
+            'event_court_id' => $fixture['court']->id,
+            'rundown_id' => $fixture['session']->id,
+            'start_time' => '08:30',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    expect($embuMatch->fresh()->scheduled_start_at->format('H:i'))->toBe('08:30');
+});

@@ -447,7 +447,6 @@ class TournamentScheduleUpdater
         $this->ensureCategorySequence($schedules);
         $this->ensureCourtIsAvailable($schedules);
         $this->ensureAthleteRest($schedules, max(0, $minimumRestMinutes));
-        $this->ensureEmbuBeforeRandori($schedules);
     }
 
     /**
@@ -536,30 +535,6 @@ class TournamentScheduleUpdater
                     ]);
                 }
             }
-        }
-    }
-
-    /** @param Collection<int, array{category_type: string|null, start: CarbonImmutable, end: CarbonImmutable}> $schedules */
-    private function ensureEmbuBeforeRandori(Collection $schedules): void
-    {
-        $embuSchedules = $schedules->where('category_type', 'embu');
-        $randoriSchedules = $schedules->where('category_type', 'randori');
-
-        if ($embuSchedules->isEmpty() || $randoriSchedules->isEmpty()) {
-            return;
-        }
-
-        $lastEmbuEnd = $embuSchedules
-            ->sortBy(fn (array $schedule): int => $schedule['end']->getTimestamp())
-            ->last()['end'];
-        $firstRandoriStart = $randoriSchedules
-            ->sortBy(fn (array $schedule): int => $schedule['start']->getTimestamp())
-            ->first()['start'];
-
-        if ($lastEmbuEnd->greaterThan($firstRandoriStart)) {
-            throw ValidationException::withMessages([
-                'schedule' => 'Seluruh pertandingan Embu harus selesai sebelum Randori dimulai.',
-            ]);
         }
     }
 
@@ -667,21 +642,6 @@ class TournamentScheduleUpdater
             ->filter(fn (TournamentMatch $m): bool => $m->scheduled_start_at !== null && $m->scheduled_end_at !== null)
             ->values();
 
-        $categoryType = $matchesToMove->first()?->matchCategory?->type;
-
-        $otherEmbuMatches = $otherScheduledEventMatches->filter(fn (TournamentMatch $m): bool => $m->matchCategory?->type === 'embu');
-        $otherRandoriMatches = $otherScheduledEventMatches->filter(fn (TournamentMatch $m): bool => $m->matchCategory?->type === 'randori');
-
-        $latestOtherEmbuEnd = $otherEmbuMatches
-            ->map(fn (TournamentMatch $m): CarbonImmutable => CarbonImmutable::instance($m->scheduled_end_at))
-            ->sortByDesc(fn (CarbonImmutable $c): int => $c->getTimestamp())
-            ->first();
-
-        $earliestOtherRandoriStart = $otherRandoriMatches
-            ->map(fn (TournamentMatch $m): CarbonImmutable => CarbonImmutable::instance($m->scheduled_start_at))
-            ->sortBy(fn (CarbonImmutable $c): int => $c->getTimestamp())
-            ->first();
-
         $athleteBusyIntervals = collect();
         foreach ($otherScheduledEventMatches as $otherMatch) {
             $otherAthleteIds = $this->athleteIds($otherMatch);
@@ -728,16 +688,6 @@ class TournamentScheduleUpdater
 
             if ($hasCourtOverlap) {
                 continue;
-            }
-
-            if ($categoryType === 'embu' && $earliestOtherRandoriStart instanceof CarbonImmutable) {
-                if ($candidateBlock->last()['end']->greaterThan($earliestOtherRandoriStart)) {
-                    continue;
-                }
-            } elseif ($categoryType === 'randori' && $latestOtherEmbuEnd instanceof CarbonImmutable) {
-                if ($candidateBlock->first()['start']->lessThan($latestOtherEmbuEnd)) {
-                    continue;
-                }
             }
 
             $hasAthleteRestViolation = false;
