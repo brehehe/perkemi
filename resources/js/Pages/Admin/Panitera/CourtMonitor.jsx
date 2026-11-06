@@ -95,15 +95,26 @@ function ParticipantDisplay({ match }) {
                         </span>
                     )}
                 </div>
-                <p className="mt-4 text-2xl font-black leading-tight text-white md:text-4xl drop-shadow-sm" style={{ color: '#ffffff' }}>
-                    {match.aka_label || 'Menunggu peserta'}
-                </p>
-                {(match.aka_contingent || match.red_contingent) && (
-                    <p className="mt-2 text-sm md:text-base font-bold text-amber-200 flex items-center gap-1.5 drop-shadow-sm">
-                        <i className="fa-solid fa-shield-halved text-xs text-amber-300" aria-hidden="true" />
-                        {match.aka_contingent || match.red_contingent}
-                    </p>
-                )}
+                <div className="mt-4 flex items-start gap-4">
+                    {match.aka_photo_url ? (
+                        <img
+                            src={match.aka_photo_url}
+                            alt={match.aka_label || 'AKA'}
+                            className="h-14 w-14 md:h-16 md:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
+                        />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                        <p className="text-2xl font-black leading-tight text-white md:text-4xl drop-shadow-sm" style={{ color: '#ffffff' }}>
+                            {match.aka_label || 'Menunggu peserta'}
+                        </p>
+                        {(match.aka_contingent || match.red_contingent) && (
+                            <p className="mt-2 text-sm md:text-base font-bold text-amber-200 flex items-center gap-1.5 drop-shadow-sm">
+                                <i className="fa-solid fa-shield-halved text-xs text-amber-300" aria-hidden="true" />
+                                {match.aka_contingent || match.red_contingent}
+                            </p>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* VS DIVIDER */}
@@ -128,13 +139,24 @@ function ParticipantDisplay({ match }) {
                         SHIRO · PUTIH
                     </span>
                 </div>
-                <p className="mt-4 text-2xl font-black leading-tight text-slate-950 dark:text-white md:text-4xl">{match.shiro_label || 'Menunggu peserta'}</p>
-                {(match.shiro_contingent || match.blue_contingent) && (
-                    <p className="mt-2 text-sm md:text-base font-bold text-slate-600 dark:text-slate-300 flex items-center justify-end gap-1.5">
-                        <i className="fa-solid fa-shield-halved text-xs text-amber-500" aria-hidden="true" />
-                        {match.shiro_contingent || match.blue_contingent}
-                    </p>
-                )}
+                <div className="mt-4 flex items-start justify-end gap-4">
+                    <div className="min-w-0 flex-1">
+                        <p className="text-2xl font-black leading-tight text-slate-950 dark:text-white md:text-4xl">{match.shiro_label || 'Menunggu peserta'}</p>
+                        {(match.shiro_contingent || match.blue_contingent) && (
+                            <p className="mt-2 text-sm md:text-base font-bold text-slate-600 dark:text-slate-300 flex items-center justify-end gap-1.5">
+                                <i className="fa-solid fa-shield-halved text-xs text-amber-500" aria-hidden="true" />
+                                {match.shiro_contingent || match.blue_contingent}
+                            </p>
+                        )}
+                    </div>
+                    {match.shiro_photo_url ? (
+                        <img
+                            src={match.shiro_photo_url}
+                            alt={match.shiro_label || 'SHIRO'}
+                            className="h-14 w-14 md:h-16 md:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/20 object-cover shadow-md"
+                        />
+                    ) : null}
+                </div>
             </div>
         </div>
     );
@@ -292,7 +314,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         };
     }, [court.id, activeMatch?.id, snapshot.active_match?.id, refreshSnapshot]);
 
-    const defaultCourtVarUrl = court?.var_url || activeMatch?.var_stream_url || `https://var.smart-perkemi.id/kempo/var/court-${court?.order || 1}`;
+    const defaultCourtVarUrl = court?.var_url || activeMatch?.var_stream_url || 'https://var.smart-perkemi.id/kempo/demo/live_stream.html';
     const activeVarUrl = varUrlInput.trim() || defaultCourtVarUrl;
     const [savingVarUrl, setSavingVarUrl] = useState(false);
     const [varSaveMessage, setVarSaveMessage] = useState('');
@@ -302,14 +324,19 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         setSavingVarUrl(true);
         setVarSaveMessage('');
         try {
-            const response = await fetch(`/admin/panitera/scoring/courts/${court.id}/var-url`, {
+            const eventId = court?.event_id || activeEvent?.id || '';
+            const url = `/admin/panitera/scoring/courts/${court.id}/var-url${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`;
+            const response = await fetch(url, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                 },
-                body: JSON.stringify({ var_url: urlToSave || null }),
+                body: JSON.stringify({
+                    event_id: eventId,
+                    var_url: urlToSave || null,
+                }),
             });
             const data = await response.json();
             if (data.success) {
@@ -676,7 +703,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center justify-between text-[11px] text-white/50">
-                                                    <span>Default Court {court.order || 1}: <code className="text-[#d4a843]">{`https://var.smart-perkemi.id/kempo/var/court-${court.order || 1}`}</code></span>
+                                                    <span>Default Stream: <code className="text-[#d4a843]">https://var.smart-perkemi.id/kempo/demo/live_stream.html</code></span>
                                                     {varSaveMessage && <span className="font-bold text-emerald-400">{varSaveMessage}</span>}
                                                 </div>
                                             </div>
@@ -793,18 +820,45 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="mt-3.5">
-                                                        <p
-                                                            className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
-                                                            style={{ color: '#ffffff' }}
-                                                        >
-                                                            {activeMatch.aka_label || 'Sudut Merah'}
-                                                        </p>
-                                                        <div className="mt-2 flex items-center">
-                                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/40 border border-white/20 px-2.5 py-1 text-xs font-bold text-amber-200 shadow-xs">
-                                                                <i className="fa-solid fa-shield-halved text-[11px] text-amber-300" aria-hidden="true" />
-                                                                <span className="truncate max-w-[200px]">{activeMatch.aka_contingent || activeMatch.red_contingent || 'Kontingen belum dicatat'}</span>
-                                                            </span>
+                                                    <div className="mt-3.5 flex items-start gap-3.5">
+                                                        {activeMatch.aka_photo_url ? (
+                                                            <img
+                                                                src={activeMatch.aka_photo_url}
+                                                                alt={activeMatch.aka_label || 'AKA'}
+                                                                className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                className="corner-aka-avatar flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 shadow-md text-white"
+                                                                style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.35)', color: '#ffffff' }}
+                                                            >
+                                                                <i className="fa-solid fa-user-ninja text-2xl" style={{ color: '#ffffff' }} />
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <p
+                                                                className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
+                                                                style={{ color: '#ffffff' }}
+                                                            >
+                                                                {activeMatch.aka_label || 'Sudut Merah'}
+                                                            </p>
+                                                            <div className="mt-2 flex items-center">
+                                                                <span
+                                                                    className="corner-aka-badge inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs"
+                                                                    style={{
+                                                                        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                                                        borderColor: 'rgba(255, 255, 255, 0.3)',
+                                                                        borderWidth: '1px',
+                                                                        borderStyle: 'solid',
+                                                                        color: '#ffffff',
+                                                                    }}
+                                                                >
+                                                                    <i className="fa-solid fa-shield-halved text-[11px]" style={{ color: '#facc15' }} aria-hidden="true" />
+                                                                    <span className="truncate max-w-[200px]" style={{ color: '#ffffff' }}>
+                                                                        {activeMatch.aka_contingent || activeMatch.red_contingent || 'Kontingen belum dicatat'}
+                                                                    </span>
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -865,15 +919,28 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="mt-3.5">
-                                                        <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
-                                                            {activeMatch.shiro_label || 'Sudut Putih'}
-                                                        </p>
-                                                        <div className="mt-2 flex items-center">
-                                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
-                                                                <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                                                                <span className="truncate max-w-[200px]">{activeMatch.shiro_contingent || activeMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
-                                                            </span>
+                                                    <div className="mt-3.5 flex items-start gap-3.5">
+                                                        {activeMatch.shiro_photo_url ? (
+                                                            <img
+                                                                src={activeMatch.shiro_photo_url}
+                                                                alt={activeMatch.shiro_label || 'SHIRO'}
+                                                                className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/30 object-cover shadow-md"
+                                                            />
+                                                        ) : (
+                                                            <div className="flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-200 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-md">
+                                                                <i className="fa-solid fa-user-ninja text-2xl" />
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
+                                                                {activeMatch.shiro_label || 'Sudut Putih'}
+                                                            </p>
+                                                            <div className="mt-2 flex items-center">
+                                                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
+                                                                    <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                                                                    <span className="truncate max-w-[200px]">{activeMatch.shiro_contingent || activeMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>

@@ -33,8 +33,8 @@ test('event court has default var url based on its order', function () {
         'is_active' => true,
     ]);
 
-    expect($court1->var_url)->toBe('https://var.smart-perkemi.id/kempo/var/court-1')
-        ->and($court2->var_url)->toBe('https://var.smart-perkemi.id/kempo/var/court-2')
+    expect($court1->var_url)->toBe('https://var.smart-perkemi.id/kempo/demo/live_stream.html')
+        ->and($court2->var_url)->toBe('https://var.smart-perkemi.id/kempo/demo/live_stream.html')
         ->and($court1->raw_var_url)->toBeNull();
 });
 
@@ -108,5 +108,39 @@ test('panitera can reset custom var url back to null/default', function () {
     $court->refresh();
 
     expect($court->raw_var_url)->toBeNull()
-        ->and($court->var_url)->toBe('https://var.smart-perkemi.id/kempo/var/court-2');
+        ->and($court->var_url)->toBe('https://var.smart-perkemi.id/kempo/demo/live_stream.html');
+});
+
+test('court var url can be updated even without explicit event_id in payload', function () {
+    $event = Event::create([
+        'name' => 'Event VAR No Param',
+        'slug' => 'event-var-no-param',
+        'venue' => 'GOR Kempo',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Tanpa Event Param',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    Role::firstOrCreate(['name' => 'Panitera', 'guard_name' => 'web']);
+    $user = User::factory()->create();
+    $user->assignRole('Panitera');
+    $event->users()->attach($user, ['access_role' => Event::AccessRoleStaff]);
+
+    $response = $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/courts/{$court->id}/var-url", [
+            'var_url' => 'https://stream.example.com/court-live',
+        ]);
+
+    $response->assertOk();
+    expect($response->json('success'))->toBeTrue();
+    $court->refresh();
+    expect($court->raw_var_url)->toBe('https://stream.example.com/court-live');
 });

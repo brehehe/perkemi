@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Athlete;
+use App\Models\AthleteMatchCategoryEntry;
+use App\Models\Contingent;
 use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventMatchCategory;
@@ -537,4 +540,64 @@ test('Panitera can choose only 3 champions leaving the optional 4th slot empty f
             ->where('categories.0.result_count', 3)
             ->has('categories.0.saved_champions', 3)
         );
+});
+
+test('Panitera can save registered athlete as champion even if athlete was in athleteEntries not in drawing matches', function () {
+    $event = createChampionResultEvent('Event Entry Only Athlete');
+    $user = createChampionResultUser($event);
+    [$category, $drawing] = createChampionResultCategory(
+        $event,
+        'Randori 55 kg with Entries',
+        'randori',
+        'single_elimination',
+        4,
+    );
+
+    $participants = collect(range(1, 2))->mapWithKeys(
+        fn (int $number): array => [$number => championResultParticipant($number)],
+    );
+
+    createChampionRandoriMatch($event, $category, $drawing, 'Final', 1, $participants[1], $participants[2]);
+
+    // Create an athlete that only exists in AthleteMatchCategoryEntry
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $user->id,
+        'name' => 'Kontingen Ngawi',
+        'city' => 'Ngawi',
+        'manager_name' => 'Sensei Ngawi',
+        'phone' => '081234567890',
+    ]);
+    $extraAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'AIRLANGGA SAKHA WIRATAMA',
+        'gender' => 'male',
+        'kyu_dan' => 'Kyu 3',
+        'weight' => 55,
+    ]);
+    $entry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $extraAthlete->id,
+        'event_match_category_id' => $category->id,
+    ]);
+
+    // Save with the 3rd rank being the extra athlete by athlete_id or entry_id
+    $this->actingAs($user)
+        ->put("/admin/panitera/scoring/champions/{$category->id}?event_id={$event->id}", [
+            'event_id' => $event->id,
+            'champions' => [
+                ['rank' => 1, 'participant_key' => 'participant-1'],
+                ['rank' => 2, 'participant_key' => 'participant-2'],
+                ['rank' => 3, 'participant_key' => (string) $extraAthlete->id],
+            ],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+
+    expect($event->tournamentResults()->where('event_match_category_id', $category->id)->count())->toBe(3);
+    $this->assertDatabaseHas('tournament_results', [
+        'event_match_category_id' => $category->id,
+        'athlete_id' => $extraAthlete->id,
+        'rank' => 3,
+    ]);
 });

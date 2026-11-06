@@ -116,7 +116,7 @@ html:not(.dark) .court-monitor :is([class*='bg-[#151210]'], [class*='bg-[#090807
     border-color: #e2dbcf;
 }
 
-html:not(.dark) .court-monitor :is([class*='bg-white/'], [class*='bg-black/']):not([class*='bg-red']):not([class*='bg-rose']):not([class*='bg-emerald']):not([class*='bg-amber']):not([class*='bg-blue']) {
+html:not(.dark) .court-monitor :is([class*='bg-white/'], [class*='bg-black/']):not([class*='bg-red']):not([class*='bg-rose']):not([class*='bg-emerald']):not([class*='bg-amber']):not([class*='bg-blue']):not(.corner-aka *):not([class*='corner-aka'] *):not(.corner-aka-badge):not(.corner-aka-avatar) {
     background-color: #f1ede6;
 }
 
@@ -153,6 +153,25 @@ html:not(.dark) .court-monitor [class~='text-white'].force-white {
 html:not(.dark) .court-monitor .corner-aka {
     background-color: #dc2626 !important;
     border-color: #b91c1c !important;
+}
+
+.court-monitor .corner-aka-badge,
+html:not(.dark) .court-monitor .corner-aka-badge {
+    background-color: rgba(0, 0, 0, 0.55) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    color: #ffffff !important;
+}
+
+.court-monitor .corner-aka-badge i,
+html:not(.dark) .court-monitor .corner-aka-badge i {
+    color: #facc15 !important;
+}
+
+.court-monitor .corner-aka-avatar,
+html:not(.dark) .court-monitor .corner-aka-avatar {
+    background-color: rgba(0, 0, 0, 0.35) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    color: #ffffff !important;
 }
 
 /* SHIRO white card preservation in light mode */

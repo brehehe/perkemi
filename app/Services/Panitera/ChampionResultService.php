@@ -94,6 +94,19 @@ class ChampionResultService
         $category->loadMissing('tournamentDrawing.matches.randoriScore');
         $participants = $this->participants($category)->keyBy('key');
 
+        $participantLookup = collect();
+        foreach ($participants as $p) {
+            if (! empty($p['key'])) {
+                $participantLookup->put((string) $p['key'], $p);
+            }
+            if (! empty($p['entry_id'])) {
+                $participantLookup->put((string) $p['entry_id'], $p);
+            }
+            if (! empty($p['athlete_id'])) {
+                $participantLookup->put((string) $p['athlete_id'], $p);
+            }
+        }
+
         $submitted = collect($champions)
             ->filter(fn (array $champion): bool => ! empty($champion['participant_key']))
             ->values()
@@ -129,19 +142,19 @@ class ChampionResultService
         }
 
         foreach ($submitted as $champion) {
-            if ($participants->isNotEmpty() && ! $participants->has($champion['participant_key'])) {
+            if ($participantLookup->isNotEmpty() && ! $participantLookup->has($champion['participant_key'])) {
                 throw ValidationException::withMessages([
                     'champions' => 'Salah satu peserta juara tidak terdaftar pada nomor pertandingan ini.',
                 ]);
             }
         }
 
-        return DB::transaction(function () use ($event, $category, $submitted, $participants, $actualParticipantCount): Collection {
+        return DB::transaction(function () use ($event, $category, $submitted, $participantLookup, $actualParticipantCount): Collection {
             $this->resultQuery($event, $category)->lockForUpdate()->get();
             $this->resultQuery($event, $category)->delete();
 
-            return $submitted->map(function (array $champion) use ($event, $category, $participants, $actualParticipantCount): TournamentResult {
-                $participant = $participants->get($champion['participant_key'], [
+            return $submitted->map(function (array $champion) use ($event, $category, $participantLookup, $actualParticipantCount): TournamentResult {
+                $participant = $participantLookup->get($champion['participant_key'], [
                     'key' => $champion['participant_key'],
                     'label' => $champion['participant_key'],
                     'contingent_name' => null,
@@ -196,22 +209,26 @@ class ChampionResultService
             }
         }
 
-        if ($participants->isEmpty()) {
-            $category->loadMissing('athleteEntries.athlete.contingent');
-            foreach ($category->athleteEntries as $entry) {
-                $athlete = $entry->athlete;
-                if (! $athlete) {
-                    continue;
-                }
-                $key = (string) $entry->id;
-                $participants->put($key, [
-                    'key' => $key,
-                    'entry_id' => $entry->id,
-                    'athlete_id' => $athlete->id,
-                    'label' => $athlete->name,
-                    'contingent_name' => $athlete->contingent?->name,
-                    'contingent_id' => $athlete->contingent_id,
-                ]);
+        $category->loadMissing('athleteEntries.athlete.contingent');
+        foreach ($category->athleteEntries as $entry) {
+            $athlete = $entry->athlete;
+            if (! $athlete) {
+                continue;
+            }
+            $athleteKey = (string) $athlete->id;
+            $entryKey = (string) $entry->id;
+            $data = [
+                'key' => $athleteKey,
+                'entry_id' => $entry->id,
+                'athlete_id' => $athlete->id,
+                'label' => $athlete->name,
+                'contingent_name' => $athlete->contingent?->name,
+                'contingent_id' => $athlete->contingent_id,
+                'sublabel' => $athlete->contingent?->name ?: 'Peserta nomor pertandingan',
+            ];
+
+            if (! $participants->has($athleteKey) && ! $participants->has($entryKey)) {
+                $participants->put($athleteKey, $data);
             }
         }
 

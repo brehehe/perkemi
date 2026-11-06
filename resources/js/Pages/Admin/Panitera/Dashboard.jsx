@@ -482,9 +482,13 @@ export default function PaniteraDashboard({
         e.preventDefault();
         if (!editingVarCourt) return;
         setSavingVarUrl(true);
+        const url = `/admin/panitera/scoring/courts/${editingVarCourt.id}/var-url?event_id=${encodeURIComponent(activeEvent.id)}`;
         router.put(
-            `/admin/panitera/scoring/courts/${editingVarCourt.id}/var-url`,
-            { var_url: varUrlInput.trim() || null },
+            url,
+            {
+                event_id: activeEvent.id,
+                var_url: varUrlInput.trim() || null,
+            },
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -1686,7 +1690,7 @@ export default function PaniteraDashboard({
                                     type="url"
                                     value={varUrlInput}
                                     onChange={(e) => setVarUrlInput(e.target.value)}
-                                    placeholder={`https://var.smart-perkemi.id/kempo/var/court-${editingVarCourt.order || 1}`}
+                                    placeholder="https://var.smart-perkemi.id/kempo/demo/live_stream.html"
                                     required={false}
                                     autoFocus
                                 />
@@ -1694,10 +1698,10 @@ export default function PaniteraDashboard({
                                     <span>Tautan bawaan sistem:</span>
                                     <button
                                         type="button"
-                                        onClick={() => setVarUrlInput(`https://var.smart-perkemi.id/kempo/var/court-${editingVarCourt.order || 1}`)}
+                                        onClick={() => setVarUrlInput('https://var.smart-perkemi.id/kempo/demo/live_stream.html')}
                                         className="font-mono text-[11px] font-bold text-rose-600 hover:underline"
                                     >
-                                        Gunakan Default Court {editingVarCourt.order || 1}
+                                        Gunakan Default Live Stream
                                     </button>
                                 </div>
                             </div>
@@ -1708,7 +1712,7 @@ export default function PaniteraDashboard({
                                     Contoh format:
                                 </p>
                                 <p className="mt-1 text-[11px] text-amber-800">
-                                    <code>https://var.smart-perkemi.id/kempo/var/court-{editingVarCourt.order || 1}</code>, IP camera local stream, atau tautan video replay external.
+                                    <code>https://var.smart-perkemi.id/kempo/demo/live_stream.html</code>, IP camera local stream, atau tautan video replay external.
                                 </p>
                             </div>
 

@@ -185,7 +185,8 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
                     ...c,
                     rank: index + 1,
                 })),
-        })).put(url, {
+        }));
+        form.put(url, {
             preserveScroll: true,
             onSuccess: () => setConfirmation(null),
             onError: (errs) => {

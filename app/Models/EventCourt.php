@@ -92,9 +92,7 @@ class EventCourt extends Model
             return $value;
         }
 
-        $courtNum = $this->order ?: 1;
-
-        return "https://var.smart-perkemi.id/kempo/var/court-{$courtNum}";
+        return 'https://var.smart-perkemi.id/kempo/demo/live_stream.html';
     }
 
     /**

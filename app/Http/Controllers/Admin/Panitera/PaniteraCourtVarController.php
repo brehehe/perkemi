@@ -18,8 +18,12 @@ class PaniteraCourtVarController extends Controller
         EventContext $eventContext,
         PaniteraCourtAccess $courtAccess,
     ): JsonResponse|RedirectResponse {
-        $event = $eventContext->eventFor($request);
+        $event = ($request->filled('event_id') || $request->has('event_id'))
+            ? $eventContext->eventFor($request)
+            : ($eventCourt->event ?? $eventContext->eventFor($request));
+
         abort_unless($eventCourt->event_id === $event->id, 404);
+        $eventContext->ensureCanManage($request, $event);
         $courtAccess->ensureCourtIsAccessible($request, $event, $eventCourt);
 
         $validated = $request->validate([

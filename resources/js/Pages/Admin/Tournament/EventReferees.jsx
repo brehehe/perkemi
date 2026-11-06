@@ -729,11 +729,16 @@ export default function EventReferees({
         const url = `/admin/pertandingan/wasit/${referee.id}/attendance?event_id=${encodeURIComponent(activeEvent.id)}&attendance_date=${encodeURIComponent(targetDate)}`;
 
         resetAttendanceForm.clearErrors();
-        resetAttendanceForm.transform(() => ({
+        resetAttendanceForm.setData({
             event_id: activeEvent.id,
             attendance_date: targetDate,
-        })).delete(url, {
+        });
+        resetAttendanceForm.delete(url, {
             preserveScroll: true,
+            data: {
+                event_id: activeEvent.id,
+                attendance_date: targetDate,
+            },
             onSuccess: () => {
                 setResetAttendanceTarget(null);
                 setAttendanceReferee(null);

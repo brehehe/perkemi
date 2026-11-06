@@ -7,7 +7,7 @@ const monitorModes = [
 ];
 
 export function CourtMonitorButtons({ courtId, eventId, compact = false, varUrl = null }) {
-    const resolvedVarUrl = varUrl || `https://var.smart-perkemi.id/kempo/var/court-${courtId}`;
+    const resolvedVarUrl = varUrl || 'https://var.smart-perkemi.id/kempo/demo/live_stream.html';
 
     return (
         <div className={`grid gap-2 ${compact ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-6'}`}>

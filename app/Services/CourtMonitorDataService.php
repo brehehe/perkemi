@@ -32,7 +32,9 @@ class CourtMonitorDataService
             'embuJudgeScores.referee:id,name,region,dan_grade',
             'randoriScore',
             'activeVarReview',
+            'redEntry.athlete:id,contingent_id,name,profile_photo_path',
             'redEntry.athlete.contingent:id,name',
+            'blueEntry.athlete:id,contingent_id,name,profile_photo_path',
             'blueEntry.athlete.contingent:id,name',
         ];
         $baseQuery = fn () => TournamentMatch::query()
@@ -160,7 +162,9 @@ class CourtMonitorDataService
                 ->with([
                     'randoriScore',
                     'court:id,name',
+                    'redEntry.athlete:id,contingent_id,name,profile_photo_path',
                     'redEntry.athlete.contingent:id,name',
+                    'blueEntry.athlete:id,contingent_id,name,profile_photo_path',
                     'blueEntry.athlete.contingent:id,name',
                 ])
                 ->orderBy('match_sequence')
@@ -338,6 +342,10 @@ class CourtMonitorDataService
                 'participant_label' => $match->participant_label ?: implode(' vs ', array_filter([$match->red_label, $match->blue_label])),
                 'aka_label' => $match->red_label,
                 'shiro_label' => $match->blue_label,
+                'aka_photo_url' => data_get($match->metadata, 'red.photo_url')
+                    ?? (filled($match->redEntry?->athlete?->profile_photo_path) ? route('athletes.photo', $match->redEntry->athlete->id) : null),
+                'shiro_photo_url' => data_get($match->metadata, 'blue.photo_url')
+                    ?? (filled($match->blueEntry?->athlete?->profile_photo_path) ? route('athletes.photo', $match->blueEntry->athlete->id) : null),
                 'aka_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
                 'shiro_contingent' => $match->metadata['blue']['contingent_name'] ?? $match->blueEntry?->athlete?->contingent?->name,
                 'red_contingent' => $match->metadata['red']['contingent_name'] ?? $match->redEntry?->athlete?->contingent?->name,
@@ -392,6 +400,11 @@ class CourtMonitorDataService
             ?? $match->blueEntry?->athlete?->contingent?->name
             ?? null;
 
+        $akaPhotoUrl = data_get($match->metadata, 'red.photo_url')
+            ?? (filled($match->redEntry?->athlete?->profile_photo_path) ? route('athletes.photo', $match->redEntry->athlete->id) : null);
+        $shiroPhotoUrl = data_get($match->metadata, 'blue.photo_url')
+            ?? (filled($match->blueEntry?->athlete?->profile_photo_path) ? route('athletes.photo', $match->blueEntry->athlete->id) : null);
+
         return [
             'id' => $match->id,
             'category_name' => $match->matchCategory?->name,
@@ -403,6 +416,8 @@ class CourtMonitorDataService
             'participant' => $type === 'embu' ? $this->participantDetails->forMatch($event, $match) : null,
             'aka_label' => $match->red_label,
             'shiro_label' => $match->blue_label,
+            'aka_photo_url' => $akaPhotoUrl,
+            'shiro_photo_url' => $shiroPhotoUrl,
             'aka_contingent' => $redContingent,
             'shiro_contingent' => $blueContingent,
             'red_contingent' => $redContingent,
@@ -443,7 +458,7 @@ class CourtMonitorDataService
                 : [],
             'var_stream_url' => data_get($match->metadata, 'var_stream_url')
                 ?? $match->court?->var_url
-                ?? 'https://var.smart-perkemi.id',
+                ?? 'https://var.smart-perkemi.id/kempo/demo/live_stream.html',
             'var_review' => [
                 'is_under_review' => (bool) data_get($match->metadata, 'under_var_review', false),
                 'reason' => data_get($match->metadata, 'var_review_reason'),

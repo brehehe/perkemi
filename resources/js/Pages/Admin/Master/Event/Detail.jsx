@@ -503,15 +503,14 @@ export default function EventDetail({
                 },
             });
         } else {
-            refereeForm
-                .transform((data) => ({ ...data, create_new: true }))
-                .post(`/admin/master/event/${event.id}/referee`, {
-                    preserveScroll: true,
-                    onSuccess: () => {
-                        setIsRefereeModalOpen(false);
-                        refereeForm.reset();
-                    },
-                });
+            refereeForm.transform((data) => ({ ...data, create_new: true }));
+            refereeForm.post(`/admin/master/event/${event.id}/referee`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsRefereeModalOpen(false);
+                    refereeForm.reset();
+                },
+            });
         }
     };
 
