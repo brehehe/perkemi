@@ -46,17 +46,141 @@ const mergeDraftChanges = (current, incoming) => {
     return merged;
 };
 
-function ScoreFields({ corner, label, values, errors, onChange, disabled = false }) {
+function ScoreStepper({
+    name,
+    weight,
+    value,
+    corner,
+    disabled = false,
+    error,
+    onChange,
+}) {
+    const isPenalty = weight < 0;
+    const currentVal = Math.max(0, Math.min(20, Number(value) || 0));
+    const isAka = corner === 'aka';
+    const hasValue = currentVal > 0;
+
+    const handleDecrement = () => {
+        if (disabled || currentVal <= 0) return;
+        onChange(currentVal - 1);
+    };
+
+    const handleIncrement = () => {
+        if (disabled || currentVal >= 20) return;
+        onChange(currentVal + 1);
+    };
+
     return (
-        <fieldset className={`min-w-0 rounded-xl border p-3 sm:p-4 ${corner === 'aka' ? 'border-rose-200 bg-rose-50/50' : 'border-slate-200 bg-slate-50'}`}>
-            <legend className={`px-2 text-sm font-black uppercase tracking-wide ${corner === 'aka' ? 'text-rose-700' : 'text-slate-700'}`}>{corner === 'aka' ? 'AKA · Merah' : 'SHIRO · Putih'}</legend>
-            <p className="mb-3 text-sm font-bold text-[#17120f]">{label}</p>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div
+            className={`flex flex-col justify-between rounded-xl border p-2.5 sm:p-3 transition-all ${
+                hasValue
+                    ? isPenalty
+                        ? 'border-amber-300 bg-amber-50/70 shadow-xs ring-1 ring-amber-300/70'
+                        : isAka
+                            ? 'border-rose-300 bg-rose-100/50 shadow-xs ring-1 ring-rose-300/70'
+                            : 'border-slate-300 bg-slate-100/70 shadow-xs ring-1 ring-slate-300/70'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+        >
+            <div className="mb-2 flex items-start justify-between gap-1.5">
+                <span className="text-xs font-black uppercase tracking-tight text-slate-800 line-clamp-1 leading-snug" title={name}>
+                    {name}
+                </span>
+                <span
+                    className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
+                        isPenalty
+                            ? 'border border-amber-300 bg-amber-100 text-amber-900'
+                            : 'border border-emerald-200 bg-emerald-100 text-emerald-800'
+                    }`}
+                >
+                    {weight > 0 ? `+${weight}` : weight}
+                </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 select-none">
+                <button
+                    type="button"
+                    disabled={disabled || currentVal <= 0}
+                    onClick={handleDecrement}
+                    aria-label={`Kurangi ${name} ${isAka ? 'Aka' : 'Shiro'}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border font-bold text-sm transition active:scale-95 disabled:pointer-events-none disabled:opacity-30 ${
+                        isAka
+                            ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 active:bg-rose-200'
+                            : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 active:bg-slate-300'
+                    }`}
+                >
+                    <i className="fa-solid fa-minus" aria-hidden="true" />
+                </button>
+
+                <div
+                    className={`flex h-10 flex-1 items-center justify-center rounded-lg border font-black text-lg tabular-nums ${
+                        hasValue
+                            ? isPenalty
+                                ? 'border-amber-300 bg-white text-amber-950 shadow-inner'
+                                : isAka
+                                    ? 'border-rose-300 bg-white text-rose-950 shadow-inner'
+                                    : 'border-slate-300 bg-white text-slate-950 shadow-inner'
+                            : 'border-slate-200 bg-slate-50/70 text-slate-400'
+                    }`}
+                    role="status"
+                    aria-label={`${name}: ${currentVal}`}
+                >
+                    {currentVal}
+                </div>
+
+                <button
+                    type="button"
+                    disabled={disabled || currentVal >= 20}
+                    onClick={handleIncrement}
+                    aria-label={`Tambah ${name} ${isAka ? 'Aka' : 'Shiro'}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border font-bold text-sm shadow-xs transition active:scale-95 disabled:pointer-events-none disabled:opacity-30 ${
+                        isAka
+                            ? 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800'
+                            : 'border-slate-800 bg-slate-800 text-white hover:bg-slate-900 active:bg-slate-950'
+                    }`}
+                >
+                    <i className="fa-solid fa-plus" aria-hidden="true" />
+                </button>
+            </div>
+
+            {error && <p className="mt-1 text-[11px] font-bold text-rose-600">{error}</p>}
+        </div>
+    );
+}
+
+function ScoreFields({ corner, label, values, errors, onChange, disabled = false }) {
+    const isAka = corner === 'aka';
+    const total = calculateTotal(values);
+
+    return (
+        <fieldset className={`min-w-0 rounded-2xl border p-3.5 sm:p-5 shadow-xs ${isAka ? 'border-rose-200 bg-rose-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
+            <legend className={`rounded-lg px-2.5 py-0.5 text-xs font-black uppercase tracking-wider ${isAka ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-slate-200/70 text-slate-800 border border-slate-300'}`}>
+                {isAka ? 'AKA · Merah' : 'SHIRO · Putih'}
+            </legend>
+            <div className="mb-3.5 flex items-center justify-between gap-2 border-b border-black/5 pb-2.5">
+                <p className="text-base font-black text-[#17120f] truncate">{label}</p>
+                <span className="text-xs font-semibold text-slate-500 hidden sm:inline">Gunakan tombol + / - untuk mengisi skor</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3">
                 {scoreKeys.map(([key, name, weight]) => (
-                    <Input key={key} label={`${name} (${weight > 0 ? '+' : ''}${weight})`} type="number" min="0" max="20" required value={values[key]} error={errors[`${corner}.${key}`]} disabled={disabled} onChange={(event) => onChange(key, event.target.value)} />
+                    <ScoreStepper
+                        key={key}
+                        name={name}
+                        weight={weight}
+                        value={values[key]}
+                        corner={corner}
+                        disabled={disabled}
+                        error={errors[`${corner}.${key}`]}
+                        onChange={(nextVal) => onChange(key, nextVal)}
+                    />
                 ))}
             </div>
-            <p className="mt-4 border-t border-black/5 pt-3 text-right text-xl font-black">Total: {calculateTotal(values)}</p>
+            <div className="mt-4 flex items-center justify-between border-t border-black/10 pt-3">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Total Nilai {isAka ? 'Merah' : 'Putih'}</span>
+                <p className={`text-2xl font-black tabular-nums ${isAka ? 'text-rose-700' : 'text-slate-900'}`}>
+                    Total: {total}
+                </p>
+            </div>
         </fieldset>
     );
 }

@@ -524,6 +524,196 @@ class RegistrationController extends Controller
     }
 
     /**
+     * Display a comprehensive overview and technique report across all match categories.
+     */
+    public function matchCategoriesReport(Request $request): Response|RedirectResponse
+    {
+        if ($this->isContingentPortalUser($request)) {
+            return redirect()->route('kontingen.registrasi');
+        }
+
+        $events = $this->registrationEventsForRequest($request);
+        $tenantEvent = $request->attributes->get('tenantEvent');
+        $event = $events->firstWhere('id', $tenantEvent?->id ?? $request->query('event_id'))
+            ?? $events->firstWhere('is_active', true)
+            ?? $events->first();
+
+        abort_unless($event instanceof Event, 403);
+        $eventStaff = $this->canManageMatchEntries($request, $event);
+        $isContingentOwner = $event->contingents()->where('user_id', $request->user()?->id)->exists();
+        abort_unless($eventStaff || $isContingentOwner, 403);
+
+        $categories = $event->matchCategories()
+            ->where('is_active', true)
+            ->whereNull('merged_into_id')
+            ->with([
+                'ageCategory:id,name,min_age,max_age',
+                'athleteEntries' => fn ($q) => $q->with([
+                    'athlete:id,contingent_id,name,gender,kyu_dan,weight,nik,kenshi_number',
+                    'athlete.contingent:id,name,city',
+                ]),
+            ])
+            ->orderBy('order')
+            ->get();
+
+        $allTechniques = EmbuTeamTechnique::query()
+            ->where('event_id', $event->id)
+            ->with('technique:id,name,kyu_id')
+            ->orderBy('order')
+            ->get()
+            ->groupBy(fn ($t) => $t->event_match_category_id.'_'.$t->contingent_id.'_'.$t->team_number);
+
+        $contingentIds = collect();
+        $totalEmbuTeams = 0;
+        $embuTeamsWithTechniques = 0;
+        $embuTeamsWithoutTechniques = 0;
+        $totalRandoriAthletes = 0;
+        $totalEmbuAthletes = 0;
+
+        $reportCategories = $categories->map(function (EventMatchCategory $category) use (
+            $allTechniques,
+            &$contingentIds,
+            &$totalEmbuTeams,
+            &$embuTeamsWithTechniques,
+            &$embuTeamsWithoutTechniques,
+            &$totalRandoriAthletes,
+            &$totalEmbuAthletes
+        ) {
+            $isEmbu = $category->type === 'embu';
+            $teams = [];
+            $randoriAthletes = [];
+
+            if ($isEmbu) {
+                $grouped = $category->athleteEntries->groupBy(function ($entry) {
+                    $cId = $entry->athlete?->contingent_id ?? 'unknown';
+
+                    return $cId.'_'.($entry->team_number ?? 1);
+                });
+
+                foreach ($grouped as $key => $entries) {
+                    $contingent = $entries->first()->athlete?->contingent;
+                    $teamNumber = (int) ($entries->first()->team_number ?? 1);
+                    $contingentId = $contingent?->id ?? '';
+                    if ($contingentId) {
+                        $contingentIds->push($contingentId);
+                    }
+
+                    $techKey = $category->id.'_'.$contingentId.'_'.$teamNumber;
+                    $techs = $allTechniques->get($techKey, collect());
+
+                    $hasTechs = $techs->isNotEmpty();
+                    $totalEmbuTeams++;
+                    if ($hasTechs) {
+                        $embuTeamsWithTechniques++;
+                    } else {
+                        $embuTeamsWithoutTechniques++;
+                    }
+
+                    $athleteList = $entries->map(function ($e) use (&$totalEmbuAthletes) {
+                        $totalEmbuAthletes++;
+
+                        return [
+                            'id' => $e->athlete?->id,
+                            'name' => $e->athlete?->name ?? 'Tanpa Nama',
+                            'gender' => $e->athlete?->gender,
+                            'kyu_dan' => $e->athlete?->kyu_dan,
+                            'nik' => $e->athlete?->nik,
+                            'kenshi_number' => $e->athlete?->kenshi_number,
+                            'entry_id' => $e->id,
+                        ];
+                    })->values()->all();
+
+                    $teams[] = [
+                        'team_key' => $key,
+                        'contingent_id' => $contingentId,
+                        'contingent_name' => $contingent?->name ?? 'Kontingen Tidak Diketahui',
+                        'contingent_city' => $contingent?->city,
+                        'team_number' => $teamNumber,
+                        'athletes' => $athleteList,
+                        'techniques' => $techs->map(fn ($t) => [
+                            'id' => $t->id,
+                            'technique_id' => $t->technique_id,
+                            'name' => $t->technique?->name ?? 'Teknik #'.$t->id,
+                            'order' => $t->order,
+                        ])->values()->all(),
+                        'has_techniques' => $hasTechs,
+                        'technique_count' => $techs->count(),
+                    ];
+                }
+
+                usort($teams, fn ($a, $b) => strcmp($a['contingent_name'], $b['contingent_name']) ?: ($a['team_number'] <=> $b['team_number']));
+            } else {
+                foreach ($category->athleteEntries as $entry) {
+                    $contingent = $entry->athlete?->contingent;
+                    if ($contingent?->id) {
+                        $contingentIds->push($contingent->id);
+                    }
+                    $totalRandoriAthletes++;
+
+                    $randoriAthletes[] = [
+                        'entry_id' => $entry->id,
+                        'athlete_id' => $entry->athlete?->id,
+                        'name' => $entry->athlete?->name ?? 'Tanpa Nama',
+                        'gender' => $entry->athlete?->gender,
+                        'kyu_dan' => $entry->athlete?->kyu_dan,
+                        'weight' => $entry->athlete?->weight,
+                        'nik' => $entry->athlete?->nik,
+                        'kenshi_number' => $entry->athlete?->kenshi_number,
+                        'contingent_id' => $contingent?->id,
+                        'contingent_name' => $contingent?->name ?? '—',
+                        'contingent_city' => $contingent?->city,
+                    ];
+                }
+
+                usort($randoriAthletes, fn ($a, $b) => strcmp($a['contingent_name'], $b['contingent_name']) ?: strcmp($a['name'], $b['name']));
+            }
+
+            return [
+                'id' => $category->id,
+                'name' => $category->name,
+                'type' => $category->type,
+                'gender' => $category->gender,
+                'order' => $category->order,
+                'max_athletes_per_team' => $category->max_athletes_per_team,
+                'min_weight' => $category->min_weight,
+                'max_weight' => $category->max_weight,
+                'age_category_name' => $category->ageCategory?->name ?? 'Semua Usia',
+                'teams' => $teams,
+                'randori_athletes' => $randoriAthletes,
+                'total_teams' => count($teams),
+                'total_athletes' => $isEmbu ? count($category->athleteEntries) : count($randoriAthletes),
+                'teams_with_techniques' => count(array_filter($teams, fn ($t) => $t['has_techniques'])),
+                'teams_without_techniques' => count(array_filter($teams, fn ($t) => ! $t['has_techniques'])),
+            ];
+        });
+
+        $uniqueContingentsCount = $contingentIds->unique()->filter()->count();
+
+        $stats = [
+            'total_categories' => $categories->count(),
+            'total_embu_categories' => $categories->where('type', 'embu')->count(),
+            'total_randori_categories' => $categories->where('type', 'randori')->count(),
+            'total_embu_teams' => $totalEmbuTeams,
+            'embu_teams_with_techniques' => $embuTeamsWithTechniques,
+            'embu_teams_without_techniques' => $embuTeamsWithoutTechniques,
+            'total_athletes' => $totalEmbuAthletes + $totalRandoriAthletes,
+            'total_embu_athletes' => $totalEmbuAthletes,
+            'total_randori_athletes' => $totalRandoriAthletes,
+            'total_contingents' => $uniqueContingentsCount,
+            'embu_completion_percent' => $totalEmbuTeams > 0
+                ? (int) round(($embuTeamsWithTechniques / $totalEmbuTeams) * 100)
+                : 100,
+        ];
+
+        return Inertia::render('Admin/Registration/MatchCategoriesReport', [
+            'activeEvent' => $event->only(['id', 'name', 'start_date', 'end_date', 'city', 'location']),
+            'eventOptions' => $this->eventOptions($events),
+            'categories' => $reportCategories,
+            'stats' => $stats,
+        ]);
+    }
+
+    /**
      * Export match groups and athlete entries as a native Excel XLSX workbook.
      */
     public function exportMatchGroups(
@@ -1226,18 +1416,24 @@ class RegistrationController extends Controller
         Registration $registration,
         EventMatchCategory $category,
         int $teamNumber,
-        EmbuTeamTechnique $teamTechnique
+        string $teamTechnique
     ): RedirectResponse {
         $this->ensureTenantRegistration($request, $registration);
         abort_unless($registration->event instanceof Event && $this->canManageRegistration($request, $registration), 403);
         $this->ensureRegistrationEditable($request, $registration);
         abort_unless($category->event_id === $registration->event_id && $category->type === 'embu', 404);
-        abort_unless($teamTechnique->event_id === $registration->event_id
-            && $teamTechnique->contingent_id === $registration->contingent_id
-            && $teamTechnique->event_match_category_id === $category->id
-            && $teamTechnique->team_number === $teamNumber, 404);
 
-        $teamTechnique->delete();
+        $technique = EmbuTeamTechnique::query()->find($teamTechnique);
+        if (! $technique) {
+            return back()->with('success', 'Teknik Embu berhasil dihapus.');
+        }
+
+        abort_unless($technique->event_id === $registration->event_id
+            && $technique->contingent_id === $registration->contingent_id
+            && $technique->event_match_category_id === $category->id
+            && $technique->team_number === $teamNumber, 404);
+
+        $technique->delete();
 
         return back()->with('success', 'Teknik Embu berhasil dihapus.');
     }
@@ -1279,6 +1475,10 @@ class RegistrationController extends Controller
     private function ensureTenantRegistration(Request $request, Registration $registration): void
     {
         abort_unless($request->user(), 403);
+
+        if ($request->user()?->hasAnyRole(['Super Admin', 'Admin'])) {
+            return;
+        }
 
         $tenantEvent = $request->attributes->get('tenantEvent');
         abort_unless(! ($tenantEvent instanceof Event) || $registration->event_id === $tenantEvent->id, 404);

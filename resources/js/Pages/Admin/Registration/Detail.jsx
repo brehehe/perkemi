@@ -16,6 +16,7 @@ const categoryRequirements = (category) => {
 function TechniquePanel({ registration, category, teamNumber, assignments, techniques, canManage, hasAthletes }) {
     const [editing, setEditing] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
     const [createError, setCreateError] = useState('');
     const form = useForm({ technique_id: '' });
     const url = '/admin/pendaftaran/registrasi/' + registration.id + '/match-category/' + category.id + '/teams/' + teamNumber + '/techniques';
@@ -36,6 +37,16 @@ function TechniquePanel({ registration, category, teamNumber, assignments, techn
             onSuccess: () => form.reset(),
         });
     };
+    const removeTechnique = (item) => {
+        if (deletingId) return;
+        setDeletingId(item.id);
+        const itemTeamNumber = item.team_number ?? teamNumber;
+        const deleteUrl = '/admin/pendaftaran/registrasi/' + registration.id + '/match-category/' + category.id + '/teams/' + itemTeamNumber + '/techniques/' + item.id;
+        router.delete(deleteUrl, {
+            preserveScroll: true,
+            onFinish: () => setDeletingId(null),
+        });
+    };
 
     return <div className="min-w-0 border-t border-[#eee8df] p-4 lg:border-l lg:border-t-0">
         <div className="flex items-center justify-between gap-3">
@@ -48,9 +59,13 @@ function TechniquePanel({ registration, category, teamNumber, assignments, techn
         {assignments.length ? <ol className="mt-4 space-y-2">
             {assignments.map((item, index) => <li key={item.id} className="flex justify-between gap-3 rounded-lg bg-[#fbf8f4] px-3 py-2 text-sm text-[#17120f]">
                 <span><strong className="mr-2 text-[#a93226]">{index + 1}.</strong>{item.technique?.name || 'Teknik tidak tersedia'}</span>
-                {canManage && editing && <Button variant="unstyled" size="none" type="button" onClick={() => router.delete(url + '/' + item.id, { preserveScroll: true })}
+                {canManage && editing && <Button variant="unstyled" size="none" type="button"
+                    disabled={deletingId === item.id}
+                    onClick={() => removeTechnique(item)}
                     aria-label={'Hapus teknik ' + (item.technique?.name || '') + ' dari Tim ' + teamNumber}
-                    className="rounded px-2 text-xs font-semibold text-rose-700 hover:bg-rose-100">Hapus</Button>}
+                    className="rounded px-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">
+                    {deletingId === item.id ? 'Menghapus...' : 'Hapus'}
+                </Button>}
             </li>)}
         </ol> : <p className="mt-4 text-sm text-[#706860]">Belum ada teknik untuk tim ini.</p>}
         {canManage && editing && <form onSubmit={add} className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">

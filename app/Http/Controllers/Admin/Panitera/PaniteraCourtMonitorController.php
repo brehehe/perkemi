@@ -36,7 +36,7 @@ class PaniteraCourtMonitorController extends Controller
 
         return Inertia::render('Admin/Panitera/CourtMonitor', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue']),
-            'court' => $eventCourt->only(['id', 'name', 'location']),
+            'court' => $eventCourt->only(['id', 'name', 'location', 'order', 'var_url', 'raw_var_url']),
             'mode' => $mode,
             'monitor' => $this->monitorService->monitorData($event, $eventCourt),
             'timerStateUrl' => route('admin.panitera.monitors.timer', ['eventCourt' => $eventCourt, 'event_id' => $event->id]),

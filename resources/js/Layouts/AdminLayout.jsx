@@ -60,7 +60,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const activeReport = currentSearchParams.get('report') || 'champions';
     const isDashboard = currentPath === '/admin/dashboard';
     const isRegistration = url.startsWith('/admin/pendaftaran/registrasi');
-    const isMatchGroups = url.startsWith('/admin/pendaftaran/nomor-pertandingan');
+    const isMatchGroups = url.startsWith('/admin/pendaftaran/nomor-pertandingan') && !url.startsWith('/admin/pendaftaran/nomor-pertandingan/laporan');
+    const isMatchCategoriesReport = url.startsWith('/admin/pendaftaran/laporan-nomor-pertandingan') || url.startsWith('/admin/pendaftaran/nomor-pertandingan/laporan');
     const isVerification = url.startsWith('/admin/pendaftaran/verifikasi');
     const isDrawing = url.startsWith('/admin/pertandingan/drawing');
     const isSchedule = url.startsWith('/admin/pertandingan/jadwal');
@@ -259,6 +260,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             category: 'Pendaftaran',
             icon: <i className="fa-solid fa-people-group text-[#d4a843]"></i>,
             onSelect: () => router.visit(withEventContext('/admin/pendaftaran/nomor-pertandingan')),
+        },
+        {
+            id: 'laporan-nomor-pertandingan',
+            title: 'Laporan Nomor Pertandingan & Teknik',
+            subtitle: 'Rekap menyeluruh nomor tanding, susunan tim Embu, teknik, dan atlet',
+            category: 'Pendaftaran',
+            icon: <i className="fa-solid fa-clipboard-list text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/pendaftaran/laporan-nomor-pertandingan')),
         },
         {
             id: 'verifikasi',
@@ -551,6 +560,16 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         >
                                             <i className={`fa-solid fa-people-group w-4 shrink-0 text-[11px] ${isMatchGroups ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
                                             <span>Nomor dan Kelompok Pertandingan</span>
+                                        </Link>
+                                        <Link
+                                            href={withEventContext('/admin/pendaftaran/laporan-nomor-pertandingan')}
+                                            className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isMatchCategoriesReport
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <i className={`fa-solid fa-clipboard-list w-4 shrink-0 text-[11px] ${isMatchCategoriesReport ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                            <span>Laporan Nomor Pertandingan</span>
                                         </Link>
                                         <Link
                                             href={withEventContext('/admin/pendaftaran/verifikasi')}

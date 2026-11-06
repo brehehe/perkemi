@@ -6,9 +6,11 @@ const monitorModes = [
     ['officials', 'Ofisial', 'fa-user-shield'],
 ];
 
-export function CourtMonitorButtons({ courtId, eventId, compact = false }) {
+export function CourtMonitorButtons({ courtId, eventId, compact = false, varUrl = null }) {
+    const resolvedVarUrl = varUrl || `https://var.smart-perkemi.id/kempo/var/court-${courtId}`;
+
     return (
-        <div className={`grid gap-2 ${compact ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5'}`}>
+        <div className={`grid gap-2 ${compact ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-6'}`}>
             {monitorModes.map(([mode, label, icon]) => (
                 <a
                     key={mode}
@@ -21,6 +23,16 @@ export function CourtMonitorButtons({ courtId, eventId, compact = false }) {
                     {label}
                 </a>
             ))}
+            <a
+                href={resolvedVarUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={`Buka VAR Camera Stream (${resolvedVarUrl})`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 px-3 text-xs font-bold text-rose-700 transition-colors hover:border-rose-400 hover:bg-rose-100 hover:text-rose-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 sm:min-h-10"
+            >
+                <i className="fa-solid fa-video text-rose-600" aria-hidden="true" />
+                VAR
+            </a>
         </div>
     );
 }
@@ -39,7 +51,7 @@ export default function CourtMonitorLinks({ activeEvent, courts = [] }) {
                             <h3 className="text-sm font-bold text-[#17120f]">{court.name}</h3>
                             <p className="mt-0.5 text-[11px] text-[#7a746e]">{court.location || 'Lokasi belum dicatat'}</p>
                         </div>
-                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} />
+                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} />
                     </article>
                 ))}
                 {courts.length === 0 && <p className="rounded-xl border border-dashed border-[#d9d3c9] p-6 text-center text-xs text-[#7a746e] lg:col-span-2 2xl:col-span-3">Belum ada court aktif pada event ini.</p>}

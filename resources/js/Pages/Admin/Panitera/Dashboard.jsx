@@ -469,6 +469,31 @@ export default function PaniteraDashboard({
     const [viewModeTab, setViewModeTab] = useState(filters.category_id ? 'single' : (filters.view_mode || 'categories'));
     const [randoriViewTab, setRandoriViewTab] = useState('bracket');
     const [generatingChampions, setGeneratingChampions] = useState(false);
+    const [editingVarCourt, setEditingVarCourt] = useState(null);
+    const [varUrlInput, setVarUrlInput] = useState('');
+    const [savingVarUrl, setSavingVarUrl] = useState(false);
+
+    const handleOpenVarModal = (court) => {
+        setEditingVarCourt(court);
+        setVarUrlInput(court.raw_var_url || court.var_url || '');
+    };
+
+    const handleSaveVarUrl = (e) => {
+        e.preventDefault();
+        if (!editingVarCourt) return;
+        setSavingVarUrl(true);
+        router.put(
+            `/admin/panitera/scoring/courts/${editingVarCourt.id}/var-url`,
+            { var_url: varUrlInput.trim() || null },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setSavingVarUrl(false);
+                    setEditingVarCourt(null);
+                },
+            }
+        );
+    };
     const eventQuery = `?event_id=${encodeURIComponent(activeEvent.id)}`;
     const selectedCategory = categories.find((c) => c.id === filters.category_id);
 
@@ -1592,7 +1617,35 @@ export default function PaniteraDashboard({
                                             </div>
                                         )}
                                     </div>
-                                    <div className="mt-3 border-t border-[#e7e0d7] pt-3"><CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} compact /></div>
+                                    {/* VAR Stream Link Row */}
+                                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs shadow-2xs">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <i className="fa-solid fa-video text-rose-600 text-xs shrink-0" aria-hidden="true" />
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 shrink-0">VAR:</span>
+                                            <a
+                                                href={court.var_url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="truncate font-mono text-[11px] font-semibold text-rose-700 hover:text-rose-900 hover:underline"
+                                                title={`Buka Link VAR (${court.var_url})`}
+                                            >
+                                                {court.var_url}
+                                            </a>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenVarModal(court)}
+                                            className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                                            title="Sesuaikan Link VAR"
+                                        >
+                                            <i className="fa-solid fa-pen-to-square text-[10px]" />
+                                            <span>Ubah</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-3 border-t border-[#e7e0d7] pt-3">
+                                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} compact />
+                                    </div>
                                 </article>
                             ))}
                             {courts.length === 0 && <p className="rounded-xl border border-dashed border-[#d9d3c9] p-8 text-center text-sm text-[#7a746e] md:col-span-2 2xl:col-span-3">Belum ada court untuk akun Panitera ini.</p>}
@@ -1600,6 +1653,87 @@ export default function PaniteraDashboard({
                     </div>
                 </section>
             </div>
+
+            {/* Modal Sesuaikan Link VAR Court */}
+            {editingVarCourt && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                            <div>
+                                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <i className="fa-solid fa-video text-rose-600" />
+                                    Sesuaikan Link VAR — {editingVarCourt.name}
+                                </h3>
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                    Link ini akan otomatis dibuka tombol VAR dan dimuat pada Layar Tanding Monitor saat nomor Randori.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setEditingVarCourt(null)}
+                                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                                <i className="fa-solid fa-xmark text-sm" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveVarUrl} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    URL Streaming VAR (Kamera Court)
+                                </label>
+                                <Input
+                                    type="url"
+                                    value={varUrlInput}
+                                    onChange={(e) => setVarUrlInput(e.target.value)}
+                                    placeholder={`https://var.smart-perkemi.id/kempo/var/court-${editingVarCourt.order || 1}`}
+                                    required={false}
+                                    autoFocus
+                                />
+                                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                                    <span>Tautan bawaan sistem:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVarUrlInput(`https://var.smart-perkemi.id/kempo/var/court-${editingVarCourt.order || 1}`)}
+                                        className="font-mono text-[11px] font-bold text-rose-600 hover:underline"
+                                    >
+                                        Gunakan Default Court {editingVarCourt.order || 1}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                                <p className="font-bold flex items-center gap-1.5">
+                                    <i className="fa-solid fa-circle-info text-amber-600" />
+                                    Contoh format:
+                                </p>
+                                <p className="mt-1 text-[11px] text-amber-800">
+                                    <code>https://var.smart-perkemi.id/kempo/var/court-{editingVarCourt.order || 1}</code>, IP camera local stream, atau tautan video replay external.
+                                </p>
+                            </div>
+
+                            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => setEditingVarCourt(null)}
+                                    disabled={savingVarUrl}
+                                >
+                                    Batal
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    disabled={savingVarUrl}
+                                    iconLeft={<i className="fa-solid fa-floppy-disk" />}
+                                >
+                                    {savingVarUrl ? 'Menyimpan…' : 'Simpan Link VAR'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </AdminLayout>
     );
 }

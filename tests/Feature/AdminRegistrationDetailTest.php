@@ -315,5 +315,7 @@ test('one contingent can enter two Embu teams and choose separate techniques for
         ->assertNotFound();
     $this->actingAs($staff)->delete("{$base}/match-category/{$category->id}/teams/1/techniques/{$teamOneTechnique->id}")
         ->assertRedirect();
+    $this->actingAs($staff)->delete("{$base}/match-category/{$category->id}/teams/1/techniques/{$teamOneTechnique->id}")
+        ->assertRedirect();
     expect(EmbuTeamTechnique::count())->toBe(3);
 });

@@ -121,6 +121,11 @@ class EventMatchCategory extends Model
         return $this->hasMany(AthleteMatchCategoryEntry::class);
     }
 
+    public function teamTechniques(): HasMany
+    {
+        return $this->hasMany(EmbuTeamTechnique::class, 'event_match_category_id');
+    }
+
     public function tournamentDrawing(): HasOne
     {
         return $this->hasOne(TournamentDrawing::class);

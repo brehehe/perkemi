@@ -34,8 +34,18 @@ class EventCourt extends Model
         'location',
         'description',
         'access_code',
+        'var_url',
         'order',
         'is_active',
+    ];
+
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var list<string>
+     */
+    protected $appends = [
+        'var_url',
     ];
 
     protected static function booted(): void
@@ -71,6 +81,28 @@ class EventCourt extends Model
             'is_active' => 'boolean',
             'deleted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Get the resolved VAR stream URL (falls back to default court slug if not customized).
+     */
+    public function getVarUrlAttribute(?string $value): string
+    {
+        if (filled($value)) {
+            return $value;
+        }
+
+        $courtNum = $this->order ?: 1;
+
+        return "https://var.smart-perkemi.id/kempo/var/court-{$courtNum}";
+    }
+
+    /**
+     * Get raw customized VAR URL value without fallback.
+     */
+    public function getRawVarUrlAttribute(): ?string
+    {
+        return $this->attributes['var_url'] ?? null;
     }
 
     /**

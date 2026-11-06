@@ -1,11 +1,16 @@
 <?php
 
+use App\Models\Athlete;
+use App\Models\AthleteMatchCategoryEntry;
+use App\Models\Contingent;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
 use App\Models\Rundown;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
+use App\Models\User;
+use App\Services\TournamentDrawingGenerator;
 use App\Services\TournamentScheduleGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -434,4 +439,247 @@ test('next category starts in the remaining slot before continuing in the follow
             $afternoonSession->id,
             $afternoonSession->id,
         ]);
+});
+
+test('multi-pool embu draws and schedules pool A completely before pool B and pool C without interleaving', function () {
+    $event = Event::query()->create([
+        'name' => 'Event Multi Pool Embu',
+        'slug' => 'event-multi-pool-embu',
+        'venue' => 'GOR Kempo',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-07',
+        'match_duration_minutes' => 7,
+        'minimum_rest_minutes' => 10,
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    Rundown::query()->create([
+        'event_id' => $event->id,
+        'date' => '2026-11-07 08:30:00',
+        'end_time' => '2026-11-07 12:00:00',
+        'name' => 'Sesi Pagi',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
+    ]);
+    $category = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Tandoku Putra Kyu III',
+        'type' => 'embu',
+        'gender' => 'male',
+        'capacity' => 15,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    // Create 12 participants (which triggers 3 pools: A, B, C)
+    $owner = User::factory()->create();
+    $contingent = Contingent::create([
+        'event_id' => $event->id,
+        'user_id' => $owner->id,
+        'name' => 'Dojo Surabaya',
+        'city' => 'Surabaya',
+        'manager_name' => 'Sensei Test',
+        'phone' => '08123456789',
+    ]);
+    $participants = collect(range(1, 12))->map(function (int $i) use ($event, $category, $contingent) {
+        $athlete = Athlete::create([
+            'contingent_id' => $contingent->id,
+            'name' => "Kenshi {$i}",
+            'gender' => 'male',
+            'birth_date' => '2008-01-01',
+        ]);
+        $entry = AthleteMatchCategoryEntry::create([
+            'event_id' => $event->id,
+            'athlete_id' => $athlete->id,
+            'event_match_category_id' => $category->id,
+        ]);
+
+        return [
+            'entry_id' => $entry->id,
+            'athlete_ids' => [$athlete->id],
+            'contingent_id' => $contingent->id,
+            'contingent_name' => "Dojo {$i}",
+            'label' => "Kenshi {$i}",
+        ];
+    });
+
+    $drawingGenerator = app(TournamentDrawingGenerator::class);
+    $reflector = new ReflectionClass($drawingGenerator);
+    $method = $reflector->getMethod('createEmbuNodes');
+    $method->setAccessible(true);
+
+    $drawing = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'status' => 'generated',
+        'bracket_type' => 'embu_3_pools',
+        'participant_count' => 12,
+        'contingent_count' => 12,
+        'generated_at' => now(),
+    ]);
+
+    $method->invoke($drawingGenerator, $event, $category, $drawing, $participants);
+
+    // Verify drawing nodes: all Pool A first, then Pool B, then Pool C
+    $preliminaryMatches = $drawing->matches()->where('phase', 'preliminary')->orderBy('match_sequence')->get();
+    $pools = $preliminaryMatches->pluck('pool')->all();
+
+    expect($pools)->toBe(['A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'C', 'C', 'C', 'C']);
+
+    // Schedule and verify times are also sequential
+    app(TournamentScheduleGenerator::class)->schedule($event);
+
+    $scheduled = $drawing->matches()->where('phase', 'preliminary')->orderBy('scheduled_start_at')->get();
+    $scheduledPools = $scheduled->pluck('pool')->all();
+
+    expect($scheduledPools)->toBe(['A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'C', 'C', 'C', 'C']);
+});
+
+test('earlier empty slots on finished courts are filled by randori without waiting for other court embu', function () {
+    $event = Event::query()->create([
+        'name' => 'Event Dual Court Dense',
+        'slug' => 'event-dual-court-dense',
+        'venue' => 'GOR Kempo',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-07',
+        'match_duration_minutes' => 10,
+        'minimum_rest_minutes' => 10,
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
+    $court1 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $court2 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    Rundown::query()->create([
+        'event_id' => $event->id,
+        'date' => '2026-11-07 08:00:00',
+        'end_time' => '2026-11-07 10:00:00',
+        'name' => 'Sesi Pagi',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
+    ]);
+
+    // Embu category 1 on Court 1 (only 2 matches: 08:00, 08:10)
+    $embuShort = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Pendek',
+        'type' => 'embu',
+        'gender' => 'male',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $d1 = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuShort->id,
+        'status' => 'generated',
+        'bracket_type' => 'embu_direct_final',
+        'participant_count' => 2,
+        'contingent_count' => 2,
+    ]);
+    foreach (range(1, 2) as $s) {
+        TournamentMatch::query()->create([
+            'tournament_drawing_id' => $d1->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $embuShort->id,
+            'phase' => 'preliminary',
+            'round_label' => 'Babak Final',
+            'match_sequence' => $s,
+            'bracket_position' => $s,
+            'status' => 'pending',
+            'is_bye' => false,
+            'metadata' => ['athlete_ids' => [(string) Str::uuid()]],
+        ]);
+    }
+
+    // Embu category 2 on Court 2 (longer, 5 matches: 08:00..08:40)
+    $embuLong = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Panjang',
+        'type' => 'embu',
+        'gender' => 'male',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $d2 = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuLong->id,
+        'status' => 'generated',
+        'bracket_type' => 'embu_direct_final',
+        'participant_count' => 5,
+        'contingent_count' => 5,
+    ]);
+    foreach (range(1, 5) as $s) {
+        TournamentMatch::query()->create([
+            'tournament_drawing_id' => $d2->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $embuLong->id,
+            'phase' => 'preliminary',
+            'round_label' => 'Babak Final',
+            'match_sequence' => $s,
+            'bracket_position' => $s,
+            'status' => 'pending',
+            'is_bye' => false,
+            'metadata' => ['athlete_ids' => [(string) Str::uuid()]],
+        ]);
+    }
+
+    // Randori category with distinct athletes
+    $randori = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Randori A',
+        'type' => 'randori',
+        'gender' => 'male',
+        'order' => 3,
+        'is_active' => true,
+    ]);
+    $d3 = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $randori->id,
+        'status' => 'generated',
+        'bracket_type' => 'single_elimination',
+        'participant_count' => 2,
+        'contingent_count' => 2,
+    ]);
+    foreach (range(1, 2) as $s) {
+        TournamentMatch::query()->create([
+            'tournament_drawing_id' => $d3->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $randori->id,
+            'phase' => 'preliminary',
+            'round_label' => 'Penyisihan',
+            'match_sequence' => $s,
+            'bracket_position' => $s,
+            'status' => 'pending',
+            'is_bye' => false,
+            'metadata' => ['athlete_ids' => [(string) Str::uuid()]],
+        ]);
+    }
+
+    app(TournamentScheduleGenerator::class)->schedule($event);
+
+    // Court 1 should start Randori at 08:20 (right after its Embu finishes at 08:20),
+    // WITHOUT waiting for Court 2's Embu to finish at 08:50!
+    $randoriMatches = $d3->matches()->orderBy('scheduled_start_at')->get();
+
+    expect($randoriMatches->first()->event_court_id)->toBe($court1->id)
+        ->and($randoriMatches->first()->scheduled_start_at->format('H:i'))->toBe('08:20');
 });

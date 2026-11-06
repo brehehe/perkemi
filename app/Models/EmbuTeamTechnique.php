@@ -28,4 +28,24 @@ class EmbuTeamTechnique extends Model
     {
         return $this->belongsTo(Technique::class);
     }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function contingent(): BelongsTo
+    {
+        return $this->belongsTo(Contingent::class);
+    }
+
+    public function matchCategory(): BelongsTo
+    {
+        return $this->belongsTo(EventMatchCategory::class, 'event_match_category_id');
+    }
+
+    public function eventMatchCategory(): BelongsTo
+    {
+        return $this->belongsTo(EventMatchCategory::class, 'event_match_category_id');
+    }
 }

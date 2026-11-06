@@ -90,8 +90,6 @@ class TournamentScheduleGenerator
             if ($matchType === 'embu') {
                 $this->resequenceEmbuMatches($typeMatches);
             }
-
-            $notBefore = $result['last_end'];
         }
     }
 
@@ -310,7 +308,9 @@ class TournamentScheduleGenerator
             }
 
             $eligibleMatches = $isEmbu
-                ? $remainingMatches->where('phase', $firstMatch->phase)
+                ? $remainingMatches
+                    ->where('phase', $firstMatch->phase)
+                    ->where('pool', $firstMatch->pool)
                 : $remainingMatches->take(1);
             /** @var TournamentMatch|null $match */
             $match = $eligibleMatches->first(fn (TournamentMatch $candidate): bool => $this->athleteIds($candidate)->every(
@@ -342,6 +342,7 @@ class TournamentScheduleGenerator
             $orderedMatches = $categoryMatches->sortBy(fn (TournamentMatch $match): array => [
                 $match->scheduled_start_at ? 0 : 1,
                 $match->scheduled_start_at?->timestamp ?? PHP_INT_MAX,
+                $match->pool ?? '',
                 $match->match_sequence,
             ])->values();
             $temporaryOffset = ((int) $categoryMatches->max('match_sequence')) + $categoryMatches->count() + 1;

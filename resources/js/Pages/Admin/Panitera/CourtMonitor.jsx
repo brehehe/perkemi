@@ -74,13 +74,12 @@ function ParticipantDisplay({ match }) {
         <div className="grid overflow-hidden rounded-3xl border border-slate-200 dark:border-white/10 md:grid-cols-[1fr_auto_1fr] shadow-xl">
             {/* AKA (MERAH) */}
             <div
-                className={`p-6 transition-all md:p-10 corner-aka force-white ${
-                    winner === 'aka'
-                        ? 'border-4 border-amber-400 bg-red-600 dark:bg-red-700 shadow-2xl'
-                        : winner === 'shiro'
-                            ? 'bg-red-900/40 opacity-50 grayscale'
-                            : 'bg-red-600 dark:bg-red-700'
-                }`}
+                className={`p-6 transition-all md:p-10 corner-aka force-white ${winner === 'aka'
+                    ? 'border-4 border-amber-400 bg-red-600 dark:bg-red-700 shadow-2xl'
+                    : winner === 'shiro'
+                        ? 'bg-red-900/40 opacity-50 grayscale'
+                        : 'bg-red-600 dark:bg-red-700'
+                    }`}
                 style={{ backgroundColor: winner === 'shiro' ? '#7f1d1d' : '#dc2626' }}
             >
                 <div className="flex items-center justify-between gap-2">
@@ -107,13 +106,12 @@ function ParticipantDisplay({ match }) {
             </div>
 
             {/* SHIRO (PUTIH) */}
-            <div className={`p-6 text-right transition-all md:p-10 corner-shiro ${
-                winner === 'shiro'
-                    ? 'border-4 border-amber-400 bg-white dark:bg-slate-900 shadow-2xl'
-                    : winner === 'aka'
-                        ? 'bg-slate-200/50 dark:bg-black/60 opacity-50 grayscale'
-                        : 'bg-white dark:bg-slate-900'
-            }`}>
+            <div className={`p-6 text-right transition-all md:p-10 corner-shiro ${winner === 'shiro'
+                ? 'border-4 border-amber-400 bg-white dark:bg-slate-900 shadow-2xl'
+                : winner === 'aka'
+                    ? 'bg-slate-200/50 dark:bg-black/60 opacity-50 grayscale'
+                    : 'bg-white dark:bg-slate-900'
+                }`}>
                 <div className="flex items-center justify-end gap-2">
                     {winner === 'shiro' && (
                         <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
@@ -282,7 +280,37 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         };
     }, [court.id, activeMatch?.id, snapshot.active_match?.id, refreshSnapshot]);
 
-    const activeVarUrl = varUrlInput.trim() || activeMatch?.var_stream_url || 'https://var.smart-perkemi.id';
+    const defaultCourtVarUrl = court?.var_url || activeMatch?.var_stream_url || `https://var.smart-perkemi.id/kempo/var/court-${court?.order || 1}`;
+    const activeVarUrl = varUrlInput.trim() || defaultCourtVarUrl;
+    const [savingVarUrl, setSavingVarUrl] = useState(false);
+    const [varSaveMessage, setVarSaveMessage] = useState('');
+
+    const saveCourtVarUrlPermanently = async () => {
+        const urlToSave = varUrlInput.trim();
+        setSavingVarUrl(true);
+        setVarSaveMessage('');
+        try {
+            const response = await fetch(`/admin/panitera/scoring/courts/${court.id}/var-url`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                body: JSON.stringify({ var_url: urlToSave || null }),
+            });
+            const data = await response.json();
+            if (data.success) {
+                setVarSaveMessage('Tersimpan permanen!');
+                setVarKey((k) => k + 1);
+                setTimeout(() => setVarSaveMessage(''), 3000);
+            }
+        } catch (err) {
+            setVarSaveMessage('Gagal menyimpan.');
+        } finally {
+            setSavingVarUrl(false);
+        }
+    };
 
     const handleFullscreenVar = () => {
         if (varIframeRef.current?.requestFullscreen) {
@@ -437,13 +465,12 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     </p>
                                                 </div>
                                                 <div className="border-l-2 border-slate-200 dark:border-white/10 pl-5 text-xs font-bold space-y-1.5">
-                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${
-                                                        activeMatch.timer?.status === 'running'
-                                                            ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                                            : activeMatch.timer?.status === 'paused'
-                                                                ? 'bg-amber-500 text-slate-950'
-                                                                : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
-                                                    }`}>
+                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${activeMatch.timer?.status === 'running'
+                                                        ? 'bg-emerald-600 text-white animate-pulse force-white'
+                                                        : activeMatch.timer?.status === 'paused'
+                                                            ? 'bg-amber-500 text-slate-950'
+                                                            : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
+                                                        }`}>
                                                         {activeMatch.timer?.is_finished ? 'Selesai' : isExpired ? 'Waktu Habis' : activeMatch.timer?.status === 'running' ? 'Berjalan' : activeMatch.timer?.status === 'paused' ? 'Dijeda' : 'Menunggu'}
                                                     </span>
                                                     <p className="text-slate-500 dark:text-white/50 text-[11px]">Durasi: {timerDuration}s</p>
@@ -479,19 +506,17 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 return (
                                                     <div
                                                         key={judgeNum}
-                                                        className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${
-                                                            isSubmitted
-                                                                ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
-                                                                : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
-                                                        }`}
+                                                        className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${isSubmitted
+                                                            ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
+                                                            : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
+                                                            }`}
                                                     >
                                                         <div className="flex items-center justify-between gap-1">
                                                             <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-[#d4a843]/20 dark:text-[#f2cd73] px-2.5 py-0.5 text-[10px] font-black uppercase">
                                                                 Juri {judgeNum} {judgeNum === 1 ? '(Utama)' : ''}
                                                             </span>
-                                                            <span className={`text-[10px] font-bold uppercase ${
-                                                                isSubmitted ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'
-                                                            }`}>
+                                                            <span className={`text-[10px] font-bold uppercase ${isSubmitted ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'
+                                                                }`}>
                                                                 {isSubmitted ? 'Terkirim' : 'Menilai'}
                                                             </span>
                                                         </div>
@@ -609,21 +634,39 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                                         {/* Optional VAR URL Config Input */}
                                         {showVarConfig && (
-                                            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 p-2.5">
-                                                <input
-                                                    type="url"
-                                                    value={varUrlInput}
-                                                    onChange={(e) => setVarUrlInput(e.target.value)}
-                                                    placeholder="Contoh: https://var.smart-perkemi.id atau http://192.168.1.100:8080"
-                                                    className="flex-1 rounded-lg border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-[#d4a843]"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setVarKey((k) => k + 1)}
-                                                    className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-xs font-bold text-black"
-                                                >
-                                                    Terapkan
-                                                </button>
+                                            <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-3">
+                                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                    <input
+                                                        type="url"
+                                                        value={varUrlInput}
+                                                        onChange={(e) => setVarUrlInput(e.target.value)}
+                                                        placeholder={`Default: ${defaultCourtVarUrl}`}
+                                                        className="flex-1 rounded-lg border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-[#d4a843]"
+                                                    />
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setVarKey((k) => k + 1)}
+                                                            className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-xs font-bold text-black hover:bg-[#e0b852] transition-colors"
+                                                            title="Terapkan preview untuk sesi monitor ini"
+                                                        >
+                                                            Terapkan
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={savingVarUrl}
+                                                            onClick={saveCourtVarUrlPermanently}
+                                                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                                            title="Simpan permanen untuk gelanggang ini"
+                                                        >
+                                                            {savingVarUrl ? 'Menyimpan…' : 'Simpan Permanen'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[11px] text-white/50">
+                                                    <span>Default Court {court.order || 1}: <code className="text-[#d4a843]">{`https://var.smart-perkemi.id/kempo/var/court-${court.order || 1}`}</code></span>
+                                                    {varSaveMessage && <span className="font-bold text-emerald-400">{varSaveMessage}</span>}
+                                                </div>
                                             </div>
                                         )}
 
@@ -693,23 +736,21 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-950 dark:text-[#f2cd73]">
                                                     {timerDirection === 'down' ? 'WAKTU PERTANDINGAN' : 'HITUNG MAJU'}
                                                 </p>
-                                                <p className={`mt-2 font-mono text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl ${
-                                                    isExpired ? 'text-red-600 dark:text-red-500 animate-pulse' : 'text-slate-950 dark:text-white'
-                                                }`}>
+                                                <p className={`mt-2 font-mono text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl ${isExpired ? 'text-red-600 dark:text-red-500 animate-pulse' : 'text-slate-950 dark:text-white'
+                                                    }`}>
                                                     {timerText}
                                                 </p>
                                                 <div className="mt-4 flex items-center justify-center gap-2">
-                                                    <span className={`inline-block rounded-full px-4 py-1.5 text-xs uppercase font-black tracking-wider shadow-sm ${
-                                                        activeMatch.timer?.is_finished
-                                                            ? 'bg-slate-800 text-white dark:bg-slate-700 force-white'
-                                                            : isExpired
-                                                                ? 'bg-red-600 text-white animate-pulse force-white'
-                                                                : activeMatch.timer?.status === 'running'
-                                                                    ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                                                    : activeMatch.timer?.status === 'paused'
-                                                                        ? 'bg-amber-500 text-slate-950 font-black'
-                                                                        : 'bg-slate-200 text-slate-900 border border-slate-300 dark:border-white/20 dark:bg-white/15 dark:text-white font-black'
-                                                    }`}>
+                                                    <span className={`inline-block rounded-full px-4 py-1.5 text-xs uppercase font-black tracking-wider shadow-sm ${activeMatch.timer?.is_finished
+                                                        ? 'bg-slate-800 text-white dark:bg-slate-700 force-white'
+                                                        : isExpired
+                                                            ? 'bg-red-600 text-white animate-pulse force-white'
+                                                            : activeMatch.timer?.status === 'running'
+                                                                ? 'bg-emerald-600 text-white animate-pulse force-white'
+                                                                : activeMatch.timer?.status === 'paused'
+                                                                    ? 'bg-amber-500 text-slate-950 font-black'
+                                                                    : 'bg-slate-200 text-slate-900 border border-slate-300 dark:border-white/20 dark:bg-white/15 dark:text-white font-black'
+                                                        }`}>
                                                         {activeMatch.timer?.is_finished ? 'Partai Selesai' : isExpired ? 'WAKTU HABIS' : activeMatch.timer?.status === 'running' ? 'WAKTU BERJALAN' : activeMatch.timer?.status === 'paused' ? 'WAKTU DIJEDA' : 'MENUNGGU WASIT'}
                                                     </span>
                                                 </div>
@@ -720,11 +761,10 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             {/* SUDUT AKA (MERAH) */}
                                             <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white ${
-                                                    activeMatch.result?.winner_corner === 'aka'
-                                                        ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
-                                                        : 'border-red-700 bg-red-600 dark:bg-red-700'
-                                                }`}
+                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white ${activeMatch.result?.winner_corner === 'aka'
+                                                    ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
+                                                    : 'border-red-700 bg-red-600 dark:bg-red-700'
+                                                    }`}
                                                 style={{ backgroundColor: '#dc2626', borderColor: activeMatch.result?.winner_corner === 'aka' ? '#fbbf24' : '#b91c1c' }}
                                             >
                                                 <div className="flex items-center justify-between gap-2">
@@ -763,20 +803,20 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 {(Boolean(activeMatch.aka_breakdown?.waza_ari) || Boolean(activeMatch.aka_breakdown?.yuko)) && (
                                                     <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
                                                         {Boolean(activeMatch.aka_breakdown?.waza_ari) && (
-                                                             <span
-                                                                 className="rounded-lg px-2.5 py-0.5 border"
-                                                                 style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                             >
-                                                                 Waza-ari: {activeMatch.aka_breakdown.waza_ari}
-                                                             </span>
+                                                            <span
+                                                                className="rounded-lg px-2.5 py-0.5 border"
+                                                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                                            >
+                                                                Waza-ari: {activeMatch.aka_breakdown.waza_ari}
+                                                            </span>
                                                         )}
                                                         {Boolean(activeMatch.aka_breakdown?.yuko) && (
-                                                             <span
-                                                                 className="rounded-lg px-2.5 py-0.5 border"
-                                                                 style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                             >
-                                                                 Yuko: {activeMatch.aka_breakdown.yuko}
-                                                             </span>
+                                                            <span
+                                                                className="rounded-lg px-2.5 py-0.5 border"
+                                                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                                            >
+                                                                Yuko: {activeMatch.aka_breakdown.yuko}
+                                                            </span>
                                                         )}
                                                     </div>
                                                 )}
@@ -784,11 +824,10 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                                             {/* SUDUT SHIRO (PUTIH) */}
                                             <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro ${
-                                                    activeMatch.result?.winner_corner === 'shiro'
-                                                        ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
-                                                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
-                                                }`}
+                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro ${activeMatch.result?.winner_corner === 'shiro'
+                                                    ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
+                                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
+                                                    }`}
                                             >
                                                 <div className="flex items-center justify-between gap-2">
                                                     <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
@@ -808,7 +847,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                         {activeMatch.result?.shiro_total ?? 0}
                                                     </p>
                                                     <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                                         TOTAL POIN
+                                                        TOTAL POIN
                                                     </p>
                                                 </div>
                                                 {(Boolean(activeMatch.shiro_breakdown?.waza_ari) || Boolean(activeMatch.shiro_breakdown?.yuko)) && (
@@ -855,9 +894,8 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                             <div>
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider text-white ${
-                                                        snapshot.category_recap.type === 'embu' ? 'bg-blue-600' : 'bg-red-600'
-                                                    }`}>
+                                                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider text-white ${snapshot.category_recap.type === 'embu' ? 'bg-blue-600' : 'bg-red-600'
+                                                        }`}>
                                                         {snapshot.category_recap.type?.toUpperCase()}
                                                     </span>
                                                     <span className="rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 px-3 py-1 text-xs font-black border border-amber-300 dark:border-amber-700">
@@ -954,21 +992,19 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                 return (
                                                                     <div
                                                                         key={jNum}
-                                                                        className={`rounded-xl border p-2.5 text-center transition-all ${
-                                                                            hasScore
-                                                                                ? 'border-emerald-400 bg-white dark:bg-emerald-950/40 shadow-xs'
-                                                                                : 'border-blue-200/80 bg-white/70 dark:border-white/10 dark:bg-white/5'
-                                                                        }`}
+                                                                        className={`rounded-xl border p-2.5 text-center transition-all ${hasScore
+                                                                            ? 'border-emerald-400 bg-white dark:bg-emerald-950/40 shadow-xs'
+                                                                            : 'border-blue-200/80 bg-white/70 dark:border-white/10 dark:bg-white/5'
+                                                                            }`}
                                                                     >
                                                                         <div className="flex items-center justify-between text-[10px] font-bold">
                                                                             <span className="text-slate-600 dark:text-white/70">Juri {jNum}</span>
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                                                                isSubmitted
-                                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
-                                                                                    : hasScore
-                                                                                        ? 'bg-amber-100 text-amber-800'
-                                                                                        : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60'
-                                                                            }`}>
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${isSubmitted
+                                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                                                                : hasScore
+                                                                                    ? 'bg-amber-100 text-amber-800'
+                                                                                    : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60'
+                                                                                }`}>
                                                                                 {isSubmitted ? 'Terkirim' : hasScore ? 'Mengisi' : 'Menilai'}
                                                                             </span>
                                                                         </div>
@@ -1038,229 +1074,226 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
                                             {/* Tabel Rekap Embu */}
                                             {snapshot.category_recap.type === 'embu' ? (
-                                        <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] shadow-2xl">
-                                            <div className="border-b border-slate-200 dark:border-white/10 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                <div>
-                                                    <h3 className="text-lg font-black text-slate-950 dark:text-white">
-                                                        Papan Rekap Nilai & Klasemen Embu
-                                                    </h3>
-                                                    <p className="text-xs text-slate-500 dark:text-white/50">
-                                                        Urutan tampil dan akumulasi nilai resmi 5 Juri setelah membuang nilai tertinggi dan terendah.
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                                                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                                                        Live Reverb Aktif
-                                                    </span>
-                                                </div>
-                                            </div>
+                                                <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] shadow-2xl">
+                                                    <div className="border-b border-slate-200 dark:border-white/10 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                        <div>
+                                                            <h3 className="text-lg font-black text-slate-950 dark:text-white">
+                                                                Papan Rekap Nilai & Klasemen Embu
+                                                            </h3>
+                                                            <p className="text-xs text-slate-500 dark:text-white/50">
+                                                                Urutan tampil dan akumulasi nilai resmi 5 Juri setelah membuang nilai tertinggi dan terendah.
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                                                                Live Reverb Aktif
+                                                            </span>
+                                                        </div>
+                                                    </div>
 
-                                            <div className="overflow-x-auto">
-                                                <table className="min-w-full text-left text-xs">
-                                                    <thead className="bg-slate-50 dark:bg-white/5 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-white/60">
-                                                        <tr>
-                                                            <th className="px-4 py-3.5 text-center">Rank</th>
-                                                            <th className="px-4 py-3.5">Partai & Babak</th>
-                                                            <th className="px-4 py-3.5">Kontingen & Atlet</th>
-                                                            <th className="px-4 py-3.5 text-center">Nilai 5 Juri</th>
-                                                            <th className="px-4 py-3.5 text-center">Denda</th>
-                                                            <th className="px-4 py-3.5 text-center">Durasi</th>
-                                                            <th className="px-4 py-3.5 text-right font-black">Nilai Akhir</th>
-                                                            <th className="px-4 py-3.5 text-center">Status</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                                        {snapshot.category_recap.matches.map((row) => {
-                                                            const isRowActive = row.is_active;
-                                                            const isCompleted = row.is_completed;
-                                                            const score = row.embu_result;
-                                                            const rank = row.rank;
-
-                                                            return (
-                                                                <tr
-                                                                    key={row.id}
-                                                                    className={`transition-colors ${
-                                                                        isRowActive
-                                                                            ? 'bg-blue-100/60 dark:bg-blue-950/50 border-y-2 border-blue-400'
-                                                                            : isCompleted
-                                                                                ? 'hover:bg-slate-50 dark:hover:bg-white/[.03]'
-                                                                                : 'opacity-70 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/[.02]'
-                                                                    }`}
-                                                                >
-                                                                    {/* Rank / Medali */}
-                                                                    <td className="px-4 py-4 text-center align-middle">
-                                                                        {rank === 1 ? (
-                                                                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-sm shadow-md" title="Peringkat 1">
-                                                                                🥇
-                                                                            </span>
-                                                                        ) : rank === 2 ? (
-                                                                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-950 font-black text-sm shadow-sm" title="Peringkat 2">
-                                                                                🥈
-                                                                            </span>
-                                                                        ) : rank === 3 ? (
-                                                                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-700 text-white font-black text-sm shadow-sm" title="Peringkat 3">
-                                                                                🥉
-                                                                            </span>
-                                                                        ) : rank === 'DQ' ? (
-                                                                            <span className="inline-flex items-center justify-center rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                                DQ
-                                                                            </span>
-                                                                        ) : rank ? (
-                                                                            <span className="font-mono text-sm font-bold text-slate-700 dark:text-white/70">
-                                                                                #{rank}
-                                                                            </span>
-                                                                        ) : isRowActive ? (
-                                                                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-black animate-pulse">
-                                                                                ▶
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="text-slate-400 dark:text-white/30 font-mono">-</span>
-                                                                        )}
-                                                                    </td>
-
-                                                                    {/* Partai & Babak */}
-                                                                    <td className="px-4 py-4 align-middle">
-                                                                        <div className="font-bold text-slate-900 dark:text-white text-sm">
-                                                                            Partai #{row.sequence}
-                                                                        </div>
-                                                                        <div className="text-[11px] text-slate-500 dark:text-white/50">
-                                                                            {row.round_label}
-                                                                            {row.scheduled_at && ` · ${row.scheduled_at}`}
-                                                                        </div>
-                                                                    </td>
-
-                                                                    {/* Peserta & Atlet */}
-                                                                    <td className="px-4 py-4 align-middle">
-                                                                        <div className="font-black text-slate-950 dark:text-white text-sm">
-                                                                            {row.participant_label}
-                                                                        </div>
-                                                                        {row.athletes?.length > 0 && (
-                                                                            <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-semibold text-slate-600 dark:text-white/70">
-                                                                                {row.athletes.join(' · ')}
-                                                                            </div>
-                                                                        )}
-                                                                    </td>
-
-                                                                    {/* Nilai 5 Juri */}
-                                                                    <td className="px-4 py-4 text-center align-middle">
-                                                                        {score?.judge_scores?.length > 0 ? (
-                                                                            <div className="flex flex-col items-center gap-1">
-                                                                                <div className="flex flex-wrap items-center justify-center gap-1">
-                                                                                    {score.judge_scores.map((jScore, jIdx) => (
-                                                                                        <span
-                                                                                            key={jIdx}
-                                                                                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-bold ${
-                                                                                                score.is_live
-                                                                                                    ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 shadow-2xs'
-                                                                                                    : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-white'
-                                                                                            }`}
-                                                                                            title={`Juri ${jIdx + 1}: ${Number(jScore).toFixed(2)}`}
-                                                                                        >
-                                                                                            {Number(jScore).toFixed(1)}
-                                                                                        </span>
-                                                                                    ))}
-                                                                                </div>
-                                                                                {score.is_live && (
-                                                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300">
-                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
-                                                                                        Live Wasit ({score.judge_scores.length}/5)
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                        ) : isRowActive ? (
-                                                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 animate-pulse">
-                                                                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
-                                                                                Sedang dinilai...
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="text-slate-400 dark:text-white/30 font-mono text-xs">Belum dinilai</span>
-                                                                        )}
-                                                                    </td>
-
-                                                                    {/* Denda */}
-                                                                    <td className="px-4 py-4 text-center align-middle">
-                                                                        {score && Number(score.total_penalty || 0) > 0 ? (
-                                                                            <span className="inline-flex items-center rounded-md border border-rose-300 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 font-mono text-xs font-bold text-rose-700 dark:text-rose-300">
-                                                                                -{Number(score.total_penalty).toFixed(1)}
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="text-slate-400 dark:text-white/30 font-mono text-xs">0</span>
-                                                                        )}
-                                                                    </td>
-
-                                                                    {/* Durasi */}
-                                                                    <td className="px-4 py-4 text-center align-middle font-mono text-xs font-bold text-slate-700 dark:text-white/70">
-                                                                        {score?.duration_seconds ? formatTimer(score.duration_seconds) : isRowActive && elapsedSeconds > 0 ? formatTimer(elapsedSeconds) : '-'}
-                                                                    </td>
-
-                                                                    {/* Nilai Akhir */}
-                                                                    <td className="px-4 py-4 text-right align-middle">
-                                                                        {score?.is_disqualified ? (
-                                                                            <span className="text-red-600 font-bold text-xs uppercase">Diskualifikasi</span>
-                                                                        ) : score?.final_score !== undefined && score?.final_score !== null ? (
-                                                                            <div>
-                                                                                <span className={`font-mono text-lg md:text-xl font-black ${
-                                                                                    score.is_live
-                                                                                        ? 'text-amber-600 dark:text-amber-400'
-                                                                                        : 'text-emerald-700 dark:text-emerald-400'
-                                                                                }`}>
-                                                                                    {Number(score.final_score).toFixed(2)}
-                                                                                </span>
-                                                                                {score.is_live && (
-                                                                                    <span className="block text-[9px] font-bold text-amber-700 dark:text-amber-300">
-                                                                                        (Sementara)
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <span className="text-slate-400 dark:text-white/30 font-mono text-sm">-</span>
-                                                                        )}
-                                                                    </td>
-
-                                                                    {/* Status */}
-                                                                    <td className="px-4 py-4 text-center align-middle">
-                                                                        {isRowActive ? (
-                                                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider animate-pulse shadow-xs">
-                                                                                <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                                                                                {score?.is_live ? 'DINILAI WASIT' : 'SEDANG TAMPIL'}
-                                                                            </span>
-                                                                        ) : isCompleted ? (
-                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 text-[10.5px] font-bold border border-emerald-300 dark:border-emerald-700">
-                                                                                <i className="fa-solid fa-check text-[9px]" /> Selesai
-                                                                            </span>
-                                                                        ) : score?.is_live ? (
-                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold border border-amber-300 dark:border-amber-700">
-                                                                                Menunggu Simpan
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white/60 px-2 py-0.5 text-[10px] font-semibold">
-                                                                                {row.status_label}
-                                                                            </span>
-                                                                        )}
-                                                                    </td>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="min-w-full text-left text-xs">
+                                                            <thead className="bg-slate-50 dark:bg-white/5 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-white/60">
+                                                                <tr>
+                                                                    <th className="px-4 py-3.5 text-center">Rank</th>
+                                                                    <th className="px-4 py-3.5">Partai & Babak</th>
+                                                                    <th className="px-4 py-3.5">Kontingen & Atlet</th>
+                                                                    <th className="px-4 py-3.5 text-center">Nilai 5 Juri</th>
+                                                                    <th className="px-4 py-3.5 text-center">Denda</th>
+                                                                    <th className="px-4 py-3.5 text-center">Durasi</th>
+                                                                    <th className="px-4 py-3.5 text-right font-black">Nilai Akhir</th>
+                                                                    <th className="px-4 py-3.5 text-center">Status</th>
                                                                 </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        /* Bagan Randori Tournament Tree */
-                                        <RandoriBracketTree
-                                            matches={snapshot.category_recap.matches}
-                                            activeEvent={activeEvent}
-                                            categoryName={snapshot.category_recap.name}
-                                            categoryFormat={snapshot.category_recap.format}
-                                            isMonitor={true}
-                                            activeMatchId={activeMatch?.id}
-                                        />
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                                                {snapshot.category_recap.matches.map((row) => {
+                                                                    const isRowActive = row.is_active;
+                                                                    const isCompleted = row.is_completed;
+                                                                    const score = row.embu_result;
+                                                                    const rank = row.rank;
+
+                                                                    return (
+                                                                        <tr
+                                                                            key={row.id}
+                                                                            className={`transition-colors ${isRowActive
+                                                                                ? 'bg-blue-100/60 dark:bg-blue-950/50 border-y-2 border-blue-400'
+                                                                                : isCompleted
+                                                                                    ? 'hover:bg-slate-50 dark:hover:bg-white/[.03]'
+                                                                                    : 'opacity-70 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/[.02]'
+                                                                                }`}
+                                                                        >
+                                                                            {/* Rank / Medali */}
+                                                                            <td className="px-4 py-4 text-center align-middle">
+                                                                                {rank === 1 ? (
+                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-sm shadow-md" title="Peringkat 1">
+                                                                                        🥇
+                                                                                    </span>
+                                                                                ) : rank === 2 ? (
+                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-950 font-black text-sm shadow-sm" title="Peringkat 2">
+                                                                                        🥈
+                                                                                    </span>
+                                                                                ) : rank === 3 ? (
+                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-700 text-white font-black text-sm shadow-sm" title="Peringkat 3">
+                                                                                        🥉
+                                                                                    </span>
+                                                                                ) : rank === 'DQ' ? (
+                                                                                    <span className="inline-flex items-center justify-center rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                                        DQ
+                                                                                    </span>
+                                                                                ) : rank ? (
+                                                                                    <span className="font-mono text-sm font-bold text-slate-700 dark:text-white/70">
+                                                                                        #{rank}
+                                                                                    </span>
+                                                                                ) : isRowActive ? (
+                                                                                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-black animate-pulse">
+                                                                                        ▶
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono">-</span>
+                                                                                )}
+                                                                            </td>
+
+                                                                            {/* Partai & Babak */}
+                                                                            <td className="px-4 py-4 align-middle">
+                                                                                <div className="font-bold text-slate-900 dark:text-white text-sm">
+                                                                                    Partai #{row.sequence}
+                                                                                </div>
+                                                                                <div className="text-[11px] text-slate-500 dark:text-white/50">
+                                                                                    {row.round_label}
+                                                                                    {row.scheduled_at && ` · ${row.scheduled_at}`}
+                                                                                </div>
+                                                                            </td>
+
+                                                                            {/* Peserta & Atlet */}
+                                                                            <td className="px-4 py-4 align-middle">
+                                                                                <div className="font-black text-slate-950 dark:text-white text-sm">
+                                                                                    {row.participant_label}
+                                                                                </div>
+                                                                                {row.athletes?.length > 0 && (
+                                                                                    <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-semibold text-slate-600 dark:text-white/70">
+                                                                                        {row.athletes.join(' · ')}
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+
+                                                                            {/* Nilai 5 Juri */}
+                                                                            <td className="px-4 py-4 text-center align-middle">
+                                                                                {score?.judge_scores?.length > 0 ? (
+                                                                                    <div className="flex flex-col items-center gap-1">
+                                                                                        <div className="flex flex-wrap items-center justify-center gap-1">
+                                                                                            {score.judge_scores.map((jScore, jIdx) => (
+                                                                                                <span
+                                                                                                    key={jIdx}
+                                                                                                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-bold ${score.is_live
+                                                                                                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 shadow-2xs'
+                                                                                                        : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-white'
+                                                                                                        }`}
+                                                                                                    title={`Juri ${jIdx + 1}: ${Number(jScore).toFixed(2)}`}
+                                                                                                >
+                                                                                                    {Number(jScore).toFixed(1)}
+                                                                                                </span>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                        {score.is_live && (
+                                                                                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                                                                                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                                                                                                Live Wasit ({score.judge_scores.length}/5)
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ) : isRowActive ? (
+                                                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 animate-pulse">
+                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+                                                                                        Sedang dinilai...
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-xs">Belum dinilai</span>
+                                                                                )}
+                                                                            </td>
+
+                                                                            {/* Denda */}
+                                                                            <td className="px-4 py-4 text-center align-middle">
+                                                                                {score && Number(score.total_penalty || 0) > 0 ? (
+                                                                                    <span className="inline-flex items-center rounded-md border border-rose-300 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 font-mono text-xs font-bold text-rose-700 dark:text-rose-300">
+                                                                                        -{Number(score.total_penalty).toFixed(1)}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-xs">0</span>
+                                                                                )}
+                                                                            </td>
+
+                                                                            {/* Durasi */}
+                                                                            <td className="px-4 py-4 text-center align-middle font-mono text-xs font-bold text-slate-700 dark:text-white/70">
+                                                                                {score?.duration_seconds ? formatTimer(score.duration_seconds) : isRowActive && elapsedSeconds > 0 ? formatTimer(elapsedSeconds) : '-'}
+                                                                            </td>
+
+                                                                            {/* Nilai Akhir */}
+                                                                            <td className="px-4 py-4 text-right align-middle">
+                                                                                {score?.is_disqualified ? (
+                                                                                    <span className="text-red-600 font-bold text-xs uppercase">Diskualifikasi</span>
+                                                                                ) : score?.final_score !== undefined && score?.final_score !== null ? (
+                                                                                    <div>
+                                                                                        <span className={`font-mono text-lg md:text-xl font-black ${score.is_live
+                                                                                            ? 'text-amber-600 dark:text-amber-400'
+                                                                                            : 'text-emerald-700 dark:text-emerald-400'
+                                                                                            }`}>
+                                                                                            {Number(score.final_score).toFixed(2)}
+                                                                                        </span>
+                                                                                        {score.is_live && (
+                                                                                            <span className="block text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                                                                                                (Sementara)
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-sm">-</span>
+                                                                                )}
+                                                                            </td>
+
+                                                                            {/* Status */}
+                                                                            <td className="px-4 py-4 text-center align-middle">
+                                                                                {isRowActive ? (
+                                                                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider animate-pulse shadow-xs">
+                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                                                                        {score?.is_live ? 'DINILAI WASIT' : 'SEDANG TAMPIL'}
+                                                                                    </span>
+                                                                                ) : isCompleted ? (
+                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 text-[10.5px] font-bold border border-emerald-300 dark:border-emerald-700">
+                                                                                        <i className="fa-solid fa-check text-[9px]" /> Selesai
+                                                                                    </span>
+                                                                                ) : score?.is_live ? (
+                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold border border-amber-300 dark:border-amber-700">
+                                                                                        Menunggu Simpan
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white/60 px-2 py-0.5 text-[10px] font-semibold">
+                                                                                        {row.status_label}
+                                                                                    </span>
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Bagan Randori Tournament Tree */
+                                                <RandoriBracketTree
+                                                    matches={snapshot.category_recap.matches}
+                                                    activeEvent={activeEvent}
+                                                    categoryName={snapshot.category_recap.name}
+                                                    categoryFormat={snapshot.category_recap.format}
+                                                    isMonitor={true}
+                                                    activeMatchId={activeMatch?.id}
+                                                />
+                                            )}
+                                        </>
                                     )}
                                 </>
-                            )}
-                        </>
-                    ) : resultMatch?.result ? (
+                            ) : resultMatch?.result ? (
                                 /* Fallback Single Result jika category_recap belum terload */
                                 <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 md:p-10 shadow-2xl">
                                     <div className="text-center">
@@ -1311,55 +1344,54 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                             .slice(0, 5);
 
                         return (
-                        <section className="min-h-[60vh] rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
-                            <div className="text-center">
-                                <p className="text-sm font-black uppercase tracking-[.18em] text-amber-700 dark:text-[#d4a843]">Susunan Wasit & Juri</p>
-                                <h2 className="mt-3 text-3xl font-black text-slate-950 dark:text-white md:text-5xl">{court.name}</h2>
-                                <p className="mt-2 text-sm font-medium text-slate-600 dark:text-white/50">Diurutkan dari Wasit Utama hingga Juri 5</p>
-                            </div>
-                            <div className="mx-auto mt-10 grid max-w-7xl gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                                {officialStaff.map((member) => {
-                                    const initials = member.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
-                                    return (
-                                        <article key={member.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 shadow-xs">
-                                            <div className="aspect-[4/3] overflow-hidden bg-slate-200 dark:bg-black/20">
-                                                {member.photo_url ? (
-                                                    <img src={member.photo_url} alt={`Foto ${member.name}`} className="h-full w-full object-cover" />
-                                                ) : (
-                                                    <div className="flex h-full items-center justify-center text-4xl font-black text-amber-700 dark:text-[#d4a843]">{initials}</div>
-                                                )}
-                                            </div>
-                                            <div className="p-5">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <span className="rounded-full bg-amber-100 dark:bg-[#d4a843]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900 dark:text-[#d4a843]">
-                                                        Juri {member.judge_number || '—'}
-                                                    </span>
-                                                    <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${
-                                                        member.is_present
+                            <section className="min-h-[60vh] rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
+                                <div className="text-center">
+                                    <p className="text-sm font-black uppercase tracking-[.18em] text-amber-700 dark:text-[#d4a843]">Susunan Wasit & Juri</p>
+                                    <h2 className="mt-3 text-3xl font-black text-slate-950 dark:text-white md:text-5xl">{court.name}</h2>
+                                    <p className="mt-2 text-sm font-medium text-slate-600 dark:text-white/50">Diurutkan dari Wasit Utama hingga Juri 5</p>
+                                </div>
+                                <div className="mx-auto mt-10 grid max-w-7xl gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                                    {officialStaff.map((member) => {
+                                        const initials = member.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
+                                        return (
+                                            <article key={member.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 shadow-xs">
+                                                <div className="aspect-[4/3] overflow-hidden bg-slate-200 dark:bg-black/20">
+                                                    {member.photo_url ? (
+                                                        <img src={member.photo_url} alt={`Foto ${member.name}`} className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <div className="flex h-full items-center justify-center text-4xl font-black text-amber-700 dark:text-[#d4a843]">{initials}</div>
+                                                    )}
+                                                </div>
+                                                <div className="p-5">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="rounded-full bg-amber-100 dark:bg-[#d4a843]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900 dark:text-[#d4a843]">
+                                                            Juri {member.judge_number || '—'}
+                                                        </span>
+                                                        <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${member.is_present
                                                             ? 'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/15 dark:text-emerald-300'
                                                             : 'border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200'
-                                                    }`}>
-                                                        {member.is_present ? 'Hadir' : 'Belum Scan'}
-                                                    </span>
+                                                            }`}>
+                                                            {member.is_present ? 'Hadir' : 'Belum Scan'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="mt-4 text-lg font-black leading-tight text-slate-950 dark:text-white">{member.name}</p>
+                                                    <p className="mt-2 text-sm font-bold text-amber-700 dark:text-[#d4a843]">{member.role}</p>
+                                                    {(member.certification || member.region) && (
+                                                        <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-white/45">
+                                                            {[member.certification, member.region].filter(Boolean).join(' · ')}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                                <p className="mt-4 text-lg font-black leading-tight text-slate-950 dark:text-white">{member.name}</p>
-                                                <p className="mt-2 text-sm font-bold text-amber-700 dark:text-[#d4a843]">{member.role}</p>
-                                                {(member.certification || member.region) && (
-                                                    <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-white/45">
-                                                        {[member.certification, member.region].filter(Boolean).join(' · ')}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </article>
-                                    );
-                                })}
-                                {officialStaff.length === 0 && (
-                                    <p className="rounded-2xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-slate-500 dark:text-white/45 sm:col-span-2 xl:col-span-5">
-                                        Wasit dan Juri belum ditugaskan ke court ini.
-                                    </p>
-                                )}
-                            </div>
-                        </section>
+                                            </article>
+                                        );
+                                    })}
+                                    {officialStaff.length === 0 && (
+                                        <p className="rounded-2xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-slate-500 dark:text-white/45 sm:col-span-2 xl:col-span-5">
+                                            Wasit dan Juri belum ditugaskan ke court ini.
+                                        </p>
+                                    )}
+                                </div>
+                            </section>
                         );
                     })()}
                 </div>

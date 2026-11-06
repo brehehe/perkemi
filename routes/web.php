@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\Panitera\EmbuPenaltyController;
 use App\Http\Controllers\Admin\Panitera\EmbuResultController;
 use App\Http\Controllers\Admin\Panitera\PaniteraCategoryLockController;
 use App\Http\Controllers\Admin\Panitera\PaniteraCourtMonitorController;
+use App\Http\Controllers\Admin\Panitera\PaniteraCourtVarController;
 use App\Http\Controllers\Admin\Panitera\PaniteraDashboardController;
 use App\Http\Controllers\Admin\Panitera\PaniteraEventContextController;
 use App\Http\Controllers\Admin\Panitera\PaniteraMatchController;
@@ -238,6 +239,8 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
 // Pendaftaran
 Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('admin.pendaftaran.')->group(function () {
     Route::get('nomor-pertandingan/export', [RegistrationController::class, 'exportMatchGroups'])->name('nomor-pertandingan.export');
+    Route::get('nomor-pertandingan/laporan', [RegistrationController::class, 'matchCategoriesReport'])->name('nomor-pertandingan.laporan');
+    Route::get('laporan-nomor-pertandingan', [RegistrationController::class, 'matchCategoriesReport'])->name('laporan-nomor-pertandingan');
     Route::get('nomor-pertandingan', [RegistrationController::class, 'matchGroups'])->name('nomor-pertandingan');
     Route::get('registrasi/export', [RegistrationController::class, 'exportRegistrasi'])->name('registrasi.export');
     Route::get('registrasi', [RegistrationController::class, 'registrasi'])->name('registrasi');
@@ -394,6 +397,7 @@ Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('adm
     Route::post('scoring/categories/{matchCategory}/unlock', [PaniteraCategoryLockController::class, 'unlock'])->name('categories.unlock');
 
     // VAR (Video Assistant Review)
+    Route::put('scoring/courts/{eventCourt}/var-url', [PaniteraCourtVarController::class, 'update'])->name('courts.var-url.update');
     Route::post('scoring/matches/{tournamentMatch}/var-review', [VarReviewController::class, 'store'])->name('matches.var.store');
     Route::post('scoring/var-review/{review}/resolve', [VarReviewController::class, 'resolve'])->name('var.resolve');
     Route::get('scoring/matches/{tournamentMatch}/var-history', [VarReviewController::class, 'history'])->name('matches.var.history');

@@ -427,7 +427,7 @@ class CourtMonitorDataService
                     ->all()
                 : [],
             'var_stream_url' => data_get($match->metadata, 'var_stream_url')
-                ?? data_get($match->court?->description, 'var_stream_url')
+                ?? $match->court?->var_url
                 ?? 'https://var.smart-perkemi.id',
             'var_review' => [
                 'is_under_review' => (bool) data_get($match->metadata, 'under_var_review', false),

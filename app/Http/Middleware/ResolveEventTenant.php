@@ -56,7 +56,7 @@ class ResolveEventTenant
         abort_unless($hasTenantAccess, 403);
 
         if ($isContingentOwner && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === null) {
-            abort_unless($request->routeIs(['admin.pendaftaran.registrasi*', 'admin.pendaftaran.nomor-pertandingan']), 403);
+            abort_unless($request->routeIs(['admin.pendaftaran.registrasi*', 'admin.pendaftaran.nomor-pertandingan*', 'admin.pendaftaran.laporan-nomor-pertandingan*']), 403);
         }
 
         if ($user->hasRole('Wasit') && ! $isFullAdmin && $eventAccessRole === null) {

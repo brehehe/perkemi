@@ -284,8 +284,15 @@ class TournamentDrawingGenerator
         $poolAthleteIds = collect();
         $sequence = 1;
 
+        $participantsByPool = collect();
+        foreach ($poolNames as $pool) {
+            $participantsByPool->put($pool, collect());
+        }
+
         foreach ($participants as $index => $participant) {
             $pool = $poolNames[$index % $poolCount];
+            $participantsByPool[$pool]->push($participant);
+
             $poolAthleteIds->put(
                 $pool,
                 collect($poolAthleteIds->get($pool, []))
@@ -294,16 +301,22 @@ class TournamentDrawingGenerator
                     ->values()
                     ->all(),
             );
-            $this->createNode($event, $category, $drawing, [
-                'phase' => 'preliminary',
-                'round_label' => $poolCount === 1 ? 'Babak Penyisihan' : "Penyisihan Pool {$pool}",
-                'pool' => $pool,
-                'match_sequence' => $sequence++,
-                'bracket_position' => intdiv($index, $poolCount) + 1,
-                'participant_entry_id' => $participant['entry_id'],
-                'participant_label' => $participant['label'],
-                'metadata' => $participant,
-            ]);
+        }
+
+        foreach ($poolNames as $pool) {
+            $poolParticipants = $participantsByPool->get($pool, collect());
+            foreach ($poolParticipants as $pos => $participant) {
+                $this->createNode($event, $category, $drawing, [
+                    'phase' => 'preliminary',
+                    'round_label' => $poolCount === 1 ? 'Babak Penyisihan' : "Penyisihan Pool {$pool}",
+                    'pool' => $pool,
+                    'match_sequence' => $sequence++,
+                    'bracket_position' => $pos + 1,
+                    'participant_entry_id' => $participant['entry_id'],
+                    'participant_label' => $participant['label'],
+                    'metadata' => $participant,
+                ]);
+            }
         }
 
         if ($poolCount === 1) {
