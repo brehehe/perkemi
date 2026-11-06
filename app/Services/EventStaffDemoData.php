@@ -238,28 +238,28 @@ class EventStaffDemoData
         return User::withTrashed()
             ->where(function (Builder $query) use ($event): void {
                 $query
-                    ->where('email', 'like', $this->emailPrefix($event).'%')
+                    ->where('email', 'ilike', $this->emailPrefix($event).'%')
                     ->orWhereHas('referee', fn (Builder $refereeQuery) => $refereeQuery
-                        ->where('license_number', 'like', $this->identifierPrefix($event, 'WST').'%'));
+                        ->where('license_number', 'ilike', $this->identifierPrefix($event, 'WST').'%'));
             });
     }
 
     /** @return Builder<Referee> */
     private function demoReferees(Event $event): Builder
     {
-        return Referee::withTrashed()->where('license_number', 'like', $this->identifierPrefix($event, 'WST').'%');
+        return Referee::withTrashed()->where('license_number', 'ilike', $this->identifierPrefix($event, 'WST').'%');
     }
 
     /** @return Builder<Clerk> */
     private function demoClerks(Event $event): Builder
     {
-        return Clerk::withTrashed()->where('employee_number', 'like', $this->identifierPrefix($event, 'PNT').'%');
+        return Clerk::withTrashed()->where('employee_number', 'ilike', $this->identifierPrefix($event, 'PNT').'%');
     }
 
     /** @return Builder<FieldCoordinator> */
     private function demoFieldCoordinators(Event $event): Builder
     {
-        return FieldCoordinator::withTrashed()->where('coordinator_number', 'like', $this->identifierPrefix($event, 'KOR').'%');
+        return FieldCoordinator::withTrashed()->where('coordinator_number', 'ilike', $this->identifierPrefix($event, 'KOR').'%');
     }
 
     private function email(Event $event, string $type, int $courtNumber, int $position): string

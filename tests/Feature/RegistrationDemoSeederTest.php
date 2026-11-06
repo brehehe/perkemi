@@ -152,6 +152,6 @@ test('default seeding links base contingents to the primary event and adds demo 
     expect(Event::count())->toBe(4)
         ->and(Contingent::whereNull('event_id')->count())->toBe(0)
         ->and($primaryEvent->contingents()->where('name', 'Dojo Garuda Sakti Surabaya')->count())->toBe(1)
-        ->and($primaryEvent->contingents()->where('name', 'like', 'Demo Dojo %')->count())->toBe(3)
-        ->and(Registration::where('registration_number', 'like', 'REG-DEMO-%')->count())->toBe(9);
+        ->and($primaryEvent->contingents()->where('name', 'ilike', 'Demo Dojo %')->count())->toBe(3)
+        ->and(Registration::where('registration_number', 'ilike', 'REG-DEMO-%')->count())->toBe(9);
 });

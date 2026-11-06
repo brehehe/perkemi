@@ -42,7 +42,7 @@ test('command creates isolated drawing demo data with double and single eliminat
     $dummyAthletes = Athlete::query()
         ->whereHas('contingent', fn ($query) => $query
             ->whereBelongsTo($event)
-            ->where('name', 'like', '[DUMMY DRAWING]%'))
+            ->where('name', 'ilike', '[DUMMY DRAWING]%'))
         ->with('matchCategoryEntries.matchCategory')
         ->get();
     $athleteWithTwoEmbuCategories = $dummyAthletes->first(fn (Athlete $athlete): bool => $athlete
@@ -56,7 +56,7 @@ test('command creates isolated drawing demo data with double and single eliminat
         ->get();
     $nonByeMatchCount = $event->tournamentMatches()->where('is_bye', false)->count();
 
-    expect($event->contingents()->where('name', 'like', '[DUMMY DRAWING]%')->count())->toBe(6)
+    expect($event->contingents()->where('name', 'ilike', '[DUMMY DRAWING]%')->count())->toBe(6)
         ->and($event->registrations()->where('status', RegistrationStatus::Verified)->where('payment_status', PaymentStatus::Verified)->count())->toBe(6)
         ->and($doubleDrawing->bracket_type)->toBe('double_elimination')
         ->and($doubleDrawing->participant_count)->toBe(4)
@@ -103,8 +103,8 @@ test('delete option removes only data owned by the drawing demo command', functi
         ->expectsOutputToContain('berhasil dihapus')
         ->assertSuccessful();
 
-    expect(Contingent::withTrashed()->where('event_id', $event->id)->where('name', 'like', '[DUMMY DRAWING]%')->count())->toBe(0)
-        ->and(Registration::withTrashed()->where('registration_number', 'like', 'REG-DRAW-%')->count())->toBe(0)
+    expect(Contingent::withTrashed()->where('event_id', $event->id)->where('name', 'ilike', '[DUMMY DRAWING]%')->count())->toBe(0)
+        ->and(Registration::withTrashed()->where('registration_number', 'ilike', 'REG-DRAW-%')->count())->toBe(0)
         ->and(TournamentDrawing::where('event_id', $event->id)->count())->toBe(0);
     $this->assertModelExists($existingContingent);
 });
@@ -148,7 +148,7 @@ test('command rejects an invalid random seed without changing data', function ()
         ->expectsOutput('Opsi --seed harus berupa bilangan bulat antara 0 dan 2147483647.')
         ->assertFailed();
 
-    expect($event->contingents()->where('name', 'like', '[DUMMY DRAWING]%')->count())->toBe(0)
+    expect($event->contingents()->where('name', 'ilike', '[DUMMY DRAWING]%')->count())->toBe(0)
         ->and($event->tournamentDrawings()->count())->toBe(0);
 });
 

@@ -439,7 +439,7 @@ class TournamentDrawingDemoData
 
     private function demoUsers(Event $event): Builder
     {
-        return User::withTrashed()->where('email', 'like', $this->emailPrefix($event).'%');
+        return User::withTrashed()->where('email', 'ilike', $this->emailPrefix($event).'%');
     }
 
     private function emailPrefix(Event $event): string

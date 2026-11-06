@@ -49,7 +49,7 @@ class AthleteController extends Controller
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
-                    ->orWhere('nik', 'like', "%{$search}%")
+                    ->orWhere('nik', 'ilike', "%{$search}%")
                     ->orWhere('kenshi_number', 'ilike', "%{$search}%")
                     ->orWhere('kyu_dan', 'ilike', "%{$search}%")
                     ->orWhereHas('contingent', function ($cq) use ($search) {

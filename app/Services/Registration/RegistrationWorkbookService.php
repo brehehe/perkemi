@@ -39,11 +39,11 @@ class RegistrationWorkbookService
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('registration_number', 'like', "%{$search}%")
+                $q->where('registration_number', 'ilike', "%{$search}%")
                     ->orWhereHas('contingent', function ($cq) use ($search) {
-                        $cq->where('name', 'like', "%{$search}%")
-                            ->orWhere('city', 'like', "%{$search}%")
-                            ->orWhere('manager_name', 'like', "%{$search}%");
+                        $cq->where('name', 'ilike', "%{$search}%")
+                            ->orWhere('city', 'ilike', "%{$search}%")
+                            ->orWhere('manager_name', 'ilike', "%{$search}%");
                     });
             });
         }
@@ -273,9 +273,9 @@ class RegistrationWorkbookService
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('kyu_dan', 'like', "%{$search}%")
-                    ->orWhere('kenshi_number', 'like', "%{$search}%");
+                $q->where('name', 'ilike', "%{$search}%")
+                    ->orWhere('kyu_dan', 'ilike', "%{$search}%")
+                    ->orWhere('kenshi_number', 'ilike', "%{$search}%");
             });
         }
 

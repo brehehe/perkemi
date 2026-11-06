@@ -329,7 +329,7 @@
         <!-- Gelanggang Filter Selector -->
         <select onchange="window.location.href=this.value" title="Filter Gelanggang (Court)">
             <option value="{{ request()->fullUrlWithQuery(['court_id' => null]) }}">
-                &#9873; Semua Gelanggang (Lengkap)
+                Semua Gelanggang (Lengkap)
             </option>
             @foreach(($courts ?? []) as $court)
                 <option value="{{ request()->fullUrlWithQuery(['court_id' => $court->id]) }}" {{ ($courtId ?? null) == $court->id ? 'selected' : '' }}>
@@ -374,7 +374,7 @@
             <p class="sub-org">DEWAN WASIT &amp; PANITERA PERTANDINGAN</p>
             <h1 class="doc-title">JADWAL PERTANDINGAN RESMI (ORDER OF PLAY)</h1>
             @if(!empty($selectedCourt))
-                <div class="doc-court-badge">&#9873; {{ $selectedCourt->name }}</div>
+                <div class="doc-court-badge">&#9679; {{ $selectedCourt->name }}</div>
             @endif
             @if(!empty($selectedType))
                 <div style="font-size: 11px; font-weight: bold; color: #78350f; margin-top: 3px;">
@@ -439,8 +439,8 @@
             </div>
         @else
             @foreach($sessions as $sessionTitle => $sessionMatches)
-                <div style="background: #3a2e24; color: #f7eed8; font-weight: bold; font-size: 10.5px; padding: 6px 10px; margin-top: 12px; margin-bottom: 6px; border-radius: 2px;">
-                    &#128197; {{ $sessionTitle }}
+                <div style="background: #3a2e24; color: #f7eed8; font-weight: bold; font-size: 10.5px; padding: 6px 10px; margin-top: 14px; margin-bottom: 6px; border-radius: 2px;">
+                    <span style="color: #f0c060; margin-right: 4px;">&#9632;</span> {{ $sessionTitle }}
                 </div>
 
                 @if($isSeparatedMode && empty($selectedType))
@@ -710,22 +710,66 @@
                             return true;
                         });
                     }
+
+                    // Fallback to gap detection if explicit break rundown record is missing
+                    if (! $breakAfter && $firstMatch) {
+                        $lastMatch = $sessionMatches->last();
+                        $sessionEndTime = $currentRundown?->end_time ?? $lastMatch?->scheduled_end_at;
+                        $nextMatch = $matches->first(function ($m) use ($matchDate, $sessionEndTime) {
+                            if (! $m->scheduled_start_at || $m->scheduled_start_at->format('Y-m-d') !== $matchDate) return false;
+                            if ($sessionEndTime && $m->scheduled_start_at->gt($sessionEndTime)) return true;
+                            return false;
+                        });
+                        if ($nextMatch && $sessionEndTime && $nextMatch->scheduled_start_at->diffInMinutes($sessionEndTime) >= 30) {
+                            $breakAfter = (object) [
+                                'name' => 'ISHOMA (Istirahat, Sholat, Makan)',
+                                'date' => $sessionEndTime,
+                                'end_time' => $nextMatch->scheduled_start_at,
+                            ];
+                        }
+                    }
+
+                    $durationMinutes = ($breakAfter && $breakAfter->date && $breakAfter->end_time)
+                        ? (int) abs($breakAfter->date->diffInMinutes($breakAfter->end_time))
+                        : 120;
                 @endphp
 
                 @if($breakAfter)
-                    <div style="background: #fffbeb; border: 1px solid #fcd34d; border-left: 5px solid #d97706; padding: 6px 12px; margin: 12px 0 8px; border-radius: 3px; color: #78350f; page-break-inside: avoid;">
-                        <table style="width: 100%; border-collapse: collapse;">
+                    <div style="background: #fffbeb; border: 1.5px solid #f59e0b; border-left: 6px solid #d97706; padding: 7px 12px; margin: 12px 0 14px; border-radius: 4px; color: #78350f; page-break-inside: avoid; break-inside: avoid;">
+                        <table style="width: 100%; border-collapse: collapse; border: none; margin: 0;">
                             <tr>
-                                <td style="vertical-align: middle;">
-                                    <strong style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;">
-                                        &#9749; JEDA RESMI: {{ strtoupper($breakAfter->name ?: 'ISHOMA') }}
-                                    </strong>
-                                    <span style="font-size: 9px; color: #b45309; margin-left: 8px;">
-                                        (Istirahat, Sholat, Makan &mdash; Seluruh Gelanggang Berhenti Sementara)
-                                    </span>
+                                <td style="width: 32px; vertical-align: middle; border: none; padding: 0 8px 0 0;">
+                                    <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; width: 26px; height: 26px; text-align: center; line-height: 24px; font-weight: bold; font-size: 11px; color: #b45309;">
+                                        &#9646;&#9646;
+                                    </div>
                                 </td>
-                                <td style="text-align: right; vertical-align: middle; font-weight: bold; font-size: 10px; color: #92400e; width: 160px;">
-                                    {{ $breakAfter->date?->format('H:i') }} &ndash; {{ $breakAfter->end_time?->format('H:i') }} WIB
+                                <td style="vertical-align: middle; border: none; padding: 0;">
+                                    <div style="margin-bottom: 2px;">
+                                        <span style="display: inline-block; background: #fde68a; color: #78350f; font-weight: bold; font-size: 8px; padding: 1px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px;">
+                                            JEDA RESMI
+                                        </span>
+                                        <strong style="font-size: 11px; color: #451a03; text-transform: uppercase; letter-spacing: 0.02em;">
+                                            {{ $breakAfter->name ? strtoupper($breakAfter->name) : 'ISHOMA (ISTIRAHAT, SHOLAT, MAKAN)' }}
+                                        </strong>
+                                        @if(!empty($durationMinutes))
+                                            <span style="display: inline-block; background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; font-weight: bold; font-size: 8px; padding: 1px 6px; border-radius: 8px; margin-left: 4px;">
+                                                {{ $durationMinutes }} Menit
+                                            </span>
+                                        @endif
+                                    </div>
+                                    <div style="font-size: 8.5px; color: #92400e; line-height: 1.2;">
+                                        Waktu istirahat resmi antar sesi pertandingan. Seluruh gelanggang (court) dan panitera rehat sementara.
+                                    </div>
+                                </td>
+                                <td style="width: 150px; text-align: right; vertical-align: middle; border: none; padding: 0;">
+                                    <div style="background: #ffffff; border: 1px solid #f59e0b; border-radius: 4px; padding: 3px 8px; text-align: center; display: inline-block; min-width: 130px;">
+                                        <div style="font-size: 7.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: #b45309;">
+                                            WAKTU ISTIRAHAT
+                                        </div>
+                                        <div style="font-size: 11px; font-weight: bold; color: #78350f; margin-top: 1px;">
+                                            {{ $breakAfter->date?->format('H:i') ?? '12:00' }} &ndash; {{ $breakAfter->end_time?->format('H:i') ?? '14:00' }} WIB
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         </table>

@@ -324,8 +324,8 @@ class SeedRealPopdaStaff extends Command
                 }
 
                 $dummyUsers = User::query()
-                    ->where('email', 'like', 'wasit%@example.test')
-                    ->orWhere('email', 'like', '%dummy%')
+                    ->where('email', 'ilike', 'wasit%@example.test')
+                    ->orWhere('email', 'ilike', '%dummy%')
                     ->get();
 
                 foreach ($dummyUsers as $user) {
@@ -334,9 +334,9 @@ class SeedRealPopdaStaff extends Command
                 }
 
                 Referee::query()
-                    ->where('license_number', 'like', '%-DMO-%')
-                    ->orWhere('notes', 'like', '%DUMMY%')
-                    ->orWhere('name', 'like', '%Dummy%')
+                    ->where('license_number', 'ilike', '%-DMO-%')
+                    ->orWhere('notes', 'ilike', '%DUMMY%')
+                    ->orWhere('name', 'ilike', '%Dummy%')
                     ->forceDelete();
             });
             $this->info('Pembersihan data dummy selesai.');

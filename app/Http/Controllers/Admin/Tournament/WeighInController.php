@@ -43,8 +43,8 @@ class WeighInController extends Controller
 
         if ($search = $request->string('search')->trim()->toString()) {
             $entriesQuery->where(function ($query) use ($search): void {
-                $query->whereHas('athlete', fn ($aq) => $aq->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('athlete.contingent', fn ($cq) => $cq->where('name', 'like', "%{$search}%"));
+                $query->whereHas('athlete', fn ($aq) => $aq->where('name', 'ilike', "%{$search}%"))
+                    ->orWhereHas('athlete.contingent', fn ($cq) => $cq->where('name', 'ilike', "%{$search}%"));
             });
         }
 

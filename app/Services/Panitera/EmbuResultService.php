@@ -491,12 +491,16 @@ class EmbuResultService
             }
 
             $minTieRank = ! empty($normalized) ? min($normalized) : 1;
+            $matchIds = array_keys($normalized);
+
+            $matches = TournamentMatch::query()
+                ->where('event_match_category_id', $category->id)
+                ->whereIn('id', $matchIds)
+                ->get()
+                ->keyBy('id');
 
             foreach ($normalized as $matchId => $rank) {
-                $match = TournamentMatch::query()
-                    ->where('event_match_category_id', $category->id)
-                    ->whereKey($matchId)
-                    ->first();
+                $match = $matches->get($matchId);
 
                 if ($match) {
                     $metadata = $match->metadata ?? [];
@@ -510,9 +514,7 @@ class EmbuResultService
             }
 
             // Broadcast real-time Reverb event to Wasit Utama and Panitera
-            $matchIds = array_keys($normalized);
-            $courtIds = TournamentMatch::query()
-                ->whereIn('id', $matchIds)
+            $courtIds = $matches
                 ->pluck('event_court_id')
                 ->filter()
                 ->unique()

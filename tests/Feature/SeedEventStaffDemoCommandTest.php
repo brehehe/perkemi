@@ -23,7 +23,7 @@ test('command creates login masters event rosters and court assignments for ever
     ])->expectsOutputToContain('berhasil dibuat')
         ->assertSuccessful();
 
-    $users = User::query()->where('email', 'like', 'event-staff-demo-%')->get();
+    $users = User::query()->where('email', 'ilike', 'event-staff-demo-%')->get();
     $masterEmails = collect()
         ->merge(Referee::query()->pluck('email'))
         ->merge(Clerk::query()->pluck('email'))
@@ -81,10 +81,10 @@ test('delete option removes only data owned by the official demo command', funct
     ])->expectsOutputToContain('berhasil dihapus')
         ->assertSuccessful();
 
-    expect(User::withTrashed()->where('email', 'like', 'event-staff-demo-%')->count())->toBe(0)
-        ->and(Referee::withTrashed()->where('license_number', 'like', 'WST-DMO-%')->count())->toBe(0)
-        ->and(Clerk::withTrashed()->where('employee_number', 'like', 'PNT-DMO-%')->count())->toBe(0)
-        ->and(FieldCoordinator::withTrashed()->where('coordinator_number', 'like', 'KOR-DMO-%')->count())->toBe(0);
+    expect(User::withTrashed()->where('email', 'ilike', 'event-staff-demo-%')->count())->toBe(0)
+        ->and(Referee::withTrashed()->where('license_number', 'ilike', 'WST-DMO-%')->count())->toBe(0)
+        ->and(Clerk::withTrashed()->where('employee_number', 'ilike', 'PNT-DMO-%')->count())->toBe(0)
+        ->and(FieldCoordinator::withTrashed()->where('coordinator_number', 'ilike', 'KOR-DMO-%')->count())->toBe(0);
 
     $this->assertModelExists($originalUser);
     $this->assertModelExists($originalReferee);
@@ -130,7 +130,7 @@ test('command fails without changing data when event has no active court', funct
     ])->expectsOutput('Event membutuhkan minimal satu court aktif untuk membagi petugas dummy.')
         ->assertFailed();
 
-    expect(User::query()->where('email', 'like', 'event-staff-demo-%')->count())->toBe(0)
+    expect(User::query()->where('email', 'ilike', 'event-staff-demo-%')->count())->toBe(0)
         ->and(Referee::count())->toBe(0)
         ->and(Clerk::count())->toBe(0)
         ->and(FieldCoordinator::count())->toBe(0);

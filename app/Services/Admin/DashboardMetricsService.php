@@ -13,10 +13,25 @@ use App\Models\Rundown;
 use App\Models\TournamentResult;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardMetricsService
 {
+    /**
+     * Clear all cached metrics for an event or globally.
+     */
+    public static function clearCache(?string $eventId = null): void
+    {
+        $id = $eventId ?: 'global';
+        Cache::forget("dashboard:stats:{$id}");
+        Cache::forget("dashboard:monthly:{$id}");
+        Cache::forget("dashboard:status:{$id}");
+        Cache::forget("dashboard:contingents:{$id}");
+        Cache::forget("dashboard:medals:{$id}");
+        Cache::forget("dashboard:distribution:{$id}");
+    }
+
     /**
      * Calculate core dashboard metrics.
      *
@@ -32,43 +47,47 @@ class DashboardMetricsService
      */
     public function getStats(?Event $event = null): array
     {
-        $totalAthletes = $this->scopeAthletesToEvent(Athlete::query(), $event)->count();
-        $totalContingents = Contingent::query()
-            ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
-            ->count();
+        $key = 'dashboard:stats:'.($event?->id ?? 'global');
 
-        $verifiedVal = RegistrationStatus::Verified->value;
-        $pendingVal = RegistrationStatus::Pending->value;
-        $verifiedPaymentVal = PaymentStatus::Verified->value;
+        return Cache::remember($key, 60, function () use ($event): array {
+            $totalAthletes = $this->scopeAthletesToEvent(Athlete::query(), $event)->count();
+            $totalContingents = Contingent::query()
+                ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
+                ->count();
 
-        $regStats = Registration::query()
-            ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
-            ->selectRaw("
-            COUNT(*) as total_registrations,
-            SUM(CASE WHEN status = '{$verifiedVal}' THEN 1 ELSE 0 END) as verified_count,
-            SUM(CASE WHEN status = '{$pendingVal}' THEN 1 ELSE 0 END) as pending_count,
-            SUM(CASE WHEN payment_status = '{$verifiedPaymentVal}' THEN payment_amount ELSE 0 END) as total_amount
-        ")
-            ->first();
+            $verifiedVal = RegistrationStatus::Verified->value;
+            $pendingVal = RegistrationStatus::Pending->value;
+            $verifiedPaymentVal = PaymentStatus::Verified->value;
 
-        $totalRegistrations = (int) ($regStats->total_registrations ?? 0);
-        $verifiedCount = (int) ($regStats->verified_count ?? 0);
-        $pendingCount = (int) ($regStats->pending_count ?? 0);
-        $totalAmount = (float) ($regStats->total_amount ?? 0);
+            $regStats = Registration::query()
+                ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
+                ->selectRaw("
+                COUNT(*) as total_registrations,
+                SUM(CASE WHEN status = '{$verifiedVal}' THEN 1 ELSE 0 END) as verified_count,
+                SUM(CASE WHEN status = '{$pendingVal}' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN payment_status = '{$verifiedPaymentVal}' THEN payment_amount ELSE 0 END) as total_amount
+            ")
+                ->first();
 
-        $verificationRate = $totalRegistrations > 0
-            ? round(($verifiedCount / $totalRegistrations) * 100, 1)
-            : 0;
+            $totalRegistrations = (int) ($regStats->total_registrations ?? 0);
+            $verifiedCount = (int) ($regStats->verified_count ?? 0);
+            $pendingCount = (int) ($regStats->pending_count ?? 0);
+            $totalAmount = (float) ($regStats->total_amount ?? 0);
 
-        return [
-            'total_athletes' => $totalAthletes,
-            'total_contingents' => $totalContingents,
-            'total_registrations' => $totalRegistrations,
-            'verified_count' => $verifiedCount,
-            'pending_count' => $pendingCount,
-            'total_amount' => $totalAmount,
-            'verification_rate' => $verificationRate,
-        ];
+            $verificationRate = $totalRegistrations > 0
+                ? round(($verifiedCount / $totalRegistrations) * 100, 1)
+                : 0;
+
+            return [
+                'total_athletes' => $totalAthletes,
+                'total_contingents' => $totalContingents,
+                'total_registrations' => $totalRegistrations,
+                'verified_count' => $verifiedCount,
+                'pending_count' => $pendingCount,
+                'total_amount' => $totalAmount,
+                'verification_rate' => $verificationRate,
+            ];
+        });
     }
 
     /**
@@ -78,50 +97,54 @@ class DashboardMetricsService
      */
     public function getMonthlyAthletes(?Event $event = null): array
     {
-        $driver = DB::connection()->getDriverName();
+        $key = 'dashboard:monthly:'.($event?->id ?? 'global');
 
-        if ($driver === 'pgsql') {
-            $data = $this->scopeAthletesToEvent(Athlete::selectRaw("TO_CHAR(created_at, 'Mon') as month_label, EXTRACT(MONTH FROM created_at) as month, EXTRACT(YEAR FROM created_at) as year, count(*) as total"), $event)
-                ->where('created_at', '>=', now()->subMonths(6))
-                ->groupByRaw("TO_CHAR(created_at, 'Mon'), EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)")
-                ->orderByRaw('EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)')
-                ->get();
-        } elseif ($driver === 'sqlite') {
-            $data = $this->scopeAthletesToEvent(Athlete::selectRaw("strftime('%m', created_at) as month, strftime('%Y', created_at) as year, count(*) as total"), $event)
-                ->where('created_at', '>=', now()->subMonths(6))
-                ->groupByRaw("strftime('%Y', created_at), strftime('%m', created_at)")
-                ->orderByRaw("strftime('%Y', created_at), strftime('%m', created_at)")
-                ->get()
-                ->map(function ($row) {
-                    $row->month_label = date('M', mktime(0, 0, 0, (int) $row->month, 10));
+        return Cache::remember($key, 60, function () use ($event): array {
+            $driver = DB::connection()->getDriverName();
 
-                    return $row;
-                });
-        } else {
-            $data = $this->scopeAthletesToEvent(Athlete::selectRaw("DATE_FORMAT(created_at, '%b') as month_label, MONTH(created_at) as month, YEAR(created_at) as year, count(*) as total"), $event)
-                ->where('created_at', '>=', now()->subMonths(6))
-                ->groupByRaw("DATE_FORMAT(created_at, '%b'), YEAR(created_at), MONTH(created_at)")
-                ->orderByRaw('YEAR(created_at), MONTH(created_at)')
-                ->get();
-        }
+            if ($driver === 'pgsql') {
+                $data = $this->scopeAthletesToEvent(Athlete::selectRaw("TO_CHAR(created_at, 'Mon') as month_label, EXTRACT(MONTH FROM created_at) as month, EXTRACT(YEAR FROM created_at) as year, count(*) as total"), $event)
+                    ->where('created_at', '>=', now()->subMonths(6))
+                    ->groupByRaw("TO_CHAR(created_at, 'Mon'), EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)")
+                    ->orderByRaw('EXTRACT(YEAR FROM created_at), EXTRACT(MONTH FROM created_at)')
+                    ->get();
+            } elseif ($driver === 'sqlite') {
+                $data = $this->scopeAthletesToEvent(Athlete::selectRaw("strftime('%m', created_at) as month, strftime('%Y', created_at) as year, count(*) as total"), $event)
+                    ->where('created_at', '>=', now()->subMonths(6))
+                    ->groupByRaw("strftime('%Y', created_at), strftime('%m', created_at)")
+                    ->orderByRaw("strftime('%Y', created_at), strftime('%m', created_at)")
+                    ->get()
+                    ->map(function ($row) {
+                        $row->month_label = date('M', mktime(0, 0, 0, (int) $row->month, 10));
 
-        $months = [];
-        $counts = [];
-
-        foreach ($data as $row) {
-            $months[] = (string) $row->month_label;
-            $counts[] = (int) $row->total;
-        }
-
-        // Fallback default months if data is empty
-        if (empty($months)) {
-            for ($i = 5; $i >= 0; $i--) {
-                $months[] = now()->subMonths($i)->translatedFormat('M');
-                $counts[] = 0;
+                        return $row;
+                    });
+            } else {
+                $data = $this->scopeAthletesToEvent(Athlete::selectRaw("DATE_FORMAT(created_at, '%b') as month_label, MONTH(created_at) as month, YEAR(created_at) as year, count(*) as total"), $event)
+                    ->where('created_at', '>=', now()->subMonths(6))
+                    ->groupByRaw("DATE_FORMAT(created_at, '%b'), YEAR(created_at), MONTH(created_at)")
+                    ->orderByRaw('YEAR(created_at), MONTH(created_at)')
+                    ->get();
             }
-        }
 
-        return ['labels' => $months, 'data' => $counts];
+            $months = [];
+            $counts = [];
+
+            foreach ($data as $row) {
+                $months[] = (string) $row->month_label;
+                $counts[] = (int) $row->total;
+            }
+
+            // Fallback default months if data is empty
+            if (empty($months)) {
+                for ($i = 5; $i >= 0; $i--) {
+                    $months[] = now()->subMonths($i)->translatedFormat('M');
+                    $counts[] = 0;
+                }
+            }
+
+            return ['labels' => $months, 'data' => $counts];
+        });
     }
 
     /**
@@ -131,26 +154,30 @@ class DashboardMetricsService
      */
     public function getRegistrationStatusBreakdown(?Event $event = null): array
     {
-        $breakdown = [
-            RegistrationStatus::Verified->value => 0,
-            RegistrationStatus::Pending->value => 0,
-            RegistrationStatus::Rejected->value => 0,
-        ];
+        $key = 'dashboard:status:'.($event?->id ?? 'global');
 
-        $data = Registration::query()
-            ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
-            ->selectRaw('status, count(*) as total')
-            ->groupBy('status')
-            ->get();
+        return Cache::remember($key, 60, function () use ($event): array {
+            $breakdown = [
+                RegistrationStatus::Verified->value => 0,
+                RegistrationStatus::Pending->value => 0,
+                RegistrationStatus::Rejected->value => 0,
+            ];
 
-        foreach ($data as $row) {
-            $statusKey = $row->status instanceof \BackedEnum ? $row->status->value : (string) $row->status;
-            if (array_key_exists($statusKey, $breakdown)) {
-                $breakdown[$statusKey] = (int) $row->total;
+            $data = Registration::query()
+                ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
+                ->selectRaw('status, count(*) as total')
+                ->groupBy('status')
+                ->get();
+
+            foreach ($data as $row) {
+                $statusKey = $row->status instanceof \BackedEnum ? $row->status->value : (string) $row->status;
+                if (array_key_exists($statusKey, $breakdown)) {
+                    $breakdown[$statusKey] = (int) $row->total;
+                }
             }
-        }
 
-        return $breakdown;
+            return $breakdown;
+        });
     }
 
     /**
@@ -160,21 +187,25 @@ class DashboardMetricsService
      */
     public function getLatestContingents(?Event $event = null): array
     {
-        return Contingent::query()
-            ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
-            ->select(['id', 'name', 'city', 'manager_name'])
-            ->withCount('athletes')
-            ->latest()
-            ->take(8)
-            ->get()
-            ->map(fn (Contingent $c) => [
-                'id' => $c->id,
-                'name' => $c->name,
-                'city' => $c->city,
-                'manager_name' => $c->manager_name,
-                'athletes_count' => (int) $c->athletes_count,
-            ])
-            ->toArray();
+        $key = 'dashboard:contingents:'.($event?->id ?? 'global');
+
+        return Cache::remember($key, 60, function () use ($event): array {
+            return Contingent::query()
+                ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
+                ->select(['id', 'name', 'city', 'manager_name'])
+                ->withCount('athletes')
+                ->latest()
+                ->take(8)
+                ->get()
+                ->map(fn (Contingent $c) => [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'city' => $c->city,
+                    'manager_name' => $c->manager_name,
+                    'athletes_count' => (int) $c->athletes_count,
+                ])
+                ->toArray();
+        });
     }
 
     /**
@@ -225,28 +256,32 @@ class DashboardMetricsService
      */
     public function getMedalStats(?Event $event = null): array
     {
-        $goldVal = TournamentRank::Gold->value;
-        $silverVal = TournamentRank::Silver->value;
-        $bronzeVal = TournamentRank::Bronze->value;
-        $runnerUpVal = TournamentRank::RunnerUp->value;
+        $key = 'dashboard:medals:'.($event?->id ?? 'global');
 
-        $statsQuery = TournamentResult::selectRaw("
-            SUM(CASE WHEN rank = {$goldVal} THEN 1 ELSE 0 END) as gold,
-            SUM(CASE WHEN rank = {$silverVal} THEN 1 ELSE 0 END) as silver,
-            SUM(CASE WHEN rank IN ({$bronzeVal}, {$runnerUpVal}) THEN 1 ELSE 0 END) as bronze
-        ");
+        return Cache::remember($key, 60, function () use ($event): array {
+            $goldVal = TournamentRank::Gold->value;
+            $silverVal = TournamentRank::Silver->value;
+            $bronzeVal = TournamentRank::Bronze->value;
+            $runnerUpVal = TournamentRank::RunnerUp->value;
 
-        if ($event instanceof Event) {
-            $statsQuery->whereBelongsTo($event);
-        }
+            $statsQuery = TournamentResult::selectRaw("
+                SUM(CASE WHEN rank = {$goldVal} THEN 1 ELSE 0 END) as gold,
+                SUM(CASE WHEN rank = {$silverVal} THEN 1 ELSE 0 END) as silver,
+                SUM(CASE WHEN rank IN ({$bronzeVal}, {$runnerUpVal}) THEN 1 ELSE 0 END) as bronze
+            ");
 
-        $stats = $statsQuery->first();
+            if ($event instanceof Event) {
+                $statsQuery->whereBelongsTo($event);
+            }
 
-        return [
-            'gold' => (int) ($stats->gold ?? 0),
-            'silver' => (int) ($stats->silver ?? 0),
-            'bronze' => (int) ($stats->bronze ?? 0),
-        ];
+            $stats = $statsQuery->first();
+
+            return [
+                'gold' => (int) ($stats->gold ?? 0),
+                'silver' => (int) ($stats->silver ?? 0),
+                'bronze' => (int) ($stats->bronze ?? 0),
+            ];
+        });
     }
 
     /**
@@ -262,107 +297,111 @@ class DashboardMetricsService
      */
     public function getMedalDistribution(?Event $event = null): array
     {
-        $goldVal = TournamentRank::Gold->value;
-        $silverVal = TournamentRank::Silver->value;
-        $bronzeVal = TournamentRank::Bronze->value;
-        $runnerUpVal = TournamentRank::RunnerUp->value;
+        $key = 'dashboard:distribution:'.($event?->id ?? 'global');
 
-        $isPointsSystem = $event instanceof Event && ($event->champion_ranking_system ?? 'medals') === 'points';
-        $goldMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_gold_points ?? 5)) : 1;
-        $silverMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_silver_points ?? 3)) : 1;
-        $bronzeMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_bronze_points ?? 1)) : 1;
+        return Cache::remember($key, 60, function () use ($event): array {
+            $goldVal = TournamentRank::Gold->value;
+            $silverVal = TournamentRank::Silver->value;
+            $bronzeVal = TournamentRank::Bronze->value;
+            $runnerUpVal = TournamentRank::RunnerUp->value;
 
-        $contingents = Contingent::query()
-            ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
-            ->select(['id', 'name'])
-            ->withCount([
-                'tournamentResults as gold_count' => function ($query) use ($goldVal, $event) {
-                    $query->where('rank', $goldVal);
+            $isPointsSystem = $event instanceof Event && ($event->champion_ranking_system ?? 'medals') === 'points';
+            $goldMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_gold_points ?? 5)) : 1;
+            $silverMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_silver_points ?? 3)) : 1;
+            $bronzeMultiplier = $isPointsSystem ? max(1, (int) ($event->champion_bronze_points ?? 1)) : 1;
 
-                    if ($event instanceof Event) {
-                        $query->whereBelongsTo($event);
+            $contingents = Contingent::query()
+                ->when($event instanceof Event, fn (Builder $query) => $query->whereBelongsTo($event))
+                ->select(['id', 'name'])
+                ->withCount([
+                    'tournamentResults as gold_count' => function ($query) use ($goldVal, $event) {
+                        $query->where('rank', $goldVal);
+
+                        if ($event instanceof Event) {
+                            $query->whereBelongsTo($event);
+                        }
+                    },
+                    'tournamentResults as silver_count' => function ($query) use ($silverVal, $event) {
+                        $query->where('rank', $silverVal);
+
+                        if ($event instanceof Event) {
+                            $query->whereBelongsTo($event);
+                        }
+                    },
+                    'tournamentResults as bronze_count' => function ($query) use ($bronzeVal, $runnerUpVal, $event) {
+                        $query->whereIn('rank', [$bronzeVal, $runnerUpVal]);
+
+                        if ($event instanceof Event) {
+                            $query->whereBelongsTo($event);
+                        }
+                    },
+                ])
+                ->get()
+                ->sort(function ($a, $b) use ($isPointsSystem, $goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
+                    if ($isPointsSystem) {
+                        $aPoints = ((int) $a->gold_count * $goldMultiplier) + ((int) $a->silver_count * $silverMultiplier) + ((int) $a->bronze_count * $bronzeMultiplier);
+                        $bPoints = ((int) $b->gold_count * $goldMultiplier) + ((int) $b->silver_count * $silverMultiplier) + ((int) $b->bronze_count * $bronzeMultiplier);
+                        if ($aPoints !== $bPoints) {
+                            return $bPoints <=> $aPoints;
+                        }
                     }
-                },
-                'tournamentResults as silver_count' => function ($query) use ($silverVal, $event) {
-                    $query->where('rank', $silverVal);
 
-                    if ($event instanceof Event) {
-                        $query->whereBelongsTo($event);
+                    if ((int) $a->gold_count !== (int) $b->gold_count) {
+                        return (int) $b->gold_count <=> (int) $a->gold_count;
                     }
-                },
-                'tournamentResults as bronze_count' => function ($query) use ($bronzeVal, $runnerUpVal, $event) {
-                    $query->whereIn('rank', [$bronzeVal, $runnerUpVal]);
 
-                    if ($event instanceof Event) {
-                        $query->whereBelongsTo($event);
+                    if ((int) $a->silver_count !== (int) $b->silver_count) {
+                        return (int) $b->silver_count <=> (int) $a->silver_count;
                     }
-                },
-            ])
-            ->get()
-            ->sort(function ($a, $b) use ($isPointsSystem, $goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
-                if ($isPointsSystem) {
-                    $aPoints = ((int) $a->gold_count * $goldMultiplier) + ((int) $a->silver_count * $silverMultiplier) + ((int) $a->bronze_count * $bronzeMultiplier);
-                    $bPoints = ((int) $b->gold_count * $goldMultiplier) + ((int) $b->silver_count * $silverMultiplier) + ((int) $b->bronze_count * $bronzeMultiplier);
-                    if ($aPoints !== $bPoints) {
-                        return $bPoints <=> $aPoints;
+
+                    if ((int) $a->bronze_count !== (int) $b->bronze_count) {
+                        return (int) $b->bronze_count <=> (int) $a->bronze_count;
                     }
-                }
 
-                if ((int) $a->gold_count !== (int) $b->gold_count) {
-                    return (int) $b->gold_count <=> (int) $a->gold_count;
-                }
+                    return strcmp($a->name, $b->name);
+                })
+                ->take(7)
+                ->values();
 
-                if ((int) $a->silver_count !== (int) $b->silver_count) {
-                    return (int) $b->silver_count <=> (int) $a->silver_count;
-                }
+            $labels = $contingents->pluck('name')->toArray();
+            $goldData = $contingents->pluck('gold_count')->map(fn ($v) => (int) $v)->toArray();
+            $silverData = $contingents->pluck('silver_count')->map(fn ($v) => (int) $v)->toArray();
+            $bronzeData = $contingents->pluck('bronze_count')->map(fn ($v) => (int) $v)->toArray();
 
-                if ((int) $a->bronze_count !== (int) $b->bronze_count) {
-                    return (int) $b->bronze_count <=> (int) $a->bronze_count;
-                }
+            $contingentsList = $contingents->map(function ($con) use ($goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
+                $gold = (int) $con->gold_count;
+                $silver = (int) $con->silver_count;
+                $bronze = (int) $con->bronze_count;
+                $totalPoints = ($gold * $goldMultiplier) + ($silver * $silverMultiplier) + ($bronze * $bronzeMultiplier);
 
-                return strcmp($a->name, $b->name);
-            })
-            ->take(7)
-            ->values();
-
-        $labels = $contingents->pluck('name')->toArray();
-        $goldData = $contingents->pluck('gold_count')->map(fn ($v) => (int) $v)->toArray();
-        $silverData = $contingents->pluck('silver_count')->map(fn ($v) => (int) $v)->toArray();
-        $bronzeData = $contingents->pluck('bronze_count')->map(fn ($v) => (int) $v)->toArray();
-
-        $contingentsList = $contingents->map(function ($con) use ($goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
-            $gold = (int) $con->gold_count;
-            $silver = (int) $con->silver_count;
-            $bronze = (int) $con->bronze_count;
-            $totalPoints = ($gold * $goldMultiplier) + ($silver * $silverMultiplier) + ($bronze * $bronzeMultiplier);
+                return [
+                    'id' => $con->id,
+                    'name' => $con->name,
+                    'gold_count' => $gold,
+                    'silver_count' => $silver,
+                    'bronze_count' => $bronze,
+                    'total_score' => $gold + $silver + $bronze,
+                    'total_points' => $totalPoints,
+                ];
+            })->toArray();
 
             return [
-                'id' => $con->id,
-                'name' => $con->name,
-                'gold_count' => $gold,
-                'silver_count' => $silver,
-                'bronze_count' => $bronze,
-                'total_score' => $gold + $silver + $bronze,
-                'total_points' => $totalPoints,
+                'labels' => $labels,
+                'gold' => $goldData,
+                'silver' => $silverData,
+                'bronze' => $bronzeData,
+                'contingents' => $contingentsList,
+                'ranking_system' => $isPointsSystem ? 'points' : 'medals',
+                'ranking_label' => $isPointsSystem
+                    ? "Sistem Poin Berbobot (Emas: {$goldMultiplier}, Perak: {$silverMultiplier}, Perunggu: {$bronzeMultiplier})"
+                    : 'Standar Medali (Emas > Perak > Perunggu)',
+                'points_weights' => [
+                    'gold' => $goldMultiplier,
+                    'silver' => $silverMultiplier,
+                    'bronze' => $bronzeMultiplier,
+                ],
             ];
-        })->toArray();
-
-        return [
-            'labels' => $labels,
-            'gold' => $goldData,
-            'silver' => $silverData,
-            'bronze' => $bronzeData,
-            'contingents' => $contingentsList,
-            'ranking_system' => $isPointsSystem ? 'points' : 'medals',
-            'ranking_label' => $isPointsSystem
-                ? "Sistem Poin Berbobot (Emas: {$goldMultiplier}, Perak: {$silverMultiplier}, Perunggu: {$bronzeMultiplier})"
-                : 'Standar Medali (Emas > Perak > Perunggu)',
-            'points_weights' => [
-                'gold' => $goldMultiplier,
-                'silver' => $silverMultiplier,
-                'bronze' => $bronzeMultiplier,
-            ],
-        ];
+        });
     }
 
     /**

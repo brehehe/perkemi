@@ -424,7 +424,8 @@ Route::prefix('admin/laporan')->middleware(['auth', 'event.tenant'])->name('admi
 Route::middleware('guest')->group(function () {
     Route::get('login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::get('wasit/login', [AuthenticatedSessionController::class, 'create'])->name('wasit.login');
-    Route::post('login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('login', [AuthenticatedSessionController::class, 'store'])
+        ->middleware('throttle:15,1');
     Route::post('login/nik', NikLoginController::class)
         ->middleware('throttle:15,1')
         ->name('login.nik');

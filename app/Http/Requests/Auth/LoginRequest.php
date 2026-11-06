@@ -133,7 +133,8 @@ class LoginRequest extends FormRequest
     private function legacyUserForPhone(string $phone): ?User
     {
         $referee = Referee::query()
-            ->with('user')
+            ->select(['id', 'user_id', 'phone'])
+            ->with('user:id,name,email,phone')
             ->whereNotNull('user_id')
             ->whereNotNull('phone')
             ->get()
@@ -144,7 +145,8 @@ class LoginRequest extends FormRequest
         }
 
         $contingent = Contingent::query()
-            ->with('user')
+            ->select(['id', 'user_id', 'phone'])
+            ->with('user:id,name,email,phone')
             ->whereNotNull('user_id')
             ->whereNotNull('phone')
             ->get()
