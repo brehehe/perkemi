@@ -847,8 +847,11 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                                 <h2 id="match-timer-title" className="font-bold text-[#17120f]">Waktu Pertandingan</h2>
                                 <span className="rounded-full bg-[#fff4cf] px-2.5 py-1 text-[10px] font-bold uppercase text-[#9a6b20]">{timerDirection === 'down' ? 'Mode Mundur' : 'Mode Maju'}</span>
                             </div>
-                            <p className={`mt-3 font-mono text-5xl font-black tracking-tight sm:text-6xl ${timerExpired ? 'text-rose-600' : 'text-[#17120f]'}`} aria-live="off">{match.timer.status === 'running' && !liveTimer.synchronized ? '--:--' : formatTimer(displayedSeconds)}</p>
-                            <p className="mt-2 text-xs font-semibold text-[#7a746e]">{!liveTimer.synchronized && match.timer.status === 'running' ? 'Menyinkronkan jam server…' : match.timer.is_finished ? 'Pertandingan selesai · durasi resmi terkunci' : timerExpired ? 'Waktu habis' : match.timer.status === 'running' ? 'Sedang berjalan' : match.timer.status === 'paused' ? 'Dijeda' : 'Belum dimulai'}{liveTimer.synchronized && (liveTimer.connected ? ' · Reverb terhubung' : liveTimer.httpConnected ? ' · Sinkronisasi cadangan' : ' · Koneksi terputus, menunggu status resmi')}</p>
+                            <p className={`mt-3 font-mono text-5xl font-black tracking-tight sm:text-6xl ${timerExpired ? 'text-rose-600' : 'text-[#17120f]'}`} aria-live="off">{formatTimer(displayedSeconds)}</p>
+                            <p className="mt-2 text-xs font-semibold text-[#7a746e]">
+                                {match.timer.is_finished ? 'Pertandingan selesai · durasi resmi terkunci' : timerExpired ? 'Waktu habis' : match.timer.status === 'running' ? 'Sedang berjalan' : match.timer.status === 'paused' ? 'Dijeda' : 'Belum dimulai'}
+                                {liveTimer.connected ? ' · Reverb terhubung' : liveTimer.httpConnected ? ' · Sinkronisasi cadangan' : ' · Koneksi terputus, menunggu status resmi'}
+                            </p>
                         </div>
 
                         <div className={`grid gap-2 ${match.category_type === 'embu' ? 'sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3' : 'sm:grid-cols-2'}`}>

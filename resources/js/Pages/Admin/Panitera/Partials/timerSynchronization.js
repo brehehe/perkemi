@@ -3,15 +3,26 @@ export const timerVersion = (timer) => Math.max(0, Number(timer?.version) || 0);
 
 // Only request/response samples measure clock offset. A one-way WebSocket
 // message has unknown travel time and must never reset the clock.
-export function createServerClock(now = monotonicNow) {
+export function createServerClock(now = monotonicNow, initialServerNowMs = null) {
     let samples = [];
     let targetOffset = null;
     let previousAt = now();
     let previousServerTime = null;
     let sampleCount = 0;
+
+    const seed = (serverNowMs, at = now()) => {
+        const ms = Number(serverNowMs);
+        if (!Number.isFinite(ms) || ms <= 0) return;
+        previousAt = at;
+        previousServerTime = ms;
+        targetOffset = ms - at;
+        clock.synchronized = true;
+    };
+
     const clock = {
         synchronized: false,
         uncertaintyMs: null,
+        seed,
         recalibrate() {
             samples = [];
             targetOffset = null;
@@ -45,7 +56,7 @@ export function createServerClock(now = monotonicNow) {
             samples.sort((a, b) => a.networkTime - b.networkTime || b.at - a.at);
             samples = samples.slice(0, 8);
             const best = samples[0];
-            if (!clock.synchronized) {
+            if (!clock.synchronized || targetOffset === null) {
                 previousAt = receivedAt;
                 previousServerTime = receivedAt + best.offset;
             } else {
@@ -58,6 +69,11 @@ export function createServerClock(now = monotonicNow) {
             return true;
         },
     };
+
+    if (initialServerNowMs) {
+        seed(initialServerNowMs);
+    }
+
     return clock;
 }
 
@@ -74,9 +90,11 @@ export function acceptTimerState(current, incoming) {
 export function calculateElapsedMilliseconds(timer, serverClock) {
     const stored = Math.max(0, Number(timer?.elapsed_ms) || Number(timer?.elapsed_seconds) * 1000 || 0);
     const startedAt = Number(timer?.started_at_ms) || Date.parse(timer?.started_at);
-    const serverNow = serverClock.now();
-    if (timer?.status !== 'running' || !Number.isFinite(startedAt) || serverNow === null) return stored;
-    return stored + Math.max(0, serverNow - startedAt);
+    if (timer?.status !== 'running' || !Number.isFinite(startedAt)) return stored;
+    const serverNow = serverClock?.now ? serverClock.now() : null;
+    const currentNow = serverNow !== null ? serverNow : (typeof Date !== 'undefined' ? Date.now() : null);
+    if (currentNow === null) return stored;
+    return stored + Math.max(0, currentNow - startedAt);
 }
 
 export const timerDurationMilliseconds = (timer) => Number(timer?.duration_ms) || Number(timer?.duration_seconds) * 1000 || 120000;

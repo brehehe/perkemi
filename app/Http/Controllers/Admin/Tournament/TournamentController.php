@@ -93,8 +93,11 @@ class TournamentController extends Controller
                 'blueEntry.athlete.contingent:id,name',
             ]);
 
+        $courts = $activeEvent->courts()->orderBy('order')->get();
+        $selectedCourt = null;
         if ($courtId = $request->input('court_id')) {
             $query->where('event_court_id', $courtId);
+            $selectedCourt = $courts->firstWhere('id', $courtId);
         }
 
         if ($date = $request->input('date')) {
@@ -103,6 +106,11 @@ class TournamentController extends Controller
 
         if ($sessionId = $request->input('rundown_id')) {
             $query->where('rundown_id', $sessionId);
+        }
+
+        $type = $request->input('type');
+        if ($type && in_array($type, ['embu', 'randori'], true)) {
+            $query->whereHas('matchCategory', fn ($q) => $q->where('type', $type));
         }
 
         $matches = $query->get()
@@ -115,23 +123,30 @@ class TournamentController extends Controller
 
         $wantsHtml = $request->query('format') === 'html' || $request->boolean('preview');
         $wantsStream = $request->boolean('stream');
+        $viewMode = $request->input('mode', 'separated'); // 'separated' (default) or 'mixed'
 
-        if ($wantsHtml) {
-            return response()->view('reports.tournament-schedule-matches', [
-                'event' => $activeEvent,
-                'matches' => $matches,
-                'isPdf' => false,
-            ]);
-        }
-
-        $pdf = Pdf::loadView('reports.tournament-schedule-matches', [
+        $viewData = [
             'event' => $activeEvent,
             'matches' => $matches,
-            'isPdf' => true,
-        ])->setPaper('a4', 'landscape');
+            'isPdf' => ! $wantsHtml,
+            'courts' => $courts,
+            'selectedCourt' => $selectedCourt,
+            'courtId' => $courtId,
+            'selectedType' => $type,
+            'viewMode' => $viewMode,
+        ];
+
+        if ($wantsHtml) {
+            return response()->view('reports.tournament-schedule-matches', $viewData);
+        }
+
+        $pdf = Pdf::loadView('reports.tournament-schedule-matches', $viewData)
+            ->setPaper('a4', 'landscape');
 
         $safeEvent = Str::slug($activeEvent->name ?: 'kejuaraan', '_');
-        $filename = "Jadwal_Pertandingan_{$safeEvent}_".now()->format('Ymd_His').'.pdf';
+        $courtSuffix = $selectedCourt ? '_'.Str::slug($selectedCourt->name, '_') : '';
+        $typeSuffix = $type ? '_'.Str::slug($type, '_') : '';
+        $filename = "Jadwal_Pertandingan_{$safeEvent}{$courtSuffix}{$typeSuffix}_".now()->format('Ymd_His').'.pdf';
 
         if ($wantsStream) {
             return $pdf->stream($filename);

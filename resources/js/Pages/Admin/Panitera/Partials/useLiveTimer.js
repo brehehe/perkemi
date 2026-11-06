@@ -5,10 +5,10 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
     const [state, setState] = useState(initialState);
     const stateRef = useRef(initialState);
     const clockRef = useRef(null);
-    if (!clockRef.current) clockRef.current = createServerClock();
+    if (!clockRef.current) clockRef.current = createServerClock(monotonicNow, initialState?.server_now_ms);
     const [connected, setConnected] = useState(false);
     const [httpConnected, setHttpConnected] = useState(true);
-    const [synchronized, setSynchronized] = useState(false);
+    const [synchronized, setSynchronized] = useState(() => Boolean(initialState?.server_now_ms || clockRef.current?.synchronized));
     const [syncGeneration, setSyncGeneration] = useState(0);
     const requestRef = useRef(null);
     const scopeRef = useRef(stateUrl);
@@ -20,6 +20,10 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
         const current = stateRef.current;
         const next = acceptTimerState(current, incoming);
         if (next === current) return;
+        if (incoming?.server_now_ms && clockRef.current?.seed) {
+            clockRef.current.seed(Number(incoming.server_now_ms));
+            setSynchronized(true);
+        }
         stateRef.current = next;
         setState(next);
         if (next.match_id !== current?.match_id || next.timer?.version !== current?.timer?.version
@@ -82,16 +86,16 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
     }, [refresh, connected, syncGeneration]);
 
     useEffect(() => {
-        const onVisible = () => { if (document.visibilityState === 'visible') resynchronize(); };
-        window.addEventListener('online', resynchronize);
+        const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+        window.addEventListener('online', refresh);
         document.addEventListener('visibilitychange', onVisible);
         return () => {
-            window.removeEventListener('online', resynchronize);
+            window.removeEventListener('online', refresh);
             document.removeEventListener('visibilitychange', onVisible);
             requestRef.current?.abort();
             requestRef.current = null;
         };
-    }, [refresh, resynchronize]);
+    }, [refresh]);
 
     useEffect(() => {
         if (!window.Echo || !channelName) return undefined;
@@ -103,6 +107,10 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             if (expectedMatchId && incoming.match_id !== expectedMatchId) return;
             if (courtId && incoming.action === 'release') { refresh(); return; }
             const cleared = courtId && incoming.match_status === 'completed';
+            if (incoming.server_now_ms && clockRef.current?.seed) {
+                clockRef.current.seed(Number(incoming.server_now_ms));
+                setSynchronized(true);
+            }
             acceptState(cleared ? { ...incoming, match_id: null, timer: null } : incoming);
         };
         const connection = window.Echo.connector?.pusher?.connection;

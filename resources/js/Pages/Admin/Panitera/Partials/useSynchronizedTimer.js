@@ -6,15 +6,33 @@ export default function useSynchronizedTimer(timer, serverClock, matchId) {
 
     useEffect(() => {
         let timeout;
+        let isCancelled = false;
+
         const tick = () => {
+            if (isCancelled) return;
             const next = calculateElapsedMilliseconds(timer, serverClock);
             setSample({ timer, matchId, elapsed: next });
             const delay = nextTimerTickDelay(timer, next);
-            if (delay !== null) timeout = window.setTimeout(tick, delay);
+            if (delay !== null) {
+                const safeDelay = Math.min(delay, 250);
+                timeout = window.setTimeout(tick, safeDelay);
+            }
         };
-        // Wake only at the next displayed second, using the server clock each time.
+
         tick();
-        return () => window.clearTimeout(timeout);
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                tick();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
+        return () => {
+            isCancelled = true;
+            window.clearTimeout(timeout);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
     }, [timer, serverClock, matchId]);
 
     // A new run must never render the elapsed time from the previous run, even for one render.

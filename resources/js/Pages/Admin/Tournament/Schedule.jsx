@@ -2,7 +2,7 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const timeToMinutes = (time) => {
     const [hours, minutes] = String(time || '00:00').split(':').map(Number);
@@ -308,6 +308,15 @@ export default function Schedule({
     const [showUnscheduledPanel, setShowUnscheduledPanel] = useState(false);
     const [filterClashOnly, setFilterClashOnly] = useState(false);
     const [isGeneratingSchedule, setIsGeneratingSchedule] = useState(false);
+    const [showPdfMenu, setShowPdfMenu] = useState(false);
+
+    useEffect(() => {
+        const closeMenu = () => setShowPdfMenu(false);
+        if (showPdfMenu) {
+            window.addEventListener('click', closeMenu);
+            return () => window.removeEventListener('click', closeMenu);
+        }
+    }, [showPdfMenu]);
     const duration = Math.max(1, Number(settings?.match_duration_minutes || 10));
     const eventQuery = activeEvent?.id ? `?event_id=${encodeURIComponent(activeEvent.id)}` : '';
     const matchesBySlot = useMemo(() => new Map(matches.map((match) => [
@@ -693,13 +702,100 @@ export default function Schedule({
                                 <Link href={`/admin/pertandingan/drawing${eventQuery}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#ded5ca] px-3.5 py-2.5 text-sm font-semibold text-[#5f574f] hover:bg-[#f7f4ef]">
                                     <i className="fa-solid fa-diagram-project mr-1.5" />Lihat Drawing
                                 </Link>
-                                <a
-                                    href={`/admin/pertandingan/jadwal/pdf${eventQuery}`}
-                                    className="inline-flex min-h-11 items-center justify-center rounded-lg bg-rose-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-800 shadow-2xs transition cursor-pointer"
-                                    title="Download dokumen resmi PDF jadwal pertandingan (Order of Play)"
-                                >
-                                    <i className="fa-solid fa-file-pdf mr-1.5" />Download PDF Jadwal
-                                </a>
+                                <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPdfMenu((prev) => !prev)}
+                                        className="inline-flex min-h-11 items-center justify-center rounded-lg bg-rose-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-800 shadow-2xs transition cursor-pointer"
+                                        title="Download dokumen resmi PDF jadwal pertandingan (Order of Play)"
+                                        aria-expanded={showPdfMenu}
+                                    >
+                                        <i className="fa-solid fa-file-pdf mr-1.5" />
+                                        <span>Download PDF Jadwal</span>
+                                        <i className={`fa-solid fa-chevron-down ml-2 text-xs transition-transform ${showPdfMenu ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {showPdfMenu && (
+                                        <div className="absolute right-0 mt-2 w-72 origin-top-right rounded-xl border border-slate-200 bg-white py-2 shadow-xl z-50">
+                                            <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                Dokumen Lengkap
+                                            </div>
+                                            <a
+                                                href={`/admin/pertandingan/jadwal/pdf${eventQuery}&mode=separated`}
+                                                className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:text-rose-700"
+                                            >
+                                                <i className="fa-solid fa-table-list text-rose-600 text-sm w-4" />
+                                                <div>
+                                                    <div>Semua Gelanggang (Lengkap)</div>
+                                                    <div className="text-[10px] text-slate-400 font-normal">Tabel Embu &amp; Randori Terpisah</div>
+                                                </div>
+                                            </a>
+                                            <a
+                                                href={`/admin/pertandingan/jadwal/pdf${eventQuery}&mode=mixed`}
+                                                className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:text-slate-900"
+                                            >
+                                                <i className="fa-solid fa-clock text-slate-400 text-sm w-4" />
+                                                <div>
+                                                    <div>Campur Sesuai Waktu (Kronologis)</div>
+                                                    <div className="text-[10px] text-slate-400 font-normal">Satu tabel urut jam partai</div>
+                                                </div>
+                                            </a>
+
+                                            {courts.length > 0 && (
+                                                <>
+                                                    <div className="my-1.5 border-t border-slate-100" />
+                                                    <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                        Download per Gelanggang (Court)
+                                                    </div>
+                                                    {courts.map((court, cIdx) => (
+                                                        <a
+                                                            key={court.id}
+                                                            href={`/admin/pertandingan/jadwal/pdf${eventQuery}&court_id=${court.id}&mode=separated`}
+                                                            className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:text-rose-700"
+                                                        >
+                                                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-rose-50 text-[10px] font-bold text-rose-700">
+                                                                {cIdx + 1}
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <div className="truncate font-semibold">{court.name}</div>
+                                                                <div className="text-[10px] text-slate-400 font-normal">Jadwal khusus court ini</div>
+                                                            </div>
+                                                        </a>
+                                                    ))}
+                                                </>
+                                            )}
+
+                                            <div className="my-1.5 border-t border-slate-100" />
+                                            <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                Filter per Kategori
+                                            </div>
+                                            <a
+                                                href={`/admin/pertandingan/jadwal/pdf${eventQuery}&type=embu`}
+                                                className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:text-amber-700"
+                                            >
+                                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-amber-50 text-[10px] font-bold text-amber-700">
+                                                    EM
+                                                </span>
+                                                <div>
+                                                    <div>Khusus Nomor Embu Saja</div>
+                                                    <div className="text-[10px] text-slate-400 font-normal">Tanpa Sudut Merah/Biru</div>
+                                                </div>
+                                            </a>
+                                            <a
+                                                href={`/admin/pertandingan/jadwal/pdf${eventQuery}&type=randori`}
+                                                className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:text-red-700"
+                                            >
+                                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-red-50 text-[10px] font-bold text-red-700">
+                                                    RA
+                                                </span>
+                                                <div>
+                                                    <div>Khusus Nomor Randori Saja</div>
+                                                    <div className="text-[10px] text-slate-400 font-normal">Aka vs Shiro</div>
+                                                </div>
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
                                 <a href={`/admin/pertandingan/jadwal/export${eventQuery}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
                                     <i className="fa-solid fa-file-excel mr-1.5" />Download Excel
                                 </a>
@@ -996,8 +1092,21 @@ export default function Schedule({
                                                                     }`}
                                                                 >
                                                                     <div className="flex items-center justify-center gap-2">
-                                                                        <i className="fa-solid fa-vector-square mr-2 text-[#d4a843]" />
+                                                                        <i className="fa-solid fa-vector-square mr-1 text-[#d4a843]" />
                                                                         <span>{court.name}</span>
+                                                                        {activeEvent?.id && (
+                                                                            <a
+                                                                                href={`/admin/pertandingan/jadwal/pdf?event_id=${activeEvent.id}&court_id=${court.id}&mode=separated`}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                title={`Download PDF ${court.name}`}
+                                                                                className="inline-flex items-center gap-1 rounded bg-[#f4efe6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8b651e] hover:bg-[#8b651e] hover:text-white transition shadow-2xs"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            >
+                                                                                <i className="fa-solid fa-file-pdf text-[10px]" />
+                                                                                PDF
+                                                                            </a>
+                                                                        )}
                                                                     </div>
                                                                     {draggedCategory && (
                                                                         <p className="mt-1 text-[11px] font-semibold text-amber-800">

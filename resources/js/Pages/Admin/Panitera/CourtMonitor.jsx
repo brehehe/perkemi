@@ -327,11 +327,11 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const timerDirection = activeMatch?.timer.direction || 'up';
     const timerDuration = Number(activeMatch?.timer.duration_seconds) || 120;
     const displayedSeconds = displayedTimerSeconds(activeMatch?.timer, elapsedMilliseconds);
-    const timerText = activeMatch?.timer.status === 'running' && !liveTimer.synchronized ? '--:--' : formatTimer(displayedSeconds);
+    const timerText = formatTimer(displayedSeconds);
     const isExpired = timerDirection === 'down' && elapsedSeconds >= timerDuration;
     const resultMatch = activeMatch?.result ? activeMatch : snapshot.last_result;
     const monitorUrl = (targetMode) => `/admin/panitera/scoring/monitors/${court.id}?event_id=${encodeURIComponent(activeEvent.id)}&mode=${targetMode}`;
-    const synchronizationLabel = !liveTimer.synchronized ? 'Menyinkronkan jam server…' : realtimeConnected
+    const synchronizationLabel = realtimeConnected
         ? 'Real-time Reverb'
         : httpConnected
             ? 'Sinkronisasi cadangan'
