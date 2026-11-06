@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Clerk;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
 use App\Models\Event;
@@ -1077,4 +1078,149 @@ test('court coordinator index renders successfully when user is not assigned to 
         ->where('reserves', [])
         ->where('panel', [])
     );
+});
+
+test('panitera can access court coordinator at admin/panitera scoped to assigned court', function () {
+    $user = User::factory()->create(['email' => 'panitera1@smart-perkemi.id']);
+    $user->assignRole('Panitera');
+
+    $event = Event::query()->create([
+        'name' => 'POPDA XV Jatim 2026',
+        'slug' => 'popda-xv-jatim-2026',
+        'venue' => 'SMKN 1 Geneng',
+        'city' => 'Ngawi',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court1 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $court2 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    $clerk = Clerk::query()->create([
+        'name' => $user->name,
+        'email' => $user->email,
+        'is_active' => true,
+    ]);
+    $event->clerks()->attach($clerk, ['role' => 'scorer']);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court1->id,
+        'staff_type' => 'clerk',
+        'staff_id' => $clerk->id,
+        'role' => 'scorer',
+    ]);
+
+    $response = $this->actingAs($user)->get(route('admin.panitera.index', ['event_id' => $event->id]));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('Admin/Arbitration/CourtCoordinator')
+        ->where('baseUrl', '/admin/panitera')
+        ->where('isPanitera', true)
+        ->where('canSwitchCourt', false)
+        ->where('selectedCourtId', $court1->id)
+        ->has('courts', 1)
+        ->where('courts.0.id', $court1->id)
+    );
+});
+
+test('panitera without specific court assignment has access to all courts at admin/panitera', function () {
+    $user = User::factory()->create(['email' => 'panitera-roaming@smart-perkemi.id']);
+    $user->assignRole('Panitera');
+
+    $event = Event::query()->create([
+        'name' => 'POPDA XV Jatim 2026',
+        'slug' => 'popda-xv-jatim-2026',
+        'venue' => 'SMKN 1 Geneng',
+        'city' => 'Ngawi',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court1 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $court2 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->get(route('admin.panitera.index', ['event_id' => $event->id]));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('Admin/Arbitration/CourtCoordinator')
+        ->where('baseUrl', '/admin/panitera')
+        ->where('isPanitera', true)
+        ->where('canSwitchCourt', true)
+        ->has('courts', 2)
+    );
+});
+
+test('panitera cannot operate court outside assigned court', function () {
+    $user = User::factory()->create(['email' => 'panitera-restricted@smart-perkemi.id']);
+    $user->assignRole('Panitera');
+
+    $event = Event::query()->create([
+        'name' => 'POPDA XV Jatim 2026',
+        'slug' => 'popda-xv-jatim-2026',
+        'venue' => 'SMKN 1 Geneng',
+        'city' => 'Ngawi',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court1 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $court2 = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 2',
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    $clerk = Clerk::query()->create([
+        'name' => $user->name,
+        'email' => $user->email,
+        'is_active' => true,
+    ]);
+    $event->clerks()->attach($clerk, ['role' => 'scorer']);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court1->id,
+        'staff_type' => 'clerk',
+        'staff_id' => $clerk->id,
+        'role' => 'scorer',
+    ]);
+
+    // Try to reset duty on Court 2 which panitera is NOT assigned to
+    $response = $this->actingAs($user)->post(route('admin.panitera.courts.duty.reset', [
+        'eventCourt' => $court2->id,
+        'event_id' => $event->id,
+    ]));
+
+    $response->assertForbidden();
 });

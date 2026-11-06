@@ -15,6 +15,7 @@ use App\Models\RefereeCourtAssignmentHistory;
 use App\Models\RefereeCourtAttendance;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
+use App\Services\Panitera\PaniteraCourtAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -27,12 +28,15 @@ use Inertia\Response;
 
 class CourtCoordinatorController extends Controller
 {
-    public function index(Request $request, EventContext $eventContext): Response
+    public function index(Request $request, EventContext $eventContext, PaniteraCourtAccess $courtAccess): Response
     {
         $event = $eventContext->eventFor($request);
         $user = $request->user();
 
         $isSupervisor = $user?->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan', 'Arbitrase']) ?? false;
+        $isPanitera = $user?->hasRole('Panitera') ?? false;
+
+        $paniteraAssignedCourtIds = $isPanitera ? $courtAccess->assignedCourtIds($request, $event) : null;
 
         // Resolve FieldCoordinator identity for user
         $fieldCoordinator = null;
@@ -55,6 +59,8 @@ class CourtCoordinatorController extends Controller
                 ->where('staff_id', $fieldCoordinator->id)
                 ->where('role', 'court_coordinator')
                 ->value('event_court_id');
+        } elseif ($isPanitera && $paniteraAssignedCourtIds !== null && $paniteraAssignedCourtIds->isNotEmpty()) {
+            $assignedCourtId = $paniteraAssignedCourtIds->first();
         }
 
         // Active courts for this event
@@ -74,7 +80,37 @@ class CourtCoordinatorController extends Controller
             ->get()
             ->keyBy('id');
 
-        $courtsData = $allCourts->map(function (EventCourt $court) use ($coordinatorMap): array {
+        $canSwitchCourt = $isSupervisor
+            || ($isPanitera && ($paniteraAssignedCourtIds === null || $paniteraAssignedCourtIds->count() > 1));
+
+        // Determine which court is being viewed
+        $selectedCourtId = null;
+        if ($isSupervisor || ($isPanitera && $paniteraAssignedCourtIds === null)) {
+            $requestedCourtId = $request->string('court_id')->toString();
+            if ($requestedCourtId && $allCourts->contains('id', $requestedCourtId)) {
+                $selectedCourtId = $requestedCourtId;
+            } elseif ($assignedCourtId && $allCourts->contains('id', $assignedCourtId)) {
+                $selectedCourtId = $assignedCourtId;
+            } else {
+                $selectedCourtId = $allCourts->first()?->id;
+            }
+        } elseif ($isPanitera && $paniteraAssignedCourtIds !== null) {
+            $requestedCourtId = $request->string('court_id')->toString();
+            if ($requestedCourtId && $paniteraAssignedCourtIds->contains($requestedCourtId) && $allCourts->contains('id', $requestedCourtId)) {
+                $selectedCourtId = $requestedCourtId;
+            } else {
+                $selectedCourtId = $assignedCourtId;
+            }
+        } else {
+            // Strictly locked to assigned court
+            $selectedCourtId = $assignedCourtId;
+        }
+
+        $visibleCourts = ($isPanitera && $paniteraAssignedCourtIds !== null)
+            ? $allCourts->whereIn('id', $paniteraAssignedCourtIds)->values()
+            : $allCourts;
+
+        $courtsData = $visibleCourts->map(function (EventCourt $court) use ($coordinatorMap): array {
             $coordAssignment = $court->assignments->first();
             $coordinator = $coordAssignment ? $coordinatorMap->get($coordAssignment->staff_id) : null;
 
@@ -93,22 +129,6 @@ class CourtCoordinatorController extends Controller
                 ] : null,
             ];
         });
-
-        // Determine which court is being viewed
-        $selectedCourtId = null;
-        if ($isSupervisor) {
-            $requestedCourtId = $request->string('court_id')->toString();
-            if ($requestedCourtId && $allCourts->contains('id', $requestedCourtId)) {
-                $selectedCourtId = $requestedCourtId;
-            } elseif ($assignedCourtId && $allCourts->contains('id', $assignedCourtId)) {
-                $selectedCourtId = $assignedCourtId;
-            } else {
-                $selectedCourtId = $allCourts->first()?->id;
-            }
-        } else {
-            // Strictly locked to assigned court
-            $selectedCourtId = $assignedCourtId;
-        }
 
         $selectedCourt = $selectedCourtId ? $allCourts->firstWhere('id', $selectedCourtId) : null;
 
@@ -294,7 +314,10 @@ class CourtCoordinatorController extends Controller
             })->values()->all();
         }
 
+        $baseUrl = $request->is('admin/panitera*') ? '/admin/panitera' : '/admin/koordinator-court';
+
         return Inertia::render('Admin/Arbitration/CourtCoordinator', [
+            'baseUrl' => $baseUrl,
             'activeEvent' => [
                 'id' => $event->id,
                 'name' => $event->name,
@@ -305,6 +328,8 @@ class CourtCoordinatorController extends Controller
             ],
             'events' => $eventContext->accessibleEvents($request),
             'isSupervisor' => $isSupervisor,
+            'isPanitera' => $isPanitera,
+            'canSwitchCourt' => $canSwitchCourt,
             'isAssigned' => $selectedCourt !== null,
             'assignedCourtId' => $assignedCourtId,
             'selectedCourtId' => $selectedCourtId,
@@ -862,6 +887,16 @@ class CourtCoordinatorController extends Controller
         $user = $request->user();
         if ($user?->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan', 'Arbitrase'])) {
             return;
+        }
+
+        if ($user?->hasRole('Panitera')) {
+            $courtAccess = app(PaniteraCourtAccess::class);
+            $assignedCourtIds = $courtAccess->assignedCourtIds($request, $event);
+            if ($assignedCourtIds === null || $assignedCourtIds->contains($court->id)) {
+                return;
+            }
+
+            abort(403, 'Anda hanya dapat mengelola court yang ditugaskan kepada Anda.');
         }
 
         // Check if assigned coordinator

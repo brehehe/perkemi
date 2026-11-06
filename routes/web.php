@@ -367,6 +367,13 @@ Route::post('admin/panitera/event-context', PaniteraEventContextController::clas
     ->middleware('auth')
     ->name('admin.panitera.event-context.store');
 Route::prefix('admin/panitera')->middleware(['auth', 'event.tenant'])->name('admin.panitera.')->group(function () {
+    Route::get('/', [CourtCoordinatorController::class, 'index'])->name('index');
+    Route::post('courts/{eventCourt}/generate', [CourtCoordinatorController::class, 'generatePanel'])->name('courts.generate');
+    Route::post('courts/{eventCourt}/rotate', [CourtCoordinatorController::class, 'rotatePanel'])->name('courts.rotate');
+    Route::post('courts/{eventCourt}/swap', [CourtCoordinatorController::class, 'swapReferees'])->name('courts.swap');
+    Route::post('courts/{eventCourt}/reset-duty', [CourtCoordinatorController::class, 'resetDutyCount'])->name('courts.duty.reset');
+    Route::delete('courts/{eventCourt}/panel', [CourtCoordinatorController::class, 'resetPanel'])->name('courts.panel.reset');
+
     Route::get('scoring', PaniteraDashboardController::class)->name('scoring.index');
     Route::get('scoring/monitors/{eventCourt}', [PaniteraCourtMonitorController::class, 'show'])->name('monitors.show');
     Route::get('scoring/monitors/{eventCourt}/state', [PaniteraCourtMonitorController::class, 'state'])->name('monitors.state');

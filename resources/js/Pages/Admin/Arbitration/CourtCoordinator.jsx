@@ -95,7 +95,10 @@ export default function CourtCoordinator({
     activeEvent,
     events = [],
     isSupervisor = false,
+    isPanitera = false,
     isAssigned = false,
+    canSwitchCourt = false,
+    baseUrl = '/admin/koordinator-court',
     assignedCourtId = null,
     selectedCourtId = null,
     selectedCourt = null,
@@ -291,7 +294,7 @@ export default function CourtCoordinator({
         setIsSwapping(true);
         setSwapError(null);
         router.post(
-            `/admin/koordinator-court/courts/${selectedCourt.id}/swap`,
+            `${baseUrl}/courts/${selectedCourt.id}/swap`,
             {
                 event_id: activeEvent.id,
                 source_referee_id: sourceRefId,
@@ -365,7 +368,7 @@ export default function CourtCoordinator({
     };
 
     const handleSwitchCourt = (courtId) => {
-        router.get('/admin/koordinator-court', {
+        router.get(baseUrl, {
             event_id: activeEvent.id,
             court_id: courtId,
         }, { preserveScroll: true });
@@ -374,7 +377,7 @@ export default function CourtCoordinator({
     const handleGenerate = (event) => {
         event.preventDefault();
         if (!selectedCourt) return;
-        generateForm.post(`/admin/koordinator-court/courts/${selectedCourt.id}/generate`, {
+        generateForm.post(`${baseUrl}/courts/${selectedCourt.id}/generate`, {
             preserveScroll: true,
             onSuccess: () => setGenerateModalOpen(false),
         });
@@ -383,7 +386,7 @@ export default function CourtCoordinator({
     const handleRotate = (event) => {
         event.preventDefault();
         if (!selectedCourt) return;
-        rotateForm.post(`/admin/koordinator-court/courts/${selectedCourt.id}/rotate`, {
+        rotateForm.post(`${baseUrl}/courts/${selectedCourt.id}/rotate`, {
             preserveScroll: true,
             onSuccess: () => setRotateModalOpen(false),
         });
@@ -392,7 +395,7 @@ export default function CourtCoordinator({
     const handleReset = (event) => {
         event.preventDefault();
         if (!selectedCourt) return;
-        resetForm.delete(`/admin/koordinator-court/courts/${selectedCourt.id}/panel`, {
+        resetForm.delete(`${baseUrl}/courts/${selectedCourt.id}/panel`, {
             preserveScroll: true,
             onSuccess: () => setResetModalOpen(false),
         });
@@ -401,7 +404,7 @@ export default function CourtCoordinator({
     const handleResetDuty = (event) => {
         event.preventDefault();
         if (!selectedCourt) return;
-        resetDutyForm.post(`/admin/koordinator-court/courts/${selectedCourt.id}/reset-duty`, {
+        resetDutyForm.post(`${baseUrl}/courts/${selectedCourt.id}/reset-duty`, {
             preserveScroll: true,
             onSuccess: () => setResetDutyModalOpen(false),
         });
@@ -450,14 +453,14 @@ export default function CourtCoordinator({
                             </div>
                         </div>
 
-                        {isSupervisor && (
+                        {(isSupervisor || canSwitchCourt) && (
                             <Combobox
                                 label="Pilih Event"
                                 labelClassName="text-white/60"
                                 containerClassName="w-full xl:w-80"
                                 value={activeEvent.id}
                                 clearable={false}
-                                onChange={(value) => router.get('/admin/koordinator-court', { event_id: value })}
+                                onChange={(value) => router.get(baseUrl, { event_id: value })}
                                 options={events.map((e) => ({
                                     value: e.id,
                                     label: e.name,
@@ -490,8 +493,8 @@ export default function CourtCoordinator({
                     </div>
                 )}
 
-                {/* Supervisor Court Selector Tabs */}
-                {isSupervisor && courts.length > 1 && (
+                {/* Court Selector Tabs */}
+                {(isSupervisor || canSwitchCourt) && courts.length > 1 && (
                     <div className="flex flex-wrap items-center gap-2 border-b border-[#e9e2d8] pb-3">
                         <span className="mr-2 text-xs font-bold uppercase tracking-wider text-[#7a746e]">
                             Pilih Court:

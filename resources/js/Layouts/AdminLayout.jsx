@@ -71,7 +71,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isReferee = url.startsWith('/admin/arbitrase/wasit');
     const isScoring = url.startsWith('/admin/arbitrase/scoring');
     const isEvaluation = url.startsWith('/admin/arbitrase/evaluasi');
-    const isCourtCoordinator = url.startsWith('/admin/koordinator-court') || url.startsWith('/admin/arbitrase/court-coordinator');
+    const isPaniteraCourtCoordinator = currentPath === '/admin/panitera' || url.startsWith('/admin/panitera?') || (url.startsWith('/admin/panitera') && !url.includes('/scoring'));
+    const isCourtCoordinator = url.startsWith('/admin/koordinator-court') || url.startsWith('/admin/arbitrase/court-coordinator') || isPaniteraCourtCoordinator;
     const isPaniteraDashboard = url.startsWith('/admin/panitera/scoring') && !url.includes('/embu-result') && !url.includes('/randori-result') && !url.includes('/champions');
     const isPaniteraEmbu = url.startsWith('/admin/panitera/scoring/embu-result');
     const isPaniteraRandori = url.startsWith('/admin/panitera/scoring/randori-result');
@@ -127,7 +128,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         pertandingan: isPertandinganCoordinator || isDrawing || isSchedule || isEventReferees || isMerge || isWeighIn,
         courtCoordinator: isCourtCoordinator,
         arbitrase: isReferee || isScoring || isEvaluation,
-        panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
+        panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions || isPaniteraCourtCoordinator,
         laporan: isReportHub || isMedals || isRecap,
     });
 
@@ -168,6 +169,7 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         'merge',
         'wasit',
         'scoring',
+        'panitera-court-coordinator',
         'panitera-dashboard',
         'panitera-embu',
         'panitera-randori',
@@ -350,6 +352,14 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
             onSelect: () => router.visit(withEventContext('/admin/arbitrase/evaluasi')),
         },
         {
+            id: 'panitera-court-coordinator',
+            title: 'Koordinator Court Panitera',
+            subtitle: 'Rotasi wasit, kontrol partai, dan manajemen court panitera',
+            category: 'Panitera',
+            icon: <i className="fa-solid fa-chalkboard-user text-[#d4a843]"></i>,
+            onSelect: () => router.visit(withEventContext('/admin/panitera')),
+        },
+        {
             id: 'panitera-dashboard',
             title: 'Pusat Kendali Panitera',
             subtitle: 'Antrean partai dan penugasan meja per event',
@@ -400,8 +410,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     ].filter((command) => (
         (!isRestrictedTenant || tenantCommandIds.has(command.id))
         && (!isResponsibleTenant || !responsibleTenantHiddenCommandIds.has(command.id))
-        && (!isPaniteraAccount || ['panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
-        && (!isCourtCoordinatorAccount || ['court-coordinator', 'panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
+        && (!isPaniteraAccount || ['panitera-dashboard', 'panitera-court-coordinator', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
+        && (!isCourtCoordinatorAccount || ['court-coordinator', 'panitera-court-coordinator', 'panitera-dashboard', 'panitera-embu', 'panitera-randori', 'panitera-champions', 'website'].includes(command.id))
     ));
 
     // Close mobile sidebar on resize to desktop
@@ -666,6 +676,13 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                             </button>
                             {openSections.panitera && (
                                 <div className="space-y-0.5 pl-2">
+                                    <Link
+                                        href={withEventContext('/admin/panitera')}
+                                        className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraCourtCoordinator ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid fa-chalkboard-user w-4 text-[11px] ${isPaniteraCourtCoordinator ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
+                                        <span>Koordinator Court</span>
+                                    </Link>
                                     <Link
                                         href={withEventContext('/admin/panitera/scoring')}
                                         className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isPaniteraDashboard ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]' : 'text-white/65 hover:text-white hover:bg-white/5'}`}
