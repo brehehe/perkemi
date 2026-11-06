@@ -41,24 +41,41 @@ class EmbuJudgeScoreController extends Controller
         $role = RefereeCourtRole::tryFrom((string) $assignment?->role);
         abort_unless($assignment && $role, 403, 'Anda tidak ditugaskan sebagai juri pada court pertandingan ini.');
 
+        $today = now()->toDateString();
         $isCheckedIn = RefereeAttendance::query()
             ->whereBelongsTo($event)
             ->whereBelongsTo($referee)
-            ->whereDate('attendance_date', now()->toDateString())
             ->where('is_present', true)
+            ->where(function ($q) use ($today) {
+                $q->whereDate('attendance_date', $today)
+                    ->orWhere('checked_in_at', '>=', now()->startOfDay());
+            })
             ->exists()
             && RefereeCourtAttendance::query()
                 ->whereBelongsTo($event)
                 ->whereBelongsTo($tournamentMatch->court, 'court')
                 ->whereBelongsTo($referee)
-                ->whereDate('attendance_date', now()->toDateString())
+                ->where(function ($q) use ($today) {
+                    $q->whereDate('attendance_date', $today)
+                        ->orWhere('checked_in_at', '>=', now()->startOfDay());
+                })
                 ->exists();
         abort_unless($isCheckedIn, 403, 'Scan QR event dan court terlebih dahulu.');
 
         $lockKey = "referee_session_lock:court_{$tournamentMatch->event_court_id}:role_{$role->value}";
         $currentHolder = Cache::get($lockKey);
-        if ($currentHolder && $currentHolder !== $request->session()->getId()) {
-            abort(409, 'Posisi telah diambil alih oleh perangkat lain. Sesi Anda dihentikan.');
+        if ($currentHolder) {
+            $holderSessionId = is_array($currentHolder) ? ($currentHolder['session_id'] ?? null) : $currentHolder;
+            $holderUserId = is_array($currentHolder) ? ($currentHolder['user_id'] ?? null) : null;
+            $holderRefereeId = is_array($currentHolder) ? ($currentHolder['referee_id'] ?? null) : null;
+
+            $isSameReferee = ($holderUserId && $holderUserId === (string) $user->id)
+                || ($holderRefereeId && $holderRefereeId === (string) $referee->id)
+                || ($holderSessionId === $request->session()->getId());
+
+            if (! $isSameReferee) {
+                abort(409, 'Posisi telah diambil alih oleh perangkat lain. Sesi Anda dihentikan.');
+            }
         }
 
         $isMatchActive = $tournamentMatch->call_status === 'participants_called'

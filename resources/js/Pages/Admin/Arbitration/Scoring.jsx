@@ -552,12 +552,6 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null,
     const isEmbu = activeMatch?.category_type?.toLowerCase() === 'embu';
 
     useEffect(() => {
-        if (refereeSession && (!refereeSession.is_checked_in || refereeSession.is_taken_over) && activeEvent?.id) {
-            router.visit(`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`, { replace: true, preserveState: false });
-        }
-    }, [refereeSession?.is_checked_in, refereeSession?.is_taken_over, activeEvent?.id]);
-
-    useEffect(() => {
         if (!window.Echo || !refereeSession?.court_id) return undefined;
 
         const channelName = activeMatch?.id

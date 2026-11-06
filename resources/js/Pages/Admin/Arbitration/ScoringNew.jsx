@@ -468,12 +468,6 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
     }, [activeEvent?.id, liveScore, storedScores]);
 
     useEffect(() => {
-        if (refereeSession && (!refereeSession.is_checked_in || refereeSession.is_taken_over) && refereePortalUrl) {
-            router.visit(refereePortalUrl, { replace: true, preserveState: false });
-        }
-    }, [refereeSession?.is_checked_in, refereeSession?.is_taken_over, refereePortalUrl]);
-
-    useEffect(() => {
         if (busy) return undefined;
         const refresh = () => {
             if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession', 'completedCategoryScores', 'embuTies'], preserveScroll: true, preserveState: true });

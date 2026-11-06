@@ -316,6 +316,25 @@ class ArbitrationController extends Controller
 
         $courtIds = $activeEvent->courts()->pluck('id');
         $requestedCourtId = $request->string('court_id')->toString();
+        $today = now()->toDateString();
+
+        // Jika court_id tidak diberikan di URL, utamakan court tempat wasit sudah check-in hari ini
+        if ($requestedCourtId === '') {
+            $todayCourtAttendance = RefereeCourtAttendance::query()
+                ->whereBelongsTo($activeEvent)
+                ->whereBelongsTo($referee)
+                ->where(function ($q) use ($today) {
+                    $q->whereDate('attendance_date', $today)
+                        ->orWhere('checked_in_at', '>=', now()->startOfDay());
+                })
+                ->latest('checked_in_at')
+                ->first();
+
+            if ($todayCourtAttendance && $courtIds->contains($todayCourtAttendance->event_court_id)) {
+                $requestedCourtId = (string) $todayCourtAttendance->event_court_id;
+            }
+        }
+
         $assignment = EventCourtAssignment::query()
             ->whereIn('event_court_id', $courtIds)
             ->where('staff_type', 'referee')
@@ -373,31 +392,53 @@ class ArbitrationController extends Controller
             : ['values' => [], 'points' => 0.0, 'source' => null, 'updated_by' => null, 'updated_at' => null];
 
         $lockKey = "referee_session_lock:court_{$court->id}:role_{$role->value}";
-        $currentSessionHolder = Cache::get($lockKey);
+        $currentHolder = Cache::get($lockKey);
         $currentSessionId = $request->session()->getId();
 
+        $holderSessionId = is_array($currentHolder) ? ($currentHolder['session_id'] ?? null) : $currentHolder;
+        $holderUserId = is_array($currentHolder) ? ($currentHolder['user_id'] ?? null) : null;
+        $holderRefereeId = is_array($currentHolder) ? ($currentHolder['referee_id'] ?? null) : null;
+
+        $isSameReferee = ($holderUserId && $holderUserId === (string) $user->id)
+            || ($holderRefereeId && $holderRefereeId === (string) $referee->id)
+            || ($holderSessionId === $currentSessionId);
+
         $isTakenOver = false;
-        if ($currentSessionHolder && $currentSessionHolder !== $currentSessionId) {
+        if ($currentHolder && ! $isSameReferee) {
             if ($request->boolean('takeover')) {
-                Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+                Cache::put($lockKey, [
+                    'session_id' => $currentSessionId,
+                    'user_id' => (string) $user->id,
+                    'referee_id' => (string) $referee->id,
+                ], now()->addHours(6));
             } else {
                 $isTakenOver = true;
             }
         } else {
-            Cache::put($lockKey, $currentSessionId, now()->addHours(6));
+            Cache::put($lockKey, [
+                'session_id' => $currentSessionId,
+                'user_id' => (string) $user->id,
+                'referee_id' => (string) $referee->id,
+            ], now()->addHours(6));
         }
 
         $isCheckedIn = RefereeAttendance::query()
             ->whereBelongsTo($activeEvent)
             ->whereBelongsTo($referee)
-            ->whereDate('attendance_date', now()->toDateString())
             ->where('is_present', true)
+            ->where(function ($q) use ($today) {
+                $q->whereDate('attendance_date', $today)
+                    ->orWhere('checked_in_at', '>=', now()->startOfDay());
+            })
             ->exists()
             && RefereeCourtAttendance::query()
                 ->whereBelongsTo($activeEvent)
                 ->whereBelongsTo($court, 'court')
                 ->whereBelongsTo($referee)
-                ->whereDate('attendance_date', now()->toDateString())
+                ->where(function ($q) use ($today) {
+                    $q->whereDate('attendance_date', $today)
+                        ->orWhere('checked_in_at', '>=', now()->startOfDay());
+                })
                 ->exists();
 
         $refereeSession = [

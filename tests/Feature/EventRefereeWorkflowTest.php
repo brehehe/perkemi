@@ -1465,6 +1465,119 @@ test('referee accessing scoring without court assignment is redirected to wasit 
         ->assertSessionHas('error', 'Anda belum memiliki penugasan court pada event ini.');
 });
 
+test('referee opening scoring without court_id resolves to court they checked into today', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('smart-court-resolve');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court1 = $courts[0];
+    $court2 = $courts[1];
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court1->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::AssistantOne->value,
+    ]);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court2->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+
+    // Check in to event and court 2
+    createDailyRefereeAttendance($event, $court2, $referee);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.court_id', $court2->id)
+            ->where('refereeSession.role_key', RefereeCourtRole::Chief->value)
+            ->where('refereeSession.is_checked_in', true)
+            ->where('refereeSession.is_taken_over', false));
+});
+
+test('referee session lock does not lock out the same referee on new session or tab', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('same-referee-lock');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+
+    // Initial visit establishes session lock
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.is_taken_over', false));
+
+    // Simulate same user opening in another session/tab with regenerated session ID
+    $this->flushSession();
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.is_taken_over', false));
+});
+
+test('referee session lock detects foreign takeover and allows explicit takeover', function () {
+    [$event, $courts] = createRefereeWorkflowEvent('foreign-takeover');
+    $user1 = createRefereeWorkflowUser($event, 'Wasit');
+    $referee1 = createEventReferee($event, 1, $user1);
+
+    $user2 = createRefereeWorkflowUser($event, 'Wasit');
+    $referee2 = createEventReferee($event, 2, $user2);
+
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee1->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee1);
+
+    // User 1 accesses scoring and locks the position
+    $this->actingAs($user1)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.is_taken_over', false));
+
+    // Now reassign role to User 2 / Referee 2
+    EventCourtAssignment::query()->where('staff_id', $referee1->id)->delete();
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee2->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee2);
+
+    // User 2 visits: lock is held by User 1!
+    $this->actingAs($user2)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.is_taken_over', true));
+
+    // User 2 visits with takeover=1
+    $this->actingAs($user2)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id, 'takeover' => 1]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('refereeSession.is_taken_over', false));
+});
+
 /** @return array{Event, Collection<int, EventCourt>} */
 function createRefereeWorkflowEvent(?string $identifier = null): array
 {
