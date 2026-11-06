@@ -1827,9 +1827,15 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                 }
             >
                 <div className="space-y-4 p-1 text-sm">
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900 leading-relaxed">
-                        <i className="fa-solid fa-circle-info mr-1.5 text-amber-700" />
-                        Setiap partai pertandingan akan otomatis dijadwalkan dengan interval waktu <strong>{matchDuration} menit</strong> (contoh: 08:30–08:{30 + Number(matchDuration) < 60 ? 30 + Number(matchDuration) : '40'}, berikutnya 10 menit kemudian) di seluruh court aktif.
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900 leading-relaxed space-y-1.5">
+                        <p>
+                            <i className="fa-solid fa-circle-info mr-1.5 text-amber-700" />
+                            Setiap partai pertandingan akan otomatis dijadwalkan dengan interval waktu <strong>{matchDuration} menit</strong> (contoh: 08:30–08:{30 + Number(matchDuration) < 60 ? 30 + Number(matchDuration) : '40'}, berikutnya 10 menit kemudian) di seluruh court aktif.
+                        </p>
+                        <p className="flex items-center gap-1.5 font-semibold text-amber-950">
+                            <i className="fa-solid fa-mug-hot text-amber-700" />
+                            Jadwal <strong>ISHOMA (Istirahat, Sholat, Makan)</strong> otomatis terproteksi dan tidak akan ditimpa oleh jadwal pertandingan.
+                        </p>
                     </div>
 
                     <div>
@@ -1865,10 +1871,28 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                         </div>
                     </div>
 
-                    <div className="rounded-xl border border-[#e8e1d8] bg-[#fbfaf8] p-3 text-xs text-[#746b63] space-y-1">
-                        <p><strong>Lapangan Aktif:</strong> {settings.courts_count} Court</p>
-                        <p><strong>Sesi Pertandingan:</strong> {settings.sessions_count} Sesi Rundown</p>
-                        <p><strong>Jeda Istirahat Minimal:</strong> {settings.minimum_rest_minutes} Menit</p>
+                    <div className="rounded-xl border border-[#e8e1d8] bg-[#fbfaf8] p-3 text-xs text-[#746b63] space-y-1.5">
+                        <div className="flex justify-between items-center">
+                            <span><strong>Lapangan Aktif:</strong></span>
+                            <span className="font-bold text-[#17120f]">{settings.courts_count} Court</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span><strong>Sesi Pertandingan:</strong></span>
+                            <span className="font-bold text-[#17120f]">{settings.sessions_count} Sesi Rundown</span>
+                        </div>
+                        {settings.ishoma_count > 0 && (
+                            <div className="flex justify-between items-center text-amber-900 bg-amber-100/70 px-2 py-1 rounded-md">
+                                <span className="flex items-center gap-1 font-bold">
+                                    <i className="fa-solid fa-mug-hot text-amber-700" />
+                                    Jeda ISHOMA:
+                                </span>
+                                <span className="font-extrabold text-amber-950">{settings.ishoma_count} Sesi Terproteksi</span>
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center">
+                            <span><strong>Jeda Istirahat Minimal:</strong></span>
+                            <span className="font-bold text-[#17120f]">{settings.minimum_rest_minutes} Menit</span>
+                        </div>
                     </div>
                 </div>
             </Modal>

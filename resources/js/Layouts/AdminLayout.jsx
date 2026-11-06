@@ -92,26 +92,6 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
     const isFieldCoordinatorMaster = url.startsWith('/admin/master/field-coordinator');
     const isUserMaster = url.startsWith('/admin/master/user');
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [profileOpen, setProfileOpen] = useState(false);
-    const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-    const [openSections, setOpenSections] = useState({
-        pendaftaran: true,
-        master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
-        pertandingan: isDrawing || isSchedule || isEventReferees || isMerge || isWeighIn,
-        courtCoordinator: isCourtCoordinator,
-        arbitrase: isReferee || isScoring || isEvaluation,
-        panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
-        laporan: isReportHub || isMedals || isRecap,
-    });
-
-    const toggleSection = (section) => {
-        setOpenSections((prev) => ({
-            ...prev,
-            [section]: !prev[section],
-        }));
-    };
-
     const user = auth.user || props.auth?.user || {
         name: 'Administrator Perkemi',
         email: 'admin@smart-perkemi.id',
@@ -137,6 +117,26 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
         || props.activeEvent?.is_training_mode
         || props.event?.is_training_mode
     );
+
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+    const [openSections, setOpenSections] = useState({
+        pendaftaran: true,
+        master: isEventMaster || isContingentMaster || isAthleteMaster || isOfficialMaster || isKyuMaster || isTechniqueMaster || isWeightClassMaster || isPaymentMethodMaster || isRefereeMaster || isClerkMaster || isFieldCoordinatorMaster || isUserMaster,
+        pertandingan: isPertandinganCoordinator || isDrawing || isSchedule || isEventReferees || isMerge || isWeighIn,
+        courtCoordinator: isCourtCoordinator,
+        arbitrase: isReferee || isScoring || isEvaluation,
+        panitera: isPaniteraDashboard || isPaniteraEmbu || isPaniteraRandori || isPaniteraChampions,
+        laporan: isReportHub || isMedals || isRecap,
+    });
+
+    const toggleSection = (section) => {
+        setOpenSections((prev) => ({
+            ...prev,
+            [section]: !prev[section],
+        }));
+    };
     const withEventContext = (path) => {
         const [pathname, query = ''] = path.split('?');
         const searchParams = new URLSearchParams(query);
@@ -520,8 +520,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                         <Link
                             href={isCourtCoordinatorAccount ? withEventContext('/admin/koordinator-court') : isPaniteraAccount ? withEventContext('/admin/panitera/scoring') : '/admin/dashboard'}
                             className={`flex items-center gap-3 px-6 py-2.5 text-[13px] transition-colors ${(isDashboard || (isPaniteraAccount && isPaniteraDashboard) || (isCourtCoordinatorAccount && isCourtCoordinator))
-                                    ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 text-[#f0c060] font-medium'
-                                    : 'text-white/80 font-medium hover:bg-white/5 hover:text-white'
+                                ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 text-[#f0c060] font-medium'
+                                : 'text-white/80 font-medium hover:bg-white/5 hover:text-white'
                                 }`}
                         >
                             <i className="fa-solid fa-gauge-high w-4 text-[13px]"></i>
@@ -544,8 +544,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pendaftaran/registrasi')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isRegistration
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-file-signature w-4 text-[11px] ${isRegistration ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -554,8 +554,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pendaftaran/nomor-pertandingan')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isMatchGroups
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-people-group w-4 shrink-0 text-[11px] ${isMatchGroups ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -564,8 +564,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pendaftaran/laporan-nomor-pertandingan')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isMatchCategoriesReport
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-clipboard-list w-4 shrink-0 text-[11px] ${isMatchCategoriesReport ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -574,8 +574,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pendaftaran/verifikasi')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isVerification
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-user-check w-4 text-[11px] ${isVerification ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -602,8 +602,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pertandingan/drawing')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isDrawing
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-dice w-4 text-[11px] ${isDrawing ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -612,8 +612,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pertandingan/jadwal')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isSchedule
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-calendar-days w-4 text-[11px] ${isSchedule ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -622,8 +622,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pertandingan/wasit')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isEventReferees
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-user-shield w-4 text-[11px] ${isEventReferees ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -632,8 +632,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pertandingan/timbang-badan')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isWeighIn
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-weight-scale w-4 text-[11px] ${isWeighIn ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -642,8 +642,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/pertandingan/merge')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isMerge
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-object-group w-4 text-[11px] ${isMerge ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -714,8 +714,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/koordinator-court')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isCourtCoordinator
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-chalkboard-user w-4 text-[11px] ${isCourtCoordinator ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -753,8 +753,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/arbitrase/wasit')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isReferee
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-gavel w-4 text-[11px] ${isReferee ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -763,8 +763,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/arbitrase/scoring')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isScoring
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-chart-column w-4 text-[11px] ${isScoring ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -773,8 +773,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={withEventContext('/admin/arbitrase/evaluasi')}
                                             className={`flex items-center gap-3 px-6 py-2 text-[12.5px] transition-colors ${isEvaluation
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <i className={`fa-solid fa-scale-unbalanced w-4 text-[11px] ${isEvaluation ? 'text-[#f0c060]' : 'text-[#d4a843]'}`}></i>
@@ -807,8 +807,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                                     href={reportHref(report.key)}
                                                     aria-current={isActive ? 'page' : undefined}
                                                     className={`flex min-h-11 items-center gap-3 px-6 py-2 text-[12.5px] leading-snug transition-colors ${isActive
-                                                            ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
-                                                            : 'text-white/65 hover:bg-white/5 hover:text-white'
+                                                        ? 'border-l-3 border-[#e74c3c] bg-[#c0392b]/20 font-medium text-[#f0c060]'
+                                                        : 'text-white/65 hover:bg-white/5 hover:text-white'
                                                         }`}
                                                 >
                                                     <i className={`fa-solid ${report.icon} w-4 shrink-0 text-[11px] ${isActive ? 'text-[#f0c060]' : 'text-[#d4a843]'}`} aria-hidden="true"></i>
@@ -837,8 +837,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                         <Link
                                             href={tenant ? '/admin/master/event/detail' : '/admin/master/event'}
                                             className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isEventMaster
-                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                : 'text-white/65 hover:text-white hover:bg-white/5'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3">
@@ -856,8 +856,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                                 <Link
                                                     href="/admin/master/contingent"
                                                     className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isContingentMaster
-                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3">
@@ -873,8 +873,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                                 <Link
                                                     href="/admin/master/athlete"
                                                     className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isAthleteMaster
-                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3">
@@ -890,8 +890,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                                 <Link
                                                     href="/admin/master/official"
                                                     className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isOfficialMaster
-                                                            ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                            : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3">
@@ -910,8 +910,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                             <Link
                                                 href="/admin/master/kyu"
                                                 className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isKyuMaster
-                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">
@@ -961,8 +961,8 @@ export default function AdminLayout({ children, title = 'Admin Dashboard', auth 
                                             <Link
                                                 href="/admin/master/user"
                                                 className={`flex items-center justify-between px-6 py-2 text-[12.5px] transition-colors ${isUserMaster
-                                                        ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
-                                                        : 'text-white/65 hover:text-white hover:bg-white/5'
+                                                    ? 'bg-[#c0392b]/20 text-[#f0c060] font-medium border-l-3 border-[#e74c3c]'
+                                                    : 'text-white/65 hover:text-white hover:bg-white/5'
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">

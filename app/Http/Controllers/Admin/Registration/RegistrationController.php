@@ -1518,7 +1518,7 @@ class RegistrationController extends Controller
         }
 
         return Event::query()
-            ->when(! $user->hasAnyRole(['Super Admin', 'Admin']), fn ($query) => $query->where(
+            ->when(! $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']), fn ($query) => $query->where(
                 fn ($eventQuery) => $eventQuery->whereHas('users', fn ($usersQuery) => $usersQuery->whereKey($user->id))
                     ->orWhereHas('contingents', fn ($contingentsQuery) => $contingentsQuery->where('user_id', $user->id))
             ))
@@ -1564,7 +1564,7 @@ class RegistrationController extends Controller
             return false;
         }
 
-        if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
             return true;
         }
 

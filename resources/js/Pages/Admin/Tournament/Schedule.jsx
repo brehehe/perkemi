@@ -2,7 +2,7 @@ import Combobox from '@/Components/UI/Forms/Combobox';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useState } from 'react';
 
 const timeToMinutes = (time) => {
     const [hours, minutes] = String(time || '00:00').split(':').map(Number);
@@ -293,6 +293,7 @@ export default function Schedule({
     drawingsPublished = false,
     scheduleIsLocked = false,
     canManageSchedule = false,
+    breaks = [],
 }) {
     const { flash = {} } = usePage().props;
     const [selectedMatchId, setSelectedMatchId] = useState(null);
@@ -397,7 +398,7 @@ export default function Schedule({
             return;
         }
 
-        if (!window.confirm('Susun ulang seluruh jadwal pertandingan secara otomatis ke court dan sesi pertandingan yang tersedia?')) {
+        if (!window.confirm('Susun ulang seluruh jadwal pertandingan secara otomatis ke court dan sesi pertandingan yang tersedia?\n\nJadwal jeda resmi ISHOMA tetap dipertahankan dan terproteksi sehingga tidak ada partai tanding di waktu istirahat.')) {
             return;
         }
 
@@ -665,7 +666,15 @@ export default function Schedule({
 
                         <section className="flex flex-col gap-4 rounded-xl border border-[#e8e1d8] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
                             <div>
-                                <p className="text-sm font-bold uppercase tracking-wide text-[#9a6b20]">{activeEvent.name}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-bold uppercase tracking-wide text-[#9a6b20]">{activeEvent.name}</p>
+                                    {breaks?.length > 0 && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900 shadow-2xs">
+                                            <i className="fa-solid fa-mug-hot text-amber-700 text-[10px]" />
+                                            {breaks.length} Sesi ISHOMA / Istirahat
+                                        </span>
+                                    )}
+                                </div>
                                 <p className="mt-1.5 text-sm leading-relaxed text-[#746b63]">
                                     Slot {duration} menit · jeda atlet minimal {settings?.minimum_rest_minutes || 0} menit. Pemindahan hanya berlaku untuk satu partai yang dipilih.
                                 </p>
@@ -1043,16 +1052,26 @@ export default function Schedule({
                             <div className="space-y-5">
                                 {sessions.map((session) => {
                                     const slots = sessionSlots(session, duration);
+                                    const breakAfter = session.break_after || breaks.find((b) => b.date === session.date && b.start_time >= session.end_time);
 
                                     return (
-                                        <section key={session.id} className="overflow-hidden rounded-2xl border border-[#e8e1d8] bg-white shadow-sm">
-                                            <div className="flex flex-col gap-2 border-b border-[#e8e1d8] bg-[#f8f6f2] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                                <div>
-                                                    <h2 className="font-bold text-[#17120f]">{session.name}</h2>
-                                                    <p className="mt-0.5 text-xs text-[#746b63]">{session.date_formatted} · {session.start_time}–{session.end_time}</p>
+                                        <Fragment key={session.id}>
+                                            <section className="overflow-hidden rounded-2xl border border-[#e8e1d8] bg-white shadow-sm">
+                                                <div className="flex flex-col gap-2 border-b border-[#e8e1d8] bg-[#f8f6f2] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                                    <div>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <h2 className="font-bold text-[#17120f]">{session.name}</h2>
+                                                            {breakAfter && (
+                                                                <span className="inline-flex items-center gap-1 rounded-md bg-amber-100/90 px-2 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-300/70 shadow-2xs">
+                                                                    <i className="fa-solid fa-mug-hot text-amber-700 text-[10px]" />
+                                                                    Lanjut {breakAfter.name || 'ISHOMA'} ({breakAfter.start_time}–{breakAfter.end_time})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="mt-0.5 text-xs text-[#746b63]">{session.date_formatted} · {session.start_time}–{session.end_time}</p>
+                                                    </div>
+                                                    <span className="w-fit rounded-full border border-[#ded5ca] bg-white px-3 py-1 text-xs font-semibold text-[#746b63]">{slots.length} slot per court</span>
                                                 </div>
-                                                <span className="w-fit rounded-full border border-[#ded5ca] bg-white px-3 py-1 text-xs font-semibold text-[#746b63]">{slots.length} slot per court</span>
-                                            </div>
 
                                             <p className="border-b border-[#e8e1d8] bg-blue-50 px-4 py-2 text-[11px] font-medium leading-relaxed text-blue-800 lg:hidden">
                                                 <i className="fa-solid fa-hand-pointer mr-1.5" aria-hidden="true" />Geser tabel ke samping. Pada layar sentuh, pilih satu partai lalu tekan slot atau partai tujuan.
@@ -1234,11 +1253,85 @@ export default function Schedule({
                                                             })}
                                                         </div>
                                                     ))}
+
+                                                    {breakAfter && (
+                                                        <div className="grid border-t-2 border-amber-300 bg-gradient-to-r from-amber-100/90 via-orange-100/70 to-amber-100/90" style={{ gridTemplateColumns }}>
+                                                            <div className="sticky left-0 z-10 flex min-h-16 flex-col items-center justify-center border-r border-amber-300 bg-amber-100/95 px-2 py-2">
+                                                                <span className="text-xs font-black text-amber-950">{breakAfter.start_time}</span>
+                                                                <span className="text-[10px] font-bold text-amber-800">{breakAfter.end_time}</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between px-4 py-3" style={{ gridColumn: `span ${Math.max(courts.length, 1)}` }}>
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-600 text-white shadow-2xs">
+                                                                        <i className="fa-solid fa-mug-hot text-xs" />
+                                                                    </span>
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-xs font-black uppercase tracking-wider text-amber-950">
+                                                                                {breakAfter.name || 'JEDA RESMI: ISHOMA'}
+                                                                            </span>
+                                                                            {breakAfter.duration_minutes && (
+                                                                                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300">
+                                                                                    {breakAfter.duration_minutes} Menit
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[11px] font-semibold text-amber-800">
+                                                                            Waktu istirahat, ibadah, & makan siang · Seluruh gelanggang ({courts.length} court) istirahat sementara ({breakAfter.start_time}–{breakAfter.end_time} WIB)
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-white/90 border border-amber-300/80 px-2.5 py-1 text-[11px] font-bold text-amber-950 shadow-2xs">
+                                                                    <i className="fa-solid fa-shield-halved text-amber-700" />
+                                                                    Jadwal Terproteksi
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </section>
-                                    );
-                                })}
+
+                                        {breakAfter && (
+                                            <div className="relative my-4 overflow-hidden rounded-2xl border border-amber-300/90 bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-50 p-4 sm:p-5 shadow-xs">
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                    <div className="flex items-center gap-3.5">
+                                                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800 shadow-2xs ring-1 ring-amber-400/40">
+                                                            <i className="fa-solid fa-mug-hot text-xl text-amber-700" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="inline-flex items-center gap-1 rounded-md bg-amber-200/80 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
+                                                                    <i className="fa-solid fa-pause text-[9px]" /> Jeda Resmi
+                                                                </span>
+                                                                <h3 className="text-base font-bold text-amber-950">
+                                                                    {breakAfter.name || 'ISHOMA (Istirahat, Sholat, Makan)'}
+                                                                </h3>
+                                                                {breakAfter.duration_minutes && (
+                                                                    <span className="rounded-full bg-amber-200/70 px-2.5 py-0.5 text-[10px] font-bold text-amber-900">
+                                                                        {breakAfter.duration_minutes} Menit
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="mt-1 text-xs text-amber-800 font-medium">
+                                                                Waktu istirahat resmi antar sesi pertandingan. Seluruh gelanggang (court) dan panitera rehat sementara.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 sm:self-center">
+                                                        <div className="rounded-xl border border-amber-300 bg-white/95 px-4 py-2 text-center shadow-2xs backdrop-blur-xs">
+                                                            <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700">Waktu Istirahat</div>
+                                                            <div className="font-mono text-base font-black text-amber-950">
+                                                                {breakAfter.start_time} – {breakAfter.end_time} <span className="text-xs font-semibold text-amber-700">WIB</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
                             </div>
                         )}
                     </>

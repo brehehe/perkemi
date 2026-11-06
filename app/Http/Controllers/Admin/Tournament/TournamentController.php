@@ -125,6 +125,19 @@ class TournamentController extends Controller
         $wantsStream = $request->boolean('stream');
         $viewMode = $request->input('mode', 'separated'); // 'separated' (default) or 'mixed'
 
+        $breaks = $activeEvent->rundowns()
+            ->where('is_match_session', false)
+            ->where(function ($sub): void {
+                $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+            })
+            ->orderBy('date')
+            ->orderBy('order')
+            ->get();
+
         $viewData = [
             'event' => $activeEvent,
             'matches' => $matches,
@@ -134,6 +147,7 @@ class TournamentController extends Controller
             'courtId' => $courtId,
             'selectedType' => $type,
             'viewMode' => $viewMode,
+            'breaks' => $breaks,
         ];
 
         if ($wantsHtml) {
@@ -169,8 +183,19 @@ class TournamentController extends Controller
         $generator->schedule($activeEvent);
 
         $scheduledCount = $activeEvent->tournamentMatches()->whereNotNull('scheduled_start_at')->count();
+        $ishomaCount = $activeEvent->rundowns()
+            ->where('is_match_session', false)
+            ->where(function ($sub): void {
+                $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+            })
+            ->count();
+        $ishomaNote = $ishomaCount > 0 ? " dengan {$ishomaCount} sesi jeda ISHOMA terproteksi" : '';
 
-        return back()->with('success', "Jadwal pertandingan berhasil disusun otomatis ({$scheduledCount} partai teralokasi ke court & sesi).");
+        return back()->with('success', "Jadwal pertandingan berhasil disusun otomatis ({$scheduledCount} partai teralokasi ke court & sesi{$ishomaNote}).");
     }
 
     public function scheduleReport(Request $request, TournamentDrawingViewService $service): HttpResponse
@@ -266,7 +291,19 @@ class TournamentController extends Controller
 
         $result = $generator->generate($activeEvent);
 
-        return back()->with('success', "Generate bagan & jadwal selesai (durasi {$activeEvent->match_duration_minutes} menit per partai): {$result['generated']} nomor dibuat, {$result['skipped']} nomor perlu merge.");
+        $ishomaCount = $activeEvent->rundowns()
+            ->where('is_match_session', false)
+            ->where(function ($sub): void {
+                $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+            })
+            ->count();
+        $ishomaNote = $ishomaCount > 0 ? " | {$ishomaCount} sesi ISHOMA terproteksi" : '';
+
+        return back()->with('success', "Generate bagan & jadwal selesai (durasi {$activeEvent->match_duration_minutes} menit per partai{$ishomaNote}): {$result['generated']} nomor dibuat, {$result['skipped']} nomor perlu merge.");
     }
 
     public function redrawCategory(Request $request, EventMatchCategory $matchCategory, TournamentDrawingGenerator $generator): RedirectResponse
@@ -801,14 +838,16 @@ class TournamentController extends Controller
             return false;
         }
 
-        if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
             return true;
         }
 
-        return in_array($event->accessRoleFor($user), [
+        $accessRole = $event->accessRoleFor($user);
+
+        return in_array($accessRole, [
             Event::AccessRoleResponsible,
             Event::AccessRoleAdmin,
-        ], true);
+        ], true) || ($accessRole === Event::AccessRoleStaff && $user->hasAnyRole(['Pertandingan', 'Arbitrase']));
     }
 
     private function canAccessTournament(Request $request, Event $event): bool
@@ -816,7 +855,8 @@ class TournamentController extends Controller
         $user = $request->user();
 
         return (bool) ($user && (
-            $user->hasAnyRole(['Super Admin', 'Admin'])
+            $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])
+            || ($user->hasAnyRole(['Arbitrase', 'Koordinator Lapangan', 'Court']) && $event->is_active)
             || $event->users()->whereKey($user->id)->exists()
         ));
     }
@@ -827,7 +867,7 @@ class TournamentController extends Controller
         $user = $request->user();
         $query = Event::query();
 
-        if (! $user?->hasAnyRole(['Super Admin', 'Admin'])) {
+        if (! $user?->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
             $query->whereHas('users', fn ($eventUsers) => $eventUsers->whereKey($user?->id));
         }
 

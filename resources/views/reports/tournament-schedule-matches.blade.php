@@ -693,6 +693,44 @@
                         </table>
                     @endif
                 @endif
+
+                @php
+                    $firstMatch = $sessionMatches->first();
+                    $matchDate = $firstMatch?->scheduled_start_at?->format('Y-m-d');
+                    $currentRundown = $firstMatch?->rundown;
+                    $breakAfter = null;
+                    if ($matchDate && !empty($breaks)) {
+                        $breakAfter = $breaks->first(function ($b) use ($matchDate, $currentRundown) {
+                            $bDate = $b->date?->format('Y-m-d');
+                            if ($bDate !== $matchDate) return false;
+                            if ($currentRundown && $currentRundown->order && $b->order > $currentRundown->order) return true;
+                            if ($currentRundown && $currentRundown->end_time && $b->date) {
+                                return $b->date->format('H:i') >= $currentRundown->end_time->format('H:i');
+                            }
+                            return true;
+                        });
+                    }
+                @endphp
+
+                @if($breakAfter)
+                    <div style="background: #fffbeb; border: 1px solid #fcd34d; border-left: 5px solid #d97706; padding: 6px 12px; margin: 12px 0 8px; border-radius: 3px; color: #78350f; page-break-inside: avoid;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="vertical-align: middle;">
+                                    <strong style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;">
+                                        &#9749; JEDA RESMI: {{ strtoupper($breakAfter->name ?: 'ISHOMA') }}
+                                    </strong>
+                                    <span style="font-size: 9px; color: #b45309; margin-left: 8px;">
+                                        (Istirahat, Sholat, Makan &mdash; Seluruh Gelanggang Berhenti Sementara)
+                                    </span>
+                                </td>
+                                <td style="text-align: right; vertical-align: middle; font-weight: bold; font-size: 10px; color: #92400e; width: 160px;">
+                                    {{ $breakAfter->date?->format('H:i') }} &ndash; {{ $breakAfter->end_time?->format('H:i') }} WIB
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                @endif
             @endforeach
         @endif
 

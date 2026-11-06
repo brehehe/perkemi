@@ -127,7 +127,7 @@ class WeighInController extends Controller
                 'status' => $request->string('status')->toString(),
             ],
             'canManageWeighIn' => $eventContext->canManage($request, $event),
-            'isSuperOrAdmin' => (bool) $request->user()?->hasAnyRole(['Super Admin', 'Admin']),
+            'isSuperOrAdmin' => (bool) $request->user()?->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']),
         ]);
     }
 
@@ -169,9 +169,9 @@ class WeighInController extends Controller
     public function unlock(Request $request, EventMatchCategory $matchCategory, WeighInService $weighInService): RedirectResponse
     {
         abort_unless(
-            $request->user()?->hasAnyRole(['Super Admin', 'Admin']),
+            $request->user()?->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']),
             403,
-            'Hanya Super Admin atau Admin yang berhak membuka kunci penimbangan.'
+            'Hanya Super Admin, Admin, atau Koordinator Pertandingan yang berhak membuka kunci penimbangan.'
         );
 
         $weighInService->unlockCategory($matchCategory);

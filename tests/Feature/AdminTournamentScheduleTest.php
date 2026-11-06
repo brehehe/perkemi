@@ -3,6 +3,7 @@
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
+use App\Models\Role;
 use App\Models\Rundown;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
@@ -623,6 +624,30 @@ test('admin can trigger automatic match schedule generation from schedule page',
     $fixture = createTournamentScheduleFixture($user, 'generate-sched');
 
     $this->actingAs($user)
+        ->post('/admin/pertandingan/jadwal/generate', [
+            'event_id' => $fixture['event']->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success');
+});
+
+test('user with role Pertandingan can access schedule, drawing, and generate schedule without 403', function () {
+    Role::firstOrCreate(['name' => 'Pertandingan', 'guard_name' => 'web']);
+    $pertandinganUser = User::factory()->create();
+    $pertandinganUser->assignRole('Pertandingan');
+
+    $fixture = createTournamentScheduleFixture($pertandinganUser, 'role-pertandingan');
+
+    $this->actingAs($pertandinganUser)
+        ->get('/admin/pertandingan/jadwal?event_id='.$fixture['event']->id)
+        ->assertOk();
+
+    $this->actingAs($pertandinganUser)
+        ->get('/admin/pertandingan/drawing?event_id='.$fixture['event']->id)
+        ->assertOk();
+
+    $this->actingAs($pertandinganUser)
         ->post('/admin/pertandingan/jadwal/generate', [
             'event_id' => $fixture['event']->id,
         ])

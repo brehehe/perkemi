@@ -37,7 +37,8 @@ class TournamentScheduleGenerator
 
         $duration = max(1, (int) $event->match_duration_minutes);
         $rest = max(0, (int) $event->minimum_rest_minutes);
-        $slots = $this->slots($courts, $sessions, $duration);
+        $breaks = $this->getEventBreaks($event);
+        $slots = $this->slots($courts, $sessions, $duration, $breaks);
 
         $event->tournamentMatches()
             ->whereHas('drawing', fn ($query) => $query->where('status', 'generated'))
@@ -94,13 +95,42 @@ class TournamentScheduleGenerator
     }
 
     /**
+     * Retrieve official break rundowns (e.g. ISHOMA / Istirahat) for this event.
+     *
+     * @return Collection<int, mixed>
+     */
+    public function getEventBreaks(Event $event): Collection
+    {
+        return $event->rundowns()
+            ->where('is_match_session', false)
+            ->where(function ($sub): void {
+                $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+            })
+            ->orderBy('date')
+            ->orderBy('order')
+            ->get();
+    }
+
+    /**
      * @param  Collection<int, mixed>  $courts
      * @param  Collection<int, mixed>  $sessions
+     * @param  Collection<int, mixed>|null  $breaks
      * @return Collection<int, array{court_id: string, court_priority: int, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>
      */
-    private function slots(Collection $courts, Collection $sessions, int $duration): Collection
+    private function slots(Collection $courts, Collection $sessions, int $duration, ?Collection $breaks = null): Collection
     {
         $slots = collect();
+
+        $breakIntervals = ($breaks ?? collect())->map(function ($b) {
+            $bStart = CarbonImmutable::instance($b->date);
+            $bEnd = $b->end_time ? CarbonImmutable::instance($b->end_time) : $bStart->addHour();
+
+            return ['start' => $bStart, 'end' => $bEnd];
+        });
 
         foreach ($sessions as $session) {
             $start = CarbonImmutable::instance($session->date);
@@ -109,13 +139,24 @@ class TournamentScheduleGenerator
                 : $start->addHours(4);
 
             for ($cursor = $start; $cursor->addMinutes($duration)->lessThanOrEqualTo($end); $cursor = $cursor->addMinutes($duration)) {
+                $slotStart = $cursor;
+                $slotEnd = $cursor->addMinutes($duration);
+
+                $overlapsBreak = $breakIntervals->contains(function ($b) use ($slotStart, $slotEnd) {
+                    return $slotEnd->greaterThan($b['start']) && $slotStart->lessThan($b['end']);
+                });
+
+                if ($overlapsBreak) {
+                    continue;
+                }
+
                 foreach ($courts->values() as $courtPriority => $court) {
                     $slots->push([
                         'court_id' => $court->id,
                         'court_priority' => $courtPriority,
                         'rundown_id' => $session->id,
-                        'start' => $cursor,
-                        'end' => $cursor->addMinutes($duration),
+                        'start' => $slotStart,
+                        'end' => $slotEnd,
                     ]);
                 }
             }

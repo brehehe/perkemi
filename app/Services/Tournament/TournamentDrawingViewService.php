@@ -256,6 +256,16 @@ class TournamentDrawingViewService
                 'minimum_contingents_per_category' => (int) $activeEvent->minimum_contingents_per_category,
                 'courts_count' => $activeEvent->courts()->where('is_active', true)->count(),
                 'sessions_count' => $activeEvent->rundowns()->where('is_match_session', true)->count(),
+                'ishoma_count' => $activeEvent->rundowns()
+                    ->where('is_match_session', false)
+                    ->where(function ($sub): void {
+                        $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+                    })
+                    ->count(),
             ] : null,
             'capacityStats' => $this->computeScheduleCapacityStats($activeEvent),
             'canManageDrawing' => $canManageDrawing,

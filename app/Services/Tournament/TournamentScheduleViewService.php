@@ -46,6 +46,65 @@ class TournamentScheduleViewService
                 ])->values()
             : collect();
 
+        $breaks = $activeEvent instanceof Event
+            ? $activeEvent->rundowns()
+                ->where('is_match_session', false)
+                ->where(function ($sub): void {
+                    $sub->whereRaw('LOWER(type) LIKE ?', ['%istirahat%'])
+                        ->orWhereRaw('LOWER(type) LIKE ?', ['%ishoma%'])
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%ishoma%'])
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%istirahat%'])
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%break%']);
+                })
+                ->orderBy('date')
+                ->orderBy('order')
+                ->get()
+                ->map(fn ($r) => [
+                    'id' => $r->id,
+                    'name' => $r->name,
+                    'type' => $r->type,
+                    'date' => $r->date?->format('Y-m-d'),
+                    'date_formatted' => $r->date?->translatedFormat('d F Y'),
+                    'start_time' => $r->date?->format('H:i'),
+                    'end_time' => $r->end_time?->format('H:i'),
+                    'duration_minutes' => ($r->date && $r->end_time) ? (int) $r->date->diffInMinutes($r->end_time) : null,
+                    'order' => (int) $r->order,
+                    'description' => $r->description,
+                ])->values()
+            : collect();
+
+        // Attach break_after to each session
+        $sessions = $sessions->map(function ($session, $idx) use ($breaks, $sessions) {
+            $breakAfter = $breaks->first(function ($b) use ($session) {
+                return $b['date'] === $session['date']
+                    && $b['start_time'] >= $session['end_time'];
+            });
+
+            // If no explicit break rundown but there is a gap >= 30 mins to the next session on the same day:
+            $nextSession = $sessions->get($idx + 1);
+            if (! $breakAfter && $nextSession && $nextSession['date'] === $session['date']) {
+                $gapMinutes = (strtotime($nextSession['start_time']) - strtotime($session['end_time'])) / 60;
+                if ($gapMinutes >= 30) {
+                    $breakAfter = [
+                        'id' => 'auto-break-'.$session['id'],
+                        'name' => 'ISHOMA (Istirahat, Sholat, Makan)',
+                        'type' => 'Istirahat',
+                        'date' => $session['date'],
+                        'date_formatted' => $session['date_formatted'],
+                        'start_time' => $session['end_time'],
+                        'end_time' => $nextSession['start_time'],
+                        'duration_minutes' => (int) $gapMinutes,
+                        'order' => $session['order'] + 1,
+                        'description' => 'Jeda istirahat otomatis antar sesi pertandingan',
+                    ];
+                }
+            }
+
+            $session['break_after'] = $breakAfter;
+
+            return $session;
+        });
+
         $scheduledMatches = $activeEvent instanceof Event
             ? $activeEvent->tournamentMatches()
                 ->where('is_bye', false)
@@ -147,6 +206,7 @@ class TournamentScheduleViewService
             'events' => $accessibleEvents,
             'courts' => $courts,
             'sessions' => $sessions,
+            'breaks' => $breaks,
             'categories' => $categories,
             'matches' => $matches,
             'unscheduledMatches' => $unscheduledMatchesList,

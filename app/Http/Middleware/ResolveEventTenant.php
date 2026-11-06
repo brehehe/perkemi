@@ -51,7 +51,7 @@ class ResolveEventTenant
                 || $eventAccessRole !== null
                 || $hasOperationalAssignment
                 || $isContingentOwner
-                || (($user->hasRole('Panitera') || $user->hasRole('Koordinator Lapangan') || $user->hasRole('Court')) && $tenantEvent->is_active));
+                || (($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase'])) && $tenantEvent->is_active));
 
         abort_unless($hasTenantAccess, 403);
 
@@ -151,7 +151,7 @@ class ResolveEventTenant
         if ($user && ! $user->hasAnyRole(['Super Admin', 'Admin']) && $this->dashboardEventAccess->requiresEventScope($user)) {
             $assignedEvent = $this->dashboardEventAccess->eventsFor($user)->first();
 
-            if (! $assignedEvent && ($user->hasRole('Panitera') || $user->hasRole('Koordinator Lapangan') || $user->hasRole('Court'))) {
+            if (! $assignedEvent && ($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase']))) {
                 $assignedEvent = Event::query()->where('is_active', true)->first()
                     ?? Event::query()->orderByDesc('start_date')->first();
             }

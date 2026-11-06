@@ -15,6 +15,7 @@ class DashboardEventAccessService
     private const ScopedRoles = [
         'Penanggung Jawab',
         'Penanggung Jawab Event',
+        'Pertandingan',
         'Arbitrase',
         'Perwasitan',
         'Panitera',
@@ -37,7 +38,7 @@ class DashboardEventAccessService
     /** @return Collection<int, Event> */
     public function assignedEventsFor(User $user): Collection
     {
-        if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
             return Event::query()
                 ->orderByDesc('is_active')
                 ->orderByDesc('start_date')
@@ -56,7 +57,7 @@ class DashboardEventAccessService
     {
         $query = Event::query();
 
-        if ($user->hasAnyRole(['Super Admin', 'Admin']) || ! $this->requiresEventScope($user)) {
+        if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan']) || ! $this->requiresEventScope($user)) {
             return $query;
         }
 
@@ -65,13 +66,13 @@ class DashboardEventAccessService
 
     public function canAccess(User $user, Event $event): bool
     {
-        return $user->hasAnyRole(['Super Admin', 'Admin'])
+        return $user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])
             || $this->assignedQueryFor($user)->whereKey($event->id)->exists();
     }
 
     public function requiresEventScope(User $user): bool
     {
-        if ($user->hasAnyRole(['Super Admin', 'Admin'])) {
+        if ($user->hasAnyRole(['Super Admin', 'Admin', 'Pertandingan'])) {
             return false;
         }
 

@@ -683,3 +683,107 @@ test('earlier empty slots on finished courts are filled by randori without waiti
     expect($randoriMatches->first()->event_court_id)->toBe($court1->id)
         ->and($randoriMatches->first()->scheduled_start_at->format('H:i'))->toBe('08:20');
 });
+
+test('schedule generator protects ISHOMA break interval and ensures matches are never scheduled during ISHOMA', function () {
+    $event = Event::query()->create([
+        'name' => 'Event With ISHOMA Protection',
+        'slug' => 'event-with-ishoma-protection',
+        'venue' => 'GOR ISHOMA',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-07',
+        'match_duration_minutes' => 15,
+        'minimum_rest_minutes' => 10,
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    // Match session from 11:00 to 15:00
+    $session = Rundown::query()->create([
+        'event_id' => $event->id,
+        'date' => '2026-11-07 11:00:00',
+        'end_time' => '2026-11-07 15:00:00',
+        'name' => 'Sesi Pertandingan',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
+    ]);
+
+    // Explicit ISHOMA break from 12:00 to 13:00
+    $ishoma = Rundown::query()->create([
+        'event_id' => $event->id,
+        'date' => '2026-11-07 12:00:00',
+        'end_time' => '2026-11-07 13:00:00',
+        'name' => 'ISHOMA',
+        'type' => 'Istirahat',
+        'is_match_session' => false,
+        'order' => 2,
+    ]);
+
+    $category = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Randori A',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 16,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $drawing = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'status' => 'generated',
+        'bracket_type' => 'single_elimination',
+        'participant_count' => 8,
+        'contingent_count' => 8,
+        'generated_at' => now(),
+    ]);
+
+    // Create 8 matches to fill up slots
+    foreach (range(1, 8) as $s) {
+        TournamentMatch::query()->create([
+            'tournament_drawing_id' => $drawing->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $category->id,
+            'phase' => 'preliminary',
+            'round_label' => 'Babak Penyisihan',
+            'match_sequence' => $s,
+            'bracket_position' => $s,
+            'status' => 'pending',
+            'is_bye' => false,
+            'metadata' => [
+                'athlete_ids' => [(string) Str::uuid(), (string) Str::uuid()],
+            ],
+        ]);
+    }
+
+    app(TournamentScheduleGenerator::class)->schedule($event);
+
+    $matches = TournamentMatch::query()
+        ->where('event_id', $event->id)
+        ->whereNotNull('scheduled_start_at')
+        ->orderBy('scheduled_start_at')
+        ->get();
+
+    expect($matches)->isNotEmpty();
+
+    // Verify that NO match starts or runs inside 12:00 - 13:00
+    foreach ($matches as $match) {
+        $start = $match->scheduled_start_at->format('H:i');
+        $end = $match->scheduled_end_at->format('H:i');
+
+        // It must either finish at or before 12:00, or start at or after 13:00
+        $isBeforeBreak = $end <= '12:00';
+        $isAfterBreak = $start >= '13:00';
+
+        expect($isBeforeBreak || $isAfterBreak)->toBeTrue("Match scheduled at {$start}-{$end} overlaps with ISHOMA 12:00-13:00");
+    }
+});

@@ -155,4 +155,29 @@ test('admin can export tournament schedule pdf with court and type filters', fun
     $responsePdf->assertOk();
     $responsePdf->assertHeader('content-type', 'application/pdf');
     expect($responsePdf->headers->get('content-disposition'))->toContain('court_1');
+
+    // Test 6: Break / ISHOMA is displayed when present
+    Rundown::query()->create([
+        'event_id' => $event->id,
+        'date' => '2026-11-07 12:00:00',
+        'end_time' => '2026-11-07 13:30:00',
+        'name' => 'ISHOMA',
+        'type' => 'Istirahat',
+        'is_match_session' => false,
+        'order' => 2,
+    ]);
+
+    $responseWithBreak = $this->actingAs($user)->get("/admin/pertandingan/jadwal/pdf?event_id={$event->id}&format=html");
+    $responseWithBreak->assertOk();
+    $responseWithBreak->assertSee('JEDA RESMI: ISHOMA');
+    $responseWithBreak->assertSee('12:00 &ndash; 13:30 WIB', false);
+
+    $schedulePage = $this->actingAs($user)->get("/admin/pertandingan/jadwal?event_id={$event->id}");
+    $schedulePage->assertOk();
+    $schedulePage->assertInertia(fn ($page) => $page
+        ->component('Admin/Tournament/Schedule')
+        ->has('breaks', 1)
+        ->where('breaks.0.name', 'ISHOMA')
+        ->where('sessions.0.break_after.name', 'ISHOMA')
+    );
 });
