@@ -178,10 +178,10 @@ class CourtCoordinatorController extends Controller
 
             $activeRoleOrder = [
                 RefereeCourtRole::Chief->value => 'Wasit Utama',
-                RefereeCourtRole::RegionalOne->value => 'Wasit Pembantu 1 (Regional)',
-                RefereeCourtRole::RegionalTwo->value => 'Wasit Pembantu 2 (Regional)',
-                RefereeCourtRole::AssistantOne->value => 'Wasit Pembantu 3',
-                RefereeCourtRole::AssistantTwo->value => 'Wasit Pembantu 4',
+                RefereeCourtRole::RegionalOne->value => 'Wasit Pembantu 1 / Wasit Nasional 1',
+                RefereeCourtRole::RegionalTwo->value => 'Wasit Pembantu 2 / Wasit Nasional 2',
+                RefereeCourtRole::AssistantOne->value => 'Wasit Pembantu 3 / Wasit Daerah 1',
+                RefereeCourtRole::AssistantTwo->value => 'Wasit Pembantu 4 / Wasit Daerah 2',
             ];
 
             $expiresAt = now()->addDays(7);
@@ -667,15 +667,9 @@ class CourtCoordinatorController extends Controller
                 $isQualified = GenerateRefereeCourtPanelsAction::isChiefQualified($newChief);
 
                 if (! $isQualified) {
-                    $hasQualifiedCandidate = $refereeModels->contains(
-                        fn (Referee $r): bool => GenerateRefereeCourtPanelsAction::isChiefQualified($r)
-                    );
-
-                    if ($hasQualifiedCandidate) {
-                        throw ValidationException::withMessages([
-                            'swap' => "Pertukaran ditolak: Wasit {$newChief->name} ({$newChief->dan_grade}) belum memenuhi kualifikasi Wasit Utama (minimal IV DAN atau Wasit Nasional) sesuai ketentuan SOP Wasit (3.3).",
-                        ]);
-                    }
+                    throw ValidationException::withMessages([
+                        'swap' => "Pertukaran ditolak: Wasit {$newChief->name} ({$newChief->dan_grade}) berstatus III DAN sehingga belum memenuhi kualifikasi Wasit Utama (minimal IV DAN atau Wasit Nasional). Ketentuan Wasit Utama wajib minimal IV DAN ke atas.",
+                    ]);
                 }
             }
 

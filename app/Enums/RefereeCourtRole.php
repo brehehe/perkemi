@@ -14,10 +14,10 @@ enum RefereeCourtRole: string
     {
         return match ($this) {
             self::Chief => 'Wasit Utama',
-            self::RegionalOne => 'Wasit Daerah 1',
-            self::RegionalTwo => 'Wasit Daerah 2',
-            self::AssistantOne => 'Wasit Pembantu 1',
-            self::AssistantTwo => 'Wasit Pembantu 2',
+            self::RegionalOne => 'Wasit Pembantu 1 / Wasit Nasional 1',
+            self::RegionalTwo => 'Wasit Pembantu 2 / Wasit Nasional 2',
+            self::AssistantOne => 'Wasit Pembantu 3 / Wasit Daerah 1',
+            self::AssistantTwo => 'Wasit Pembantu 4 / Wasit Daerah 2',
         };
     }
 

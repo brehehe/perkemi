@@ -1224,3 +1224,97 @@ test('panitera cannot operate court outside assigned court', function () {
 
     $response->assertForbidden();
 });
+
+test('court panel generation alternates IV DAN and III DAN referees according to Pak Budi rules', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+
+    $event = Event::query()->create([
+        'name' => 'POPDA XV Jatim 2026',
+        'slug' => 'popda-xv-jatim-2026',
+        'venue' => 'SMKN 1 Geneng',
+        'city' => 'Ngawi',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Arena Utama',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    // Create 4 IV DAN referees and 3 III DAN referees
+    for ($i = 1; $i <= 4; $i++) {
+        $ref = Referee::query()->create([
+            'name' => "Wasit Senior IV DAN {$i}",
+            'dan_grade' => 'IV DAN',
+            'certification_level' => 'Wasit Daerah',
+            'region' => "Kota {$i}",
+            'is_active' => true,
+        ]);
+        $event->referees()->attach($ref);
+        RefereeAttendance::query()->create([
+            'event_id' => $event->id,
+            'referee_id' => $ref->id,
+            'attendance_date' => now()->toDateString(),
+            'is_present' => true,
+        ]);
+    }
+
+    for ($i = 1; $i <= 3; $i++) {
+        $ref = Referee::query()->create([
+            'name' => "Wasit Muda III DAN {$i}",
+            'dan_grade' => 'III DAN',
+            'certification_level' => 'Wasit Daerah',
+            'region' => "Daerah {$i}",
+            'is_active' => true,
+        ]);
+        $event->referees()->attach($ref);
+        RefereeAttendance::query()->create([
+            'event_id' => $event->id,
+            'referee_id' => $ref->id,
+            'attendance_date' => now()->toDateString(),
+            'is_present' => true,
+        ]);
+    }
+
+    // Generate court panel
+    $response = $this->actingAs($admin)->post(route('admin.koordinator-court.generate', [
+        'eventCourt' => $court->id,
+        'event_id' => $event->id,
+    ]));
+
+    $response->assertSessionHas('success');
+
+    $assignments = EventCourtAssignment::query()
+        ->where('event_court_id', $court->id)
+        ->where('staff_type', 'referee')
+        ->get();
+
+    // 1. Wasit Utama must be IV DAN
+    $chiefId = $assignments->firstWhere('role', 'chief')?->staff_id;
+    expect($chiefId)->not->toBeNull();
+    $chiefRef = Referee::find($chiefId);
+    expect($chiefRef->dan_grade)->toBe('IV DAN');
+
+    // 2. Wasit Pembantu 1 & 2 must be IV DAN
+    $reg1Id = $assignments->firstWhere('role', 'regional_1')?->staff_id;
+    $reg2Id = $assignments->firstWhere('role', 'regional_2')?->staff_id;
+    expect(Referee::find($reg1Id)->dan_grade)->toBe('IV DAN');
+    expect(Referee::find($reg2Id)->dan_grade)->toBe('IV DAN');
+
+    // 3. Wasit Pembantu 3 & 4 must be III DAN
+    $asst1Id = $assignments->firstWhere('role', 'assistant_1')?->staff_id;
+    $asst2Id = $assignments->firstWhere('role', 'assistant_2')?->staff_id;
+    expect(Referee::find($asst1Id)->dan_grade)->toBe('III DAN');
+    expect(Referee::find($asst2Id)->dan_grade)->toBe('III DAN');
+
+    // Total active: 3 IV DAN + 2 III DAN
+    $activeStaffIds = [$chiefId, $reg1Id, $reg2Id, $asst1Id, $asst2Id];
+    $activeRefs = Referee::whereIn('id', $activeStaffIds)->get();
+    expect($activeRefs->where('dan_grade', 'IV DAN')->count())->toBe(3);
+    expect($activeRefs->where('dan_grade', 'III DAN')->count())->toBe(2);
+});

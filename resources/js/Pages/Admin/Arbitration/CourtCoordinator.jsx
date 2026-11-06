@@ -228,10 +228,15 @@ export default function CourtCoordinator({
 
     const isChiefQualified = (ref) => {
         if (!ref) return false;
+        const dan = (ref.dan_grade || '').toUpperCase();
+        // Wasit III DAN dilarang keras menjadi Wasit Utama (hanya IV DAN ke atas)
+        if (/\b(III|II|I|3|2|1)\b/.test(dan) && !/\b(IV|V|VI|VII|VIII|IX|X|[4-9]|10)\b/.test(dan)) {
+            return false;
+        }
+        if (/\b(IV|V|VI|VII|VIII|IX|X|[4-9]|10)\b/.test(dan)) return true;
         const cert = (ref.certification_level || '').toUpperCase();
         if (cert.includes('NASIONAL')) return true;
-        const dan = (ref.dan_grade || '').toUpperCase();
-        return /\b(IV|V|VI|VII|VIII|[4-9])\b/.test(dan);
+        return false;
     };
 
     const hasChiefCandidateInCourt = useMemo(() => {
@@ -241,21 +246,21 @@ export default function CourtCoordinator({
     const getSwapValidationHint = (sourceItem, targetItem) => {
         if (!sourceItem?.referee || !targetItem?.referee) return null;
 
-        // 1. Check Chief qualification (SOP 3.3)
+        // 1. Check Chief qualification (Wasit Utama wajib IV DAN ke atas)
         const isSourceChief = sourceItem.role === 'chief';
         const isTargetChief = targetItem.role === 'chief';
 
-        if (isSourceChief && !isChiefQualified(targetItem.referee) && hasChiefCandidateInCourt) {
+        if (isSourceChief && !isChiefQualified(targetItem.referee)) {
             return {
                 type: 'error',
-                message: `Wasit ${targetItem.referee.name} belum berkualifikasi IV DAN / Wasit Nasional untuk posisi Wasit Utama (SOP Wasit 3.3).`,
+                message: `Wasit ${targetItem.referee.name} (${targetItem.referee.dan_grade || 'III DAN'}) tidak dapat menjadi Wasit Utama. Ketentuan Wasit Utama wajib minimal IV DAN ke atas.`,
             };
         }
 
-        if (isTargetChief && !isChiefQualified(sourceItem.referee) && hasChiefCandidateInCourt) {
+        if (isTargetChief && !isChiefQualified(sourceItem.referee)) {
             return {
                 type: 'error',
-                message: `Wasit ${sourceItem.referee.name} belum berkualifikasi IV DAN / Wasit Nasional untuk posisi Wasit Utama (SOP Wasit 3.3).`,
+                message: `Wasit ${sourceItem.referee.name} (${sourceItem.referee.dan_grade || 'III DAN'}) tidak dapat menjadi Wasit Utama. Ketentuan Wasit Utama wajib minimal IV DAN ke atas.`,
             };
         }
 
@@ -290,6 +295,17 @@ export default function CourtCoordinator({
 
     const performSwap = (sourceRefId, targetRefId) => {
         if (!selectedCourt || !sourceRefId || !targetRefId || sourceRefId === targetRefId) return;
+
+        const sourceItem = allCourtReferees.find((i) => i.referee?.id === sourceRefId);
+        const targetItem = allCourtReferees.find((i) => i.referee?.id === targetRefId);
+        const hint = getSwapValidationHint(sourceItem, targetItem);
+        if (hint && hint.type === 'error') {
+            setSwapError(hint.message);
+            setIsSwapping(false);
+            setDraggingReferee(null);
+            setDragOverTargetId(null);
+            return;
+        }
 
         setIsSwapping(true);
         setSwapError(null);
@@ -331,6 +347,7 @@ export default function CourtCoordinator({
             name: item.referee.name,
             role: item.role,
             roleLabel: item.role_label,
+            referee: item.referee,
         });
     };
 
@@ -665,10 +682,16 @@ export default function CourtCoordinator({
                                                 const ref = item.referee;
                                                 const isDragging = draggingReferee?.id === ref?.id;
                                                 const isDropTarget = dragOverTargetId === ref?.id && draggingReferee?.id !== ref?.id;
+                                                const isDropInvalid = isDropTarget && (
+                                                    (item.role === 'chief' && !isChiefQualified(draggingReferee?.referee))
+                                                    || (draggingReferee?.role === 'chief' && !isChiefQualified(ref))
+                                                );
+                                                const dropInvalidMessage = `Wasit ${draggingReferee?.name} (${draggingReferee?.referee?.dan_grade || 'III DAN'}) tidak dapat menjadi Wasit Utama (Wajib minimal IV DAN ke atas)`;
 
-                                                const roleFullTitle = index === 0
-                                                    ? 'Wasit Utama'
-                                                    : `Wasit Pembantu ${index}`;
+                                                const roleFullTitle = item.role_label
+                                                    || (index === 0
+                                                        ? 'Wasit Utama'
+                                                        : `Wasit Pembantu ${index}`);
 
                                                 return (
                                                     <div
@@ -683,7 +706,9 @@ export default function CourtCoordinator({
                                                             isDragging
                                                                 ? 'opacity-40 border-dashed border-amber-400 bg-amber-50/50 scale-[0.98]'
                                                                 : isDropTarget
-                                                                ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
+                                                                ? isDropInvalid
+                                                                    ? 'ring-2 ring-red-500 border-red-500 bg-red-50/80 shadow-md scale-[1.01]'
+                                                                    : 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
                                                                 : index === 0
                                                                 ? 'border-amber-300 bg-[#fffdfa] shadow-xs'
                                                                 : 'border-[#e8e1d8] bg-white shadow-2xs hover:border-amber-300'
@@ -692,7 +717,7 @@ export default function CourtCoordinator({
                                                         <div>
                                                             {/* Header Posisi & Status Kehadiran */}
                                                             <div className="flex items-center justify-between gap-2 border-b border-[#eee8e0] pb-3">
-                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                                                                     <i className="fa-solid fa-grip-vertical text-[#bda892] group-hover:text-amber-600 transition-colors text-sm shrink-0 cursor-grab" title="Geser untuk menukar posisi" />
                                                                     <span className="rounded-lg bg-[#17120f] px-2 py-0.5 text-xs font-black text-[#f0c060] tracking-wider shadow-2xs shrink-0">
                                                                         W{index + 1}
@@ -700,6 +725,21 @@ export default function CourtCoordinator({
                                                                     <span className="text-sm font-bold text-[#17120f]">
                                                                         {roleFullTitle}
                                                                     </span>
+                                                                    {index === 0 && (
+                                                                        <span className="text-[9.5px] font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.2 shrink-0">
+                                                                            Wajib IV DAN+
+                                                                        </span>
+                                                                    )}
+                                                                    {(index === 1 || index === 2) && (
+                                                                        <span className="text-[9.5px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.2 shrink-0">
+                                                                            Nasional / IV DAN+
+                                                                        </span>
+                                                                    )}
+                                                                    {(index === 3 || index === 4) && (
+                                                                        <span className="text-[9.5px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.2 shrink-0">
+                                                                            Daerah / III DAN
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                 <div className="shrink-0">
                                                                     {item.is_checked_in ? (
@@ -772,9 +812,13 @@ export default function CourtCoordinator({
 
                                                         {/* Drop Target Indicator Prompt */}
                                                         {isDropTarget && (
-                                                            <div className="my-2 rounded-xl bg-amber-200/90 px-3 py-2 text-center text-xs font-bold text-amber-950 animate-pulse border border-amber-300">
-                                                                <i className="fa-solid fa-arrow-down mr-1.5" />
-                                                                Lepas untuk menukar posisi dengan {ref?.name}
+                                                            <div className={`my-2 rounded-xl px-3 py-2 text-center text-xs font-bold border ${
+                                                                isDropInvalid
+                                                                    ? 'bg-red-100 text-red-900 border-red-300'
+                                                                    : 'bg-amber-200/90 text-amber-950 border-amber-300 animate-pulse'
+                                                            }`}>
+                                                                <i className={`fa-solid ${isDropInvalid ? 'fa-ban text-red-600' : 'fa-arrow-down'} mr-1.5`} />
+                                                                {isDropInvalid ? dropInvalidMessage : `Lepas untuk menukar posisi dengan ${ref?.name}`}
                                                             </div>
                                                         )}
 
@@ -1482,15 +1526,15 @@ export default function CourtCoordinator({
                                             </div>
                                             <Button
                                                 size="sm"
-                                                disabled={isSwapping}
+                                                disabled={isSwapping || hint?.type === 'error'}
                                                 onClick={() => performSwap(swapSourceItem.referee.id, target.referee.id)}
                                                 className={`shrink-0 text-xs px-2.5 py-1 min-h-8 ${
-                                                    hint
-                                                        ? 'bg-[#403831] text-[#f0c060] hover:bg-[#2b2520]'
+                                                    hint?.type === 'error'
+                                                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300'
                                                         : 'bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520]'
                                                 }`}
                                             >
-                                                <i className="fa-solid fa-arrow-right-arrow-left text-[10px] mr-1 text-amber-400" />
+                                                <i className={`fa-solid ${hint?.type === 'error' ? 'fa-ban text-gray-400' : 'fa-arrow-right-arrow-left text-amber-400'} text-[10px] mr-1`} />
                                                 Tukar
                                             </Button>
                                         </div>
