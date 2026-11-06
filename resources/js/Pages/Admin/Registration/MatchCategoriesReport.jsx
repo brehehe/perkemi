@@ -607,19 +607,21 @@ export default function MatchCategoriesReport({
                                                                 </div>
 
                                                                 {team.has_techniques ? (
-                                                                    <div className="flex flex-wrap gap-2">
+                                                                    <ol className="divide-y divide-slate-100 rounded-xl border border-slate-200/80 bg-white overflow-hidden shadow-2xs dark:divide-white/5 dark:border-white/10 dark:bg-white/[0.02] print:border-gray-300">
                                                                         {team.techniques.map((tech, idx) => (
-                                                                            <div
+                                                                            <li
                                                                                 key={tech.id || idx}
-                                                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-900 shadow-2xs dark:border-white/10 dark:bg-white/5 dark:text-white print:border-gray-300 print:text-[10px] print:py-0.5"
+                                                                                className="flex items-center gap-3 px-3.5 py-2 text-xs transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[0.02] print:py-1 print:text-[10px]"
                                                                             >
-                                                                                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-700 text-[10px] font-bold text-white print:h-3.5 print:w-3.5 print:text-[8px]">
+                                                                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-700 text-[10px] font-bold text-white shadow-2xs print:h-4 print:w-4 print:text-[9px]">
                                                                                     {tech.order || idx + 1}
                                                                                 </span>
-                                                                                <span className="font-medium">{tech.name}</span>
-                                                                            </div>
+                                                                                <span className="font-semibold text-slate-900 dark:text-white print:text-black">
+                                                                                    {tech.name}
+                                                                                </span>
+                                                                            </li>
                                                                         ))}
-                                                                    </div>
+                                                                    </ol>
                                                                 ) : (
                                                                     <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
                                                                         <div className="flex items-center gap-2">
