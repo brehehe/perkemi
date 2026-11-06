@@ -93,29 +93,32 @@ class ChampionResultService
     {
         $category->loadMissing('tournamentDrawing.matches.randoriScore');
         $participants = $this->participants($category)->keyBy('key');
-        $participantCount = (int) ($category->tournamentDrawing?->participant_count ?? 0);
-        $minChampionCount = min(3, max(1, $participantCount));
-        $maxChampionCount = min(4, max(1, $participantCount));
 
         $submitted = collect($champions)
-            ->map(fn (array $champion): array => [
-                'rank' => (int) $champion['rank'],
-                'participant_key' => (string) ($champion['participant_key'] ?? ''),
-            ])
-            ->filter(fn (array $champion): bool => $champion['participant_key'] !== '')
-            ->sortBy('rank')
-            ->values();
+            ->filter(fn (array $champion): bool => ! empty($champion['participant_key']))
+            ->values()
+            ->map(fn (array $champion, int $index): array => [
+                'rank' => $index + 1,
+                'participant_key' => (string) $champion['participant_key'],
+            ]);
+
+        $actualParticipantCount = (int) ($category->tournamentDrawing?->participant_count ?? 0);
+        if ($actualParticipantCount <= 0) {
+            $actualParticipantCount = $participants->count();
+        }
+        if ($actualParticipantCount <= 0) {
+            $actualParticipantCount = $category->athleteEntries()->count();
+        }
+        if ($actualParticipantCount <= 0) {
+            $actualParticipantCount = max(4, $submitted->count());
+        }
+
+        $minChampionCount = min(3, max(1, $actualParticipantCount));
+        $maxChampionCount = min(4, max($minChampionCount, $actualParticipantCount));
 
         if ($submitted->count() < $minChampionCount || $submitted->count() > $maxChampionCount) {
             throw ValidationException::withMessages([
                 'champions' => "Nomor pertandingan ini membutuhkan {$minChampionCount} hingga {$maxChampionCount} susunan juara (Juara 3 Bersama ke-2 bersifat opsional).",
-            ]);
-        }
-
-        $expectedRanks = range(1, $submitted->count());
-        if ($submitted->pluck('rank')->all() !== $expectedRanks) {
-            throw ValidationException::withMessages([
-                'champions' => 'Peringkat juara harus berurutan dari 1 sampai '.$submitted->count().'.',
             ]);
         }
 
@@ -126,19 +129,25 @@ class ChampionResultService
         }
 
         foreach ($submitted as $champion) {
-            if (! $participants->has($champion['participant_key'])) {
+            if ($participants->isNotEmpty() && ! $participants->has($champion['participant_key'])) {
                 throw ValidationException::withMessages([
                     'champions' => 'Salah satu peserta juara tidak terdaftar pada nomor pertandingan ini.',
                 ]);
             }
         }
 
-        return DB::transaction(function () use ($event, $category, $submitted, $participants, $participantCount): Collection {
+        return DB::transaction(function () use ($event, $category, $submitted, $participants, $actualParticipantCount): Collection {
             $this->resultQuery($event, $category)->lockForUpdate()->get();
             $this->resultQuery($event, $category)->delete();
 
-            return $submitted->map(function (array $champion) use ($event, $category, $participants, $participantCount): TournamentResult {
-                $participant = $participants->get($champion['participant_key']);
+            return $submitted->map(function (array $champion) use ($event, $category, $participants, $actualParticipantCount): TournamentResult {
+                $participant = $participants->get($champion['participant_key'], [
+                    'key' => $champion['participant_key'],
+                    'label' => $champion['participant_key'],
+                    'contingent_name' => null,
+                    'contingent_id' => null,
+                    'athlete_id' => null,
+                ]);
 
                 return TournamentResult::create([
                     'event_id' => $event->id,
@@ -149,7 +158,7 @@ class ChampionResultService
                     'contingent_name' => $participant['contingent_name'] ?: $participant['label'],
                     'rank' => $champion['rank'],
                     'match_category' => $category->name,
-                    'is_exhibition' => (bool) $category->is_exhibition || $participantCount <= 3,
+                    'is_exhibition' => (bool) $category->is_exhibition || $actualParticipantCount <= 3,
                 ]);
             });
         });
@@ -184,6 +193,25 @@ class ChampionResultService
                 if ($participant) {
                     $participants->put($participant['key'], $participant);
                 }
+            }
+        }
+
+        if ($participants->isEmpty()) {
+            $category->loadMissing('athleteEntries.athlete.contingent');
+            foreach ($category->athleteEntries as $entry) {
+                $athlete = $entry->athlete;
+                if (! $athlete) {
+                    continue;
+                }
+                $key = (string) $entry->id;
+                $participants->put($key, [
+                    'key' => $key,
+                    'entry_id' => $entry->id,
+                    'athlete_id' => $athlete->id,
+                    'label' => $athlete->name,
+                    'contingent_name' => $athlete->contingent?->name,
+                    'contingent_id' => $athlete->contingent_id,
+                ]);
             }
         }
 

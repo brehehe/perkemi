@@ -1145,6 +1145,69 @@ test('Admin or Panitera updates daily referee attendance and sees its history', 
     $this->travelBack();
 });
 
+test('Admin or Panitera can reset daily referee attendance and court attendance', function () {
+    [$event, $courts] = createRefereeWorkflowEvent();
+    $panitera = createRefereeWorkflowUser($event, 'Panitera');
+    $referee = createEventReferee($event, 1);
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+
+    $this->travelTo(Carbon::parse('2026-11-08 07:30:00'));
+
+    // Record attendance & court attendance
+    RefereeAttendance::query()->create([
+        'event_id' => $event->id,
+        'referee_id' => $referee->id,
+        'attendance_date' => '2026-11-08',
+        'is_present' => true,
+        'method' => 'manual',
+        'checked_in_at' => now(),
+    ]);
+    RefereeCourtAttendance::query()->create([
+        'event_id' => $event->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'attendance_date' => '2026-11-08',
+        'method' => 'manual',
+        'checked_in_at' => now(),
+    ]);
+
+    expect(RefereeAttendance::query()->whereBelongsTo($event)->whereBelongsTo($referee)->count())->toBe(1);
+    expect(RefereeCourtAttendance::query()->whereBelongsTo($event)->whereBelongsTo($referee)->count())->toBe(1);
+
+    // Perform reset via DELETE with query params
+    $deleteUrl = route('admin.pertandingan.wasit.attendance.reset', [
+        'referee' => $referee,
+        'event_id' => $event->id,
+        'attendance_date' => '2026-11-08',
+    ], false);
+
+    $this->actingAs($panitera)
+        ->delete($deleteUrl)
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect(RefereeAttendance::query()->whereBelongsTo($event)->whereBelongsTo($referee)->count())->toBe(0);
+    expect(RefereeCourtAttendance::query()->whereBelongsTo($event)->whereBelongsTo($referee)->count())->toBe(0);
+
+    // Verify index page displays referee as not recorded / Belum Absen
+    $this->actingAs($panitera)
+        ->get(route('admin.pertandingan.wasit.index', ['event_id' => $event->id], false))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Tournament/EventReferees')
+            ->where('referees.0.attendance_recorded', false)
+            ->where('referees.0.is_present', false));
+
+    $this->travelBack();
+});
+
 test('event and court QR check-ins create a new attendance record on each day', function () {
     [$event, $courts] = createRefereeWorkflowEvent();
     $panitera = createRefereeWorkflowUser($event, 'Panitera');

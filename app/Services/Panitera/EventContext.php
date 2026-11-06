@@ -47,7 +47,7 @@ class EventContext
 
     private function requestedEventId(Request $request): ?string
     {
-        $eventId = $request->input('event_id');
+        $eventId = $request->input('event_id') ?? $request->query('event_id');
         abort_unless($eventId === null || is_string($eventId), 404, 'Event tidak ditemukan.');
 
         $eventId = trim((string) $eventId);

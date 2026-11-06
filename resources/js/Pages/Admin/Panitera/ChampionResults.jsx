@@ -175,12 +175,22 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
     };
 
     const saveChampions = () => {
+        const url = `/admin/panitera/scoring/champions/${championship.id}?event_id=${encodeURIComponent(activeEvent.id)}`;
         form.transform((data) => ({
             ...data,
-            champions: data.champions.filter((c) => Boolean(c.participant_key)),
-        })).put(`/admin/panitera/scoring/champions/${championship.id}`, {
+            event_id: activeEvent.id,
+            champions: data.champions
+                .filter((c) => Boolean(c.participant_key))
+                .map((c, index) => ({
+                    ...c,
+                    rank: index + 1,
+                })),
+        })).put(url, {
             preserveScroll: true,
             onSuccess: () => setConfirmation(null),
+            onError: (errs) => {
+                console.error('Save champions error:', errs);
+            },
         });
     };
 
@@ -364,9 +374,9 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
                                 </div>
                             </div>
 
-                            {(form.errors.champions || errors.category) && (
+                            {(form.errors.champions || form.errors.event_id || errors.category || (form.errors && typeof form.errors === 'object' && Object.values(form.errors)[0])) && (
                                 <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
-                                    {form.errors.champions || errors.category}
+                                    {form.errors.champions || form.errors.event_id || errors.category || Object.values(form.errors)[0]}
                                 </p>
                             )}
 
@@ -508,7 +518,13 @@ function ChampionEditor({ activeEvent, championship, canManage, matches = [], em
                 cancelText="Batal"
                 variant="warning"
                 isLoading={form.processing}
-                error={form.errors.champions || ''}
+                error={
+                    form.errors.champions ||
+                    form.errors.event_id ||
+                    errors?.category ||
+                    (form.errors && typeof form.errors === 'object' && Object.values(form.errors)[0]) ||
+                    ''
+                }
                 onCancel={() => setConfirmation(null)}
                 onConfirm={saveChampions}
             />

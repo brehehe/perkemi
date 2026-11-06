@@ -724,14 +724,22 @@ export default function EventReferees({
         });
     };
     const executeResetAttendance = (referee, date = today) => {
+        if (!referee) return;
+        const targetDate = date || today;
+        const url = `/admin/pertandingan/wasit/${referee.id}/attendance?event_id=${encodeURIComponent(activeEvent.id)}&attendance_date=${encodeURIComponent(targetDate)}`;
+
+        resetAttendanceForm.clearErrors();
         resetAttendanceForm.transform(() => ({
             event_id: activeEvent.id,
-            attendance_date: date,
-        })).delete(`/admin/pertandingan/wasit/${referee.id}/attendance`, {
+            attendance_date: targetDate,
+        })).delete(url, {
             preserveScroll: true,
             onSuccess: () => {
                 setResetAttendanceTarget(null);
                 setAttendanceReferee(null);
+            },
+            onError: (errs) => {
+                console.error('Reset attendance error:', errs);
             },
         });
     };
@@ -1017,6 +1025,12 @@ export default function EventReferees({
                     <p className="text-sm text-[#17120f]">
                         Apakah Anda yakin ingin mereset kehadiran wasit <strong>{resetAttendanceTarget?.name}</strong> untuk hari ini?
                     </p>
+                    {Object.keys(resetAttendanceForm.errors).length > 0 && (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
+                            <i className="fa-solid fa-triangle-exclamation mr-1.5" />
+                            {Object.values(resetAttendanceForm.errors)[0]}
+                        </div>
+                    )}
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                         <i className="fa-solid fa-circle-info mr-1.5 text-amber-700" />
                         Status kehadiran event dan check-in court untuk tanggal hari ini akan dihapus dan status wasit akan dikembalikan menjadi <strong>Belum Absen</strong>.

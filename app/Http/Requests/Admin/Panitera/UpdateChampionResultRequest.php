@@ -15,6 +15,13 @@ class UpdateChampionResultRequest extends FormRequest
         return $this->user() !== null;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (! $this->has('event_id') && $this->query('event_id')) {
+            $this->merge(['event_id' => $this->query('event_id')]);
+        }
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -35,11 +42,13 @@ class UpdateChampionResultRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'event_id.required' => 'ID event wajib disertakan.',
             'champions.required' => 'Susunan juara wajib diisi.',
             'champions.min' => 'Minimal satu juara harus dipilih.',
             'champions.max' => 'Maksimal empat juara dapat disimpan.',
             'champions.*.rank.required' => 'Peringkat juara wajib diisi.',
             'champions.*.rank.between' => 'Peringkat juara harus antara 1 sampai 4.',
+            'champions.*.participant_key.required' => 'Peserta juara wajib dipilih.',
         ];
     }
 }

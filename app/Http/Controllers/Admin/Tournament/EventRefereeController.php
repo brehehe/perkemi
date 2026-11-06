@@ -25,6 +25,7 @@ use App\Services\Referee\RefereeCheckInCodeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -589,11 +590,9 @@ class EventRefereeController extends Controller
         $this->ensureCanManageEventReferees($request, $event);
         abort_unless($event->referees()->whereKey($referee->id)->exists(), 404);
 
-        $validated = $request->validate([
-            'attendance_date' => ['nullable', 'date'],
-        ]);
-
-        $date = $validated['attendance_date'] ?? now()->toDateString();
+        $date = $request->input('attendance_date')
+            ?? $request->query('attendance_date')
+            ?? now()->toDateString();
 
         RefereeAttendance::query()
             ->whereBelongsTo($event)
@@ -606,6 +605,14 @@ class EventRefereeController extends Controller
             ->whereBelongsTo($referee)
             ->whereDate('attendance_date', $date)
             ->delete();
+
+        $assignments = EventCourtAssignment::query()
+            ->where('staff_type', 'referee')
+            ->where('staff_id', $referee->id)
+            ->get();
+        foreach ($assignments as $asn) {
+            Cache::forget("referee_session_lock:court_{$asn->event_court_id}:role_{$asn->role}");
+        }
 
         $dateLabel = Carbon::parse($date)->translatedFormat('d M Y');
 
