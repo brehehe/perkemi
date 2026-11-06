@@ -220,13 +220,13 @@ class RandoriResultService
             }
 
             $completedSignatures = collect($score->signatures)
-                ->only(RandoriScore::SignatureKeys)
+                ->only(RandoriScore::RequiredSignatureKeys)
                 ->filter(fn (mixed $signature): bool => is_string($signature) && $signature !== '')
                 ->count();
 
-            if ($completedSignatures !== count(RandoriScore::SignatureKeys)) {
+            if ($completedSignatures !== count(RandoriScore::RequiredSignatureKeys)) {
                 throw ValidationException::withMessages([
-                    'result' => 'Enam tanda tangan wajib lengkap sebelum nilai Randori dikunci.',
+                    'result' => 'Empat tanda tangan utama (Wasit Lapangan, Panitera, Manajer Merah, Manajer Putih) wajib lengkap sebelum nilai Randori dikunci.',
                 ]);
             }
 

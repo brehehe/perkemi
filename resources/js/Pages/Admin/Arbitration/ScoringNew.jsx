@@ -61,7 +61,7 @@ function ScoringDialog({ title, onClose, children }) {
     );
 }
 
-function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
+function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange, refereePortalUrl }) {
     const match = session.active_match;
     const participant = match.participant ?? {};
     const [scores, setScores] = useState(() => Object.fromEntries(criteria.map(([key]) => [key, session.score?.aspect_scores?.[key] ?? null])));
@@ -72,8 +72,26 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
     const [savedStatus, setSavedStatus] = useState(session.score?.status ?? 'draft');
     const [error, setError] = useState('');
     const [panel, setPanel] = useState(null);
+    const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
     const revision = useRef(0);
     const requestInFlight = useRef(false);
+
+    useEffect(() => {
+        const handleOnline = () => {
+            setIsOnline(true);
+            setError('');
+        };
+        const handleOffline = () => {
+            setIsOnline(false);
+            setError('Koneksi terputus (offline). Penyimpanan otomatis dijeda sementara.');
+        };
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
     const completed = criteria.filter(([key]) => scores[key] != null).length;
     const subtotal = (group) => group.items.reduce((sum, [key]) => sum + Number(scores[key] ?? 0), 0);
     const total = groups.reduce((sum, group) => sum + subtotal(group), 0);
@@ -91,6 +109,10 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
 
     const save = (status = 'draft') => {
         if (requestInFlight.current) return;
+        if (!isOnline) {
+            setError('Perangkat sedang offline. Nilai akan otomatis disimpan begitu jaringan kembali online.');
+            return;
+        }
         if (status === 'submitted' && completed !== criteria.length) {
             setError('Lengkapi seluruh 10 aspek penilaian terlebih dahulu.');
             return;
@@ -127,9 +149,16 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange }) {
                 return false;
             },
             onHttpException: (response) => {
-                setError(response.status === 409
-                    ? 'Partai tidak lagi aktif. Periksa pertandingan melalui portal wasit.'
-                    : 'Penyimpanan ditolak. Periksa sesi login dan kehadiran melalui portal wasit.');
+                const isInactive = response.status === 409;
+                const msg = isInactive
+                    ? 'Partai tidak lagi aktif atau telah ditutup. Mengalihkan ke portal wasit...'
+                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset). Mengalihkan ke portal wasit...';
+                setError(msg);
+                if (refereePortalUrl) {
+                    window.setTimeout(() => {
+                        router.visit(refereePortalUrl, { replace: true, preserveState: false });
+                    }, 1200);
+                }
                 return false;
             },
             onFinish: () => {
@@ -439,6 +468,12 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
     }, [activeEvent?.id, liveScore, storedScores]);
 
     useEffect(() => {
+        if (refereeSession && (!refereeSession.is_checked_in || refereeSession.is_taken_over) && refereePortalUrl) {
+            router.visit(refereePortalUrl, { replace: true, preserveState: false });
+        }
+    }, [refereeSession?.is_checked_in, refereeSession?.is_taken_over, refereePortalUrl]);
+
+    useEffect(() => {
         if (busy) return undefined;
         const refresh = () => {
             if (document.visibilityState === 'visible') router.reload({ only: ['refereeSession', 'completedCategoryScores', 'embuTies'], preserveScroll: true, preserveState: true });
@@ -489,7 +524,7 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
 
                 {canScore ? (
                     <>
-                        <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} onScoreChange={updateLiveScore} />
+                        <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} onScoreChange={updateLiveScore} refereePortalUrl={refereePortalUrl} />
                         <JudgedAthletesTable scores={judgedScores} />
                     </>
                 ) : (

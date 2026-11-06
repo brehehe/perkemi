@@ -8,14 +8,17 @@ use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
 use App\Models\EmbuScore;
 use App\Models\Event;
+use App\Models\EventMatchCategory;
 use App\Models\Kyu;
 use App\Models\Official;
 use App\Models\RandoriScore;
 use App\Models\Registration;
 use App\Models\Rundown;
+use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\TournamentResult;
 use App\Services\Reports\ScoreReportFormatter;
+use App\Services\TournamentDrawingGenerator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -147,6 +150,156 @@ class PortalController extends Controller
         return $this->render('schedule', $contingent, $event, $eventOptions, [
             'rundowns' => $rundowns,
             'matches' => $matches,
+        ]);
+    }
+
+    public function bracket(Request $request, TournamentDrawingGenerator $generator): Response
+    {
+        [$contingent, $event, $eventOptions] = $this->context($request);
+
+        $contingentEntries = AthleteMatchCategoryEntry::query()
+            ->whereBelongsTo($event)
+            ->whereHas('athlete', fn ($query) => $query->whereBelongsTo($contingent))
+            ->with('athlete:id,name,contingent_id')
+            ->get(['id', 'athlete_id', 'event_id', 'event_match_category_id']);
+
+        $contingentEntryIds = $contingentEntries->pluck('id');
+        $contingentCategoryIds = $contingentEntries->pluck('event_match_category_id')->filter()->unique();
+        $contingentAthleteNames = $contingentEntries->pluck('athlete.name')->filter()->unique()->values();
+
+        $allRandoriCategories = $event->matchCategories()
+            ->where('type', 'randori')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'event_id', 'name', 'type', 'gender', 'preferred_bracket_type', 'capacity', 'min_weight', 'max_weight']);
+
+        $drawings = TournamentDrawing::query()
+            ->whereBelongsTo($event)
+            ->whereIn('event_match_category_id', $allRandoriCategories->pluck('id'))
+            ->get(['id', 'event_match_category_id', 'status', 'bracket_type'])
+            ->keyBy('event_match_category_id');
+
+        $categories = $allRandoriCategories->map(function (EventMatchCategory $cat) use ($contingentCategoryIds, $contingentEntries, $drawings): array {
+            $isEntered = $contingentCategoryIds->contains($cat->id);
+            $myEntries = $contingentEntries->where('event_match_category_id', $cat->id);
+            $drawing = $drawings->get($cat->id);
+            $hasDrawing = $drawing !== null && in_array($drawing->status, ['generated', 'published', 'in_progress', 'completed'], true);
+            $format = $drawing?->bracket_type ?? $cat->preferred_bracket_type ?? 'single_elimination';
+
+            return [
+                'id' => $cat->id,
+                'name' => $cat->name,
+                'format' => $format,
+                'gender' => $cat->gender,
+                'is_entered' => $isEntered,
+                'my_athletes_count' => $myEntries->count(),
+                'my_athlete_names' => $myEntries->pluck('athlete.name')->filter()->values()->all(),
+                'has_drawing' => $hasDrawing,
+                'drawing_status' => $drawing?->status ?? 'not_generated',
+            ];
+        })
+            ->sortBy(function (array $item): array {
+                return [
+                    $item['is_entered'] ? 0 : 1,
+                    $item['has_drawing'] ? 0 : 1,
+                    $item['name'],
+                ];
+            })
+            ->values();
+
+        $requestedCategoryId = $request->string('category')->toString();
+        $selectedCategoryMeta = null;
+
+        if ($requestedCategoryId) {
+            $selectedCategoryMeta = $categories->firstWhere('id', $requestedCategoryId);
+        }
+
+        if (! $selectedCategoryMeta) {
+            $selectedCategoryMeta = $categories->first(fn (array $c): bool => $c['is_entered'] && $c['has_drawing'])
+                ?? $categories->first(fn (array $c): bool => $c['is_entered'])
+                ?? $categories->first(fn (array $c): bool => $c['has_drawing'])
+                ?? $categories->first();
+        }
+
+        $selectedCategory = $selectedCategoryMeta
+            ? $allRandoriCategories->firstWhere('id', $selectedCategoryMeta['id'])
+            : null;
+
+        $matches = collect();
+
+        if ($selectedCategory instanceof EventMatchCategory) {
+            $generator->syncCategoryByes($selectedCategory);
+
+            $selectedDrawing = TournamentDrawing::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $selectedCategory->id)
+                ->with([
+                    'matches' => fn ($query) => $query->orderBy('bracket_position')->orderBy('match_sequence'),
+                    'matches.court:id,name',
+                    'matches.rundown:id,name',
+                    'matches.randoriScore',
+                    'matches.redEntry.athlete.contingent:id,name',
+                    'matches.blueEntry.athlete.contingent:id,name',
+                ])
+                ->first();
+
+            if ($selectedDrawing instanceof TournamentDrawing) {
+                $matches = $selectedDrawing->matches->map(function (TournamentMatch $match): array {
+                    $akaContingent = $match->metadata['red']['contingent_name']
+                        ?? $match->metadata['red']['city']
+                        ?? $match->redEntry?->athlete?->contingent?->name;
+                    $shiroContingent = $match->metadata['blue']['contingent_name']
+                        ?? $match->metadata['blue']['city']
+                        ?? $match->blueEntry?->athlete?->contingent?->name;
+
+                    return [
+                        'id' => $match->id,
+                        'phase' => $match->phase,
+                        'round_label' => $match->round_label,
+                        'pool' => $match->pool,
+                        'sequence' => $match->match_sequence,
+                        'position' => $match->bracket_position,
+                        'red_label' => $match->red_label,
+                        'blue_label' => $match->blue_label,
+                        'aka_label' => $match->red_label,
+                        'shiro_label' => $match->blue_label,
+                        'red_entry_id' => $match->red_entry_id ?? ($match->metadata['red']['entry_id'] ?? null),
+                        'blue_entry_id' => $match->blue_entry_id ?? ($match->metadata['blue']['entry_id'] ?? null),
+                        'aka_contingent' => $akaContingent,
+                        'shiro_contingent' => $shiroContingent,
+                        'red_contingent' => $akaContingent,
+                        'blue_contingent' => $shiroContingent,
+                        'aka_contingent_id' => $match->redEntry?->athlete?->contingent_id ?? ($match->metadata['red']['contingent_id'] ?? null),
+                        'shiro_contingent_id' => $match->blueEntry?->athlete?->contingent_id ?? ($match->metadata['blue']['contingent_id'] ?? null),
+                        'participant_label' => $match->participant_label,
+                        'is_bye' => (bool) $match->is_bye,
+                        'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                        'status' => $match->status,
+                        'court' => $match->court?->name,
+                        'session' => $match->rundown?->name,
+                        'scheduled_start' => $match->scheduled_start_at?->format('Y-m-d H:i'),
+                        'scheduled_start_formatted' => $match->scheduled_start_at?->translatedFormat('d M, H:i'),
+                        'scheduled_end_formatted' => $match->scheduled_end_at?->format('H:i'),
+                        'metadata' => $match->metadata,
+                        'score' => $match->randoriScore ? [
+                            'winner_corner' => $match->randoriScore->winner_corner,
+                            'aka_total' => $match->randoriScore->aka_total,
+                            'shiro_total' => $match->randoriScore->shiro_total,
+                            'is_locked' => $match->randoriScore->locked_at !== null,
+                        ] : null,
+                    ];
+                })->values();
+            }
+        }
+
+        return $this->render('bracket', $contingent, $event, $eventOptions, [
+            'categories' => $categories,
+            'selected_category' => $selectedCategoryMeta,
+            'matches' => $matches,
+            'highlight_contingent_id' => $contingent->id,
+            'highlight_contingent_name' => $contingent->name,
+            'highlight_entry_ids' => $contingentEntryIds->values()->all(),
+            'highlight_athlete_names' => $contingentAthleteNames->all(),
         ]);
     }
 

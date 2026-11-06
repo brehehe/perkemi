@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Arbitration;
 
 use App\Actions\Admin\Tournament\GenerateRefereeCourtPanelsAction;
+use App\Actions\Admin\Tournament\SwapOrMoveRefereeAction;
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
@@ -16,11 +17,11 @@ use App\Models\RefereeCourtAttendance;
 use App\Models\TournamentMatch;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\Referee\RefereeCheckInCodeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -28,8 +29,12 @@ use Inertia\Response;
 
 class CourtCoordinatorController extends Controller
 {
-    public function index(Request $request, EventContext $eventContext, PaniteraCourtAccess $courtAccess): Response
-    {
+    public function index(
+        Request $request,
+        EventContext $eventContext,
+        PaniteraCourtAccess $courtAccess,
+        RefereeCheckInCodeService $refereeCodeService,
+    ): Response {
         $event = $eventContext->eventFor($request);
         $user = $request->user();
 
@@ -185,27 +190,24 @@ class CourtCoordinatorController extends Controller
             ];
 
             $expiresAt = now()->addDays(7);
-            $courtCheckInUrl = URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
-                'event' => $event,
-                'eventCourt' => $selectedCourt,
-            ]);
+            $courtCheckInData = $refereeCodeService->issueCourtCheckIn($event, $selectedCourt, null, $expiresAt);
+            $courtCheckInUrl = $courtCheckInData['url'];
+            $courtCheckInCode = $courtCheckInData['code'];
 
             $panelData = collect($activeRoleOrder)->map(function (string $roleLabel, string $roleKey) use (
-                $refereeAssignments, $courtReferees, $courtAttendances, $courtHistoryCounts, $totalHistoryCounts, $event, $selectedCourt, $expiresAt
+                $refereeAssignments, $courtReferees, $courtAttendances, $courtHistoryCounts, $totalHistoryCounts, $event, $selectedCourt, $expiresAt, $refereeCodeService
             ): array {
                 $assignment = $refereeAssignments->firstWhere('role', $roleKey);
                 $ref = $assignment ? $courtReferees->get($assignment->staff_id) : null;
                 $att = $assignment ? $courtAttendances->get($assignment->staff_id) : null;
+                $roleCheckInData = $refereeCodeService->issueCourtCheckIn($event, $selectedCourt, $roleKey, $expiresAt);
 
                 return [
                     'id' => $assignment?->id,
                     'role' => $roleKey,
                     'role_label' => $roleLabel,
-                    'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
-                        'event' => $event,
-                        'eventCourt' => $selectedCourt,
-                        'role' => $roleKey,
-                    ]),
+                    'check_in_url' => $roleCheckInData['url'],
+                    'check_in_code' => $roleCheckInData['code'],
                     'referee' => $ref ? [
                         'id' => $ref->id,
                         'name' => $ref->name,
@@ -225,20 +227,18 @@ class CourtCoordinatorController extends Controller
             $reservesData = $refereeAssignments
                 ->where('role', 'reserve')
                 ->map(function (EventCourtAssignment $assignment) use (
-                    $courtReferees, $courtAttendances, $courtHistoryCounts, $totalHistoryCounts, $event, $selectedCourt, $expiresAt
+                    $courtReferees, $courtAttendances, $courtHistoryCounts, $totalHistoryCounts, $event, $selectedCourt, $expiresAt, $refereeCodeService
                 ): array {
                     $ref = $courtReferees->get($assignment->staff_id);
                     $att = $courtAttendances->get($assignment->staff_id);
+                    $reserveCheckInData = $refereeCodeService->issueCourtCheckIn($event, $selectedCourt, 'reserve', $expiresAt);
 
                     return [
                         'id' => $assignment->id,
                         'role' => 'reserve',
                         'role_label' => 'Wasit Cadangan',
-                        'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
-                            'event' => $event,
-                            'eventCourt' => $selectedCourt,
-                            'role' => 'reserve',
-                        ]),
+                        'check_in_url' => $reserveCheckInData['url'],
+                        'check_in_code' => $reserveCheckInData['code'],
                         'referee' => $ref ? [
                             'id' => $ref->id,
                             'name' => $ref->name,
@@ -339,6 +339,7 @@ class CourtCoordinatorController extends Controller
                 'location' => $selectedCourt->location,
                 'access_code' => $selectedCourt->access_code,
                 'check_in_url' => $courtCheckInUrl ?? null,
+                'check_in_code' => $courtCheckInCode ?? null,
                 'has_panel' => collect($panelData)->some(fn ($p) => $p['referee'] !== null),
                 'panel_ready' => collect($panelData)->every(fn ($p) => $p['referee'] !== null && $p['is_checked_in']),
                 'coordinator' => $selectedCourt->assignments
@@ -512,6 +513,7 @@ class CourtCoordinatorController extends Controller
         Request $request,
         EventCourt $eventCourt,
         EventContext $eventContext,
+        SwapOrMoveRefereeAction $swapAction,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
         $this->ensureCanOperateCourt($request, $event, $eventCourt);
@@ -519,7 +521,7 @@ class CourtCoordinatorController extends Controller
         $validated = $request->validate([
             'source_referee_id' => ['required', 'uuid', 'exists:referees,id'],
             'target_referee_id' => ['nullable', 'uuid', 'exists:referees,id', 'different:source_referee_id'],
-            'target_role' => ['nullable', 'string', 'in:chief,regional_1,regional_2,assistant_1,assistant_2,reserve'],
+            'target_role' => ['nullable', 'string', 'in:chief,regional_1,regional_2,assistant_1,assistant_2,assistant_3,assistant_4,reserve'],
         ]);
 
         if (empty($validated['target_referee_id']) && empty($validated['target_role'])) {
@@ -528,271 +530,19 @@ class CourtCoordinatorController extends Controller
             ]);
         }
 
-        $message = DB::transaction(function () use ($event, $eventCourt, $validated, $request): string {
-            $sourceAssignment = EventCourtAssignment::query()
-                ->where('event_court_id', $eventCourt->id)
-                ->where('staff_type', 'referee')
-                ->where('staff_id', $validated['source_referee_id'])
-                ->lockForUpdate()
-                ->first();
+        $sourceReferee = Referee::query()->findOrFail($validated['source_referee_id']);
+        $targetReferee = ! empty($validated['target_referee_id'])
+            ? Referee::query()->findOrFail($validated['target_referee_id'])
+            : null;
 
-            if (! $sourceAssignment) {
-                throw ValidationException::withMessages([
-                    'swap' => 'Wasit asal tidak terdaftar dalam penugasan court ini.',
-                ]);
-            }
-
-            $sourceReferee = Referee::query()->find($sourceAssignment->staff_id);
-            if (! $sourceReferee || ! $sourceReferee->is_active) {
-                throw ValidationException::withMessages([
-                    'swap' => "Wasit {$sourceReferee?->name} berstatus tidak aktif sehingga tidak dapat ditugaskan di arena (SOP Wasit 3.1).",
-                ]);
-            }
-
-            $targetReferee = null;
-            $batchId = (string) Str::uuid();
-            $occurredAt = now();
-
-            $targetAssignment = null;
-            if (! empty($validated['target_referee_id'])) {
-                $targetAssignment = EventCourtAssignment::query()
-                    ->where('event_court_id', $eventCourt->id)
-                    ->where('staff_type', 'referee')
-                    ->where('staff_id', $validated['target_referee_id'])
-                    ->lockForUpdate()
-                    ->first();
-
-                if (! $targetAssignment) {
-                    throw ValidationException::withMessages([
-                        'swap' => 'Wasit tujuan tidak terdaftar dalam penugasan court ini.',
-                    ]);
-                }
-
-                $targetReferee = Referee::query()->find($targetAssignment->staff_id);
-                if (! $targetReferee || ! $targetReferee->is_active) {
-                    throw ValidationException::withMessages([
-                        'swap' => "Wasit {$targetReferee?->name} berstatus tidak aktif sehingga tidak dapat ditugaskan di arena (SOP Wasit 3.1).",
-                    ]);
-                }
-            } elseif (! empty($validated['target_role'])) {
-                $targetAssignment = EventCourtAssignment::query()
-                    ->where('event_court_id', $eventCourt->id)
-                    ->where('staff_type', 'referee')
-                    ->where('role', $validated['target_role'])
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($targetAssignment) {
-                    $targetReferee = Referee::query()->find($targetAssignment->staff_id);
-                    if ($targetReferee && ! $targetReferee->is_active) {
-                        throw ValidationException::withMessages([
-                            'swap' => "Wasit {$targetReferee->name} berstatus tidak aktif sehingga tidak dapat ditugaskan di arena (SOP Wasit 3.1).",
-                        ]);
-                    }
-                }
-            }
-
-            // Validasi Kehadiran Hari Ini (SOP Wasit 3.1) bila pencatatan kehadiran tercatat pada event ini
-            $hasAttendanceTracking = RefereeAttendance::query()
-                ->whereBelongsTo($event)
-                ->whereDate('attendance_date', now()->toDateString())
-                ->exists();
-
-            if ($hasAttendanceTracking) {
-                $sourcePresent = RefereeAttendance::query()
-                    ->whereBelongsTo($event)
-                    ->whereDate('attendance_date', now()->toDateString())
-                    ->where('referee_id', $sourceReferee->id)
-                    ->where('is_present', true)
-                    ->exists();
-
-                if (! $sourcePresent) {
-                    throw ValidationException::withMessages([
-                        'swap' => "Wasit {$sourceReferee->name} belum terverifikasi hadir hari ini pada absensi SOP Wasit (3.1).",
-                    ]);
-                }
-
-                if ($targetReferee) {
-                    $targetPresent = RefereeAttendance::query()
-                        ->whereBelongsTo($event)
-                        ->whereDate('attendance_date', now()->toDateString())
-                        ->where('referee_id', $targetReferee->id)
-                        ->where('is_present', true)
-                        ->exists();
-
-                    if (! $targetPresent) {
-                        throw ValidationException::withMessages([
-                            'swap' => "Wasit {$targetReferee->name} belum terverifikasi hadir hari ini pada absensi SOP Wasit (3.1).",
-                        ]);
-                    }
-                }
-            }
-
-            // Simulasi seluruh penugasan court ini pasca pertukaran
-            $allCourtAssignments = EventCourtAssignment::query()
-                ->where('event_court_id', $eventCourt->id)
-                ->where('staff_type', 'referee')
-                ->lockForUpdate()
-                ->get();
-
-            $simulatedRoles = [];
-            foreach ($allCourtAssignments as $asn) {
-                $simulatedRoles[$asn->staff_id] = $asn->role;
-            }
-
-            if ($targetAssignment && $targetAssignment->id !== $sourceAssignment->id) {
-                $simulatedRoles[$sourceAssignment->staff_id] = $targetAssignment->role;
-                $simulatedRoles[$targetAssignment->staff_id] = $sourceAssignment->role;
-            } else {
-                $newRole = $validated['target_role'] ?? $sourceAssignment->role;
-                $simulatedRoles[$sourceAssignment->staff_id] = $newRole;
-            }
-
-            $refereeModels = Referee::query()
-                ->whereIn('id', array_keys($simulatedRoles))
-                ->get()
-                ->keyBy('id');
-
-            // 1. VALIDASI KUALIFIKASI WASIT UTAMA (W1) [SOP Wasit 3.3]
-            $chiefId = null;
-            foreach ($simulatedRoles as $refId => $role) {
-                if ($role === RefereeCourtRole::Chief->value) {
-                    $chiefId = $refId;
-                    break;
-                }
-            }
-
-            if ($chiefId && $refereeModels->has($chiefId)) {
-                $newChief = $refereeModels->get($chiefId);
-                $isQualified = GenerateRefereeCourtPanelsAction::isChiefQualified($newChief);
-
-                if (! $isQualified) {
-                    throw ValidationException::withMessages([
-                        'swap' => "Pertukaran ditolak: Wasit {$newChief->name} ({$newChief->dan_grade}) berstatus III DAN sehingga belum memenuhi kualifikasi Wasit Utama (minimal IV DAN atau Wasit Nasional). Ketentuan Wasit Utama wajib minimal IV DAN ke atas.",
-                    ]);
-                }
-            }
-
-            // 2. VALIDASI ANTI-BIAS ASAL DAERAH: MAKSIMAL 2 WASIT DARI KOTA YANG SAMA DI TATAMI [SOP Wasit 3.2 & 3.3]
-            $tatamiRoles = [
-                RefereeCourtRole::Chief->value,
-                RefereeCourtRole::RegionalOne->value,
-                RefereeCourtRole::RegionalTwo->value,
-                RefereeCourtRole::AssistantOne->value,
-                RefereeCourtRole::AssistantTwo->value,
-            ];
-
-            $tatamiReferees = collect();
-            foreach ($simulatedRoles as $refId => $role) {
-                if (in_array($role, $tatamiRoles, true) && $refereeModels->has($refId)) {
-                    $tatamiReferees->push($refereeModels->get($refId));
-                }
-            }
-
-            $cityCounts = [];
-            foreach ($tatamiReferees as $tatamiRef) {
-                $city = GenerateRefereeCourtPanelsAction::normalizeCity($tatamiRef->region);
-                $cityCounts[$city] = ($cityCounts[$city] ?? 0) + 1;
-            }
-
-            foreach ($cityCounts as $city => $count) {
-                if ($count > 2) {
-                    throw ValidationException::withMessages([
-                        'swap' => "Pertukaran ditolak: Dalam satu susunan 5 wasit tatami, maksimal hanya boleh 2 wasit dari daerah yang sama ({$city}: {$count} orang) sesuai ketentuan anti-bias SOP Wasit (3.3).",
-                    ]);
-                }
-            }
-
-            // 3. VALIDASI BENTURAN KEPENTINGAN DENGAN ATLET BERTANDING [SOP Wasit 3.3 & 4]
-            $activeMatch = TournamentMatch::query()
-                ->where('event_court_id', $eventCourt->id)
-                ->whereIn('status', ['in_progress', 'ongoing', 'calling'])
-                ->with(['redEntry.athlete.contingent', 'blueEntry.athlete.contingent', 'participantEntry.athlete.contingent'])
-                ->first();
-
-            if ($activeMatch) {
-                $competingRegions = collect([
-                    $activeMatch->redEntry?->athlete?->contingent?->name,
-                    $activeMatch->blueEntry?->athlete?->contingent?->name,
-                    $activeMatch->participantEntry?->athlete?->contingent?->name,
-                ])->filter()->map(fn ($c) => GenerateRefereeCourtPanelsAction::normalizeCity($c))->unique();
-
-                foreach ($tatamiReferees as $tatamiRef) {
-                    $refCity = GenerateRefereeCourtPanelsAction::normalizeCity($tatamiRef->region);
-                    if ($competingRegions->contains($refCity)) {
-                        throw ValidationException::withMessages([
-                            'swap' => "Pertukaran ditolak karena benturan kepentingan: Wasit {$tatamiRef->name} berasal dari daerah yang sama ({$tatamiRef->region}) dengan atlet/kontingen yang sedang bertanding di arena saat ini (SOP Wasit 3.3 & 4).",
-                        ]);
-                    }
-                }
-            }
-
-            // Eksekusi mutasi role di database
-            $affectedRefereeIds = [$sourceAssignment->staff_id];
-
-            if ($targetAssignment && $targetAssignment->id !== $sourceAssignment->id) {
-                $sourceRole = $sourceAssignment->role;
-                $targetRole = $targetAssignment->role;
-
-                $sourceAssignment->update(['role' => $targetRole]);
-                $targetAssignment->update(['role' => $sourceRole]);
-
-                $affectedRefereeIds[] = $targetAssignment->staff_id;
-
-                RefereeCourtAssignmentHistory::query()->create([
-                    'event_id' => $event->id,
-                    'event_court_id' => $eventCourt->id,
-                    'referee_id' => $sourceAssignment->staff_id,
-                    'changed_by_user_id' => $request->user()?->id,
-                    'batch_id' => $batchId,
-                    'action' => RefereeCourtAssignmentHistory::ActionAssigned,
-                    'role' => $targetRole,
-                    'occurred_at' => $occurredAt,
-                ]);
-
-                RefereeCourtAssignmentHistory::query()->create([
-                    'event_id' => $event->id,
-                    'event_court_id' => $eventCourt->id,
-                    'referee_id' => $targetAssignment->staff_id,
-                    'changed_by_user_id' => $request->user()?->id,
-                    'batch_id' => $batchId,
-                    'action' => RefereeCourtAssignmentHistory::ActionAssigned,
-                    'role' => $sourceRole,
-                    'occurred_at' => $occurredAt,
-                ]);
-            } else {
-                $newRole = $validated['target_role'] ?? $sourceAssignment->role;
-                $sourceAssignment->update(['role' => $newRole]);
-
-                RefereeCourtAssignmentHistory::query()->create([
-                    'event_id' => $event->id,
-                    'event_court_id' => $eventCourt->id,
-                    'referee_id' => $sourceAssignment->staff_id,
-                    'changed_by_user_id' => $request->user()?->id,
-                    'batch_id' => $batchId,
-                    'action' => RefereeCourtAssignmentHistory::ActionAssigned,
-                    'role' => $newRole,
-                    'occurred_at' => $occurredAt,
-                ]);
-            }
-
-            // Reset check-in QR code hari ini untuk wasit yang bertukar posisi agar wajib scan ulang di posisi barunya (SOP Wasit 3.4)
-            RefereeCourtAttendance::query()
-                ->whereBelongsTo($event)
-                ->where('event_court_id', $eventCourt->id)
-                ->whereDate('attendance_date', now()->toDateString())
-                ->whereIn('referee_id', $affectedRefereeIds)
-                ->delete();
-
-            $sourceName = $sourceReferee?->name ?? 'Wasit';
-            $targetName = $targetReferee?->name;
-
-            if ($targetName) {
-                return "Posisi {$sourceName} dan {$targetName} berhasil ditukar sesuai ketentuan SOP Wasit (3.3). Wasit yang berpindah posisi wajib memindai ulang QR code posisi barunya sebelum menilai pertandingan.";
-            }
-
-            return "Posisi {$sourceName} berhasil dipindahkan sesuai ketentuan SOP Wasit (3.3). Wasit wajib memindai ulang QR code posisi barunya sebelum menilai pertandingan.";
-        });
+        $message = $swapAction->execute(
+            event: $event,
+            sourceReferee: $sourceReferee,
+            targetReferee: $targetReferee,
+            targetCourt: $eventCourt,
+            targetRole: $validated['target_role'] ?? null,
+            changedByUserId: $request->user()?->id,
+        );
 
         return back()->with('success', $message);
     }

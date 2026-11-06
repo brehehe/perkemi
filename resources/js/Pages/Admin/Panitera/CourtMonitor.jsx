@@ -98,6 +98,12 @@ function ParticipantDisplay({ match }) {
                 <p className="mt-4 text-2xl font-black leading-tight text-white md:text-4xl drop-shadow-sm" style={{ color: '#ffffff' }}>
                     {match.aka_label || 'Menunggu peserta'}
                 </p>
+                {(match.aka_contingent || match.red_contingent) && (
+                    <p className="mt-2 text-sm md:text-base font-bold text-amber-200 flex items-center gap-1.5 drop-shadow-sm">
+                        <i className="fa-solid fa-shield-halved text-xs text-amber-300" aria-hidden="true" />
+                        {match.aka_contingent || match.red_contingent}
+                    </p>
+                )}
             </div>
 
             {/* VS DIVIDER */}
@@ -123,6 +129,12 @@ function ParticipantDisplay({ match }) {
                     </span>
                 </div>
                 <p className="mt-4 text-2xl font-black leading-tight text-slate-950 dark:text-white md:text-4xl">{match.shiro_label || 'Menunggu peserta'}</p>
+                {(match.shiro_contingent || match.blue_contingent) && (
+                    <p className="mt-2 text-sm md:text-base font-bold text-slate-600 dark:text-slate-300 flex items-center justify-end gap-1.5">
+                        <i className="fa-solid fa-shield-halved text-xs text-amber-500" aria-hidden="true" />
+                        {match.shiro_contingent || match.blue_contingent}
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -579,7 +591,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                             ) : (
                                 <div className="grid gap-6 items-start lg:grid-cols-12">
                                     {/* SISI KIRI: VAR STREAM (var.smart-perkemi.id) */}
-                                    <section className="flex flex-col rounded-3xl border border-white/10 bg-[#151210] p-5 shadow-2xl lg:col-span-7">
+                                    <section className="flex flex-col rounded-3xl border border-white/10 bg-[#151210] p-5 shadow-2xl lg:col-span-6">
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                                             <div className="flex items-center gap-3">
                                                 <span className="relative flex h-3 w-3">
@@ -607,7 +619,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     type="button"
                                                     onClick={() => setVarKey((k) => k + 1)}
                                                     title="Muat ulang tayangan VAR"
-                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10"
+                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
                                                 >
                                                     <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
                                                     Reload
@@ -616,7 +628,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     type="button"
                                                     onClick={handleFullscreenVar}
                                                     title="Tampilkan VAR Layar Penuh"
-                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10"
+                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
                                                 >
                                                     <i className="fa-solid fa-expand" aria-hidden="true" />
                                                     Layar Penuh
@@ -625,7 +637,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     type="button"
                                                     onClick={() => setShowVarConfig((prev) => !prev)}
                                                     title="Ubah URL Stream VAR (Lokal / IP Camera)"
-                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-xs text-white/70 hover:bg-white/10"
+                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-xs text-white/70 hover:bg-white/10 transition-colors"
                                                 >
                                                     <i className="fa-solid fa-gear" aria-hidden="true" />
                                                 </button>
@@ -716,7 +728,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                     </section>
 
                                     {/* SISI KANAN: TIMER RANDORI & CORNERS SCOREBOARD */}
-                                    <section className="flex flex-col gap-5 lg:col-span-5">
+                                    <section className="flex flex-col gap-5 lg:col-span-6">
                                         {/* Match Info & Big Timer Card */}
                                         <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 text-center shadow-xl">
                                             <div className="flex items-center justify-center gap-2">
@@ -761,105 +773,131 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             {/* SUDUT AKA (MERAH) */}
                                             <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white ${activeMatch.result?.winner_corner === 'aka'
+                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white flex flex-col justify-between ${activeMatch.result?.winner_corner === 'aka'
                                                     ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
                                                     : 'border-red-700 bg-red-600 dark:bg-red-700'
                                                     }`}
                                                 style={{ backgroundColor: '#dc2626', borderColor: activeMatch.result?.winner_corner === 'aka' ? '#fbbf24' : '#b91c1c' }}
                                             >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span
-                                                        className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm"
-                                                        style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                    >
-                                                        AKA · MERAH
-                                                    </span>
-                                                    {activeMatch.result?.winner_corner === 'aka' && (
-                                                        <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                                            <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
+                                                <div>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span
+                                                            className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm"
+                                                            style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                                        >
+                                                            AKA · MERAH
                                                         </span>
-                                                    )}
-                                                </div>
-                                                <p
-                                                    className="mt-4 text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3.5rem]"
-                                                    style={{ color: '#ffffff' }}
-                                                >
-                                                    {activeMatch.aka_label || 'Sudut Merah'}
-                                                </p>
-                                                <div className="mt-4 text-center border-t border-white/20 pt-4">
-                                                    <p
-                                                        className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-white drop-shadow-md"
-                                                        style={{ color: '#ffffff' }}
-                                                    >
-                                                        {activeMatch.result?.aka_total ?? 0}
-                                                    </p>
-                                                    <p
-                                                        className="mt-1 text-xs font-black uppercase tracking-widest text-white/90"
-                                                        style={{ color: 'rgba(255, 255, 255, 0.95)' }}
-                                                    >
-                                                        TOTAL POIN
-                                                    </p>
-                                                </div>
-                                                {(Boolean(activeMatch.aka_breakdown?.waza_ari) || Boolean(activeMatch.aka_breakdown?.yuko)) && (
-                                                    <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
-                                                        {Boolean(activeMatch.aka_breakdown?.waza_ari) && (
-                                                            <span
-                                                                className="rounded-lg px-2.5 py-0.5 border"
-                                                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                            >
-                                                                Waza-ari: {activeMatch.aka_breakdown.waza_ari}
-                                                            </span>
-                                                        )}
-                                                        {Boolean(activeMatch.aka_breakdown?.yuko) && (
-                                                            <span
-                                                                className="rounded-lg px-2.5 py-0.5 border"
-                                                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                            >
-                                                                Yuko: {activeMatch.aka_breakdown.yuko}
+                                                        {activeMatch.result?.winner_corner === 'aka' && (
+                                                            <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
+                                                                <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
                                                             </span>
                                                         )}
                                                     </div>
-                                                )}
+                                                    <div className="mt-3.5">
+                                                        <p
+                                                            className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
+                                                            style={{ color: '#ffffff' }}
+                                                        >
+                                                            {activeMatch.aka_label || 'Sudut Merah'}
+                                                        </p>
+                                                        <div className="mt-2 flex items-center">
+                                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/40 border border-white/20 px-2.5 py-1 text-xs font-bold text-amber-200 shadow-xs">
+                                                                <i className="fa-solid fa-shield-halved text-[11px] text-amber-300" aria-hidden="true" />
+                                                                <span className="truncate max-w-[200px]">{activeMatch.aka_contingent || activeMatch.red_contingent || 'Kontingen belum dicatat'}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <div className="mt-4 text-center border-t border-white/20 pt-4">
+                                                        <p
+                                                            className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-white drop-shadow-md"
+                                                            style={{ color: '#ffffff' }}
+                                                        >
+                                                            {activeMatch.result?.aka_total ?? 0}
+                                                        </p>
+                                                        <p
+                                                            className="mt-1 text-xs font-black uppercase tracking-widest text-white/90"
+                                                            style={{ color: 'rgba(255, 255, 255, 0.95)' }}
+                                                        >
+                                                            TOTAL POIN
+                                                        </p>
+                                                    </div>
+                                                    {(Boolean(activeMatch.aka_breakdown?.waza_ari) || Boolean(activeMatch.aka_breakdown?.yuko)) && (
+                                                        <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
+                                                            {Boolean(activeMatch.aka_breakdown?.waza_ari) && (
+                                                                <span
+                                                                    className="rounded-lg px-2.5 py-0.5 border"
+                                                                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                                                >
+                                                                    Waza-ari: {activeMatch.aka_breakdown.waza_ari}
+                                                                </span>
+                                                            )}
+                                                            {Boolean(activeMatch.aka_breakdown?.yuko) && (
+                                                                <span
+                                                                    className="rounded-lg px-2.5 py-0.5 border"
+                                                                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                                                >
+                                                                    Yuko: {activeMatch.aka_breakdown.yuko}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* SUDUT SHIRO (PUTIH) */}
                                             <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro ${activeMatch.result?.winner_corner === 'shiro'
+                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro flex flex-col justify-between ${activeMatch.result?.winner_corner === 'shiro'
                                                     ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
                                                     : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
                                                     }`}
                                             >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
-                                                        SHIRO · PUTIH
-                                                    </span>
-                                                    {activeMatch.result?.winner_corner === 'shiro' && (
-                                                        <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                                            <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
+                                                <div>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
+                                                            SHIRO · PUTIH
                                                         </span>
-                                                    )}
-                                                </div>
-                                                <p className="mt-4 text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3.5rem]">
-                                                    {activeMatch.shiro_label || 'Sudut Putih'}
-                                                </p>
-                                                <div className="mt-4 text-center border-t border-slate-200 dark:border-white/10 pt-4">
-                                                    <p className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-slate-950 dark:text-white">
-                                                        {activeMatch.result?.shiro_total ?? 0}
-                                                    </p>
-                                                    <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                                        TOTAL POIN
-                                                    </p>
-                                                </div>
-                                                {(Boolean(activeMatch.shiro_breakdown?.waza_ari) || Boolean(activeMatch.shiro_breakdown?.yuko)) && (
-                                                    <div className="mt-4 flex items-center justify-center gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                        {Boolean(activeMatch.shiro_breakdown?.waza_ari) && (
-                                                            <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Waza-ari: {activeMatch.shiro_breakdown.waza_ari}</span>
-                                                        )}
-                                                        {Boolean(activeMatch.shiro_breakdown?.yuko) && (
-                                                            <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yuko: {activeMatch.shiro_breakdown.yuko}</span>
+                                                        {activeMatch.result?.winner_corner === 'shiro' && (
+                                                            <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
+                                                                <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
+                                                            </span>
                                                         )}
                                                     </div>
-                                                )}
+                                                    <div className="mt-3.5">
+                                                        <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
+                                                            {activeMatch.shiro_label || 'Sudut Putih'}
+                                                        </p>
+                                                        <div className="mt-2 flex items-center">
+                                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
+                                                                <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                                                                <span className="truncate max-w-[200px]">{activeMatch.shiro_contingent || activeMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <div className="mt-4 text-center border-t border-slate-200 dark:border-white/10 pt-4">
+                                                        <p className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-slate-950 dark:text-white">
+                                                            {activeMatch.result?.shiro_total ?? 0}
+                                                        </p>
+                                                        <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                                                            TOTAL POIN
+                                                        </p>
+                                                    </div>
+                                                    {(Boolean(activeMatch.shiro_breakdown?.waza_ari) || Boolean(activeMatch.shiro_breakdown?.yuko)) && (
+                                                        <div className="mt-4 flex items-center justify-center gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                            {Boolean(activeMatch.shiro_breakdown?.waza_ari) && (
+                                                                <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Waza-ari: {activeMatch.shiro_breakdown.waza_ari}</span>
+                                                            )}
+                                                            {Boolean(activeMatch.shiro_breakdown?.yuko) && (
+                                                                <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yuko: {activeMatch.shiro_breakdown.yuko}</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </section>

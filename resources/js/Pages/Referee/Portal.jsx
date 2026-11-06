@@ -122,40 +122,51 @@ function validateScannedQr(scannedValue, target) {
 function QrScannerModal({ target, onClose }) {
     const videoRef = useRef(null);
     const [scannerState, setScannerState] = useState({ type: 'loading', message: 'Menyiapkan kamera belakang…' });
+    const [activeTab, setActiveTab] = useState('camera'); // 'camera' | 'code'
+    const [inputCode, setInputCode] = useState('');
+    const [codeLoading, setCodeLoading] = useState(false);
+    const [codeError, setCodeError] = useState('');
     const [manualOpen, setManualOpen] = useState(false);
     const [manualUrl, setManualUrl] = useState('');
 
     useEffect(() => {
-        if (!target) return undefined;
+        if (!target) return;
+
+        setScannerState({ type: 'loading', message: 'Menyiapkan kamera belakang…' });
+        setActiveTab('camera');
+        setInputCode('');
+        setCodeError('');
+        setManualOpen(false);
+        setManualUrl('');
+    }, [target]);
+
+    useEffect(() => {
+        if (!target || activeTab !== 'camera') return undefined;
 
         let active = true;
         let scanTimer;
         let stream;
 
-        setScannerState({ type: 'loading', message: 'Menyiapkan kamera belakang…' });
-        setManualOpen(false);
-        setManualUrl('');
-
         const startScanner = async () => {
             if (!window.isSecureContext) {
-                setScannerState({ type: 'error', message: 'Kamera hanya dapat dibuka melalui HTTPS. Gunakan alamat https://.' });
+                setScannerState({ type: 'error', message: 'Kamera hanya dapat dibuka melalui HTTPS. Masukkan 6 digit kode check-in di tab sebelah.' });
                 return;
             }
 
             if (!navigator.mediaDevices?.getUserMedia) {
-                setScannerState({ type: 'error', message: 'Browser ini tidak menyediakan akses kamera. Gunakan kamera bawaan ponsel untuk memindai QR.' });
+                setScannerState({ type: 'error', message: 'Browser tidak menyediakan akses kamera. Gunakan tab Kode 6-Digit di atas.' });
                 return;
             }
 
             if (!('BarcodeDetector' in window)) {
-                setScannerState({ type: 'error', message: 'Pemindai QR belum didukung browser ini. Gunakan Chrome terbaru atau tempel tautan manual di bawah.' });
+                setScannerState({ type: 'error', message: 'Browser belum mendukung BarcodeDetector. Gunakan tab Kode 6-Digit di atas.' });
                 return;
             }
 
             try {
                 const supportedFormats = await window.BarcodeDetector.getSupportedFormats?.();
                 if (supportedFormats && !supportedFormats.includes('qr_code')) {
-                    setScannerState({ type: 'error', message: 'Browser ini belum mendukung pembacaan QR. Gunakan tautan manual atau kamera bawaan ponsel.' });
+                    setScannerState({ type: 'error', message: 'Browser belum mendukung QR. Gunakan tab Kode 6-Digit di atas.' });
                     return;
                 }
 
@@ -197,7 +208,7 @@ function QrScannerModal({ target, onClose }) {
                             }
                         }
                     } catch {
-                        if (active) setScannerState({ type: 'error', message: 'QR belum terbaca. Pastikan gambar terang dan berada di dalam bingkai.' });
+                        if (active) setScannerState({ type: 'error', message: 'QR belum terbaca. Posisikan gambar di dalam bingkai.' });
                     }
 
                     scanTimer = window.setTimeout(scanFrame, 250);
@@ -211,8 +222,8 @@ function QrScannerModal({ target, onClose }) {
                 setScannerState({
                     type: 'error',
                     message: permissionDenied
-                        ? 'Izin kamera ditolak. Izinkan kamera pada pengaturan browser atau tempel tautan QR di bawah.'
-                        : 'Kamera tidak dapat dibuka. Pastikan kamera tidak sedang digunakan aplikasi lain.',
+                        ? 'Izin kamera ditolak. Gunakan tab Masukkan Kode 6-Digit di atas.'
+                        : 'Kamera tidak dapat dibuka. Gunakan tab Masukkan Kode 6-Digit di atas.',
                 });
             }
         };
@@ -225,7 +236,44 @@ function QrScannerModal({ target, onClose }) {
             stream?.getTracks().forEach((track) => track.stop());
             if (videoRef.current) videoRef.current.srcObject = null;
         };
-    }, [target]);
+    }, [target, activeTab]);
+
+    const handleCodeSubmit = async (e) => {
+        e?.preventDefault();
+        const cleanCode = inputCode.trim();
+        if (cleanCode.length !== 6) {
+            setCodeError('Masukkan 6 digit kode angka (contoh: 651234).');
+            return;
+        }
+
+        setCodeLoading(true);
+        setCodeError('');
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const response = await fetch('/wasit/code', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ code: cleanCode }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.target_url) {
+                window.location.assign(data.target_url);
+            } else {
+                setCodeError(data.message || 'Kode 6 digit tidak valid atau sudah kadaluarsa.');
+            }
+        } catch {
+            setCodeError('Gagal memverifikasi kode. Periksa koneksi internet Anda.');
+        } finally {
+            setCodeLoading(false);
+        }
+    };
 
     const handleManualSubmit = (e) => {
         e.preventDefault();
@@ -246,55 +294,149 @@ function QrScannerModal({ target, onClose }) {
             isOpen={Boolean(target)}
             onClose={onClose}
             title={target?.title || 'Scan QR Kehadiran'}
-            subtitle={target?.subtitle || 'Izinkan akses kamera saat browser meminta konfirmasi.'}
+            subtitle={target?.subtitle || 'Gunakan kamera atau masukkan kode 6-digit dari Panitera.'}
             size="md"
             footer={<Button variant="outline" onClick={onClose}>Tutup</Button>}
         >
             <div className="space-y-4">
+                {/* Switcher Tab: Kamera vs Kode 6-Digit */}
+                <div className="flex items-center rounded-xl border border-[#e5ded4] bg-[#f5f1eb] p-1 text-xs font-bold">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('camera')}
+                        className={`flex-1 rounded-lg py-2 transition-all ${
+                            activeTab === 'camera'
+                                ? 'bg-white text-[#17120f] shadow-xs'
+                                : 'text-[#655d56] hover:text-[#17120f]'
+                        }`}
+                    >
+                        <i className="fa-solid fa-camera mr-1.5" /> Scan Kamera
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('code')}
+                        className={`flex-1 rounded-lg py-2 transition-all ${
+                            activeTab === 'code'
+                                ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                : 'text-[#655d56] hover:text-[#17120f]'
+                        }`}
+                    >
+                        <i className="fa-solid fa-keyboard mr-1.5" /> Masukkan Kode 6-Digit
+                    </button>
+                </div>
+
                 {target?.roleLabel && (
                     <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs leading-5 text-amber-900">
                         <i className="fa-solid fa-user-shield mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
                         <div>
                             <span>Posisi penugasan Anda: <strong className="font-bold text-amber-950">{target.roleLabel}</strong> ({target.courtName}).</span>
-                            <p className="mt-0.5 text-[11px] text-amber-800">Pastikan Panitera menampilkan QR khusus untuk <strong>{target.roleLabel}</strong>.</p>
+                            <p className="mt-0.5 text-[11px] text-amber-800">Pastikan scan atau masukkan kode khusus untuk <strong>{target.roleLabel}</strong>.</p>
                         </div>
                     </div>
                 )}
-                <div className="relative aspect-square overflow-hidden rounded-2xl bg-[#0f0d0b]">
-                    <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
-                    <div className="pointer-events-none absolute inset-[12%] rounded-2xl border-2 border-[#f0c060] shadow-[0_0_0_999px_rgba(0,0,0,.38)]" />
-                    <span className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white">Posisikan QR di tengah</span>
-                </div>
-                <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${scannerState.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : scannerState.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-                    <i className={`fa-solid mr-2 ${scannerState.type === 'loading' ? 'fa-circle-notch animate-spin' : scannerState.type === 'success' ? 'fa-circle-check' : scannerState.type === 'error' ? 'fa-triangle-exclamation' : 'fa-camera'}`} aria-hidden="true" />
-                    {scannerState.message}
-                </div>
 
-                {/* Alternatif input tautan manual jika kamera bermasalah */}
-                <div className="border-t border-[#ede7df] pt-3 text-center">
-                    <button
-                        type="button"
-                        onClick={() => setManualOpen(!manualOpen)}
-                        className="text-xs font-semibold text-[#8a631c] hover:underline"
-                    >
-                        <i className={`fa-solid ${manualOpen ? 'fa-chevron-up' : 'fa-keyboard'} mr-1.5`} aria-hidden="true" />
-                        {manualOpen ? 'Tutup input manual' : 'Kamera bermasalah? Masukkan / tempel tautan QR'}
-                    </button>
-                    {manualOpen && (
-                        <form onSubmit={handleManualSubmit} className="mt-3 flex gap-2 text-left">
+                {activeTab === 'camera' ? (
+                    <>
+                        <div className="relative aspect-square overflow-hidden rounded-2xl bg-[#0f0d0b]">
+                            <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+                            <div className="pointer-events-none absolute inset-[12%] rounded-2xl border-2 border-[#f0c060] shadow-[0_0_0_999px_rgba(0,0,0,.38)]" />
+                            <span className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white">Posisikan QR di tengah</span>
+                        </div>
+                        <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${scannerState.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : scannerState.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                            <i className={`fa-solid mr-2 ${scannerState.type === 'loading' ? 'fa-circle-notch animate-spin' : scannerState.type === 'success' ? 'fa-circle-check' : scannerState.type === 'error' ? 'fa-triangle-exclamation' : 'fa-camera'}`} aria-hidden="true" />
+                            {scannerState.message}
+                        </div>
+
+                        {/* Opsi Cepat Beralih ke Kode */}
+                        <div className="rounded-xl border border-amber-200/80 bg-amber-50/60 p-3 text-center">
+                            <p className="text-xs font-semibold text-amber-900">
+                                Kamera buram atau tidak bisa dibuka?
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('code')}
+                                className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-[#17120f] px-3 py-1.5 text-xs font-bold text-[#f0c060] hover:bg-[#2b2520] transition-colors"
+                            >
+                                <i className="fa-solid fa-keyboard" />
+                                Masukkan Kode 6-Digit Saja
+                            </button>
+                        </div>
+
+                        {/* Alternatif input tautan manual */}
+                        <div className="border-t border-[#ede7df] pt-2 text-center">
+                            <button
+                                type="button"
+                                onClick={() => setManualOpen(!manualOpen)}
+                                className="text-xs font-semibold text-[#8a631c] hover:underline"
+                            >
+                                <i className={`fa-solid ${manualOpen ? 'fa-chevron-up' : 'fa-link'} mr-1.5`} aria-hidden="true" />
+                                {manualOpen ? 'Tutup input tautan' : 'Tempel tautan URL QR manual'}
+                            </button>
+                            {manualOpen && (
+                                <form onSubmit={handleManualSubmit} className="mt-2.5 flex gap-2 text-left">
+                                    <input
+                                        type="url"
+                                        value={manualUrl}
+                                        onChange={(e) => setManualUrl(e.target.value)}
+                                        placeholder="Tempel tautan check-in dari Panitera…"
+                                        className="min-h-10 flex-1 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs text-[#17120f] focus:border-[#d4a843] focus:outline-none"
+                                    />
+                                    <Button type="submit" variant="dark" size="sm" className="shrink-0 text-xs">
+                                        Buka
+                                    </Button>
+                                </form>
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    /* Tab Masukkan Kode 6-Digit */
+                    <form onSubmit={handleCodeSubmit} className="space-y-4 py-2 text-center">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 text-2xl shadow-inner">
+                            <i className="fa-solid fa-key" aria-hidden="true" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-bold text-[#17120f]">
+                                Masukkan 6 Digit Kode Check-in
+                            </h3>
+                            <p className="mt-1 text-xs text-[#70675f]">
+                                Masukkan nomor 6 angka yang tertera di bawah QR pada layar meja Panitera.
+                            </p>
+                        </div>
+                        <div className="flex justify-center">
                             <input
-                                type="url"
-                                value={manualUrl}
-                                onChange={(e) => setManualUrl(e.target.value)}
-                                placeholder="Tempel tautan check-in dari Panitera…"
-                                className="min-h-10 flex-1 rounded-lg border border-[#d8d1c8] bg-white px-3 text-xs text-[#17120f] focus:border-[#d4a843] focus:outline-none"
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={6}
+                                value={inputCode}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/\D/g, '');
+                                    setInputCode(val);
+                                    if (codeError) setCodeError('');
+                                }}
+                                placeholder="651234"
+                                autoFocus
+                                className="w-56 rounded-2xl border-2 border-amber-300 bg-amber-50/50 py-3 text-center font-mono text-3xl font-black tracking-[0.3em] text-[#17120f] focus:border-[#d4a843] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#d4a843]/20 transition-all shadow-inner"
                             />
-                            <Button type="submit" variant="dark" size="sm" className="shrink-0 text-xs">
-                                Buka
-                            </Button>
-                        </form>
-                    )}
-                </div>
+                        </div>
+                        {codeError && (
+                            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                                <i className="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true" />
+                                {codeError}
+                            </div>
+                        )}
+                        <Button
+                            type="submit"
+                            variant="dark"
+                            className="w-full min-h-12 text-sm font-bold bg-[#17120f] text-white hover:bg-[#2b2520]"
+                            loading={codeLoading}
+                            disabled={inputCode.length !== 6}
+                        >
+                            <i className="fa-solid fa-arrow-right mr-2 text-[#f0c060]" aria-hidden="true" />
+                            Buka Konfirmasi Kehadiran
+                        </Button>
+                    </form>
+                )}
             </div>
         </Modal>
     );
@@ -305,6 +447,46 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
     const listScores = evaluatedMatches.length ? evaluatedMatches : matches;
     const eventQuery = activeEvent?.id ? `?event_id=${encodeURIComponent(activeEvent.id)}` : '';
     const [scannerTarget, setScannerTarget] = useState(null);
+    const [quickCode, setQuickCode] = useState('');
+    const [quickLoading, setQuickLoading] = useState(false);
+    const [quickError, setQuickError] = useState('');
+
+    const handleQuickCodeSubmit = async (e) => {
+        e.preventDefault();
+        const cleanCode = quickCode.trim();
+        if (cleanCode.length !== 6) {
+            setQuickError('Masukkan 6 digit kode angka (contoh: 651234).');
+            return;
+        }
+
+        setQuickLoading(true);
+        setQuickError('');
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const response = await fetch('/wasit/code', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ code: cleanCode }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.target_url) {
+                window.location.assign(data.target_url);
+            } else {
+                setQuickError(data.message || 'Kode 6 digit tidak valid atau sudah kadaluarsa.');
+            }
+        } catch {
+            setQuickError('Gagal memverifikasi kode. Periksa koneksi internet Anda.');
+        } finally {
+            setQuickLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (scannerTarget) return undefined;
@@ -367,6 +549,55 @@ export default function RefereePortal({ activeEvent, events = [], referee, atten
                         </div>
                         {events.length > 1 && <Combobox label="Event tugas" labelClassName="text-white/60" containerClassName="w-full xl:w-96" value={activeEvent.id} clearable={false} onChange={(value) => router.get('/wasit', { event_id: value })} options={events.map((event) => ({ value: event.id, label: event.name, sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · ') }))} />}
                     </div>
+                </section>
+
+                {/* Alternatif Check-in Cepat Menggunakan Kode 6-Digit */}
+                <section className="rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/90 via-[#fffdf9] to-amber-50/60 p-4 sm:p-5 shadow-xs">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div className="flex items-start gap-3.5">
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800 text-lg shadow-inner">
+                                <i className="fa-solid fa-keyboard" aria-hidden="true" />
+                            </span>
+                            <div>
+                                <h2 className="text-sm font-bold text-[#17120f]">
+                                    Check-in Menggunakan Kode 6-Digit (Tanpa Kamera)
+                                </h2>
+                                <p className="mt-0.5 text-xs text-[#70675f] leading-relaxed">
+                                    Kamera bermasalah atau buram? Masukkan 6 angka kode yang tertera di bawah QR meja Panitera untuk check-in event atau court langsung.
+                                </p>
+                            </div>
+                        </div>
+                        <form onSubmit={handleQuickCodeSubmit} className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={6}
+                                value={quickCode}
+                                onChange={(e) => {
+                                    setQuickCode(e.target.value.replace(/\D/g, ''));
+                                    if (quickError) setQuickError('');
+                                }}
+                                placeholder="651234"
+                                className="min-h-11 w-32 rounded-xl border border-[#d8d1c8] bg-white px-3 text-center font-mono text-base font-black tracking-widest text-[#17120f] focus:border-[#d4a843] focus:outline-none focus:ring-2 focus:ring-[#d4a843]/20"
+                            />
+                            <Button
+                                type="submit"
+                                variant="dark"
+                                className="min-h-11 shrink-0 bg-[#17120f] hover:bg-[#2b2520]"
+                                loading={quickLoading}
+                                disabled={quickCode.length !== 6}
+                            >
+                                <i className="fa-solid fa-arrow-right mr-1.5 text-[#f0c060]" aria-hidden="true" />
+                                Check-in
+                            </Button>
+                        </form>
+                    </div>
+                    {quickError && (
+                        <p className="mt-2.5 text-xs font-semibold text-rose-700 flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                            <i className="fa-solid fa-circle-exclamation text-rose-600" /> {quickError}
+                        </p>
+                    )}
                 </section>
 
                 <section className="grid gap-4 md:grid-cols-3" aria-label="Status Wasit">

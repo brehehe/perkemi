@@ -173,6 +173,9 @@ class ScoreReportFormatter
         $signedCount = collect($signatures)
             ->filter(fn (array $signature): bool => filled($signature['signature']))
             ->count();
+        $requiredSignedCount = collect($signatures)
+            ->filter(fn (array $signature): bool => in_array($signature['key'], RandoriScore::RequiredSignatureKeys, true) && filled($signature['signature']))
+            ->count();
         $isLocked = filled($score->locked_at);
 
         return [
@@ -199,7 +202,8 @@ class ScoreReportFormatter
             'status' => $isLocked ? 'locked' : $score->status,
             'status_label' => $isLocked ? 'Nilai dikunci' : ($score->status === 'verified' ? 'Sudah disahkan' : 'Draft'),
             'signed_count' => $signedCount,
-            'is_signed' => $signedCount === count(RandoriScore::SignatureKeys),
+            'required_signed_count' => $requiredSignedCount,
+            'is_signed' => $requiredSignedCount === count(RandoriScore::RequiredSignatureKeys),
             'signatures' => $signatures,
             'notes' => $score->notes,
             'submitted_by' => $score->submitter?->name,

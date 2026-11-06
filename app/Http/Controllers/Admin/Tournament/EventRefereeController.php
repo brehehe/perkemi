@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin\Tournament;
 
 use App\Actions\Admin\Master\SyncLoginAccountAction;
 use App\Actions\Admin\Tournament\GenerateRefereeCourtPanelsAction;
+use App\Actions\Admin\Tournament\SwapOrMoveRefereeAction;
 use App\Enums\RefereeCourtRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Tournament\SwapOrMoveRefereeRequest;
 use App\Http\Requests\Admin\Tournament\UpdateRefereeAttendanceRequest;
 use App\Http\Requests\Admin\Tournament\UpdateRefereeCourtPanelRequest;
 use App\Http\Requests\Admin\Tournament\UpsertRefereeAccountRequest;
@@ -19,11 +21,11 @@ use App\Models\RefereeCourtAssignmentHistory;
 use App\Models\RefereeCourtAttendance;
 use App\Models\User;
 use App\Services\Panitera\EventContext;
+use App\Services\Referee\RefereeCheckInCodeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -31,7 +33,7 @@ use Inertia\Response;
 
 class EventRefereeController extends Controller
 {
-    public function index(Request $request, EventContext $eventContext): Response
+    public function index(Request $request, EventContext $eventContext, RefereeCheckInCodeService $refereeCodeService): Response
     {
         $event = $eventContext->eventFor($request);
         $this->ensureCanManageEventReferees($request, $event);
@@ -102,6 +104,7 @@ class EventRefereeController extends Controller
                 'license_number' => $referee->license_number,
                 'certification_level' => $referee->certification_level,
                 'dan_grade' => $referee->dan_grade,
+                'is_chief_qualified' => GenerateRefereeCourtPanelsAction::isChiefQualified($referee),
                 'region' => $referee->region,
                 'is_active' => (bool) $referee->is_active,
                 'attendance_recorded' => $attendance !== null,
@@ -136,12 +139,13 @@ class EventRefereeController extends Controller
                         'court_id' => $assignment->event_court_id,
                         'court' => $courtNames->get($assignment->event_court_id),
                         'role' => RefereeCourtRole::tryFrom($assignment->role)?->label() ?? $assignment->role,
+                        'role_key' => $assignment->role,
                     ])->values(),
             ];
         })->values();
         $presentRefereeIds = $referees->where('is_present', true)->pluck('id');
 
-        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames, $refereesById, $coordinatorAssignments, $coordinatorsById): array {
+        $courts = $event->courts->map(function (EventCourt $court) use ($event, $expiresAt, $presentRefereeIds, $refereeNames, $refereesById, $coordinatorAssignments, $coordinatorsById, $refereeCodeService): array {
             $refereeAssignments = $court->assignments
                 ->where('staff_type', 'referee')
                 ->where('role', '!=', 'reserve')
@@ -155,6 +159,7 @@ class EventRefereeController extends Controller
 
             $coordAssignment = $coordinatorAssignments->get($court->id);
             $coord = $coordAssignment ? $coordinatorsById->get($coordAssignment->staff_id) : null;
+            $courtCheckInData = $refereeCodeService->issueCourtCheckIn($event, $court, null, $expiresAt);
 
             return [
                 'id' => $court->id,
@@ -169,17 +174,16 @@ class EventRefereeController extends Controller
                     'region' => $coord->region,
                     'phone' => $coord->phone,
                 ] : null,
-                'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
-                    'event' => $event,
-                    'eventCourt' => $court,
-                ]),
+                'check_in_url' => $courtCheckInData['url'],
+                'check_in_code' => $courtCheckInData['code'],
                 'panel_complete' => $panelComplete,
                 'panel_ready' => $panelReady,
                 'has_panel' => $court->assignments->where('staff_type', 'referee')->isNotEmpty(),
-                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames, $refereesById, $event, $court, $expiresAt): array {
+                'panel' => collect(RefereeCourtRole::cases())->map(function (RefereeCourtRole $role) use ($refereeAssignments, $courtAttendances, $presentRefereeIds, $refereeNames, $refereesById, $event, $court, $expiresAt, $refereeCodeService): array {
                     $assignment = $refereeAssignments->get($role->value);
                     $refereeId = $assignment?->staff_id;
                     $ref = $refereeId ? $refereesById->get($refereeId) : null;
+                    $roleCheckInData = $refereeCodeService->issueCourtCheckIn($event, $court, $role->value, $expiresAt);
 
                     return [
                         'role' => $role->value,
@@ -188,6 +192,7 @@ class EventRefereeController extends Controller
                         'referee_id' => $refereeId,
                         'referee_name' => $refereeId ? $refereeNames->get($refereeId) : null,
                         'dan_grade' => $ref?->dan_grade,
+                        'is_chief_qualified' => $ref ? GenerateRefereeCourtPanelsAction::isChiefQualified($ref) : false,
                         'region' => $ref?->region,
                         'court_present' => $refereeId
                             ? $presentRefereeIds->contains($refereeId) && $courtAttendances->has($refereeId)
@@ -195,23 +200,22 @@ class EventRefereeController extends Controller
                         'court_checked_in_at' => $refereeId
                             ? $courtAttendances->get($refereeId)?->checked_in_at?->translatedFormat('d M Y, H:i')
                             : null,
-                        'check_in_url' => URL::temporarySignedRoute('wasit.check-in.court', $expiresAt, [
-                            'event' => $event,
-                            'eventCourt' => $court,
-                            'role' => $role->value,
-                        ]),
+                        'check_in_url' => $roleCheckInData['url'],
+                        'check_in_code' => $roleCheckInData['code'],
                     ];
                 })->values(),
                 'reserves' => $court->assignments
                     ->where('staff_type', 'referee')
                     ->where('role', 'reserve')
-                    ->map(function (EventCourtAssignment $assignment) use ($refereesById, $courtAttendances, $presentRefereeIds): array {
+                    ->map(function (EventCourtAssignment $assignment) use ($refereesById, $courtAttendances, $presentRefereeIds, $event, $court, $expiresAt, $refereeCodeService): array {
                         $ref = $refereesById->get($assignment->staff_id);
+                        $reserveCheckInData = $refereeCodeService->issueCourtCheckIn($event, $court, 'reserve', $expiresAt);
 
                         return [
                             'referee_id' => $assignment->staff_id,
                             'referee_name' => $ref?->name ?? 'Wasit tidak tersedia',
                             'dan_grade' => $ref?->dan_grade,
+                            'is_chief_qualified' => $ref ? GenerateRefereeCourtPanelsAction::isChiefQualified($ref) : false,
                             'region' => $ref?->region,
                             'court_present' => $assignment->staff_id
                                 ? $presentRefereeIds->contains($assignment->staff_id) && $courtAttendances->has($assignment->staff_id)
@@ -219,6 +223,8 @@ class EventRefereeController extends Controller
                             'court_checked_in_at' => $assignment->staff_id
                                 ? $courtAttendances->get($assignment->staff_id)?->checked_in_at?->translatedFormat('d M Y, H:i')
                                 : null,
+                            'check_in_url' => $reserveCheckInData['url'],
+                            'check_in_code' => $reserveCheckInData['code'],
                         ];
                     })->values(),
                 'assignment_history' => $court->refereeAssignmentHistories->map(fn (RefereeCourtAssignmentHistory $history): array => [
@@ -240,6 +246,8 @@ class EventRefereeController extends Controller
             ];
         })->values();
 
+        $eventCheckInData = $refereeCodeService->issueEventCheckIn($event, $expiresAt);
+
         return Inertia::render('Admin/Tournament/EventReferees', [
             'activeEvent' => $event->only(['id', 'name', 'slug', 'city', 'venue', 'start_date', 'end_date']),
             'events' => $eventContext->accessibleEvents($request),
@@ -253,7 +261,8 @@ class EventRefereeController extends Controller
                 'phone' => $c->phone,
             ])->values(),
             'roles' => RefereeCourtRole::options(),
-            'eventCheckInUrl' => URL::temporarySignedRoute('wasit.check-in.event', $expiresAt, ['event' => $event]),
+            'eventCheckInUrl' => $eventCheckInData['url'],
+            'eventCheckInCode' => $eventCheckInData['code'],
             'qrExpiresAt' => $expiresAt->translatedFormat('d M Y, H:i'),
             'refereeLoginUrl' => route('wasit.login'),
             'today' => $today,
@@ -390,6 +399,35 @@ class EventRefereeController extends Controller
         $courtCount = $event->courts()->where('is_active', true)->count();
 
         return back()->with('success', "Pembagian {$assignmentCount} penugasan wasit untuk {$courtCount} court berhasil digenerate seimbang per kota dan tingkatan DAN.");
+    }
+
+    public function swapOrMoveReferee(
+        SwapOrMoveRefereeRequest $request,
+        EventContext $eventContext,
+        SwapOrMoveRefereeAction $swapAction,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+
+        $validated = $request->validated();
+        $sourceReferee = Referee::query()->findOrFail($validated['source_referee_id']);
+        $targetReferee = ! empty($validated['target_referee_id'])
+            ? Referee::query()->findOrFail($validated['target_referee_id'])
+            : null;
+        $targetCourt = ! empty($validated['target_court_id'])
+            ? EventCourt::query()->findOrFail($validated['target_court_id'])
+            : null;
+
+        $message = $swapAction->execute(
+            event: $event,
+            sourceReferee: $sourceReferee,
+            targetReferee: $targetReferee,
+            targetCourt: $targetCourt,
+            targetRole: $validated['target_role'] ?? null,
+            changedByUserId: $request->user()?->id,
+        );
+
+        return back()->with('success', $message);
     }
 
     public function rotateCourtPanel(
@@ -540,6 +578,38 @@ class EventRefereeController extends Controller
         $dateLabel = ($checkedInAt ?? Carbon::parse($validated['attendance_date']))->translatedFormat('d M Y');
 
         return back()->with('success', "Kehadiran {$referee->name} pada {$dateLabel} diperbarui menjadi {$status}.");
+    }
+
+    public function resetAttendance(
+        Request $request,
+        Referee $referee,
+        EventContext $eventContext,
+    ): RedirectResponse {
+        $event = $eventContext->eventFor($request);
+        $this->ensureCanManageEventReferees($request, $event);
+        abort_unless($event->referees()->whereKey($referee->id)->exists(), 404);
+
+        $validated = $request->validate([
+            'attendance_date' => ['nullable', 'date'],
+        ]);
+
+        $date = $validated['attendance_date'] ?? now()->toDateString();
+
+        RefereeAttendance::query()
+            ->whereBelongsTo($event)
+            ->whereBelongsTo($referee)
+            ->whereDate('attendance_date', $date)
+            ->delete();
+
+        RefereeCourtAttendance::query()
+            ->whereBelongsTo($event)
+            ->whereBelongsTo($referee)
+            ->whereDate('attendance_date', $date)
+            ->delete();
+
+        $dateLabel = Carbon::parse($date)->translatedFormat('d M Y');
+
+        return back()->with('success', "Kehadiran {$referee->name} pada {$dateLabel} berhasil direset.");
     }
 
     public function updateCourtCoordinator(

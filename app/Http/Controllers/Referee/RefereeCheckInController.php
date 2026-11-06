@@ -12,7 +12,9 @@ use App\Models\RefereeAttendance;
 use App\Models\RefereeCourtAttendance;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Referee\RefereeCheckInCodeService;
 use App\Services\Referee\RefereeIdentity;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -64,6 +66,10 @@ class RefereeCheckInController extends Controller
             "Absensi Event · {$event->name}",
             'Konfirmasi bahwa Anda hadir pada event ini sebelum menerima penugasan court.',
             $attendance?->is_present ? $attendance->checked_in_at : null,
+            null,
+            true,
+            null,
+            $request->query('code'),
         );
     }
 
@@ -166,7 +172,54 @@ class RefereeCheckInController extends Controller
             $eventCourt,
             $eventAttendance !== null,
             $activeRoleLabel,
+            $request->query('code'),
         );
+    }
+
+    /**
+     * Resolve a 6-digit referee check-in code and redirect/respond with the signed check-in URL.
+     */
+    public function resolveCode(
+        Request $request,
+        RefereeCheckInCodeService $codeService,
+        ?string $code = null,
+    ): RedirectResponse|JsonResponse {
+        $inputCode = $code ?? $request->input('code');
+
+        if (! is_string($inputCode) || strlen(trim($inputCode)) !== 6) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Masukkan 6 digit kode check-in yang valid.',
+                ], 422);
+            }
+
+            return back()->with('error', 'Masukkan 6 digit kode check-in yang valid.');
+        }
+
+        $record = $codeService->resolve($inputCode);
+
+        if (! $record) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Kode check-in tidak ditemukan atau sudah kadaluarsa. Pastikan 6 digit kode sesuai dengan yang ditampilkan Panitera.',
+                ], 404);
+            }
+
+            return back()->with('error', 'Kode check-in tidak ditemukan atau sudah kadaluarsa. Silakan periksa kembali kode dari Panitera.');
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'target_url' => $record->target_url,
+                'type' => $record->type,
+                'role' => $record->role,
+                'event_id' => $record->event_id,
+                'event_court_id' => $record->event_court_id,
+            ]);
+        }
+
+        return redirect()->away($record->target_url);
     }
 
     private function refereeFor(Request $request, Event $event, RefereeIdentity $refereeIdentity): Referee
@@ -199,6 +252,7 @@ class RefereeCheckInController extends Controller
         ?EventCourt $court = null,
         bool $canConfirm = true,
         ?string $roleLabel = null,
+        ?string $code = null,
     ): Response {
         return Inertia::render('Referee/CheckIn', [
             'activeEvent' => $event->only(['id', 'name', 'slug', 'city', 'venue']),
@@ -209,6 +263,7 @@ class RefereeCheckInController extends Controller
                 'description' => $description,
                 'court' => $court?->only(['id', 'name', 'location']),
                 'role_label' => $roleLabel,
+                'code' => $code,
                 'is_checked_in' => $checkedInAt !== null,
                 'checked_in_at' => $checkedInAt?->translatedFormat('d M Y, H:i'),
                 'can_confirm' => $canConfirm,

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin\Master;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class StoreRefereeRequest extends FormRequest
@@ -26,7 +27,7 @@ class StoreRefereeRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'gender' => ['required', 'in:male,female'],
             'dan_grade' => ['nullable', 'string', 'max:50'],
-            'license_number' => ['nullable', 'string', 'max:100', 'unique:referees,license_number'],
+            'license_number' => ['nullable', 'string', 'max:100', Rule::unique('referees', 'license_number')->withoutTrashed()],
             'certification_level' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],

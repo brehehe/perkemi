@@ -1,12 +1,14 @@
 import ContingentLayout from '@/Layouts/ContingentLayout';
 import SchoolFields, { schoolData, schoolDefaults } from '@/Components/UI/Forms/SchoolFields';
 import { AlertConfirm, Button, Input, Modal, Select, Textarea } from '@/Components/UI';
+import RandoriBracketTree from '@/Pages/Admin/Panitera/Partials/RandoriBracketTree';
 import { Link, router, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
 const sectionMeta = {
     registration: ['Registrasi', 'Kelola berkas pendaftaran kontingen untuk event aktif.', 'fa-file-signature'],
     schedule: ['Jadwal', 'Pantau rundown event dan jadwal pertandingan kontingen.', 'fa-calendar-days'],
+    bracket: ['Bagan Randori', 'Pantau bagan undian dan skema tanding atlet kontingen.', 'fa-sitemap'],
     results: ['Hasil Juara', 'Lihat perolehan medali resmi kontingen pada event terpilih.', 'fa-trophy'],
     'embu-results': ['Hasil Embu', 'Rincian nilai Embu yang telah diverifikasi untuk kontingen.', 'fa-ranking-star'],
     'randori-results': ['Hasil Randori', 'Rincian skor Randori yang telah disahkan untuk kontingen.', 'fa-hand-fist'],
@@ -36,6 +38,7 @@ const dateOnly = (value) => value ? String(value).slice(0, 10) : '';
 const sectionPath = {
     registration: '/kontingen/registrasi',
     schedule: '/kontingen/jadwal',
+    bracket: '/kontingen/bagan',
     results: '/kontingen/hasil/juara',
     'embu-results': '/kontingen/hasil/embu',
     'randori-results': '/kontingen/hasil/randori',
@@ -190,6 +193,191 @@ function ScheduleSection({ rundowns = [], matches = [] }) {
                     </article>
                 ))}</div> : <EmptyState icon="fa-stopwatch" title="Belum ada jadwal pertandingan" description="Jadwal akan muncul setelah panitia menerbitkan drawing dan waktu pertandingan." />}
             </section>
+        </div>
+    );
+}
+
+function BracketSection({
+    categories = [],
+    selectedCategory = null,
+    matches = [],
+    highlightContingentId = null,
+    highlightContingentName = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
+    activeEvent = null,
+}) {
+    const hasCategories = categories.length > 0;
+    const enteredCategories = categories.filter((c) => c.is_entered);
+    const otherCategories = categories.filter((c) => !c.is_entered);
+
+    const switchCategory = (categoryId) => {
+        router.get(
+            '/kontingen/bagan',
+            {
+                event_id: activeEvent?.id,
+                category: categoryId,
+            },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            }
+        );
+    };
+
+    if (!hasCategories) {
+        return (
+            <EmptyState
+                icon="fa-sitemap"
+                title="Belum Ada Nomor Pertandingan Randori"
+                description="Panitia belum menambahkan kategori tanding Randori pada event ini."
+            />
+        );
+    }
+
+    return (
+        <div className="space-y-5">
+            {/* Category Switcher & Filter Card */}
+            <section className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm shadow-stone-200/50">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#c93629] text-[11px] font-bold text-white shadow-2xs">
+                                <i className="fa-solid fa-sitemap" />
+                            </span>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a47c25]">
+                                Nomor Pertandingan Randori
+                            </p>
+                        </div>
+                        <h2 className="mt-1 text-base font-black text-[#1c1815]">
+                            {selectedCategory?.name || 'Nomor Pertandingan Randori'}
+                        </h2>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[#817970]">
+                            <span>Format: <strong className="text-[#1c1815]">{selectedCategory?.format === 'double_elimination' ? 'Gugur Ganda (Double Elimination)' : selectedCategory?.format === 'round_robin' ? 'Setengah Kompetisi' : 'Sistem Gugur Tunggal'}</strong></span>
+                            <span>•</span>
+                            <span>Gender: <strong className="text-[#1c1815]">{selectedCategory?.gender === 'female' ? 'Putri' : 'Putra'}</strong></span>
+                            {selectedCategory?.is_entered && (
+                                <>
+                                    <span>•</span>
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950 px-2.5 py-0.5 text-[10.5px] font-black text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 shadow-2xs">
+                                        <i className="fa-solid fa-star text-amber-500 text-[8.5px]" /> {selectedCategory.my_athletes_count} Atlet Kontingen Anda ({selectedCategory.my_athlete_names?.join(', ') || 'Terdaftar'})
+                                    </span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="w-full lg:w-[420px]">
+                        <label className="block">
+                            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.1em] text-[#756d65]">
+                                Pilih Kategori Pertandingan
+                            </span>
+                            <select
+                                value={selectedCategory?.id || ''}
+                                onChange={(e) => switchCategory(e.target.value)}
+                                className="h-11 w-full rounded-xl border border-[#ded7ce] bg-[#fcfaf7] px-3 text-xs font-semibold text-[#413b35] outline-none transition focus:border-[#c93629] focus:ring-2 focus:ring-[#c93629]/15"
+                            >
+                                {enteredCategories.length > 0 && (
+                                    <optgroup label="⭐ Diikuti Atlet Kontingen Anda">
+                                        {enteredCategories.map((cat) => (
+                                            <option key={cat.id} value={cat.id}>
+                                                ★ {cat.name} ({cat.my_athletes_count} Atlet Anda){cat.has_drawing ? '' : ' - Bagan Belum Ada'}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                )}
+                                {otherCategories.length > 0 && (
+                                    <optgroup label="Nomor Randori Lainnya">
+                                        {otherCategories.map((cat) => (
+                                            <option key={cat.id} value={cat.id}>
+                                                {cat.name}{cat.has_drawing ? '' : ' (Bagan Belum Ada)'}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                )}
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                {/* Quick Pill Buttons for Categories with Athletes */}
+                {enteredCategories.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-[#ede7df]">
+                        <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-[#918980]">
+                            Kategori yang Diikuti Atlet Anda:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {enteredCategories.map((cat) => {
+                                const isSelected = selectedCategory?.id === cat.id;
+                                return (
+                                    <button
+                                        key={cat.id}
+                                        type="button"
+                                        onClick={() => switchCategory(cat.id)}
+                                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-2xs ${
+                                            isSelected
+                                                ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-500/50 font-black'
+                                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
+                                        }`}
+                                    >
+                                        <i className={`fa-solid ${isSelected ? 'fa-circle-check text-amber-800' : 'fa-star text-amber-500'} text-[10px]`} />
+                                        <span>{cat.name}</span>
+                                        <span className={`rounded px-1.5 py-0.2 text-[10px] font-black ${
+                                            isSelected ? 'bg-amber-500/50 text-slate-950' : 'bg-amber-200/80 text-amber-900'
+                                        }`}>
+                                            {cat.my_athletes_count} Atlet
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </section>
+
+            {/* Legend & Athlete Indicator Note */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+                <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 font-black shadow-xs">
+                        <i className="fa-solid fa-lightbulb text-sm" />
+                    </span>
+                    <div>
+                        <p className="font-extrabold text-amber-950 dark:text-amber-200 text-xs">
+                            Penanda Atlet Kontingen di Bagan Pertandingan
+                        </p>
+                        <p className="text-[11px] text-amber-800 dark:text-amber-300/80 mt-0.5">
+                            Atlet dari kontingen <strong>{highlightContingentName || 'Anda'}</strong> ditandai khusus dengan <strong>warna kuning emas</strong> serta badge <span className="inline-block rounded bg-amber-400 px-1.5 py-0.2 text-[9px] font-black text-slate-950">Atlet Anda</span> agar posisi dan alur pertandingan mudah dipantau.
+                        </p>
+                    </div>
+                </div>
+                {selectedCategory?.is_entered && (
+                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-200/90 px-3 py-1.5 text-xs font-black text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 shadow-2xs">
+                        <i className="fa-solid fa-user-check text-amber-700 dark:text-amber-400" />
+                        {selectedCategory.my_athletes_count} Atlet Anda di Bagan Ini
+                    </span>
+                )}
+            </div>
+
+            {/* The Tree Component */}
+            {selectedCategory?.has_drawing && matches.length > 0 ? (
+                <RandoriBracketTree
+                    matches={matches}
+                    activeEvent={activeEvent}
+                    categoryName={selectedCategory?.name || ''}
+                    categoryFormat={selectedCategory?.format || 'single_elimination'}
+                    highlightContingentId={highlightContingentId}
+                    highlightContingentName={highlightContingentName}
+                    highlightEntryIds={highlightEntryIds}
+                    highlightAthleteNames={highlightAthleteNames}
+                />
+            ) : (
+                <EmptyState
+                    icon="fa-sitemap"
+                    title="Bagan Pertandingan Belum Digenerate"
+                    description={`Bagan untuk nomor ${selectedCategory?.name || 'Randori'} belum digenerate oleh panitia. Jadwal dan skema tanding akan tampil otomatis setelah undian dirilis oleh panitia.`}
+                />
+            )}
         </div>
     );
 }
@@ -534,6 +722,18 @@ export default function ContingentPortal(props) {
     const content = {
         registration: <RegistrationSection registration={props.registration} summary={props.summary} registrationEvents={props.registration_events} activeEventId={props.portal?.event?.id} />,
         schedule: <ScheduleSection rundowns={props.rundowns} matches={props.matches} />,
+        bracket: (
+            <BracketSection
+                categories={props.categories}
+                selectedCategory={props.selected_category}
+                matches={props.matches}
+                highlightContingentId={props.highlight_contingent_id}
+                highlightContingentName={props.highlight_contingent_name}
+                highlightEntryIds={props.highlight_entry_ids}
+                highlightAthleteNames={props.highlight_athlete_names}
+                activeEvent={props.portal?.event}
+            />
+        ),
         results: <ResultsSection results={props.results} medalSummary={props.medal_summary} />,
         'embu-results': <EmbuResultsSection results={props.embu_results} />,
         'randori-results': <RandoriResultsSection results={props.randori_results} />,
@@ -552,7 +752,7 @@ export default function ContingentPortal(props) {
                         <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#d7a93e]">{props.portal?.contingent?.name}</p><h1 className="mt-1 font-cinzel text-xl font-bold md:text-2xl">{meta[0]}</h1><p className="mt-1 max-w-2xl text-xs leading-5 text-[#bdb4ac]">{meta[1]}</p></div>
                     </div>
                 </section>
-                {['schedule', 'results', 'embu-results', 'randori-results'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
+                {['schedule', 'bracket', 'results', 'embu-results', 'randori-results'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
                 {content}
             </div>
         </ContingentLayout>

@@ -37,7 +37,7 @@ class StoreEventRefereeRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:100',
-                Rule::when($this->input('source') === 'new', Rule::unique('referees', 'license_number')),
+                Rule::when($this->input('source') === 'new', Rule::unique('referees', 'license_number')->withoutTrashed()),
             ],
             'certification_level' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],

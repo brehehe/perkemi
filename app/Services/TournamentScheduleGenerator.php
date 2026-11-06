@@ -39,7 +39,7 @@ class TournamentScheduleGenerator
         // Sesuai kebutuhan panitia: jangan ada slot kosong di jadwal pertandingan.
         // Penjadwalan otomatis mengisi setiap slot berurutan tanpa jeda jeda kosong.
         // Panitia/koordinator tetap dapat menggeser/menukar jadwal secara manual jika diperlukan.
-        $rest = 0;
+        $rest = max(0, (int) $event->minimum_rest_minutes);
         $breaks = $this->getEventBreaks($event);
         $slots = $this->slots($courts, $sessions, $duration, $breaks);
 
@@ -67,6 +67,7 @@ class TournamentScheduleGenerator
 
         $usedSlotIndexes = [];
         $athleteAvailableAt = [];
+        $athleteBusyUntil = [];
         $notBefore = null;
 
         foreach (['embu', 'randori'] as $matchType) {
@@ -83,6 +84,7 @@ class TournamentScheduleGenerator
                 $slots,
                 $usedSlotIndexes,
                 $athleteAvailableAt,
+                $athleteBusyUntil,
                 $rest,
                 $notBefore,
             );
@@ -173,6 +175,7 @@ class TournamentScheduleGenerator
      * @param  Collection<int, array{court_id: string, court_priority: int, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>  $slots
      * @param  array<int, true>  $usedSlotIndexes
      * @param  array<string, CarbonImmutable>  $athleteAvailableAt
+     * @param  array<string, CarbonImmutable>  $athleteBusyUntil
      * @return array{complete: bool, last_end: CarbonImmutable|null}
      */
     private function scheduleMatchType(
@@ -180,6 +183,7 @@ class TournamentScheduleGenerator
         Collection $slots,
         array &$usedSlotIndexes,
         array &$athleteAvailableAt,
+        array &$athleteBusyUntil,
         int $rest,
         ?CarbonImmutable $notBefore,
     ): array {
@@ -189,31 +193,73 @@ class TournamentScheduleGenerator
             ->values();
         $lastEnd = null;
 
+        // Try passes prioritizing contiguous allocation without internal gaps ("Slot kosong") on active courts:
+        // 1. Contiguous allocation with full rest (15 mins) and no fallback.
+        // 2. Contiguous allocation with direct non-concurrent availability (no playing two courts at once).
+        // 3. Contiguous allocation with fallback to candidate with longest rest.
+        // 4. (Last resort only) Non-contiguous allocation if court session capacity is constrained.
+        $passes = [
+            ['preferContiguous' => true, 'useDirectBusy' => false, 'allowFallback' => false],
+            ['preferContiguous' => true, 'useDirectBusy' => true, 'allowFallback' => false],
+            ['preferContiguous' => true, 'useDirectBusy' => true, 'allowFallback' => true],
+            ['preferContiguous' => false, 'useDirectBusy' => true, 'allowFallback' => true],
+        ];
+
         while ($matchesByCategory->isNotEmpty()) {
             $selectedCategoryIndex = null;
             $selectedAssignments = null;
 
-            foreach ($matchesByCategory as $categoryIndex => $categoryMatches) {
-                $assignments = $this->findConsecutiveCategoryBlock(
-                    $categoryMatches,
-                    $slots,
-                    $usedSlotIndexes,
-                    $athleteAvailableAt,
-                    $notBefore,
-                );
-
-                if ($assignments === null) {
-                    continue;
-                }
-
-                $startsEarlier = $selectedAssignments === null
-                    || $assignments->first()['slot']['start']->lessThan(
-                        $selectedAssignments->first()['slot']['start'],
+            foreach ($passes as $pass) {
+                foreach ($matchesByCategory as $categoryIndex => $categoryMatches) {
+                    $assignments = $this->findConsecutiveCategoryBlock(
+                        $categoryMatches,
+                        $slots,
+                        $usedSlotIndexes,
+                        $athleteAvailableAt,
+                        $athleteBusyUntil,
+                        $notBefore,
+                        $pass['preferContiguous'],
+                        $pass['useDirectBusy'],
+                        $rest,
+                        $pass['allowFallback'],
                     );
 
-                if ($startsEarlier) {
-                    $selectedCategoryIndex = $categoryIndex;
-                    $selectedAssignments = $assignments;
+                    if ($assignments === null) {
+                        continue;
+                    }
+
+                    $candidateStart = $assignments->first()['slot']['start'];
+
+                    if ($selectedAssignments === null) {
+                        $selectedCategoryIndex = $categoryIndex;
+                        $selectedAssignments = $assignments;
+
+                        continue;
+                    }
+
+                    $currentSelectedStart = $selectedAssignments->first()['slot']['start'];
+
+                    if ($candidateStart->lessThan($currentSelectedStart)) {
+                        $selectedCategoryIndex = $categoryIndex;
+                        $selectedAssignments = $assignments;
+                    } elseif ($candidateStart->equalTo($currentSelectedStart)) {
+                        // Tie-breaker: pick category with fewer potential cross-court clashes
+                        $candidateClashCount = $this->countCrossCourtClashes($categoryMatches, $assignments, $athleteAvailableAt);
+                        $currentClashCount = $this->countCrossCourtClashes(
+                            $matchesByCategory[$selectedCategoryIndex],
+                            $selectedAssignments,
+                            $athleteAvailableAt
+                        );
+
+                        if ($candidateClashCount < $currentClashCount) {
+                            $selectedCategoryIndex = $categoryIndex;
+                            $selectedAssignments = $assignments;
+                        }
+                    }
+                }
+
+                if ($selectedCategoryIndex !== null && $selectedAssignments !== null) {
+                    break;
                 }
             }
 
@@ -233,7 +279,13 @@ class TournamentScheduleGenerator
                 ]);
 
                 foreach ($this->athleteIds($match) as $athleteId) {
+                    $busyUntil = $slot['end'];
                     $availableAt = $slot['end']->addMinutes($rest);
+
+                    if (! isset($athleteBusyUntil[$athleteId])
+                        || $busyUntil->greaterThan($athleteBusyUntil[$athleteId])) {
+                        $athleteBusyUntil[$athleteId] = $busyUntil;
+                    }
 
                     if (! isset($athleteAvailableAt[$athleteId])
                         || $availableAt->greaterThan($athleteAvailableAt[$athleteId])) {
@@ -261,6 +313,7 @@ class TournamentScheduleGenerator
      * @param  Collection<int, array{court_id: string, court_priority: int, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}>  $slots
      * @param  array<int, true>  $usedSlotIndexes
      * @param  array<string, CarbonImmutable>  $athleteAvailableAt
+     * @param  array<string, CarbonImmutable>  $athleteBusyUntil
      * @return Collection<int, array{match: TournamentMatch, slot: array{court_id: string, court_priority: int, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}, slot_index: int}>|null
      */
     private function findConsecutiveCategoryBlock(
@@ -268,17 +321,42 @@ class TournamentScheduleGenerator
         Collection $slots,
         array $usedSlotIndexes,
         array $athleteAvailableAt,
+        array $athleteBusyUntil,
         ?CarbonImmutable $notBefore,
+        bool $preferContiguousOnly = false,
+        bool $useDirectBusyOnly = false,
+        int $rest = 0,
+        bool $allowFallback = false,
     ): ?Collection {
+        $earliestUnusedByCourt = [];
+        $hasMatchesByCourt = [];
+        foreach ($slots as $slotIndex => $slot) {
+            $courtId = $slot['court_id'];
+            if (isset($usedSlotIndexes[$slotIndex])) {
+                $hasMatchesByCourt[$courtId] = true;
+            } elseif (! isset($earliestUnusedByCourt[$courtId])) {
+                $earliestUnusedByCourt[$courtId] = $slotIndex;
+            }
+        }
+
         foreach ($slots as $slotIndex => $slot) {
             if (isset($usedSlotIndexes[$slotIndex])
                 || ($notBefore && $slot['start']->lessThan($notBefore))) {
                 continue;
             }
 
+            $courtId = $slot['court_id'];
+
+            if ($preferContiguousOnly && ! empty($hasMatchesByCourt[$courtId])) {
+                $earliest = $earliestUnusedByCourt[$courtId] ?? null;
+                if ($earliest !== null && $slotIndex > $earliest) {
+                    continue;
+                }
+            }
+
             $block = $slots
                 ->filter(fn (array $candidate, int $candidateIndex): bool => $candidateIndex >= $slotIndex
-                    && $candidate['court_id'] === $slot['court_id'])
+                    && $candidate['court_id'] === $courtId)
                 ->take($categoryMatches->count())
                 ->map(fn (array $candidate, int $candidateIndex): array => [
                     'slot' => $candidate,
@@ -293,7 +371,9 @@ class TournamentScheduleGenerator
             $assignments = $this->assignMatchesToBlock(
                 $categoryMatches,
                 $block,
-                $athleteAvailableAt,
+                $useDirectBusyOnly ? $athleteBusyUntil : $athleteAvailableAt,
+                $useDirectBusyOnly ? 0 : $rest,
+                $allowFallback,
             );
 
             if ($assignments !== null) {
@@ -302,6 +382,30 @@ class TournamentScheduleGenerator
         }
 
         return null;
+    }
+
+    /**
+     * @param  Collection<int, TournamentMatch>  $categoryMatches
+     * @param  Collection<int, array{slot: array{court_id: string, court_priority: int, rundown_id: string, start: CarbonImmutable, end: CarbonImmutable}, slot_index: int}>  $assignments
+     * @param  array<string, CarbonImmutable>  $athleteAvailableAt
+     */
+    private function countCrossCourtClashes(
+        Collection $categoryMatches,
+        Collection $assignments,
+        array $athleteAvailableAt,
+    ): int {
+        $count = 0;
+        foreach ($assignments as $assignment) {
+            $match = $assignment['match'];
+            $slot = $assignment['slot'];
+            foreach ($this->athleteIds($match) as $athleteId) {
+                if (isset($athleteAvailableAt[$athleteId]) && $slot['start']->lessThan($athleteAvailableAt[$athleteId])) {
+                    $count++;
+                }
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -338,10 +442,13 @@ class TournamentScheduleGenerator
         Collection $categoryMatches,
         Collection $block,
         array $athleteAvailableAt,
+        int $rest = 0,
+        bool $allowFallback = false,
     ): ?Collection {
         $remainingMatches = $categoryMatches->values();
         $assignments = collect();
         $isEmbu = $remainingMatches->first()?->matchCategory?->type === 'embu';
+        $localAthleteAvailableAt = $athleteAvailableAt;
 
         foreach ($block as $item) {
             /** @var TournamentMatch|null $firstMatch */
@@ -357,23 +464,51 @@ class TournamentScheduleGenerator
                     ->where('pool', $firstMatch->pool)
                 : $remainingMatches
                     ->filter(fn (TournamentMatch $m): bool => ($m->round_label ?? $m->phase) === ($firstMatch->round_label ?? $firstMatch->phase));
-            /** @var TournamentMatch|null $match */
-            $match = $eligibleMatches->first(fn (TournamentMatch $candidate): bool => $this->athleteIds($candidate)->every(
-                fn (string $athleteId): bool => ! isset($athleteAvailableAt[$athleteId])
-                    || $item['slot']['start']->greaterThanOrEqualTo($athleteAvailableAt[$athleteId]),
+
+            // Candidate selection:
+            // Order eligible matches so that athletes who have rested the longest (or haven't played recently)
+            // are scheduled first, deferring recently-active athletes to later slots in this round to maximize rest.
+            $sortedEligibles = $eligibleMatches->sortBy(function (TournamentMatch $candidate) use ($localAthleteAvailableAt): array {
+                $maxRestTimestamp = 0;
+                foreach ($this->athleteIds($candidate) as $aId) {
+                    if (isset($localAthleteAvailableAt[$aId])) {
+                        $maxRestTimestamp = max($maxRestTimestamp, $localAthleteAvailableAt[$aId]->timestamp);
+                    }
+                }
+
+                return [$maxRestTimestamp, $candidate->match_sequence];
+            })->values();
+
+            // 1. Prefer candidate whose athletes have ALL satisfied rest: slot start >= localAthleteAvailableAt
+            $candidate = $sortedEligibles->first(fn (TournamentMatch $candidate): bool => $this->athleteIds($candidate)->every(
+                fn (string $athleteId): bool => ! isset($localAthleteAvailableAt[$athleteId])
+                    || $item['slot']['start']->greaterThanOrEqualTo($localAthleteAvailableAt[$athleteId]),
             ));
 
-            if (! $match) {
+            // 2. Fallback if strict rest cannot be satisfied and fallback is allowed: pick candidate whose athletes have had the longest rest (earliest availableAt)
+            if (! $candidate && $allowFallback) {
+                $candidate = $sortedEligibles->first();
+            }
+
+            if (! $candidate) {
                 return null;
             }
 
             $assignments->push([
-                'match' => $match,
+                'match' => $candidate,
                 'slot' => $item['slot'],
                 'slot_index' => $item['slot_index'],
             ]);
+
+            // Track athlete rest within this category block for subsequent matches (e.g. preliminary -> final)
+            if ($rest > 0) {
+                foreach ($this->athleteIds($candidate) as $athleteId) {
+                    $localAthleteAvailableAt[$athleteId] = $item['slot']['end']->addMinutes($rest);
+                }
+            }
+
             $remainingMatches = $remainingMatches
-                ->reject(fn (TournamentMatch $remainingMatch): bool => $remainingMatch->is($match))
+                ->reject(fn (TournamentMatch $remainingMatch): bool => $remainingMatch->is($candidate))
                 ->values();
         }
 

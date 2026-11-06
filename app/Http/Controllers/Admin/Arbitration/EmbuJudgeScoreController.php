@@ -28,12 +28,6 @@ class EmbuJudgeScoreController extends Controller
 
         $tournamentMatch->loadMissing(['matchCategory:id,name,type', 'court:id,event_id,name']);
         abort_unless($tournamentMatch->matchCategory?->type === 'embu' && $tournamentMatch->court, 404);
-        abort_unless(
-            $tournamentMatch->call_status === 'participants_called'
-                && in_array($tournamentMatch->status, ['ready', 'in_progress'], true),
-            409,
-            'Pertandingan Embu belum dipanggil atau sudah tidak aktif.',
-        );
 
         $user = $request->user();
         $referee = $refereeIdentity->forEvent($user, $event);
@@ -65,6 +59,23 @@ class EmbuJudgeScoreController extends Controller
         $currentHolder = Cache::get($lockKey);
         if ($currentHolder && $currentHolder !== $request->session()->getId()) {
             abort(409, 'Posisi telah diambil alih oleh perangkat lain. Sesi Anda dihentikan.');
+        }
+
+        $isMatchActive = $tournamentMatch->call_status === 'participants_called'
+            && in_array($tournamentMatch->status, ['ready', 'in_progress'], true);
+
+        if (! $isMatchActive) {
+            $existingScore = $tournamentMatch->embuJudgeScores()
+                ->where('judge_number', $role->judgeNumber())
+                ->where('tiebreak_round', 0)
+                ->first();
+
+            if ($existingScore?->status === 'submitted') {
+                return redirect()->route('wasit.portal', ['event_id' => $event->id])
+                    ->with('info', 'Penilaian Anda untuk partai ini telah selesai dan dikirim.');
+            }
+
+            abort(409, 'Pertandingan Embu belum dipanggil atau sudah tidak aktif.');
         }
 
         $validated = $request->validated();

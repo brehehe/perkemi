@@ -95,7 +95,7 @@ class EventRefereeImportService
             'name' => ['required', 'string', 'max:150'],
             'gender' => ['required', Rule::in(['male', 'female'])],
             'dan_grade' => ['nullable', 'string', 'max:50'],
-            'license_number' => ['nullable', 'string', 'max:100', Rule::unique('referees', 'license_number')->ignore($referee?->id)],
+            'license_number' => ['nullable', 'string', 'max:100', Rule::unique('referees', 'license_number')->ignore($referee?->id)->withoutTrashed()],
             'certification_level' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],

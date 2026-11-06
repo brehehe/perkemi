@@ -26,6 +26,9 @@ const signatureLabels = [
     ['white_manager', 'Manajer Kontingen Putih'],
 ];
 
+const optionalSignatureKeys = ['arbitrase', 'field_coordinator'];
+const requiredSignatureKeys = ['referee', 'clerk', 'red_manager', 'white_manager'];
+
 const emptyBreakdown = () => Object.fromEntries(scoreKeys.map(([key]) => [key, 0]));
 const emptySignatures = () => Object.fromEntries(signatureLabels.map(([key]) => [key, '']));
 const normalizeSignatures = (signatures = {}) => Object.fromEntries(signatureLabels.map(([key]) => [key, typeof signatures?.[key] === 'string' ? signatures[key] : '']));
@@ -191,7 +194,7 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     const isLocked = Boolean(match.category_is_locked) || Boolean(existingScore?.is_locked);
     const clientIdRef = useRef(createSyncClientId());
     const persistedSignatures = normalizeSignatures(draft.signatures || existingScore?.signatures);
-    const hasCompletePersistedSignatures = signatureLabels.every(([key]) => Boolean(persistedSignatures[key]));
+    const hasCompletePersistedSignatures = requiredSignatureKeys.every((key) => Boolean(persistedSignatures[key]));
     const initialDecisionOverride = draft.decision_override || existingScore?.decision_override || match.metadata?.result?.decision_override || null;
     const form = useForm({
         event_id: activeEvent.id,
@@ -268,7 +271,8 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     }
 
     const signedCount = signatureLabels.filter(([key]) => Boolean(form.data.signatures[key])).length;
-    const signaturesComplete = signedCount === signatureLabels.length;
+    const requiredSignedCount = requiredSignatureKeys.filter((key) => Boolean(form.data.signatures[key])).length;
+    const signaturesComplete = requiredSignedCount === requiredSignatureKeys.length;
     const winnerLabel = autoWinnerCorner === 'aka'
         ? `AKA · ${match.aka_label} (${autoWinReason})`
         : autoWinnerCorner === 'shiro'
@@ -701,44 +705,66 @@ export default function RandoriScoreForm({ activeEvent, match }) {
                 {form.errors.score && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{form.errors.score}</div>}
 
                 <fieldset className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5">
-                    <legend className="px-2 text-sm font-black text-[#17120f]">Pengesahan 6 Pihak</legend>
+                    <legend className="px-2 text-sm font-black text-[#17120f]">Pengesahan Pertandingan</legend>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="max-w-2xl text-xs leading-5 text-[#746b63]">Masing-masing pihak membubuhkan tanda tangan digital sendiri sebelum hasil disahkan.</p>
-                        <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase ${signaturesComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>{signedCount}/6 ditandatangani</span>
+                        <p className="max-w-2xl text-xs leading-5 text-[#746b63]">
+                            Masing-masing pihak membubuhkan tanda tangan digital. 4 pihak utama (Wasit, Panitera, Manajer Merah &amp; Putih) wajib diisi, sedangkan Arbitrase &amp; Koordinator Lapangan bersifat opsional.
+                        </p>
+                        <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase ${signaturesComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {requiredSignedCount}/4 tanda tangan utama ({signedCount}/6 total)
+                        </span>
                     </div>
-                    {existingScore && signaturesComplete && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900">Enam tanda tangan pengesahan sudah tersimpan dan tetap aman dipertahankan saat Anda mengubah nilai atau catatan.</p>}
+                    {existingScore && signaturesComplete && (
+                        <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900">
+                            Tanda tangan utama pengesahan sudah lengkap dan tetap aman dipertahankan saat Anda mengubah nilai atau catatan.
+                        </p>
+                    )}
                     {form.errors.signatures && <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{form.errors.signatures}</p>}
                     <div className="mt-4 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                        {signatureLabels.map(([key, label], index) => (
-                            <div key={key} className="rounded-xl border border-[#e5ded4] bg-white p-3 shadow-xs">
-                                <div className="mb-3 flex items-center gap-3">
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fff4cf] text-xs font-black text-[#936817]">{index + 1}</span>
-                                    <div>
-                                        <p className="text-sm font-black text-[#17120f]">{label}</p>
-                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8b8178]">Tanda tangan pihak {index + 1}</p>
+                        {signatureLabels.map(([key, label], index) => {
+                            const isOptional = optionalSignatureKeys.includes(key);
+                            return (
+                                <div key={key} className="rounded-xl border border-[#e5ded4] bg-white p-3 shadow-xs">
+                                    <div className="mb-3 flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fff4cf] text-xs font-black text-[#936817]">{index + 1}</span>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-black text-[#17120f] truncate">{label}</p>
+                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8b8178]">
+                                                    {isOptional ? 'Pihak pengesahan (Opsional)' : 'Pihak pengesahan (Wajib)'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                                            isOptional
+                                                ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                                                : 'border border-rose-200 bg-rose-50 text-rose-700'
+                                        }`}>
+                                            {isOptional ? 'Opsional' : 'Wajib'}
+                                        </span>
                                     </div>
+                                    <SignaturePad
+                                        value={form.data.signatures[key]}
+                                        onChange={(value) => changeSignature(key, value)}
+                                        disabled={form.processing || lockForm.processing || isLocked}
+                                        label={`Area tanda tangan digital ${label} ${isOptional ? '(Opsional)' : '(Wajib)'}`}
+                                        height={140}
+                                        error={form.errors[`signatures.${key}`]}
+                                    />
+                                    <Input
+                                        id={`signature-name-${key}`}
+                                        label={isOptional ? "Nama penandatangan (opsional)" : "Nama penandatangan"}
+                                        value={form.data.signature_names[key]}
+                                        maxLength={120}
+                                        disabled={form.processing || lockForm.processing || isLocked}
+                                        error={form.errors[`signature_names.${key}`]}
+                                        placeholder={`Nama ${label} ${isOptional ? '(opsional)' : ''}`}
+                                        containerClassName="mt-3 w-full"
+                                        onChange={(event) => changeSignatureName(key, event.target.value)}
+                                    />
                                 </div>
-                                <SignaturePad
-                                    value={form.data.signatures[key]}
-                                    onChange={(value) => changeSignature(key, value)}
-                                    disabled={form.processing || lockForm.processing || isLocked}
-                                    label={`Area tanda tangan digital ${label}`}
-                                    height={140}
-                                    error={form.errors[`signatures.${key}`]}
-                                />
-                                <Input
-                                    id={`signature-name-${key}`}
-                                    label="Nama penandatangan (opsional)"
-                                    value={form.data.signature_names[key]}
-                                    maxLength={120}
-                                    disabled={form.processing || lockForm.processing || isLocked}
-                                    error={form.errors[`signature_names.${key}`]}
-                                    placeholder={`Nama ${label}`}
-                                    containerClassName="mt-3 w-full"
-                                    onChange={(event) => changeSignatureName(key, event.target.value)}
-                                />
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </fieldset>
 

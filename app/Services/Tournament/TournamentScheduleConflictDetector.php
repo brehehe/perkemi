@@ -114,11 +114,14 @@ class TournamentScheduleConflictDetector
                         $this->registerClash($clashesByMatchId, $m1, $m2, 'exact', $commonAthlete, 0);
                         $this->registerClash($clashesByMatchId, $m2, $m1, 'exact', $commonAthlete, 0);
                     } else {
-                        // Check tight gap (selisih waktu mulai <= TIGHT_GAP_MINUTES)
-                        $diffMinutes = abs($start1->diffInMinutes($start2));
-                        if ($diffMinutes <= self::TIGHT_GAP_MINUTES) {
-                            $this->registerClash($clashesByMatchId, $m1, $m2, 'tight', $commonAthlete, $diffMinutes);
-                            $this->registerClash($clashesByMatchId, $m2, $m1, 'tight', $commonAthlete, $diffMinutes);
+                        // Check tight gap: actual rest between the end of earlier match and start of later match is < 15 mins
+                        $earlierEnd = $start1 < $start2 ? $end1 : $end2;
+                        $laterStart = $start1 < $start2 ? $start2 : $start1;
+                        $actualRestMinutes = abs($laterStart->diffInMinutes($earlierEnd));
+
+                        if ($actualRestMinutes < 15) {
+                            $this->registerClash($clashesByMatchId, $m1, $m2, 'tight', $commonAthlete, $actualRestMinutes);
+                            $this->registerClash($clashesByMatchId, $m2, $m1, 'tight', $commonAthlete, $actualRestMinutes);
                         }
                     }
                 }

@@ -7,9 +7,10 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 
-function QrPreview({ value, label, compact = false }) {
+function QrPreview({ value, label, code, compact = false }) {
     const [failed, setFailed] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [codeCopied, setCodeCopied] = useState(false);
     const qrSource = value ? `https://quickchart.io/qr?size=280&margin=2&ecLevel=M&text=${encodeURIComponent(value)}` : '';
 
     const handleCopy = () => {
@@ -17,6 +18,13 @@ function QrPreview({ value, label, compact = false }) {
         navigator.clipboard?.writeText(value);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleCopyCode = () => {
+        if (!code) return;
+        navigator.clipboard?.writeText(code);
+        setCodeCopied(true);
+        setTimeout(() => setCodeCopied(false), 2000);
     };
 
     if (compact) {
@@ -37,15 +45,27 @@ function QrPreview({ value, label, compact = false }) {
                         </div>
                     )}
                 </div>
+                {code && (
+                    <div className="mt-1.5 flex items-center justify-center gap-1 rounded bg-amber-50 px-2 py-0.5 border border-amber-200 text-center">
+                        <span className="font-mono text-[11px] font-black tracking-wider text-[#17120f]">{code}</span>
+                        <button
+                            type="button"
+                            onClick={handleCopyCode}
+                            className="text-[10px] text-amber-800 hover:text-amber-950 p-0.5"
+                            title="Salin kode 6-digit"
+                        >
+                            <i className={`fa-solid ${codeCopied ? 'fa-check text-emerald-600' : 'fa-copy'}`} />
+                        </button>
+                    </div>
+                )}
                 {value && (
                     <button
                         type="button"
                         onClick={handleCopy}
-                        className={`mt-2 inline-flex items-center justify-center gap-1 rounded-md px-2.5 py-1 text-[10.5px] font-bold transition-all shadow-2xs cursor-pointer ${
-                            copied
+                        className={`mt-1.5 inline-flex items-center justify-center gap-1 rounded-md px-2.5 py-1 text-[10.5px] font-bold transition-all shadow-2xs cursor-pointer ${copied
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520]'
-                        }`}
+                            }`}
                         title="Salin tautan absensi QR"
                     >
                         <i className={`fa-solid ${copied ? 'fa-check' : 'fa-copy'} text-[10px]`} />
@@ -73,15 +93,34 @@ function QrPreview({ value, label, compact = false }) {
                 </div>
             )}
             <p className="mt-3 text-xs font-bold text-[#17120f]">{label}</p>
+
+            {code && (
+                <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50/90 p-2.5 text-center">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                        Kode 6-Digit (Tanpa Kamera)
+                    </p>
+                    <div className="mt-1 flex items-center justify-center gap-2">
+                        <span className="font-mono text-xl font-black tracking-widest text-[#17120f]">{code}</span>
+                        <button
+                            type="button"
+                            onClick={handleCopyCode}
+                            className="rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300 transition-colors"
+                        >
+                            <i className={`fa-solid ${codeCopied ? 'fa-check text-emerald-700' : 'fa-copy'} mr-1`} />
+                            {codeCopied ? 'Tersalin' : 'Salin'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {value && (
                 <button
                     type="button"
                     onClick={handleCopy}
-                    className={`mt-3 min-h-10 w-full rounded-xl px-3 text-xs font-semibold cursor-pointer flex items-center justify-center gap-2 transition-all ${
-                        copied
+                    className={`mt-3 min-h-10 w-full rounded-xl px-3 text-xs font-semibold cursor-pointer flex items-center justify-center gap-2 transition-all ${copied
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520] shadow-sm'
-                    }`}
+                        }`}
                 >
                     <i className={`fa-solid ${copied ? 'fa-check' : 'fa-copy'} text-xs`} />
                     {copied ? 'Tautan Berhasil Disalin!' : 'Salin Tautan QR'}
@@ -492,11 +531,10 @@ export default function CourtCoordinator({
                 {(flash.success || flash.error || errors.swap || errors.generate || errors.rotate || (Object.keys(errors).length > 0 ? Object.values(errors)[0] : null)) && (
                     <div
                         role="status"
-                        className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 shadow-xs ${
-                            (flash.error || errors.swap || errors.generate || errors.rotate || Object.keys(errors).length > 0)
+                        className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 shadow-xs ${(flash.error || errors.swap || errors.generate || errors.rotate || Object.keys(errors).length > 0)
                                 ? 'border-red-300 bg-red-50/95 text-red-900'
                                 : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                        }`}
+                            }`}
                     >
                         <i className={`fa-solid ${(flash.error || errors.swap || errors.generate || errors.rotate || Object.keys(errors).length > 0) ? 'fa-triangle-exclamation text-red-600' : 'fa-circle-check text-emerald-600'} mt-0.5 text-base shrink-0`} />
                         <div className="flex-1 min-w-0">
@@ -521,11 +559,10 @@ export default function CourtCoordinator({
                                 key={court.id}
                                 type="button"
                                 onClick={() => handleSwitchCourt(court.id)}
-                                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-colors cursor-pointer ${
-                                    court.id === selectedCourtId
+                                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-colors cursor-pointer ${court.id === selectedCourtId
                                         ? 'bg-[#17120f] text-[#f0c060] shadow-sm'
                                         : 'bg-white border border-[#e2d8c8] text-[#554e46] hover:bg-[#faf7f2]'
-                                }`}
+                                    }`}
                             >
                                 <i className="fa-solid fa-map-pin" />
                                 {court.name}
@@ -558,19 +595,18 @@ export default function CourtCoordinator({
                                     <div className="flex flex-wrap items-center gap-2.5">
                                         <h2 className="text-xl font-bold text-[#17120f]">{selectedCourt.name}</h2>
                                         <span
-                                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
-                                                selectedCourt.panel_ready
+                                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${selectedCourt.panel_ready
                                                     ? 'bg-emerald-100 text-emerald-800'
                                                     : selectedCourt.has_panel
-                                                    ? 'bg-amber-100 text-amber-800'
-                                                    : 'bg-gray-100 text-gray-700'
-                                            }`}
+                                                        ? 'bg-amber-100 text-amber-800'
+                                                        : 'bg-gray-100 text-gray-700'
+                                                }`}
                                         >
                                             {selectedCourt.panel_ready
                                                 ? '5 Wasit Hadir & Siap'
                                                 : selectedCourt.has_panel
-                                                ? 'Menunggu Check-in Wasit'
-                                                : 'Belum Ada Wasit'}
+                                                    ? 'Menunggu Check-in Wasit'
+                                                    : 'Belum Ada Wasit'}
                                         </span>
                                     </div>
                                     <p className="mt-1 text-xs text-[#7a746e]">
@@ -702,17 +738,16 @@ export default function CourtCoordinator({
                                                         onDragLeave={(e) => handleDragLeave(e, ref?.id)}
                                                         onDrop={(e) => handleDrop(e, ref?.id)}
                                                         onDragEnd={handleDragEnd}
-                                                        className={`group relative flex flex-col justify-between rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${
-                                                            isDragging
+                                                        className={`group relative flex flex-col justify-between rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${isDragging
                                                                 ? 'opacity-40 border-dashed border-amber-400 bg-amber-50/50 scale-[0.98]'
                                                                 : isDropTarget
-                                                                ? isDropInvalid
-                                                                    ? 'ring-2 ring-red-500 border-red-500 bg-red-50/80 shadow-md scale-[1.01]'
-                                                                    : 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
-                                                                : index === 0
-                                                                ? 'border-amber-300 bg-[#fffdfa] shadow-xs'
-                                                                : 'border-[#e8e1d8] bg-white shadow-2xs hover:border-amber-300'
-                                                        } ${ref ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                                                    ? isDropInvalid
+                                                                        ? 'ring-2 ring-red-500 border-red-500 bg-red-50/80 shadow-md scale-[1.01]'
+                                                                        : 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
+                                                                    : index === 0
+                                                                        ? 'border-amber-300 bg-[#fffdfa] shadow-xs'
+                                                                        : 'border-[#e8e1d8] bg-white shadow-2xs hover:border-amber-300'
+                                                            } ${ref ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                                     >
                                                         <div>
                                                             {/* Header Posisi & Status Kehadiran */}
@@ -812,11 +847,10 @@ export default function CourtCoordinator({
 
                                                         {/* Drop Target Indicator Prompt */}
                                                         {isDropTarget && (
-                                                            <div className={`my-2 rounded-xl px-3 py-2 text-center text-xs font-bold border ${
-                                                                isDropInvalid
+                                                            <div className={`my-2 rounded-xl px-3 py-2 text-center text-xs font-bold border ${isDropInvalid
                                                                     ? 'bg-red-100 text-red-900 border-red-300'
                                                                     : 'bg-amber-200/90 text-amber-950 border-amber-300 animate-pulse'
-                                                            }`}>
+                                                                }`}>
                                                                 <i className={`fa-solid ${isDropInvalid ? 'fa-ban text-red-600' : 'fa-arrow-down'} mr-1.5`} />
                                                                 {isDropInvalid ? dropInvalidMessage : `Lepas untuk menukar posisi dengan ${ref?.name}`}
                                                             </div>
@@ -868,13 +902,12 @@ export default function CourtCoordinator({
                                                                 onDragLeave={(e) => handleDragLeave(e, res.referee?.id)}
                                                                 onDrop={(e) => handleDrop(e, res.referee?.id)}
                                                                 onDragEnd={handleDragEnd}
-                                                                className={`group flex items-center justify-between gap-2.5 rounded-xl border p-3 shadow-2xs transition-all ${
-                                                                    isDragging
+                                                                className={`group flex items-center justify-between gap-2.5 rounded-xl border p-3 shadow-2xs transition-all ${isDragging
                                                                         ? 'opacity-40 border-dashed border-amber-400 bg-amber-50/50 scale-[0.98]'
                                                                         : isDropTarget
-                                                                        ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
-                                                                        : 'border-dashed border-[#dcd4ca] bg-white hover:border-amber-400 hover:bg-[#fffdfa]'
-                                                                } ${res.referee ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                                                            ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-100/70 shadow-md scale-[1.02]'
+                                                                            : 'border-dashed border-[#dcd4ca] bg-white hover:border-amber-400 hover:bg-[#fffdfa]'
+                                                                    } ${res.referee ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                                             >
                                                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                                                     <i className="fa-solid fa-grip-vertical text-[#bda892] group-hover:text-amber-600 transition-colors text-xs shrink-0 cursor-grab" title="Geser ke tatami untuk menukar" />
@@ -976,11 +1009,10 @@ export default function CourtCoordinator({
                                                                     {cat.name}
                                                                 </h3>
                                                                 <span
-                                                                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                                                        cat.type === 'randori'
+                                                                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${cat.type === 'randori'
                                                                             ? 'bg-rose-100 text-rose-800'
                                                                             : 'bg-indigo-100 text-indigo-800'
-                                                                    }`}
+                                                                        }`}
                                                                 >
                                                                     {cat.type}
                                                                 </span>
@@ -997,24 +1029,22 @@ export default function CourtCoordinator({
 
                                                     <div className="flex items-center gap-3">
                                                         <span
-                                                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                                                                cat.is_completed
+                                                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${cat.is_completed
                                                                     ? 'bg-emerald-100 text-emerald-800'
                                                                     : cat.completed_matches > 0
-                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                    : 'bg-gray-100 text-gray-700'
-                                                            }`}
+                                                                        ? 'bg-amber-100 text-amber-800'
+                                                                        : 'bg-gray-100 text-gray-700'
+                                                                }`}
                                                         >
                                                             {cat.is_completed
                                                                 ? 'Selesai'
                                                                 : cat.completed_matches > 0
-                                                                ? `${cat.completed_matches}/${cat.total_matches} Partai`
-                                                                : 'Belum Mulai'}
+                                                                    ? `${cat.completed_matches}/${cat.total_matches} Partai`
+                                                                    : 'Belum Mulai'}
                                                         </span>
                                                         <i
-                                                            className={`fa-solid fa-chevron-down text-xs text-gray-400 transition-transform ${
-                                                                isExpanded ? 'rotate-180 text-amber-600' : ''
-                                                            }`}
+                                                            className={`fa-solid fa-chevron-down text-xs text-gray-400 transition-transform ${isExpanded ? 'rotate-180 text-amber-600' : ''
+                                                                }`}
                                                         />
                                                     </div>
                                                 </div>
@@ -1065,13 +1095,12 @@ export default function CourtCoordinator({
                                                                     </div>
                                                                     <div className="mt-2.5 flex items-center justify-between border-t border-[#eee8e0] pt-1.5">
                                                                         <span
-                                                                            className={`rounded-full px-2 py-0.2 text-[9px] font-bold uppercase ${
-                                                                                m.status === 'completed'
+                                                                            className={`rounded-full px-2 py-0.2 text-[9px] font-bold uppercase ${m.status === 'completed'
                                                                                     ? 'bg-emerald-100 text-emerald-800'
                                                                                     : m.status === 'in_progress'
-                                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                                    : 'bg-gray-100 text-gray-600'
-                                                                            }`}
+                                                                                        ? 'bg-amber-100 text-amber-800'
+                                                                                        : 'bg-gray-100 text-gray-600'
+                                                                                }`}
                                                                         >
                                                                             {m.status === 'completed' ? 'Selesai' : m.status === 'in_progress' ? 'Tanding' : 'Menunggu'}
                                                                         </span>
@@ -1257,11 +1286,10 @@ export default function CourtCoordinator({
                             Pilih Cakupan Reset:
                         </label>
                         <div className="space-y-2">
-                            <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-all ${
-                                resetDutyForm.data.scope === 'court'
+                            <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-all ${resetDutyForm.data.scope === 'court'
                                     ? 'border-amber-400 bg-amber-50/70'
                                     : 'border-[#e5ded4] bg-white hover:bg-[#faf8f5]'
-                            }`}>
+                                }`}>
                                 <input
                                     type="radio"
                                     name="scope"
@@ -1275,11 +1303,10 @@ export default function CourtCoordinator({
                                     <p className="text-[11px] text-[#7a746e]">Mereset hitungan tugas wasit pada court ini saja.</p>
                                 </div>
                             </label>
-                            <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-all ${
-                                resetDutyForm.data.scope === 'all'
+                            <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-all ${resetDutyForm.data.scope === 'all'
                                     ? 'border-amber-400 bg-amber-50/70'
                                     : 'border-[#e5ded4] bg-white hover:bg-[#faf8f5]'
-                            }`}>
+                                }`}>
                                 <input
                                     type="radio"
                                     name="scope"
@@ -1304,7 +1331,7 @@ export default function CourtCoordinator({
                 onClose={() => setQrModalOpen(false)}
                 title={`QR Absensi Wasit · ${selectedCourt?.name || ''}`}
                 subtitle="Tampilkan QR code ini untuk dipindai oleh wasit menggunakan kamera HP atau menu Absensi Wasit."
-                size={activeQrRole === 'all' ? '4xl' : 'md'}
+                size={activeQrRole === 'all' ? '4xl' : '4xl'}
                 className={activeQrRole === 'all' ? 'sm:max-w-5xl md:max-w-6xl' : ''}
                 footer={<Button onClick={() => setQrModalOpen(false)}>Tutup</Button>}
             >
@@ -1314,11 +1341,10 @@ export default function CourtCoordinator({
                         <button
                             type="button"
                             onClick={() => setActiveQrRole('all')}
-                            className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                activeQrRole === 'all'
+                            className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${activeQrRole === 'all'
                                     ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
                                     : 'text-[#625b54] hover:text-[#17120f]'
-                            }`}
+                                }`}
                         >
                             <i className="fa-solid fa-border-all mr-1.5" />
                             Semua 5 Posisi
@@ -1330,11 +1356,10 @@ export default function CourtCoordinator({
                                     key={pm.role}
                                     type="button"
                                     onClick={() => setActiveQrRole(pm.role)}
-                                    className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${
-                                        activeQrRole === pm.role
+                                    className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${activeQrRole === pm.role
                                             ? 'bg-white text-[#17120f] shadow-xs'
                                             : 'text-[#625b54] hover:text-[#17120f]'
-                                    }`}
+                                        }`}
                                 >
                                     {tabLabel}
                                 </button>
@@ -1362,7 +1387,12 @@ export default function CourtCoordinator({
                                                     </span>
                                                 </div>
 
-                                                <QrPreview value={pm.check_in_url} label={`${selectedCourt?.name || 'Court'} · W${idx + 1}`} compact />
+                                                <QrPreview
+                                                    value={pm.check_in_url}
+                                                    label={`${selectedCourt?.name || 'Court'} · W${idx + 1}`}
+                                                    code={pm.check_in_code}
+                                                    compact
+                                                />
 
                                                 <div className="mt-2.5 min-w-0">
                                                     <p className="text-xs sm:text-[13px] font-bold text-[#17120f] leading-snug line-clamp-2 min-h-[2.2rem] flex items-center justify-center text-center" title={pm.referee?.name}>
@@ -1403,6 +1433,7 @@ export default function CourtCoordinator({
                                     <QrPreview
                                         value={currentMember.check_in_url}
                                         label={`Check-in ${selectedCourt?.name || 'Court'} · ${currentMember.role_label}`}
+                                        code={currentMember.check_in_code}
                                     />
                                     <div className="mt-3 rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3 text-left">
                                         <p className="text-[10px] font-bold uppercase tracking-wider text-[#9b7125]">Wasit Yang Ditugaskan</p>
@@ -1496,11 +1527,10 @@ export default function CourtCoordinator({
                                     return (
                                         <div
                                             key={target.referee?.id || target.role}
-                                            className={`flex items-center justify-between gap-2.5 rounded-xl border p-3 transition-all ${
-                                                hint
+                                            className={`flex items-center justify-between gap-2.5 rounded-xl border p-3 transition-all ${hint
                                                     ? 'border-red-200 bg-red-50/30 hover:border-red-300'
                                                     : 'border-[#e5ded4] bg-white hover:border-amber-400 hover:bg-[#fffdfa]'
-                                            }`}
+                                                }`}
                                         >
                                             <div className="flex items-center gap-2.5 min-w-0">
                                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#3d3732] text-xs font-bold text-white">
@@ -1528,11 +1558,10 @@ export default function CourtCoordinator({
                                                 size="sm"
                                                 disabled={isSwapping || hint?.type === 'error'}
                                                 onClick={() => performSwap(swapSourceItem.referee.id, target.referee.id)}
-                                                className={`shrink-0 text-xs px-2.5 py-1 min-h-8 ${
-                                                    hint?.type === 'error'
+                                                className={`shrink-0 text-xs px-2.5 py-1 min-h-8 ${hint?.type === 'error'
                                                         ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300'
                                                         : 'bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520]'
-                                                }`}
+                                                    }`}
                                             >
                                                 <i className={`fa-solid ${hint?.type === 'error' ? 'fa-ban text-gray-400' : 'fa-arrow-right-arrow-left text-amber-400'} text-[10px] mr-1`} />
                                                 Tukar

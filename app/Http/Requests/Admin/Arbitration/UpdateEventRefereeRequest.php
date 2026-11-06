@@ -26,7 +26,7 @@ class UpdateEventRefereeRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:100',
-                Rule::unique('referees', 'license_number')->ignore($referee instanceof Referee ? $referee->id : $referee),
+                Rule::unique('referees', 'license_number')->ignore($referee instanceof Referee ? $referee->id : $referee)->withoutTrashed(),
             ],
             'certification_level' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],

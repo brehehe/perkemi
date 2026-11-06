@@ -346,6 +346,19 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
                 const penaltyError = Object.entries(errors).find(([key]) => key.startsWith('violation_penalties'))?.[1];
                 setValidationMessage(errors.signature || errors.aspect_scores || penaltyError || 'Terjadi kesalahan saat menyimpan nilai.');
             },
+            onHttpException: (response) => {
+                setSaveState('error');
+                const isInactive = response.status === 409;
+                setSaveMessage(isInactive
+                    ? 'Partai tidak lagi aktif atau telah ditutup. Mengalihkan ke portal wasit…'
+                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset). Mengalihkan ke portal wasit…');
+                if (activeEvent?.id) {
+                    window.setTimeout(() => {
+                        router.visit(`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`, { replace: true, preserveState: false });
+                    }, 1200);
+                }
+                return false;
+            },
             onFinish: () => onBusyChange(false),
         });
     };
@@ -537,6 +550,12 @@ export default function ArbitrationScoring({ activeEvent, refereeSession = null,
     const [scoreBusy, setScoreBusy] = useState(false);
     const activeMatch = refereeSession?.active_match;
     const isEmbu = activeMatch?.category_type?.toLowerCase() === 'embu';
+
+    useEffect(() => {
+        if (refereeSession && (!refereeSession.is_checked_in || refereeSession.is_taken_over) && activeEvent?.id) {
+            router.visit(`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`, { replace: true, preserveState: false });
+        }
+    }, [refereeSession?.is_checked_in, refereeSession?.is_taken_over, activeEvent?.id]);
 
     useEffect(() => {
         if (!window.Echo || !refereeSession?.court_id) return undefined;

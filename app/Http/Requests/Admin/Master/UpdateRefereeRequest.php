@@ -27,7 +27,7 @@ class UpdateRefereeRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'gender' => ['required', 'in:male,female'],
             'dan_grade' => ['nullable', 'string', 'max:50'],
-            'license_number' => ['nullable', 'string', 'max:100', Rule::unique('referees', 'license_number')->ignore($this->route('referee'))],
+            'license_number' => ['nullable', 'string', 'max:100', Rule::unique('referees', 'license_number')->ignore($this->route('referee'))->withoutTrashed()],
             'certification_level' => ['nullable', 'string', 'max:100'],
             'region' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],

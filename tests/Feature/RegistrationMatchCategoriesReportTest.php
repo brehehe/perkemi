@@ -151,4 +151,3 @@ test('match categories report page renders with correct categories, teams, techn
             ->where('categories.1.randori_athletes.0.name', 'Kenshi B1')
         );
 });
-

@@ -52,11 +52,13 @@ class StoreRandoriScoreRequest extends FormRequest
         ];
 
         foreach (RandoriScore::SignatureKeys as $signatureKey) {
+            $isOptional = in_array($signatureKey, RandoriScore::OptionalSignatureKeys, true);
+
             $rules["signatures.{$signatureKey}"] = [
-                'required',
+                $isOptional ? 'nullable' : 'required',
                 'string',
                 'max:500000',
-                'regex:/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/',
+                $isOptional ? 'regex:/^$|^data:image\/png;base64,[A-Za-z0-9+\/=]+$/' : 'regex:/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/',
             ];
             $rules["signature_names.{$signatureKey}"] = ['nullable', 'string', 'max:120'];
         }

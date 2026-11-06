@@ -387,6 +387,19 @@ class ArbitrationController extends Controller
             Cache::put($lockKey, $currentSessionId, now()->addHours(6));
         }
 
+        $isCheckedIn = RefereeAttendance::query()
+            ->whereBelongsTo($activeEvent)
+            ->whereBelongsTo($referee)
+            ->whereDate('attendance_date', now()->toDateString())
+            ->where('is_present', true)
+            ->exists()
+            && RefereeCourtAttendance::query()
+                ->whereBelongsTo($activeEvent)
+                ->whereBelongsTo($court, 'court')
+                ->whereBelongsTo($referee)
+                ->whereDate('attendance_date', now()->toDateString())
+                ->exists();
+
         $refereeSession = [
             'referee_name' => $referee->name,
             'court_id' => $court->id,
@@ -398,18 +411,7 @@ class ArbitrationController extends Controller
             'takeover_url' => request()->fullUrlWithQuery(['takeover' => 1]),
             'can_manage_penalties' => $role === RefereeCourtRole::Chief,
             'penalty_state' => $sharedPenaltyState,
-            'is_checked_in' => RefereeAttendance::query()
-                ->whereBelongsTo($activeEvent)
-                ->whereBelongsTo($referee)
-                ->whereDate('attendance_date', now()->toDateString())
-                ->where('is_present', true)
-                ->exists()
-                && RefereeCourtAttendance::query()
-                    ->whereBelongsTo($activeEvent)
-                    ->whereBelongsTo($court, 'court')
-                    ->whereBelongsTo($referee)
-                    ->whereDate('attendance_date', now()->toDateString())
-                    ->exists(),
+            'is_checked_in' => $isCheckedIn,
             'active_match' => $activeMatch ? [
                 'id' => $activeMatch->id,
                 'category_name' => $activeMatch->matchCategory?->name,

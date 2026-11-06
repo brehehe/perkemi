@@ -587,3 +587,127 @@ test('contingent master forms validate required and sensitive identity fields', 
     $this->assertDatabaseCount('athletes', 0);
     $this->assertDatabaseCount('officials', 0);
 });
+
+test('contingent portal exposes randori bracket page with categories and highlight props', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('POPDA Jatim 2026', 'popda-jatim-2026', true);
+    $contingent = portalContingent($owner, $event, 'Dojo Garuda Sakti');
+
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa Putra 60 kg',
+        'type' => 'randori',
+        'preferred_bracket_type' => 'single_elimination',
+        'gender' => 'male',
+        'is_active' => true,
+    ]);
+
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Bayu Angga',
+        'gender' => 'male',
+        'kyu_dan' => '1 Dan',
+    ]);
+
+    $entry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'athlete_id' => $athlete->id,
+    ]);
+
+    $drawing = TournamentDrawing::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'status' => 'published',
+    ]);
+
+    $match = TournamentMatch::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'tournament_drawing_id' => $drawing->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'bracket_position' => 1,
+        'red_entry_id' => $entry->id,
+        'red_label' => 'Kenshi Bayu Angga',
+        'blue_label' => 'Kenshi Lawan',
+        'status' => 'scheduled',
+    ]);
+
+    $this->actingAs($owner)
+        ->get('/kontingen/bagan')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'bracket')
+            ->where('highlight_contingent_id', $contingent->id)
+            ->where('highlight_contingent_name', 'Dojo Garuda Sakti')
+            ->where('highlight_entry_ids.0', $entry->id)
+            ->where('highlight_athlete_names.0', 'Kenshi Bayu Angga')
+            ->has('categories', 1)
+            ->where('categories.0.is_entered', true)
+            ->where('categories.0.my_athletes_count', 1)
+            ->where('selected_category.id', $category->id)
+            ->has('matches', 1)
+            ->where('matches.0.aka_label', 'Kenshi Bayu Angga')
+            ->where('matches.0.red_entry_id', $entry->id));
+});
+
+test('contingent randori bracket prioritizes entered categories over others', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('POPDA Jatim 2026', 'popda-jatim-2026', true);
+    $contingent = portalContingent($owner, $event, 'Dojo Garuda Sakti');
+
+    $catOther = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa Putra 50 kg',
+        'type' => 'randori',
+        'preferred_bracket_type' => 'single_elimination',
+        'gender' => 'male',
+        'is_active' => true,
+    ]);
+
+    $catEntered = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Dewasa Putra 70 kg',
+        'type' => 'randori',
+        'preferred_bracket_type' => 'single_elimination',
+        'gender' => 'male',
+        'is_active' => true,
+    ]);
+
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Budi',
+        'gender' => 'male',
+        'kyu_dan' => '1 Dan',
+    ]);
+
+    AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $catEntered->id,
+        'athlete_id' => $athlete->id,
+    ]);
+
+    // Should default to catEntered because it is entered by the contingent
+    $this->actingAs($owner)
+        ->get('/kontingen/bagan')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'bracket')
+            ->where('selected_category.id', $catEntered->id)
+            ->where('categories.0.id', $catEntered->id));
+
+    // Can switch to catOther explicitly
+    $this->actingAs($owner)
+        ->get('/kontingen/bagan?category='.$catOther->id)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'bracket')
+            ->where('selected_category.id', $catOther->id));
+});

@@ -32,6 +32,8 @@ class CourtMonitorDataService
             'embuJudgeScores.referee:id,name,region,dan_grade',
             'randoriScore',
             'activeVarReview',
+            'redEntry.athlete.contingent:id,name',
+            'blueEntry.athlete.contingent:id,name',
         ];
         $baseQuery = fn () => TournamentMatch::query()
             ->whereBelongsTo($event)
@@ -381,6 +383,15 @@ class CourtMonitorDataService
         $randoriScore = $match->randoriScore;
         $type = $match->matchCategory?->type;
 
+        $redContingent = data_get($match->metadata, 'red.contingent_name')
+            ?? data_get($match->metadata, 'red.contingent')
+            ?? $match->redEntry?->athlete?->contingent?->name
+            ?? null;
+        $blueContingent = data_get($match->metadata, 'blue.contingent_name')
+            ?? data_get($match->metadata, 'blue.contingent')
+            ?? $match->blueEntry?->athlete?->contingent?->name
+            ?? null;
+
         return [
             'id' => $match->id,
             'category_name' => $match->matchCategory?->name,
@@ -392,6 +403,10 @@ class CourtMonitorDataService
             'participant' => $type === 'embu' ? $this->participantDetails->forMatch($event, $match) : null,
             'aka_label' => $match->red_label,
             'shiro_label' => $match->blue_label,
+            'aka_contingent' => $redContingent,
+            'shiro_contingent' => $blueContingent,
+            'red_contingent' => $redContingent,
+            'blue_contingent' => $blueContingent,
             'status' => $match->status,
             'status_label' => $this->statusLabel($match->status),
             'call_status' => $match->call_status,

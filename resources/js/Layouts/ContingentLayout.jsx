@@ -10,6 +10,7 @@ const navigation = [
     ] },
     { id: 'pertandingan', label: 'Pertandingan', items: [
         { label: 'Jadwal Pertandingan', href: '/kontingen/jadwal', icon: 'fa-calendar-days' },
+        { label: 'Bagan Randori', href: '/kontingen/bagan', icon: 'fa-sitemap' },
     ] },
     { id: 'laporan', label: 'Laporan & Hasil', items: [
         { label: 'Hasil Juara', href: '/kontingen/hasil/juara', icon: 'fa-trophy' },

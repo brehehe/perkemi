@@ -17,6 +17,17 @@ export default function RefereeCheckIn({ activeEvent, referee, target, submitUrl
                         <p className="mt-2 text-sm text-white/65">{activeEvent.name} · {activeEvent.city}</p>
                     </div>
                     <div className="space-y-5 p-5 md:p-8">
+                        {target.code && (
+                            <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs text-amber-950 shadow-2xs">
+                                <span className="font-semibold text-amber-900 flex items-center gap-1.5">
+                                    <i className="fa-solid fa-key text-amber-700" aria-hidden="true" />
+                                    Kode Check-in Terverifikasi:
+                                </span>
+                                <span className="font-mono text-base font-black tracking-widest text-[#17120f] bg-white px-2.5 py-0.5 rounded-lg border border-amber-200">
+                                    {target.code}
+                                </span>
+                            </div>
+                        )}
                         {target.court && <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Court Tujuan</p><p className="mt-1 font-bold text-blue-950">{target.court.name}</p><p className="mt-0.5 text-xs text-blue-700">{target.court.location || 'Lokasi belum dicatat'}</p></div>}
                         {target.role_label && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Posisi Penugasan Meja Juri</p><p className="mt-1 font-bold text-amber-950">{target.role_label}</p><p className="mt-0.5 text-xs text-amber-700">Pastikan Anda menempati meja juri sesuai posisi ini.</p></div>}
                         <p className="text-sm leading-6 text-[#655d56]">{target.description}</p>

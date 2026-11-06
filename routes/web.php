@@ -90,6 +90,7 @@ Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.
     Route::get('registrasi/event/{event}/mulai', [ContingentPortalController::class, 'startRegistration'])->name('registrasi.start');
     Route::get('registrasi/{registration}', [ContingentPortalController::class, 'openRegistration'])->name('registrasi.detail');
     Route::get('jadwal', [ContingentPortalController::class, 'schedule'])->name('jadwal');
+    Route::get('bagan', [ContingentPortalController::class, 'bracket'])->name('bagan');
     Route::get('hasil', [ContingentPortalController::class, 'results'])->name('hasil');
     Route::get('hasil/juara', [ContingentPortalController::class, 'results'])->name('hasil.juara');
     Route::get('hasil/embu', [ContingentPortalController::class, 'embuResults'])->name('hasil.embu');
@@ -304,6 +305,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::delete('jadwal/matches/{tournamentMatch}', [TournamentController::class, 'unscheduleMatch'])->name('schedule.matches.destroy');
     Route::get('wasit', [EventRefereeController::class, 'index'])->name('wasit.index');
     Route::post('wasit/courts/generate', [EventRefereeController::class, 'generateCourtPanels'])->name('wasit.courts.generate');
+    Route::post('wasit/swap', [EventRefereeController::class, 'swapOrMoveReferee'])->name('wasit.swap');
     Route::post('wasit/courts/{eventCourt}/rotate', [EventRefereeController::class, 'rotateCourtPanel'])->name('wasit.courts.panel.rotate');
     Route::put('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'updateCourtPanel'])->name('wasit.courts.panel.update');
     Route::delete('wasit/courts/{eventCourt}/panel', [EventRefereeController::class, 'resetCourtPanel'])->name('wasit.courts.panel.reset');
@@ -311,6 +313,7 @@ Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name(
     Route::delete('wasit/courts/{eventCourt}/coordinator', [EventRefereeController::class, 'resetCourtCoordinator'])->name('wasit.courts.coordinator.reset');
     Route::post('wasit/courts/generate-coordinators', [EventRefereeController::class, 'generateCourtCoordinators'])->name('wasit.courts.coordinators.generate');
     Route::put('wasit/{referee}/attendance', [EventRefereeController::class, 'updateAttendance'])->name('wasit.attendance.update');
+    Route::delete('wasit/{referee}/attendance', [EventRefereeController::class, 'resetAttendance'])->name('wasit.attendance.reset');
     Route::post('wasit/{referee}/account', [EventRefereeController::class, 'upsertAccount'])->name('wasit.account.store');
     Route::get('merge', [TournamentController::class, 'merge'])->name('merge');
     Route::post('merge/combine', [TournamentController::class, 'storeCombinedMerge'])->name('merge.combine');
@@ -453,6 +456,14 @@ Route::match(['get', 'post'], 'wasit/check-in/event/{event}', [RefereeCheckInCon
 Route::match(['get', 'post'], 'wasit/check-in/event/{event}/court/{eventCourt}/{role?}', [RefereeCheckInController::class, 'court'])
     ->middleware(['signed', 'throttle:30,1'])
     ->name('wasit.check-in.court');
+
+// Wasit 6-digit code resolution (resolves code to signed check-in URL)
+Route::post('wasit/code', [RefereeCheckInController::class, 'resolveCode'])
+    ->middleware('throttle:60,1')
+    ->name('wasit.code.resolve');
+Route::get('wasit/code/{code}', [RefereeCheckInController::class, 'resolveCode'])
+    ->middleware('throttle:60,1')
+    ->name('wasit.code.direct');
 
 Route::middleware('auth')->group(function () {
     Route::get('wasit', RefereePortalController::class)->middleware('event.tenant')->name('wasit.portal');

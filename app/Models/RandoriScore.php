@@ -25,6 +25,20 @@ class RandoriScore extends Model
     ];
 
     /** @var list<string> */
+    public const RequiredSignatureKeys = [
+        'referee',
+        'clerk',
+        'red_manager',
+        'white_manager',
+    ];
+
+    /** @var list<string> */
+    public const OptionalSignatureKeys = [
+        'arbitrase',
+        'field_coordinator',
+    ];
+
+    /** @var list<string> */
     protected $fillable = [
         'event_id',
         'tournament_match_id',

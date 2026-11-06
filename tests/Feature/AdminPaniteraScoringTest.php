@@ -2153,6 +2153,119 @@ test('a clerk permanently locks a saved Randori result', function () {
         ->locked_at->not->toBeNull();
 });
 
+test('a clerk can save and lock a Randori result with arbitrase and field_coordinator signatures empty', function () {
+    $event = createPaniteraEvent('Event Kunci Randori Opsional TTD');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Opsional TTD', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'red_label' => 'Atlet Merah',
+        'blue_label' => 'Atlet Putih',
+        'metadata' => [
+            'red' => ['label' => 'Atlet Merah', 'athlete_ids' => ['red']],
+            'blue' => ['label' => 'Atlet Putih', 'athlete_ids' => ['white']],
+            'placeholder' => false,
+        ],
+    ]);
+    $empty = ['mujoken' => 0, 'ippon' => 0, 'waza_ari' => 0, 'yusei' => 0, 'batsu_5' => 0, 'batsu_10' => 0];
+    $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+    // 4 required signatures filled, 2 optional (arbitrase, field_coordinator) empty strings
+    $signatures = [
+        'arbitrase' => '',
+        'field_coordinator' => '',
+        'referee' => $signature,
+        'clerk' => $signature,
+        'red_manager' => $signature,
+        'white_manager' => $signature,
+    ];
+
+    // 1. Can save result without Arbitrase & Field Coordinator signatures
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}", [
+            'event_id' => $event->id,
+            'aka' => [...$empty, 'ippon' => 1],
+            'shiro' => $empty,
+            'signatures' => $signatures,
+            'return_to_match' => true,
+        ])
+        ->assertRedirect(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ]))
+        ->assertSessionHasNoErrors();
+
+    $savedScore = RandoriScore::query()->whereBelongsTo($match)->first();
+    expect($savedScore)->not->toBeNull()
+        ->and(blank($savedScore->signatures['arbitrase']))->toBeTrue()
+        ->and(blank($savedScore->signatures['field_coordinator']))->toBeTrue()
+        ->and($savedScore->signatures['referee'])->toBe($signature);
+
+    // 2. Can permanently lock result with only the 4 required signatures
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}/lock", [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect(route('admin.panitera.matches.show', [
+            'tournamentMatch' => $match,
+            'event_id' => $event->id,
+        ]))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('success', 'Nilai Randori berhasil dikunci dan tidak dapat diubah lagi.');
+
+    expect($savedScore->fresh()->locked_at)->not->toBeNull();
+});
+
+test('locking Randori fails if any of the 4 required signatures is missing', function () {
+    $event = createPaniteraEvent('Event Kunci Randori Kurang TTD Wajib');
+    $user = createPaniteraUser($event);
+    [$category, $drawing] = createPaniteraCategory($event, 'Randori Kurang TTD Wajib', 'randori', 'single_elimination');
+    $match = TournamentMatch::create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'red_label' => 'Atlet Merah',
+        'blue_label' => 'Atlet Putih',
+        'metadata' => ['placeholder' => false],
+    ]);
+    $signature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+    // white_manager missing (empty)
+    $score = RandoriScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match->id,
+        'signatures' => [
+            'arbitrase' => $signature,
+            'field_coordinator' => $signature,
+            'referee' => $signature,
+            'clerk' => $signature,
+            'red_manager' => $signature,
+            'white_manager' => '',
+        ],
+        'submitted_by' => $user->id,
+        'verified_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->post("/admin/panitera/scoring/randori-result/{$match->id}/lock", [
+            'event_id' => $event->id,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors([
+            'result' => 'Empat tanda tangan utama (Wasit Lapangan, Panitera, Manajer Merah, Manajer Putih) wajib lengkap sebelum nilai Randori dikunci.',
+        ]);
+
+    expect($score->fresh()->locked_at)->toBeNull();
+});
+
 test('the server rejects changes to a locked Randori result', function () {
     $event = createPaniteraEvent('Event Nilai Randori Terkunci');
     $user = createPaniteraUser($event);

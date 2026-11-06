@@ -66,6 +66,10 @@ function BracketMatchCard({
     isMonitor = false,
     isActive = false,
     className = '',
+    highlightContingentId = null,
+    highlightContingentName = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
 }) {
     const isCompleted = Boolean(match.score);
     const winnerCorner = match.score?.winner_corner;
@@ -112,6 +116,40 @@ function BracketMatchCard({
         return lower.startsWith('pemenang') || lower.startsWith('kalah') || lower.startsWith('menunggu') || lower.startsWith('sudut');
     };
 
+    const checkIsAthleteHighlighted = (label, contingentName, entryId, contingentId) => {
+        if (isPlaceholder(label)) return false;
+        const normalizedLabel = (label || '').trim().toLowerCase();
+        if (highlightAthleteNames?.length && highlightAthleteNames.some((n) => (n || '').trim().toLowerCase() === normalizedLabel)) {
+            return true;
+        }
+        if (highlightEntryIds?.length && entryId && highlightEntryIds.map(String).includes(String(entryId))) {
+            return true;
+        }
+        if (highlightContingentId && contingentId && String(contingentId) === String(highlightContingentId)) {
+            return true;
+        }
+        if (highlightContingentName && contingentName && contingentName.trim().toLowerCase() === highlightContingentName.trim().toLowerCase()) {
+            return true;
+        }
+        return false;
+    };
+
+    const isAkaHighlighted = checkIsAthleteHighlighted(
+        akaLabel,
+        akaContingent,
+        match.red_entry_id || match.metadata?.red?.entry_id,
+        match.aka_contingent_id || match.metadata?.red?.contingent_id
+    );
+
+    const isShiroHighlighted = checkIsAthleteHighlighted(
+        shiroLabel,
+        shiroContingent,
+        match.blue_entry_id || match.metadata?.blue?.entry_id,
+        match.shiro_contingent_id || match.metadata?.blue?.contingent_id
+    );
+
+    const hasHighlightedAthlete = isAkaHighlighted || isShiroHighlighted;
+
     return (
         <div className={`relative flex flex-col justify-center shrink-0 group ${className || 'my-2.5 w-76'}`}>
             {/* Main Match Container */}
@@ -119,6 +157,8 @@ function BracketMatchCard({
                 className={`overflow-hidden rounded-xl border transition-all duration-200 shadow-xs hover:shadow-md ${
                     isActive
                         ? 'border-blue-500 dark:border-blue-400 bg-blue-50/40 dark:bg-blue-950/40 ring-4 ring-blue-500/20'
+                        : hasHighlightedAthlete
+                        ? 'border-amber-400 dark:border-amber-500 bg-white dark:bg-[#1c1917] ring-2 ring-amber-400/50 shadow-md shadow-amber-200/40 dark:shadow-amber-950/50'
                         : match.is_bye
                         ? 'border-dashed border-[#d8d1c8] dark:border-white/15 bg-[#faf8f5]/80 dark:bg-white/[.02]'
                         : isCompleted
@@ -133,12 +173,21 @@ function BracketMatchCard({
                 {/* Match Header Bar */}
                 <div className="flex items-center justify-between border-b border-[#eee7dd] dark:border-white/10 bg-[#f8f5f0] dark:bg-white/5 px-3 py-1.5 text-[11px]">
                     <div className="flex items-center gap-1.5 font-bold text-[#17120f] dark:text-white">
-                        <span className="flex h-5 w-5 items-center justify-center rounded bg-[#17120f] dark:bg-white text-[10px] font-black text-[#f0c060] dark:text-slate-900">
+                        <span className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-black ${
+                            hasHighlightedAthlete
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-[#17120f] dark:bg-white text-[#f0c060] dark:text-slate-900'
+                        }`}>
                             #{match.sequence}
                         </span>
                         <span className="text-[10px] text-[#7a746e] dark:text-white/60">
                             {match.court || 'Court —'}
                         </span>
+                        {hasHighlightedAthlete && (
+                            <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-100 dark:bg-amber-950/80 px-1.5 py-0.5 text-[9px] font-black text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60">
+                                <i className="fa-solid fa-star text-[7.5px] text-amber-600" /> Kontingen Anda
+                            </span>
+                        )}
                     </div>
                     <div>{getStatusBadge(match, isMonitor)}</div>
                 </div>
@@ -148,7 +197,11 @@ function BracketMatchCard({
                     {/* AKA (Sudut Merah) */}
                     <div
                         className={`flex items-center justify-between gap-2 px-3 py-2 transition-colors ${
-                            isAkaWinner
+                            isAkaHighlighted
+                                ? isAkaWinner
+                                    ? 'bg-amber-100 dark:bg-amber-950/80 border-l-4 border-amber-500 font-black text-amber-950 dark:text-amber-100 ring-2 ring-inset ring-amber-400/80'
+                                    : 'bg-amber-50/90 dark:bg-amber-950/50 border-l-4 border-amber-400 font-extrabold text-amber-950 dark:text-amber-100 ring-1 ring-inset ring-amber-300/60'
+                                : isAkaWinner
                                 ? 'bg-rose-50/90 dark:bg-rose-950/40 font-bold text-rose-950 dark:text-rose-200'
                                 : match.is_bye && akaLabel?.toUpperCase() === 'BYE'
                                 ? 'bg-slate-50 dark:bg-white/5 text-slate-400 dark:text-white/30 italic'
@@ -156,20 +209,33 @@ function BracketMatchCard({
                         }`}
                     >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span className="shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black bg-rose-600 text-white shadow-2xs">
+                            <span className={`shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black shadow-2xs ${
+                                isAkaHighlighted
+                                    ? 'bg-amber-500 text-slate-950 font-black'
+                                    : 'bg-rose-600 text-white'
+                            }`}>
                                 AKA
                             </span>
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="truncate text-xs font-semibold" title={akaLabel || 'Menunggu peserta'}>
+                                    <span className={`truncate text-xs ${isAkaHighlighted ? 'font-black' : 'font-semibold'}`} title={akaLabel || 'Menunggu peserta'}>
                                         {akaLabel || 'Menunggu peserta'}
                                     </span>
+                                    {isAkaHighlighted && (
+                                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[8.5px] font-black uppercase tracking-wider shadow-2xs">
+                                            <i className="fa-solid fa-star text-[7px]" /> Atlet Anda
+                                        </span>
+                                    )}
                                     {isAkaWinner && (
                                         <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
                                     )}
                                 </div>
                                 {akaContingent && !isPlaceholder(akaLabel) && (
-                                    <p className="truncate text-[11px] font-medium text-[#625b54] dark:text-white/70 leading-tight mt-0.5" title={akaContingent}>
+                                    <p className={`truncate text-[11px] leading-tight mt-0.5 ${
+                                        isAkaHighlighted
+                                            ? 'font-bold text-amber-900 dark:text-amber-200'
+                                            : 'font-medium text-[#625b54] dark:text-white/70'
+                                    }`} title={akaContingent}>
                                         {akaContingent}
                                     </p>
                                 )}
@@ -177,7 +243,7 @@ function BracketMatchCard({
                         </div>
                         <div className="shrink-0 font-mono font-bold text-xs sm:text-sm pl-1">
                             {match.score ? (
-                                <span className={isAkaWinner ? 'text-rose-700 dark:text-rose-400 font-black' : 'text-[#7a746e] dark:text-white/50'}>
+                                <span className={isAkaHighlighted ? 'text-amber-950 dark:text-amber-200 font-black' : isAkaWinner ? 'text-rose-700 dark:text-rose-400 font-black' : 'text-[#7a746e] dark:text-white/50'}>
                                     {match.score.aka_total}
                                 </span>
                             ) : match.is_bye && isAkaWinner ? (
@@ -191,7 +257,11 @@ function BracketMatchCard({
                     {/* SHIRO (Sudut Putih) */}
                     <div
                         className={`flex items-center justify-between gap-2 px-3 py-2 transition-colors ${
-                            isShiroWinner
+                            isShiroHighlighted
+                                ? isShiroWinner
+                                    ? 'bg-amber-100 dark:bg-amber-950/80 border-l-4 border-amber-500 font-black text-amber-950 dark:text-amber-100 ring-2 ring-inset ring-amber-400/80'
+                                    : 'bg-amber-50/90 dark:bg-amber-950/50 border-l-4 border-amber-400 font-extrabold text-amber-950 dark:text-amber-100 ring-1 ring-inset ring-amber-300/60'
+                                : isShiroWinner
                                 ? 'bg-slate-100 dark:bg-slate-800/80 font-bold text-slate-950 dark:text-white'
                                 : match.is_bye && shiroLabel?.toUpperCase() === 'BYE'
                                 ? 'bg-slate-50 dark:bg-white/5 text-slate-400 dark:text-white/30 italic'
@@ -199,20 +269,33 @@ function BracketMatchCard({
                         }`}
                     >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span className="shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black bg-slate-700 dark:bg-slate-300 text-white dark:text-slate-900 shadow-2xs">
+                            <span className={`shrink-0 self-start mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-black shadow-2xs ${
+                                isShiroHighlighted
+                                    ? 'bg-amber-500 text-slate-950 font-black'
+                                    : 'bg-slate-700 dark:bg-slate-300 text-white dark:text-slate-900'
+                            }`}>
                                 SHIRO
                             </span>
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="truncate text-xs font-semibold" title={shiroLabel || 'Menunggu peserta'}>
+                                    <span className={`truncate text-xs ${isShiroHighlighted ? 'font-black' : 'font-semibold'}`} title={shiroLabel || 'Menunggu peserta'}>
                                         {shiroLabel || 'Menunggu peserta'}
                                     </span>
+                                    {isShiroHighlighted && (
+                                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[8.5px] font-black uppercase tracking-wider shadow-2xs">
+                                            <i className="fa-solid fa-star text-[7px]" /> Atlet Anda
+                                        </span>
+                                    )}
                                     {isShiroWinner && (
                                         <i className="fa-solid fa-crown text-amber-500 text-[11px] shrink-0" title="Pemenang" />
                                     )}
                                 </div>
                                 {shiroContingent && !isPlaceholder(shiroLabel) && (
-                                    <p className="truncate text-[11px] font-medium text-[#625b54] dark:text-white/70 leading-tight mt-0.5" title={shiroContingent}>
+                                    <p className={`truncate text-[11px] leading-tight mt-0.5 ${
+                                        isShiroHighlighted
+                                            ? 'font-bold text-amber-900 dark:text-amber-200'
+                                            : 'font-medium text-[#625b54] dark:text-white/70'
+                                    }`} title={shiroContingent}>
                                         {shiroContingent}
                                     </p>
                                 )}
@@ -220,7 +303,7 @@ function BracketMatchCard({
                         </div>
                         <div className="shrink-0 font-mono font-bold text-xs sm:text-sm pl-1">
                             {match.score ? (
-                                <span className={isShiroWinner ? 'text-slate-900 dark:text-white font-black' : 'text-[#7a746e] dark:text-white/50'}>
+                                <span className={isShiroHighlighted ? 'text-amber-950 dark:text-amber-200 font-black' : isShiroWinner ? 'text-slate-900 dark:text-white font-black' : 'text-[#7a746e] dark:text-white/50'}>
                                     {match.score.shiro_total}
                                 </span>
                             ) : match.is_bye && isShiroWinner ? (
@@ -278,11 +361,15 @@ function BracketRoundColumn({
     roundName,
     matches,
     activeEvent,
-    canManage,
-    isMonitor,
-    activeMatchId,
-    isFirstRound,
-    isLastRound,
+    canManage = false,
+    isMonitor = false,
+    activeMatchId = null,
+    isFirstRound = false,
+    isLastRound = false,
+    highlightContingentId = null,
+    highlightContingentName = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
 }) {
     return (
         <div className="flex flex-col items-center shrink-0 w-80">
@@ -307,6 +394,10 @@ function BracketRoundColumn({
                         canManage={canManage}
                         isMonitor={isMonitor}
                         isActive={activeMatchId && String(match.id) === String(activeMatchId)}
+                        highlightContingentId={highlightContingentId}
+                        highlightContingentName={highlightContingentName}
+                        highlightEntryIds={highlightEntryIds}
+                        highlightAthleteNames={highlightAthleteNames}
                     />
                 ))}
             </div>
@@ -315,7 +406,15 @@ function BracketRoundColumn({
 }
 
 // Winner Podium / Champion Display at the end of the bracket
-function BracketChampionPodium({ matches, isMonitor = false, className = '' }) {
+function BracketChampionPodium({
+    matches,
+    isMonitor = false,
+    className = '',
+    highlightContingentId = null,
+    highlightContingentName = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
+}) {
     const finalMatch =
         matches.find((m) => m.phase === 'final' || m.round_label?.toLowerCase().includes('final')) ||
         matches[matches.length - 1];
@@ -343,9 +442,20 @@ function BracketChampionPodium({ matches, isMonitor = false, className = '' }) {
 
     if (!championName) return null;
 
+    const isChampionHighlighted = Boolean(
+        championName && (
+            (highlightAthleteNames?.length && highlightAthleteNames.some((n) => (n || '').trim().toLowerCase() === (championName || '').trim().toLowerCase())) ||
+            (highlightContingentName && championContingent && championContingent.trim().toLowerCase() === highlightContingentName.trim().toLowerCase())
+        )
+    );
+
     return (
         <div className={`flex flex-col items-center justify-center shrink-0 my-auto self-center ${className || 'w-72 ml-4'}`}>
-            <div className="w-full rounded-2xl border-2 border-amber-300 dark:border-amber-500/40 bg-gradient-to-b from-amber-50 dark:from-amber-950/40 to-amber-100/60 dark:to-amber-950/20 p-5 text-center shadow-lg">
+            <div className={`w-full rounded-2xl border-2 p-5 text-center shadow-lg ${
+                isChampionHighlighted
+                    ? 'border-amber-400 bg-gradient-to-b from-amber-100 dark:from-amber-950/70 to-amber-200/60 dark:to-amber-950/40 ring-4 ring-amber-400/30'
+                    : 'border-amber-300 dark:border-amber-500/40 bg-gradient-to-b from-amber-50 dark:from-amber-950/40 to-amber-100/60 dark:to-amber-950/20'
+            }`}>
                 <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#17120f] dark:bg-amber-400 text-amber-400 dark:text-slate-950 shadow-md ring-4 ring-amber-400/20">
                     <i className="fa-solid fa-trophy text-2xl" />
                 </span>
@@ -359,6 +469,13 @@ function BracketChampionPodium({ matches, isMonitor = false, className = '' }) {
                     <p className="mt-0.5 text-xs font-semibold text-[#7a746e] dark:text-white/70">
                         {championContingent}
                     </p>
+                )}
+
+                {isChampionHighlighted && (
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-amber-400 text-slate-950 px-3 py-1 text-[10.5px] font-black shadow-xs">
+                        <i className="fa-solid fa-crown text-[10px]" />
+                        <span>Juara dari Kontingen Anda!</span>
+                    </div>
                 )}
 
                 {runnerUpName && (
@@ -387,6 +504,10 @@ export default function RandoriBracketTree({
     canManage = false,
     isMonitor = false,
     activeMatchId = null,
+    highlightContingentId = null,
+    highlightContingentName = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
 }) {
     const [doubleElimTab, setDoubleElimTab] = useState('all'); // 'all' | 'upper' | 'lower'
     const scrollContainerRef = useRef(null);
@@ -608,43 +729,57 @@ export default function RandoriBracketTree({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[#eee7dd] dark:divide-white/10">
-                                {roundRobinStandings.map((row, idx) => (
-                                    <tr key={row.name} className="hover:bg-amber-50/40 dark:hover:bg-white/5">
-                                        <td className="py-2 px-3 font-bold text-slate-900 dark:text-white">
-                                            {idx === 0 ? (
-                                                <span className="inline-flex items-center gap-1 text-amber-600 font-black">
-                                                    <i className="fa-solid fa-medal" /> #1
-                                                </span>
-                                            ) : idx === 1 ? (
-                                                <span className="inline-flex items-center gap-1 text-slate-500 font-black">
-                                                    <i className="fa-solid fa-medal" /> #2
-                                                </span>
-                                            ) : idx === 2 ? (
-                                                <span className="inline-flex items-center gap-1 text-amber-800 font-black">
-                                                    <i className="fa-solid fa-medal" /> #3
-                                                </span>
-                                            ) : (
-                                                `#${idx + 1}`
-                                            )}
-                                        </td>
-                                        <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                            <div>{row.name}</div>
-                                            {row.contingent && (
-                                                <div className="text-[10px] font-normal text-slate-500 dark:text-white/50">{row.contingent}</div>
-                                            )}
-                                        </td>
-                                        <td className="py-2 px-3 text-center font-mono">{row.played}</td>
-                                        <td className="py-2 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                            {row.won}
-                                        </td>
-                                        <td className="py-2 px-3 text-center font-mono text-slate-500">
-                                            {row.lost}
-                                        </td>
-                                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                                            {row.points}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {roundRobinStandings.map((row, idx) => {
+                                    const isRowHighlighted = Boolean(
+                                        (highlightAthleteNames?.length && highlightAthleteNames.some((n) => (n || '').trim().toLowerCase() === (row.name || '').trim().toLowerCase())) ||
+                                        (highlightContingentName && row.contingent && row.contingent.trim().toLowerCase() === highlightContingentName.trim().toLowerCase())
+                                    );
+
+                                    return (
+                                        <tr key={row.name} className={isRowHighlighted ? 'bg-amber-100/90 dark:bg-amber-950/70 border-l-4 border-amber-500 font-bold' : 'hover:bg-amber-50/40 dark:hover:bg-white/5'}>
+                                            <td className="py-2 px-3 font-bold text-slate-900 dark:text-white">
+                                                {idx === 0 ? (
+                                                    <span className="inline-flex items-center gap-1 text-amber-600 font-black">
+                                                        <i className="fa-solid fa-medal" /> #1
+                                                    </span>
+                                                ) : idx === 1 ? (
+                                                    <span className="inline-flex items-center gap-1 text-slate-500 font-black">
+                                                        <i className="fa-solid fa-medal" /> #2
+                                                    </span>
+                                                ) : idx === 2 ? (
+                                                    <span className="inline-flex items-center gap-1 text-amber-800 font-black">
+                                                        <i className="fa-solid fa-medal" /> #3
+                                                    </span>
+                                                ) : (
+                                                    `#${idx + 1}`
+                                                )}
+                                            </td>
+                                            <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={isRowHighlighted ? 'font-black text-amber-950 dark:text-amber-100' : ''}>{row.name}</span>
+                                                    {isRowHighlighted && (
+                                                        <span className="shrink-0 rounded bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[8.5px] font-black uppercase tracking-wider">
+                                                            Atlet Anda
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {row.contingent && (
+                                                    <div className={`text-[10px] ${isRowHighlighted ? 'font-bold text-amber-900 dark:text-amber-200' : 'font-normal text-slate-500 dark:text-white/50'}`}>{row.contingent}</div>
+                                                )}
+                                            </td>
+                                            <td className="py-2 px-3 text-center font-mono">{row.played}</td>
+                                            <td className="py-2 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                                {row.won}
+                                            </td>
+                                            <td className="py-2 px-3 text-center font-mono text-slate-500">
+                                                {row.lost}
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                                {row.points}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -694,6 +829,10 @@ export default function RandoriBracketTree({
                                             isMonitor={isMonitor}
                                             activeMatchId={activeMatchId}
                                             isFirstRound={true}
+                                            highlightContingentId={highlightContingentId}
+                                            highlightContingentName={highlightContingentName}
+                                            highlightEntryIds={highlightEntryIds}
+                                            highlightAthleteNames={highlightAthleteNames}
                                         />
 
                                         <div className="flex flex-col items-center justify-center text-blue-300 dark:text-blue-700">
@@ -709,6 +848,10 @@ export default function RandoriBracketTree({
                                             isMonitor={isMonitor}
                                             activeMatchId={activeMatchId}
                                             isLastRound={true}
+                                            highlightContingentId={highlightContingentId}
+                                            highlightContingentName={highlightContingentName}
+                                            highlightEntryIds={highlightEntryIds}
+                                            highlightAthleteNames={highlightAthleteNames}
                                         />
                                     </div>
                                 </div>
@@ -743,6 +886,10 @@ export default function RandoriBracketTree({
                                             isMonitor={isMonitor}
                                             activeMatchId={activeMatchId}
                                             isFirstRound={true}
+                                            highlightContingentId={highlightContingentId}
+                                            highlightContingentName={highlightContingentName}
+                                            highlightEntryIds={highlightEntryIds}
+                                            highlightAthleteNames={highlightAthleteNames}
                                         />
 
                                         <div className="flex flex-col items-center justify-center text-amber-300 dark:text-amber-700">
@@ -758,6 +905,10 @@ export default function RandoriBracketTree({
                                             isMonitor={isMonitor}
                                             activeMatchId={activeMatchId}
                                             isLastRound={true}
+                                            highlightContingentId={highlightContingentId}
+                                            highlightContingentName={highlightContingentName}
+                                            highlightEntryIds={highlightEntryIds}
+                                            highlightAthleteNames={highlightAthleteNames}
                                         />
                                     </div>
                                 </div>
@@ -796,12 +947,24 @@ export default function RandoriBracketTree({
                                                 isMonitor={isMonitor}
                                                 isActive={activeMatchId && String(match.id) === String(activeMatchId)}
                                                 className="w-full my-0"
+                                                highlightContingentId={highlightContingentId}
+                                                highlightContingentName={highlightContingentName}
+                                                highlightEntryIds={highlightEntryIds}
+                                                highlightAthleteNames={highlightAthleteNames}
                                             />
                                         ))}
                                     </div>
                                 </div>
 
-                                <BracketChampionPodium matches={matches} isMonitor={isMonitor} className="w-[350px] max-w-full ml-0" />
+                                <BracketChampionPodium
+                                    matches={matches}
+                                    isMonitor={isMonitor}
+                                    className="w-[350px] max-w-full ml-0"
+                                    highlightContingentId={highlightContingentId}
+                                    highlightContingentName={highlightContingentName}
+                                    highlightEntryIds={highlightEntryIds}
+                                    highlightAthleteNames={highlightAthleteNames}
+                                />
                             </div>
                         </div>
                     ) : isDoubleElim && doubleElimTab === 'upper' ? (
@@ -814,6 +977,10 @@ export default function RandoriBracketTree({
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
                                 isFirstRound={true}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
                             <BracketRoundColumn
                                 roundName="Final Upper Bracket"
@@ -822,6 +989,10 @@ export default function RandoriBracketTree({
                                 canManage={canManage}
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
                             <BracketRoundColumn
                                 roundName="Grand Final"
@@ -831,8 +1002,19 @@ export default function RandoriBracketTree({
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
                                 isLastRound={true}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
-                            <BracketChampionPodium matches={matches} isMonitor={isMonitor} />
+                            <BracketChampionPodium
+                                matches={matches}
+                                isMonitor={isMonitor}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
+                            />
                         </div>
                     ) : isDoubleElim && doubleElimTab === 'lower' ? (
                         <div className="flex items-stretch gap-8 min-w-max pb-4">
@@ -844,6 +1026,10 @@ export default function RandoriBracketTree({
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
                                 isFirstRound={true}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
                             <BracketRoundColumn
                                 roundName="Final Lower Bracket"
@@ -852,6 +1038,10 @@ export default function RandoriBracketTree({
                                 canManage={canManage}
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
                             <BracketRoundColumn
                                 roundName="Grand Final"
@@ -861,8 +1051,19 @@ export default function RandoriBracketTree({
                                 isMonitor={isMonitor}
                                 activeMatchId={activeMatchId}
                                 isLastRound={true}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
                             />
-                            <BracketChampionPodium matches={matches} isMonitor={isMonitor} />
+                            <BracketChampionPodium
+                                matches={matches}
+                                isMonitor={isMonitor}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
+                            />
                         </div>
                     ) : (
                         /* SINGLE ELIMINATION & ROUND ROBIN STANDARD COLUMNS */
@@ -878,11 +1079,22 @@ export default function RandoriBracketTree({
                                     activeMatchId={activeMatchId}
                                     isFirstRound={roundIdx === 0}
                                     isLastRound={roundIdx === allRounds.length - 1}
+                                    highlightContingentId={highlightContingentId}
+                                    highlightContingentName={highlightContingentName}
+                                    highlightEntryIds={highlightEntryIds}
+                                    highlightAthleteNames={highlightAthleteNames}
                                 />
                             ))}
 
                             {/* Champion Podium banner when final is completed */}
-                            <BracketChampionPodium matches={matches} isMonitor={isMonitor} />
+                            <BracketChampionPodium
+                                matches={matches}
+                                isMonitor={isMonitor}
+                                highlightContingentId={highlightContingentId}
+                                highlightContingentName={highlightContingentName}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
+                            />
                         </div>
                     )}
                 </div>

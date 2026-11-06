@@ -7,20 +7,82 @@ import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 
-function QrPreview({ value, label }) {
+function QrPreview({ value, label, code }) {
     const [failed, setFailed] = useState(false);
-    const qrSource = `https://quickchart.io/qr?size=280&margin=2&ecLevel=M&text=${encodeURIComponent(value)}`;
+    const [copiedUrl, setCopiedUrl] = useState(false);
+    const [copiedCode, setCopiedCode] = useState(false);
+    const qrSource = `https://quickchart.io/qr?size=280&margin=2&ecLevel=M&text=${encodeURIComponent(value || '')}`;
+
+    const handleCopyUrl = () => {
+        if (!value) return;
+        navigator.clipboard?.writeText(value);
+        setCopiedUrl(true);
+        setTimeout(() => setCopiedUrl(false), 2000);
+    };
+
+    const handleCopyCode = () => {
+        if (!code) return;
+        navigator.clipboard?.writeText(code);
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 2000);
+    };
 
     return (
-        <div className="rounded-2xl border border-[#e5ded4] bg-white p-4 text-center">
-            {!failed ? <img src={qrSource} alt={`QR ${label}`} className="mx-auto aspect-square w-full max-w-56 rounded-xl bg-white object-contain" onError={() => setFailed(true)} /> : <div className="mx-auto flex aspect-square w-full max-w-56 flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-amber-800"><i className="fa-solid fa-wifi mb-3 text-2xl" aria-hidden="true" /><p className="text-xs font-bold">Gambar QR tidak dapat dimuat.</p><p className="mt-1 text-[11px]">Gunakan tombol salin tautan.</p></div>}
+        <div className="rounded-2xl border border-[#e5ded4] bg-white p-4 text-center shadow-xs">
+            {!failed ? (
+                <img
+                    src={qrSource}
+                    alt={`QR ${label}`}
+                    className="mx-auto aspect-square w-full max-w-56 rounded-xl bg-white object-contain"
+                    onError={() => setFailed(true)}
+                />
+            ) : (
+                <div className="mx-auto flex aspect-square w-full max-w-56 flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-amber-800">
+                    <i className="fa-solid fa-wifi mb-3 text-2xl" aria-hidden="true" />
+                    <p className="text-xs font-bold">Gambar QR tidak dapat dimuat.</p>
+                    <p className="mt-1 text-[11px]">Gunakan tombol salin atau kode 6-digit.</p>
+                </div>
+            )}
             <p className="mt-3 text-sm font-bold text-[#17120f]">{label}</p>
-            <button type="button" onClick={() => navigator.clipboard?.writeText(value)} className="mt-3 min-h-11 w-full rounded-lg bg-[#17120f] px-3 text-xs font-semibold text-white hover:bg-[#2b2520]"><i className="fa-solid fa-copy mr-2" aria-hidden="true" />Salin Tautan QR</button>
+
+            {code && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/50 p-2.5 text-center shadow-2xs">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                        Kode 6-Digit (Alternatif Tanpa Kamera)
+                    </p>
+                    <div className="mt-1 flex items-center justify-center gap-2">
+                        <span className="font-mono text-2xl font-black tracking-[0.2em] text-[#17120f]">
+                            {code}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={handleCopyCode}
+                            className="inline-flex items-center gap-1 rounded-md bg-amber-200/80 px-2 py-1 text-[11px] font-bold text-amber-900 hover:bg-amber-300 transition-colors"
+                            title="Salin 6-digit kode"
+                        >
+                            <i className={`fa-solid ${copiedCode ? 'fa-check text-emerald-700' : 'fa-copy'}`} aria-hidden="true" />
+                            {copiedCode ? 'Tersalin' : 'Salin'}
+                        </button>
+                    </div>
+                    <p className="mt-1 text-[10.5px] leading-tight text-amber-800/80">
+                        Wasit dapat memasukkan kode ini di Portal Wasit jika kamera ponsel bermasalah.
+                    </p>
+                </div>
+            )}
+
+            <button
+                type="button"
+                onClick={handleCopyUrl}
+                className="mt-3 min-h-11 w-full rounded-lg bg-[#17120f] px-3 text-xs font-semibold text-white hover:bg-[#2b2520] transition-colors"
+            >
+                <i className={`fa-solid ${copiedUrl ? 'fa-check text-emerald-400' : 'fa-copy'} mr-2`} aria-hidden="true" />
+                {copiedUrl ? 'Tautan QR Tersalin!' : 'Salin Tautan QR'}
+            </button>
         </div>
     );
 }
 
-function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordinator }) {
+function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordinator, onOpenSwapModal }) {
     const [qrOpen, setQrOpen] = useState(false);
     const [activeRoleTab, setActiveRoleTab] = useState('chief');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -86,6 +148,16 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                     )}
                 </div>
                 <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:justify-end">
+                    <button
+                        type="button"
+                        disabled={!court.has_panel}
+                        onClick={() => onOpenSwapModal && onOpenSwapModal({ court_id: court.id, court_name: court.name })}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#c5a059] bg-[#fffbf2] px-3.5 text-xs font-bold text-[#8a631c] hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-[#ddd7cf] disabled:bg-[#eeeae4] disabled:text-[#a79f96]"
+                        title="Pindah atau tukar wasit court ini dengan court lain / posisi lain"
+                    >
+                        <i className="fa-solid fa-right-left text-amber-700" aria-hidden="true" />
+                        Tukar / Pindah Wasit
+                    </button>
                     <button
                         type="button"
                         disabled={!court.has_panel}
@@ -203,19 +275,42 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                             </div>
 
                             {court.panel_complete && (
-                                <div className="mt-3.5 flex items-center justify-between border-t border-[#ede7df] pt-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => openRoleQr(panelMember.role)}
-                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8a631c] hover:text-[#5e410f] hover:underline"
-                                    >
-                                        <i className="fa-solid fa-qrcode" aria-hidden="true" />
-                                        <span>QR {panelMember.role_label}</span>
-                                    </button>
+                                <div className="mt-3.5 flex items-center justify-between gap-1 border-t border-[#ede7df] pt-2.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={() => openRoleQr(panelMember.role)}
+                                            className="inline-flex items-center gap-1 text-xs font-bold text-[#8a631c] hover:text-[#5e410f] hover:underline"
+                                        >
+                                            <i className="fa-solid fa-qrcode" aria-hidden="true" />
+                                            <span>QR {panelMember.role_label}</span>
+                                        </button>
+                                        {panelMember.referee_id && onOpenSwapModal && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onOpenSwapModal({
+                                                    referee_id: panelMember.referee_id,
+                                                    referee_name: panelMember.referee_name,
+                                                    dan_grade: panelMember.dan_grade,
+                                                    region: panelMember.region,
+                                                    is_chief_qualified: panelMember.is_chief_qualified,
+                                                    court_id: court.id,
+                                                    court_name: court.name,
+                                                    role: panelMember.role,
+                                                    role_label: panelMember.role_label,
+                                                })}
+                                                className="cursor-pointer inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-[#625b54] border border-[#d8d1c8] hover:bg-[#f5f1eb] hover:text-[#17120f] transition-colors"
+                                                title={`Pindah atau tukar posisi ${panelMember.referee_name}`}
+                                            >
+                                                <i className="fa-solid fa-right-left text-[9px]" />
+                                                <span>Pindah/Tukar</span>
+                                            </button>
+                                        )}
+                                    </div>
                                     {panelMember.court_present ? (
-                                        <span className="text-[10px] font-semibold text-emerald-700"><i className="fa-solid fa-circle-check mr-1" />Siap</span>
+                                        <span className="text-[10px] font-semibold text-emerald-700 shrink-0"><i className="fa-solid fa-circle-check mr-1" />Siap</span>
                                     ) : (
-                                        <span className="text-[10px] font-medium text-amber-700"><i className="fa-solid fa-clock mr-1" />Scan</span>
+                                        <span className="text-[10px] font-medium text-amber-700 shrink-0"><i className="fa-solid fa-clock mr-1" />Scan</span>
                                     )}
                                 </div>
                             )}
@@ -234,17 +329,42 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             {court.reserves.map((res) => (
-                                <div key={res.referee_id} className="flex items-center gap-2.5 rounded-xl border border-dashed border-[#dcd4ca] bg-white p-2.5 shadow-xs">
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#3d3732] text-xs font-black text-white">
-                                        {res.referee_name?.slice(0, 1).toUpperCase()}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="truncate text-xs font-bold text-[#17120f]">{res.referee_name}</p>
-                                        <p className="text-[10px] font-semibold text-[#8a631c]">{[res.dan_grade, res.region].filter(Boolean).join(' · ')}</p>
+                                <div key={res.referee_id} className="flex items-center justify-between gap-2.5 rounded-xl border border-dashed border-[#dcd4ca] bg-white p-2.5 shadow-xs">
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#3d3732] text-xs font-black text-white">
+                                            {res.referee_name?.slice(0, 1).toUpperCase()}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-xs font-bold text-[#17120f]">{res.referee_name}</p>
+                                            <p className="text-[10px] font-semibold text-[#8a631c]">{[res.dan_grade, res.region].filter(Boolean).join(' · ')}</p>
+                                        </div>
                                     </div>
-                                    <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-800">
-                                        Istirahat
-                                    </span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        {onOpenSwapModal && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onOpenSwapModal({
+                                                    referee_id: res.referee_id,
+                                                    referee_name: res.referee_name,
+                                                    dan_grade: res.dan_grade,
+                                                    region: res.region,
+                                                    is_chief_qualified: res.is_chief_qualified,
+                                                    court_id: court.id,
+                                                    court_name: court.name,
+                                                    role: 'reserve',
+                                                    role_label: 'Cadangan / Rotasi',
+                                                })}
+                                                className="cursor-pointer inline-flex items-center gap-1 rounded bg-[#fffbf2] border border-[#c5a059] px-2 py-1 text-[10px] font-bold text-[#8a631c] hover:bg-amber-100 transition-colors"
+                                                title={`Pindah atau tukar wasit cadangan ${res.referee_name}`}
+                                            >
+                                                <i className="fa-solid fa-right-left text-[9px]" />
+                                                <span>Pindah/Tukar</span>
+                                            </button>
+                                        )}
+                                        <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-800">
+                                            Cadangan
+                                        </span>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -262,7 +382,7 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                 onClose={() => setQrOpen(false)}
                 title={`QR Absensi ${court.name}`}
                 subtitle="Pilih posisi wasit untuk menampilkan QR masing-masing."
-                size={activeRoleTab === 'all' ? 'xl' : 'md'}
+                size={activeRoleTab === 'all' ? '4xl' : '4xl'}
                 footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}
             >
                 <div className="space-y-4">
@@ -271,11 +391,10 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                         <button
                             type="button"
                             onClick={() => setActiveRoleTab('all')}
-                            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                activeRoleTab === 'all'
-                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
-                                    : 'text-[#625b54] hover:text-[#17120f]'
-                            }`}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${activeRoleTab === 'all'
+                                ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                : 'text-[#625b54] hover:text-[#17120f]'
+                                }`}
                         >
                             <i className="fa-solid fa-border-all mr-1.5" />
                             Semua 5 Posisi
@@ -285,11 +404,10 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                                 key={pm.role}
                                 type="button"
                                 onClick={() => setActiveRoleTab(pm.role)}
-                                className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                    activeRoleTab === pm.role
-                                        ? 'bg-white text-[#17120f] shadow-xs'
-                                        : 'text-[#625b54] hover:text-[#17120f]'
-                                }`}
+                                className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${activeRoleTab === pm.role
+                                    ? 'bg-white text-[#17120f] shadow-xs'
+                                    : 'text-[#625b54] hover:text-[#17120f]'
+                                    }`}
                             >
                                 {idx + 1}. {pm.role_label}
                             </button>
@@ -308,7 +426,11 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                                             <span className="mb-2 inline-block rounded-full bg-[#f5f1eb] px-2.5 py-0.5 text-[11px] font-bold text-[#8a631c]">
                                                 {idx + 1}. {pm.role_label}
                                             </span>
-                                            <QrPreview value={pm.check_in_url || court.check_in_url} label={`${court.name} - ${pm.role_label}`} />
+                                            <QrPreview
+                                                value={pm.check_in_url || court.check_in_url}
+                                                label={`${court.name} - ${pm.role_label}`}
+                                                code={pm.check_in_code || court.check_in_code}
+                                            />
                                             <p className="mt-2 truncate text-xs font-semibold text-[#17120f]">{pm.referee_name || 'Belum ditugaskan'}</p>
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-[#f0eae1]">
@@ -331,6 +453,7 @@ function CourtPanelCard({ court, activeEvent, onAssignCoordinator, onResetCoordi
                             <QrPreview
                                 value={currentMember?.check_in_url || court.check_in_url}
                                 label={`Check-in ${court.name} · ${currentMember?.role_label}`}
+                                code={currentMember?.check_in_code || court.check_in_code}
                             />
                             <div className="mt-3 rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3 text-left">
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-[#9b7125]">Wasit Yang Ditugaskan</p>
@@ -411,6 +534,7 @@ export default function EventReferees({
     availableCoordinators = [],
     roles = [],
     eventCheckInUrl,
+    eventCheckInCode,
     qrExpiresAt,
     refereeLoginUrl,
     today,
@@ -424,17 +548,143 @@ export default function EventReferees({
     const [assignCoordinatorCourt, setAssignCoordinatorCourt] = useState(null);
     const [resetCoordinatorCourt, setResetCoordinatorCourt] = useState(null);
     const [generateCoordinatorsOpen, setGenerateCoordinatorsOpen] = useState(false);
+    const [swapModalOpen, setSwapModalOpen] = useState(false);
+    const [selectedSwapSource, setSelectedSwapSource] = useState(null);
+    const [swapMode, setSwapMode] = useState('swap');
+    const [swapSearch, setSwapSearch] = useState('');
     const [search, setSearch] = useState('');
+    const [resetAttendanceTarget, setResetAttendanceTarget] = useState(null);
     const accountForm = useForm({ event_id: activeEvent.id, email: '', phone: '', password: '', password_confirmation: '' });
     const attendanceForm = useForm({ event_id: activeEvent.id, attendance_date: today, is_present: true, notes: '' });
+    const resetAttendanceForm = useForm({ event_id: activeEvent.id, attendance_date: today });
     const generateForm = useForm({ event_id: activeEvent.id });
     const coordinatorForm = useForm({ event_id: activeEvent.id, coordinator_id: '' });
     const resetCoordinatorForm = useForm({ event_id: activeEvent.id });
     const generateCoordinatorsForm = useForm({ event_id: activeEvent.id });
+    const swapForm = useForm({
+        event_id: activeEvent.id,
+        source_referee_id: '',
+        target_referee_id: '',
+        target_court_id: '',
+        target_role: '',
+    });
     const assignableRefereeCount = stats.assignable ?? referees.filter((referee) => referee.is_active && referee.is_present).length;
     const requiredRefereeCount = courts.length * roles.length;
     const canGeneratePanels = requiredRefereeCount > 0 && assignableRefereeCount >= requiredRefereeCount;
     const hasExistingPanels = courts.some((court) => court.has_panel);
+
+    const allAssignedReferees = useMemo(() => {
+        const list = [];
+        courts.forEach((court) => {
+            (court.panel || []).forEach((pm) => {
+                if (pm.referee_id) {
+                    list.push({
+                        referee_id: pm.referee_id,
+                        referee_name: pm.referee_name,
+                        dan_grade: pm.dan_grade,
+                        region: pm.region,
+                        is_chief_qualified: Boolean(pm.is_chief_qualified),
+                        court_id: court.id,
+                        court_name: court.name,
+                        role: pm.role,
+                        role_label: pm.role_label,
+                        is_reserve: false,
+                    });
+                }
+            });
+            (court.reserves || []).forEach((res) => {
+                list.push({
+                    referee_id: res.referee_id,
+                    referee_name: res.referee_name,
+                    dan_grade: res.dan_grade,
+                    region: res.region,
+                    is_chief_qualified: Boolean(res.is_chief_qualified),
+                    court_id: court.id,
+                    court_name: court.name,
+                    role: 'reserve',
+                    role_label: 'Cadangan / Rotasi',
+                    is_reserve: true,
+                });
+            });
+        });
+        return list;
+    }, [courts]);
+
+    const openSwapModal = (sourceData) => {
+        let source = sourceData;
+        if (!source?.referee_id && source?.court_id) {
+            const courtTarget = courts.find((c) => c.id === source.court_id);
+            const firstPanel = courtTarget?.panel?.find((p) => p.referee_id);
+            if (firstPanel) {
+                source = {
+                    referee_id: firstPanel.referee_id,
+                    referee_name: firstPanel.referee_name,
+                    dan_grade: firstPanel.dan_grade,
+                    region: firstPanel.region,
+                    is_chief_qualified: Boolean(firstPanel.is_chief_qualified),
+                    court_id: courtTarget.id,
+                    court_name: courtTarget.name,
+                    role: firstPanel.role,
+                    role_label: firstPanel.role_label,
+                };
+            }
+        }
+        if (!source || !source.referee_id) return;
+        setSelectedSwapSource(source);
+        setSwapMode('swap');
+        setSwapSearch('');
+        swapForm.setData({
+            event_id: activeEvent.id,
+            source_referee_id: source.referee_id,
+            target_referee_id: '',
+            target_court_id: courts[0]?.id || '',
+            target_role: roles[0]?.value || roles[0]?.key || 'chief',
+        });
+        swapForm.clearErrors();
+        setSwapModalOpen(true);
+    };
+
+    const openSwapFromTable = (referee) => {
+        const found = allAssignedReferees.find((r) => r.referee_id === referee.id);
+        if (found) {
+            openSwapModal(found);
+        }
+    };
+
+    const handleExecuteSwap = (targetRefereeId) => {
+        swapForm.setData({
+            event_id: activeEvent.id,
+            source_referee_id: selectedSwapSource.referee_id,
+            target_referee_id: targetRefereeId,
+            target_court_id: '',
+            target_role: '',
+        });
+        swapForm.post('/admin/pertandingan/wasit/swap', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSwapModalOpen(false);
+                setSelectedSwapSource(null);
+            },
+        });
+    };
+
+    const handleExecuteMove = (e) => {
+        e.preventDefault();
+        swapForm.setData({
+            event_id: activeEvent.id,
+            source_referee_id: selectedSwapSource.referee_id,
+            target_referee_id: '',
+            target_court_id: swapForm.data.target_court_id,
+            target_role: swapForm.data.target_role,
+        });
+        swapForm.post('/admin/pertandingan/wasit/swap', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSwapModalOpen(false);
+                setSelectedSwapSource(null);
+            },
+        });
+    };
     const filteredReferees = useMemo(() => {
         const keyword = search.trim().toLowerCase();
         return keyword ? referees.filter((referee) => [referee.name, referee.email, referee.license_number, referee.region].filter(Boolean).some((value) => value.toLowerCase().includes(keyword))) : referees;
@@ -471,6 +721,18 @@ export default function EventReferees({
         attendanceForm.put(`/admin/pertandingan/wasit/${attendanceReferee.id}/attendance`, {
             preserveScroll: true,
             onSuccess: () => setAttendanceReferee(null),
+        });
+    };
+    const executeResetAttendance = (referee, date = today) => {
+        resetAttendanceForm.transform(() => ({
+            event_id: activeEvent.id,
+            attendance_date: date,
+        })).delete(`/admin/pertandingan/wasit/${referee.id}/attendance`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setResetAttendanceTarget(null);
+                setAttendanceReferee(null);
+            },
         });
     };
     const openGenerate = () => {
@@ -540,9 +802,9 @@ export default function EventReferees({
                     ['Court Siap', `${stats.courts_ready || 0}/${courts.length}`, 'fa-map-location-dot', 'bg-amber-50 text-amber-700'],
                 ].map(([label, value, icon, tone]) => <article key={label} className="rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm"><div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}><i className={`fa-solid ${icon}`} aria-hidden="true" /></div><p className="mt-4 text-2xl font-black text-[#17120f]">{value}</p><p className="mt-0.5 text-xs text-[#7a746e]">{label}</p></article>)}</section>
 
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" aria-labelledby="event-attendance-title"><div className="min-w-0 rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 1</p><h2 id="event-attendance-title" className="mt-1 text-lg font-bold text-[#17120f]">Absensi QR Event Harian</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-[#746c64]">Tampilkan QR ini setiap hari di meja registrasi Wasit. Wasit login melalui <a href={refereeLoginUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#9b2f25] underline">halaman login Wasit</a>, scan QR, lalu mengonfirmasi kehadiran. Scan pada hari berikutnya membuat catatan baru dan tidak menghapus histori sebelumnya.</p><div className="mt-4 grid gap-3 sm:flex sm:flex-wrap"><Button onClick={() => setQrOpen(true)} className="min-h-11 w-full bg-[#b73328] text-white hover:bg-[#96291f] sm:w-auto"><i className="fa-solid fa-qrcode mr-2" aria-hidden="true" />Tampilkan QR Event</Button><button type="button" onClick={() => navigator.clipboard?.writeText(eventCheckInUrl)} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#dcd4ca] px-4 text-sm font-semibold text-[#625b54] hover:bg-[#f7f4ef]"><i className="fa-solid fa-copy mr-2" aria-hidden="true" />Salin tautan QR</button><Link href={`/admin/master/event/${activeEvent.id}/detail`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#dcd4ca] px-4 text-sm font-semibold text-[#625b54] hover:bg-[#f7f4ef]">Kelola roster event</Link></div><p className="mt-3 break-words text-xs text-[#8a8179]">QR berlaku sampai {qrExpiresAt}. Status hari ini menjadi dasar penugasan Court. Admin/Panitera hanya menampilkan QR; konfirmasi dilakukan dari akun Wasit.</p></div><QrPreview value={eventCheckInUrl} label="QR Absensi Event Hari Ini" /></section>
+                <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" aria-labelledby="event-attendance-title"><div className="min-w-0 rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 1</p><h2 id="event-attendance-title" className="mt-1 text-lg font-bold text-[#17120f]">Absensi QR Event Harian</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-[#746c64]">Tampilkan QR ini setiap hari di meja registrasi Wasit. Wasit login melalui <a href={refereeLoginUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#9b2f25] underline">halaman login Wasit</a>, scan QR, lalu mengonfirmasi kehadiran. Scan pada hari berikutnya membuat catatan baru dan tidak menghapus histori sebelumnya.</p><div className="mt-4 grid gap-3 sm:flex sm:flex-wrap"><Button onClick={() => setQrOpen(true)} className="min-h-11 w-full bg-[#b73328] text-white hover:bg-[#96291f] sm:w-auto"><i className="fa-solid fa-qrcode mr-2" aria-hidden="true" />Tampilkan QR Event</Button><button type="button" onClick={() => navigator.clipboard?.writeText(eventCheckInUrl)} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#dcd4ca] px-4 text-sm font-semibold text-[#625b54] hover:bg-[#f7f4ef]"><i className="fa-solid fa-copy mr-2" aria-hidden="true" />Salin tautan QR</button><Link href={`/admin/master/event/${activeEvent.id}/detail`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#dcd4ca] px-4 text-sm font-semibold text-[#625b54] hover:bg-[#f7f4ef]">Kelola roster event</Link></div><p className="mt-3 break-words text-xs text-[#8a8179]">QR berlaku sampai {qrExpiresAt}. Status hari ini menjadi dasar penugasan Court. Admin/Panitera hanya menampilkan QR; konfirmasi dilakukan dari akun Wasit.</p></div><QrPreview value={eventCheckInUrl} label="QR Absensi Event Hari Ini" code={eventCheckInCode} /></section>
 
-                <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm" aria-labelledby="referee-roster-title"><div className="flex flex-col gap-4 border-b border-[#e9e2d8] p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 2 · Kesiapan Roster</p><h2 id="referee-roster-title" className="mt-1 text-lg font-bold text-[#17120f]">Kehadiran dan Akun Login Wasit</h2><p className="mt-1 text-sm text-[#7a746e]">Status yang tampil adalah kehadiran hari ini. Riwayat seluruh hari dapat dibuka melalui tombol Update Kehadiran.</p></div><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama, lisensi, wilayah..." iconLeft={<i className="fa-solid fa-magnifying-glass" />} containerClassName="w-full lg:w-80" /></div>{filteredReferees.length ? <TableContainer ariaLabel="Roster, akun, dan kehadiran wasit event"><table className="responsive-data-table responsive-data-table--cards w-full text-left text-sm"><thead><tr className="border-b border-[#e9e2d8] bg-[#f8f5f0] text-[10px] font-bold uppercase tracking-wider text-[#817970]"><th className="px-5 py-3">Wasit</th><th className="px-5 py-3">Sertifikasi</th><th className="px-5 py-3">Akun Login</th><th className="px-5 py-3">Absensi Hari Ini</th><th className="px-5 py-3">Penugasan</th><th className="px-5 py-3 text-right">Aksi</th></tr></thead><tbody className="divide-y divide-[#eee8e0]">{filteredReferees.map((referee) => <tr key={referee.id} className="hover:bg-[#fcfaf7]"><td data-label="Wasit" className="px-5 py-4"><p className="font-bold text-[#17120f]">{referee.name}</p><p className="mt-0.5 text-xs text-[#7a746e]">{referee.license_number || 'Lisensi belum dicatat'} · {referee.region || 'Wilayah belum dicatat'}</p></td><td data-label="Sertifikasi" className="px-5 py-4 text-[#625b54]">{referee.certification_level || referee.dan_grade || '—'}</td><td data-label="Akun Login" className="px-5 py-4">{referee.account ? <><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">Aktif</span><p className="mt-1.5 break-all text-xs text-[#716960]">{referee.account.email}</p></> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">Belum dibuat</span>}</td><td data-label="Absensi Hari Ini" className="px-5 py-4">{referee.is_present ? <><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><i className="fa-solid fa-circle-check mr-1" aria-hidden="true" />Hadir</span><p className="mt-1.5 text-xs text-[#716960]">{referee.checked_in_at}</p></> : referee.attendance_recorded ? <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700">Tidak Hadir</span> : <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700">Belum Absen</span>}</td><td data-label="Penugasan" className="px-5 py-4">{referee.assignments.length ? referee.assignments.map((assignment) => <p key={`${assignment.court}-${assignment.role}`} className="text-xs text-[#625b54]"><strong>{assignment.court}</strong> · {assignment.role}</p>) : <span className="text-xs text-[#918981]">Belum ditugaskan</span>}</td><td data-label="Aksi" className="px-5 py-4"><div className="flex flex-col justify-end gap-2 sm:flex-row"><Button variant="outline" size="sm" onClick={() => openAttendance(referee)}><i className="fa-solid fa-calendar-check mr-1.5" aria-hidden="true" />Update Kehadiran</Button><Button variant="outline" size="sm" onClick={() => openAccount(referee)}><i className="fa-solid fa-key mr-1.5" aria-hidden="true" />{referee.account ? 'Reset Login' : 'Buat Login'}</Button></div></td></tr>)}</tbody></table></TableContainer> : <p className="p-8 text-center text-sm text-[#7a746e]">Tidak ada Wasit yang cocok dengan pencarian.</p>}</section>
+                <section className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm" aria-labelledby="referee-roster-title"><div className="flex flex-col gap-4 border-b border-[#e9e2d8] p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#9b7125]">Tahap 2 · Kesiapan Roster</p><h2 id="referee-roster-title" className="mt-1 text-lg font-bold text-[#17120f]">Kehadiran dan Akun Login Wasit</h2><p className="mt-1 text-sm text-[#7a746e]">Status yang tampil adalah kehadiran hari ini. Riwayat seluruh hari dapat dibuka melalui tombol Update Kehadiran.</p></div><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama, lisensi, wilayah..." iconLeft={<i className="fa-solid fa-magnifying-glass" />} containerClassName="w-full lg:w-80" /></div>{filteredReferees.length ? <TableContainer ariaLabel="Roster, akun, dan kehadiran wasit event"><table className="responsive-data-table responsive-data-table--cards w-full text-left text-sm"><thead><tr className="border-b border-[#e9e2d8] bg-[#f8f5f0] text-[10px] font-bold uppercase tracking-wider text-[#817970]"><th className="px-5 py-3">Wasit</th><th className="px-5 py-3">Sertifikasi</th><th className="px-5 py-3">Akun Login</th><th className="px-5 py-3">Absensi Hari Ini</th><th className="px-5 py-3">Penugasan</th><th className="px-5 py-3 text-right">Aksi</th></tr></thead><tbody className="divide-y divide-[#eee8e0]">{filteredReferees.map((referee) => <tr key={referee.id} className="hover:bg-[#fcfaf7]"><td data-label="Wasit" className="px-5 py-4"><p className="font-bold text-[#17120f]">{referee.name}</p><p className="mt-0.5 text-xs text-[#7a746e]">{referee.license_number || 'Lisensi belum dicatat'} · {referee.region || 'Wilayah belum dicatat'}</p></td><td data-label="Sertifikasi" className="px-5 py-4 text-[#625b54]">{referee.certification_level || referee.dan_grade || '—'}</td><td data-label="Akun Login" className="px-5 py-4">{referee.account ? <><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">Aktif</span><p className="mt-1.5 break-all text-xs text-[#716960]">{referee.account.email}</p></> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">Belum dibuat</span>}</td><td data-label="Absensi Hari Ini" className="px-5 py-4">{referee.is_present ? <><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><i className="fa-solid fa-circle-check mr-1" aria-hidden="true" />Hadir</span><p className="mt-1.5 text-xs text-[#716960]">{referee.checked_in_at}</p></> : referee.attendance_recorded ? <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700">Tidak Hadir</span> : <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700">Belum Absen</span>}</td><td data-label="Penugasan" className="px-5 py-4">{referee.assignments.length ? referee.assignments.map((assignment) => <p key={`${assignment.court}-${assignment.role}`} className="text-xs text-[#625b54]"><strong>{assignment.court}</strong> · {assignment.role}</p>) : <span className="text-xs text-[#918981]">Belum ditugaskan</span>}</td><td data-label="Aksi" className="px-5 py-4"><div className="flex flex-col justify-end gap-2 sm:flex-row">{referee.assignments.length > 0 && <Button variant="outline" size="sm" onClick={() => openSwapFromTable(referee)} className="border-[#c5a059] text-[#8a631c] hover:bg-amber-50"><i className="fa-solid fa-right-left mr-1.5" aria-hidden="true" />Pindah / Tukar</Button>}<Button variant="outline" size="sm" onClick={() => openAttendance(referee)}><i className="fa-solid fa-calendar-check mr-1.5" aria-hidden="true" />Update Kehadiran</Button>{(referee.is_present || referee.attendance_recorded) && <Button variant="outline" size="sm" onClick={() => setResetAttendanceTarget(referee)} className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:border-rose-300" title="Reset kehadiran hari ini menjadi Belum Absen"><i className="fa-solid fa-rotate-left mr-1.5" aria-hidden="true" />Reset Absen</Button>}<Button variant="outline" size="sm" onClick={() => openAccount(referee)}><i className="fa-solid fa-key mr-1.5" aria-hidden="true" />{referee.account ? 'Reset Login' : 'Buat Login'}</Button></div></td></tr>)}</tbody></table></TableContainer> : <p className="p-8 text-center text-sm text-[#7a746e]">Tidak ada Wasit yang cocok dengan pencarian.</p>}</section>
 
                 <section className="space-y-4" aria-labelledby="court-panel-title">
                     <div className="flex flex-col gap-4 rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -592,6 +854,7 @@ export default function EventReferees({
                             activeEvent={activeEvent}
                             onAssignCoordinator={openAssignCoordinator}
                             onResetCoordinator={openResetCoordinator}
+                            onOpenSwapModal={openSwapModal}
                         />
                     ))}
                     {courts.length === 0 && <div className="rounded-2xl border border-dashed border-[#d9d3c9] bg-white p-10 text-center text-sm text-[#7a746e]">Belum ada court aktif pada event ini.</div>}
@@ -610,7 +873,156 @@ export default function EventReferees({
                     <Input label="Konfirmasi Password" type="password" required value={accountForm.data.password_confirmation} onChange={(event) => accountForm.setData('password_confirmation', event.target.value)} autoComplete="new-password" />
                 </form>
             </Modal>
-            <Modal isOpen={Boolean(attendanceReferee)} onClose={() => setAttendanceReferee(null)} title="Update Kehadiran Wasit" footer={<><Button variant="outline" onClick={() => setAttendanceReferee(null)}>Batal</Button><Button onClick={saveAttendance} loading={attendanceForm.processing}>Simpan Kehadiran</Button></>}><form onSubmit={saveAttendance} className="space-y-5"><div className="rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3"><p className="font-bold text-[#17120f]">{attendanceReferee?.name}</p><p className="mt-1 text-xs leading-5 text-[#746c64]">{activeEvent.name} · {activeEvent.start_date} sampai {activeEvent.end_date}</p></div><div className="grid gap-4 sm:grid-cols-2"><Input label="Tanggal Absensi" type="date" required value={attendanceForm.data.attendance_date} onChange={(event) => { const record = attendanceReferee?.attendance_history.find((attendance) => attendance.date === event.target.value); attendanceForm.setData({ ...attendanceForm.data, attendance_date: event.target.value, is_present: record ? record.is_present : true, notes: record?.notes || '' }); }} error={attendanceForm.errors.attendance_date} /><label className="block"><span className="mb-1.5 block text-sm font-semibold text-[#3d3732]">Status Kehadiran</span><select value={attendanceForm.data.is_present ? '1' : '0'} onChange={(event) => attendanceForm.setData('is_present', event.target.value === '1')} className="min-h-11 w-full rounded-lg border border-[#dcd4ca] bg-white px-3 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-2 focus:ring-[#d4a843]/25"><option value="1">Hadir</option><option value="0">Tidak Hadir</option></select>{attendanceForm.errors.is_present && <span className="mt-1 block text-xs text-red-600">{attendanceForm.errors.is_present}</span>}</label></div><label className="block"><span className="mb-1.5 block text-sm font-semibold text-[#3d3732]">Catatan (opsional)</span><textarea rows={3} maxLength={500} value={attendanceForm.data.notes} onChange={(event) => attendanceForm.setData('notes', event.target.value)} placeholder="Contoh: izin sakit, hadir dikonfirmasi Panitera..." className="w-full rounded-lg border border-[#dcd4ca] bg-white px-3 py-2 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-2 focus:ring-[#d4a843]/25" />{attendanceForm.errors.notes && <span className="mt-1 block text-xs text-red-600">{attendanceForm.errors.notes}</span>}</label><div><h3 className="text-sm font-bold text-[#17120f]">Riwayat Absensi Event</h3>{attendanceReferee?.attendance_history.length ? <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">{attendanceReferee.attendance_history.map((history) => <div key={history.id} className="rounded-xl border border-[#e8e1d8] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-bold text-[#17120f]">{history.date_label}</p><p className="mt-0.5 text-xs text-[#746c64]">{history.method_label}{history.checked_in_at ? ` · ${history.checked_in_at}` : ''}{history.updated_by ? ` · ${history.updated_by}` : ''}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${history.is_present ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{history.is_present ? 'Hadir' : 'Tidak Hadir'}</span></div>{history.notes && <p className="mt-2 text-xs leading-5 text-[#625b54]">{history.notes}</p>}</div>)}</div> : <p className="mt-2 rounded-xl border border-dashed border-[#ddd5ca] p-4 text-center text-xs text-[#817970]">Belum ada riwayat absensi.</p>}</div><div><h3 className="text-sm font-bold text-[#17120f]">Riwayat Check-in Court</h3>{attendanceReferee?.court_attendance_history.length ? <div className="mt-2 flex flex-wrap gap-2">{attendanceReferee.court_attendance_history.map((history) => <span key={history.id} className="rounded-full border border-[#e2d8c8] bg-[#faf7f1] px-3 py-1.5 text-xs text-[#625b54]">{history.date_label} · <strong>{history.court_name}</strong> · {history.checked_in_at}</span>)}</div> : <p className="mt-2 text-xs text-[#817970]">Belum ada check-in Court.</p>}</div></form></Modal>
+            <Modal
+                isOpen={Boolean(attendanceReferee)}
+                onClose={() => setAttendanceReferee(null)}
+                title="Update Kehadiran Wasit"
+                footer={
+                    <div className="flex w-full items-center justify-between gap-2">
+                        {attendanceReferee?.attendance_recorded ? (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                loading={resetAttendanceForm.processing}
+                                onClick={() => executeResetAttendance(attendanceReferee, attendanceForm.data.attendance_date)}
+                            >
+                                <i className="fa-solid fa-rotate-left mr-1.5" />
+                                Reset Absen Tanggal Ini
+                            </Button>
+                        ) : <div />}
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" onClick={() => setAttendanceReferee(null)}>Batal</Button>
+                            <Button onClick={saveAttendance} loading={attendanceForm.processing}>Simpan Kehadiran</Button>
+                        </div>
+                    </div>
+                }
+            >
+                <form onSubmit={saveAttendance} className="space-y-5">
+                    <div className="rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3">
+                        <p className="font-bold text-[#17120f]">{attendanceReferee?.name}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#746c64]">{activeEvent.name} · {activeEvent.start_date} sampai {activeEvent.end_date}</p>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Tanggal Absensi"
+                            type="date"
+                            required
+                            value={attendanceForm.data.attendance_date}
+                            onChange={(event) => {
+                                const record = attendanceReferee?.attendance_history.find((attendance) => attendance.date === event.target.value);
+                                attendanceForm.setData({
+                                    ...attendanceForm.data,
+                                    attendance_date: event.target.value,
+                                    is_present: record ? record.is_present : true,
+                                    notes: record?.notes || '',
+                                });
+                            }}
+                            error={attendanceForm.errors.attendance_date}
+                        />
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm font-semibold text-[#3d3732]">Status Kehadiran</span>
+                            <select
+                                value={attendanceForm.data.is_present ? '1' : '0'}
+                                onChange={(event) => attendanceForm.setData('is_present', event.target.value === '1')}
+                                className="min-h-11 w-full rounded-lg border border-[#dcd4ca] bg-white px-3 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-2 focus:ring-[#d4a843]/25"
+                            >
+                                <option value="1">Hadir</option>
+                                <option value="0">Tidak Hadir</option>
+                            </select>
+                            {attendanceForm.errors.is_present && <span className="mt-1 block text-xs text-red-600">{attendanceForm.errors.is_present}</span>}
+                        </label>
+                    </div>
+                    <label className="block">
+                        <span className="mb-1.5 block text-sm font-semibold text-[#3d3732]">Catatan (opsional)</span>
+                        <textarea
+                            rows={3}
+                            maxLength={500}
+                            value={attendanceForm.data.notes}
+                            onChange={(event) => attendanceForm.setData('notes', event.target.value)}
+                            placeholder="Contoh: izin sakit, hadir dikonfirmasi Panitera..."
+                            className="w-full rounded-lg border border-[#dcd4ca] bg-white px-3 py-2 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-2 focus:ring-[#d4a843]/25"
+                        />
+                        {attendanceForm.errors.notes && <span className="mt-1 block text-xs text-red-600">{attendanceForm.errors.notes}</span>}
+                    </label>
+                    <div>
+                        <h3 className="text-sm font-bold text-[#17120f]">Riwayat Absensi Event</h3>
+                        {attendanceReferee?.attendance_history.length ? (
+                            <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
+                                {attendanceReferee.attendance_history.map((history) => (
+                                    <div key={history.id} className="rounded-xl border border-[#e8e1d8] p-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <p className="text-sm font-bold text-[#17120f]">{history.date_label}</p>
+                                                <p className="mt-0.5 text-xs text-[#746c64]">
+                                                    {history.method_label}
+                                                    {history.checked_in_at ? ` · ${history.checked_in_at}` : ''}
+                                                    {history.updated_by ? ` · ${history.updated_by}` : ''}
+                                                </p>
+                                            </div>
+                                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${history.is_present ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                {history.is_present ? 'Hadir' : 'Tidak Hadir'}
+                                            </span>
+                                        </div>
+                                        {history.notes && <p className="mt-2 text-xs leading-5 text-[#625b54]">{history.notes}</p>}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="mt-2 rounded-xl border border-dashed border-[#ddd5ca] p-4 text-center text-xs text-[#817970]">
+                                Belum ada riwayat absensi.
+                            </p>
+                        )}
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-bold text-[#17120f]">Riwayat Check-in Court</h3>
+                        {attendanceReferee?.court_attendance_history.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {attendanceReferee.court_attendance_history.map((history) => (
+                                    <span key={history.id} className="rounded-full border border-[#e2d8c8] bg-[#faf7f1] px-3 py-1.5 text-xs text-[#625b54]">
+                                        {history.date_label} · <strong>{history.court_name}</strong> · {history.checked_in_at}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="mt-2 text-xs text-[#817970]">Belum ada check-in Court.</p>
+                        )}
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal Konfirmasi Reset Kehadiran Cepat dari Tabel */}
+            <Modal
+                isOpen={Boolean(resetAttendanceTarget)}
+                onClose={() => !resetAttendanceForm.processing && setResetAttendanceTarget(null)}
+                title="Konfirmasi Reset Kehadiran Wasit"
+                footer={
+                    <>
+                        <Button variant="outline" onClick={() => setResetAttendanceTarget(null)} disabled={resetAttendanceForm.processing}>
+                            Batal
+                        </Button>
+                        <Button
+                            variant="danger"
+                            loading={resetAttendanceForm.processing}
+                            onClick={() => executeResetAttendance(resetAttendanceTarget)}
+                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                        >
+                            <i className="fa-solid fa-rotate-left mr-1.5" />
+                            Ya, Reset Kehadiran
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <p className="text-sm text-[#17120f]">
+                        Apakah Anda yakin ingin mereset kehadiran wasit <strong>{resetAttendanceTarget?.name}</strong> untuk hari ini?
+                    </p>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                        <i className="fa-solid fa-circle-info mr-1.5 text-amber-700" />
+                        Status kehadiran event dan check-in court untuk tanggal hari ini akan dihapus dan status wasit akan dikembalikan menjadi <strong>Belum Absen</strong>.
+                    </div>
+                </div>
+            </Modal>
             <Modal
                 isOpen={generateOpen}
                 onClose={() => !generateForm.processing && setGenerateOpen(false)}
@@ -651,7 +1063,7 @@ export default function EventReferees({
                     )}
                 </form>
             </Modal>
-            <Modal isOpen={qrOpen} onClose={() => setQrOpen(false)} title="QR Absensi Wasit Event" footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}><div className="mx-auto max-w-sm"><QrPreview value={eventCheckInUrl} label={activeEvent.name} /><p className="mt-3 text-center text-xs leading-5 text-[#7a746e]">Wasit scan menggunakan kamera ponsel, login, lalu tekan Konfirmasi Kehadiran.</p></div></Modal>
+            <Modal isOpen={qrOpen} onClose={() => setQrOpen(false)} title="QR Absensi Wasit Event" footer={<Button onClick={() => setQrOpen(false)}>Tutup</Button>}><div className="mx-auto max-w-sm"><QrPreview value={eventCheckInUrl} label={activeEvent.name} code={eventCheckInCode} /><p className="mt-3 text-center text-xs leading-5 text-[#7a746e]">Wasit scan menggunakan kamera ponsel atau masukkan 6 digit kode, login, lalu tekan Konfirmasi Kehadiran.</p></div></Modal>
 
             {/* Modal Tugaskan / Pindah Koordinator Court */}
             <Modal
@@ -712,11 +1124,10 @@ export default function EventReferees({
                                 return (
                                     <label
                                         key={c.id}
-                                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors ${
-                                            isSelected
-                                                ? 'border-amber-400 bg-amber-50/70 text-amber-950 ring-1 ring-amber-400'
-                                                : 'border-[#e8e1d8] bg-white hover:bg-[#faf7f2]'
-                                        }`}
+                                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition-colors ${isSelected
+                                            ? 'border-amber-400 bg-amber-50/70 text-amber-950 ring-1 ring-amber-400'
+                                            : 'border-[#e8e1d8] bg-white hover:bg-[#faf7f2]'
+                                            }`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <input
@@ -831,6 +1242,266 @@ export default function EventReferees({
                         Penugasan koordinator yang sudah ada sebelumnya akan diperbarui secara merata.
                     </p>
                 </div>
+            </Modal>
+
+            {/* Modal Pindah / Tukar Wasit Court */}
+            <Modal
+                isOpen={swapModalOpen && Boolean(selectedSwapSource)}
+                onClose={() => !swapForm.processing && setSwapModalOpen(false)}
+                title="Pindah / Tukar Wasit Court"
+                subtitle={selectedSwapSource ? `Atur penugasan atau tukar posisi untuk ${selectedSwapSource.referee_name}` : ''}
+                size="3xl"
+                closeOnBackdrop={!swapForm.processing}
+                closeOnEscape={!swapForm.processing}
+                footer={
+                    <Button
+                        variant="outline"
+                        onClick={() => setSwapModalOpen(false)}
+                        disabled={swapForm.processing}
+                    >
+                        Tutup
+                    </Button>
+                }
+            >
+                {selectedSwapSource && (
+                    <div className="space-y-4">
+                        {/* Error Alert */}
+                        {swapForm.errors.swap && (
+                            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold leading-relaxed text-red-800">
+                                <div className="flex items-start gap-2">
+                                    <i className="fa-solid fa-triangle-exclamation mt-0.5 text-red-600" />
+                                    <span>{swapForm.errors.swap}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Source Referee Info Card */}
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800 mb-1">
+                                Wasit Yang Dipilih (Sumber):
+                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                    <p className="text-base font-bold text-[#17120f]">{selectedSwapSource.referee_name}</p>
+                                    <p className="text-xs text-[#7a746e] mt-0.5">
+                                        {[selectedSwapSource.dan_grade, selectedSwapSource.region].filter(Boolean).join(' · ')}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="rounded-lg bg-amber-100 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-900">
+                                        {selectedSwapSource.court_name} · {selectedSwapSource.role_label}
+                                    </span>
+                                    {selectedSwapSource.is_chief_qualified ? (
+                                        <span className="rounded-lg bg-emerald-100 border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-800" title="Memenuhi syarat Wasit Utama (IV DAN+ atau Nasional)">
+                                            <i className="fa-solid fa-medal mr-1" />IV DAN+
+                                        </span>
+                                    ) : (
+                                        <span className="rounded-lg bg-slate-100 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700" title="Hanya untuk Wasit Pembantu / Wasit Daerah">
+                                            III DAN
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mode Selector Tabs */}
+                        <div className="flex rounded-xl border border-[#e5ded4] bg-[#f5f1eb] p-1">
+                            <button
+                                type="button"
+                                onClick={() => setSwapMode('swap')}
+                                className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${swapMode === 'swap'
+                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                    : 'text-[#625b54] hover:text-[#17120f]'
+                                    }`}
+                            >
+                                <i className="fa-solid fa-right-left mr-1.5" />
+                                Opsi A: Tukar dengan Wasit Lain
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSwapMode('move')}
+                                className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${swapMode === 'move'
+                                    ? 'bg-[#17120f] text-[#f0c060] shadow-xs'
+                                    : 'text-[#625b54] hover:text-[#17120f]'
+                                    }`}
+                            >
+                                <i className="fa-solid fa-arrow-right mr-1.5" />
+                                Opsi B: Pindah ke Court / Posisi Tertentu
+                            </button>
+                        </div>
+
+                        {/* Mode A: Swap with another referee */}
+                        {swapMode === 'swap' && (
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs text-[#7a746e]">
+                                        Pilih wasit tujuan untuk bertukar posisi dan court secara instan:
+                                    </p>
+                                    <input
+                                        type="text"
+                                        value={swapSearch}
+                                        onChange={(e) => setSwapSearch(e.target.value)}
+                                        placeholder="Cari wasit tujuan..."
+                                        className="rounded-lg border border-[#dcd4ca] bg-white px-3 py-1 text-xs text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-1 focus:ring-[#d4a843]"
+                                    />
+                                </div>
+
+                                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                                    {allAssignedReferees
+                                        .filter((candidate) => candidate.referee_id !== selectedSwapSource.referee_id)
+                                        .filter((candidate) => {
+                                            if (!swapSearch.trim()) return true;
+                                            const q = swapSearch.toLowerCase();
+                                            return (
+                                                candidate.referee_name.toLowerCase().includes(q) ||
+                                                candidate.court_name.toLowerCase().includes(q) ||
+                                                (candidate.region || '').toLowerCase().includes(q)
+                                            );
+                                        })
+                                        .map((candidate) => {
+                                            const sourceIsChief = selectedSwapSource.role === 'chief';
+                                            const candidateIsChief = candidate.role === 'chief';
+                                            const candidateCannotBeChief = sourceIsChief && !candidate.is_chief_qualified;
+                                            const sourceCannotBeChief = candidateIsChief && !selectedSwapSource.is_chief_qualified;
+                                            const isDanBlocked = candidateCannotBeChief || sourceCannotBeChief;
+
+                                            return (
+                                                <div
+                                                    key={candidate.referee_id}
+                                                    className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border p-3 transition-colors ${isDanBlocked
+                                                        ? 'border-gray-200 bg-gray-50/80 opacity-75'
+                                                        : 'border-[#e8e1d8] bg-white hover:bg-[#fcfaf7]'
+                                                        }`}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="truncate text-sm font-bold text-[#17120f]">
+                                                                {candidate.referee_name}
+                                                            </p>
+                                                            <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                                                {candidate.court_name} · {candidate.role_label}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-[#7a746e] mt-0.5">
+                                                            {[candidate.dan_grade, candidate.region].filter(Boolean).join(' · ')}
+                                                        </p>
+                                                        {isDanBlocked && (
+                                                            <p className="text-[10px] font-semibold text-red-600 mt-1">
+                                                                <i className="fa-solid fa-ban mr-1" />
+                                                                {candidateCannotBeChief
+                                                                    ? `Wasit tujuan (${candidate.dan_grade}) berstatus III DAN, belum memenuhi syarat Wasit Utama.`
+                                                                    : `Wasit sumber (${selectedSwapSource.dan_grade}) berstatus III DAN, tidak dapat menjadi Wasit Utama.`}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="shrink-0 flex items-center justify-end">
+                                                        <Button
+                                                            size="sm"
+                                                            disabled={isDanBlocked || swapForm.processing}
+                                                            loading={swapForm.processing && swapForm.data.target_referee_id === candidate.referee_id}
+                                                            onClick={() => handleExecuteSwap(candidate.referee_id)}
+                                                            className="min-h-9 bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520] disabled:bg-gray-200 disabled:text-gray-500 font-bold text-xs"
+                                                        >
+                                                            <i className="fa-solid fa-right-left mr-1.5" />
+                                                            Tukar Posisi
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Mode B: Move to specific court / role */}
+                        {swapMode === 'move' && (
+                            <form onSubmit={handleExecuteMove} className="space-y-4">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wider text-[#3d3732] mb-1.5">
+                                            Court Tujuan:
+                                        </label>
+                                        <select
+                                            value={swapForm.data.target_court_id}
+                                            onChange={(e) => swapForm.setData('target_court_id', e.target.value)}
+                                            className="w-full rounded-lg border border-[#dcd4ca] bg-white px-3 py-2 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-1 focus:ring-[#d4a843]"
+                                        >
+                                            {courts.map((c) => (
+                                                <option key={c.id} value={c.id} className="bg-white text-[#17120f]">
+                                                    {c.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wider text-[#3d3732] mb-1.5">
+                                            Posisi Tujuan:
+                                        </label>
+                                        <select
+                                            value={swapForm.data.target_role}
+                                            onChange={(e) => swapForm.setData('target_role', e.target.value)}
+                                            className="w-full rounded-lg border border-[#dcd4ca] bg-white px-3 py-2 text-sm text-[#17120f] focus:border-[#b8872d] focus:outline-none focus:ring-1 focus:ring-[#d4a843]"
+                                        >
+                                            {(roles && roles.length ? roles : [
+                                                { value: 'chief', label: 'Wasit Utama' },
+                                                { value: 'regional_1', label: 'Wasit Pembantu 1 / Wasit Nasional 1' },
+                                                { value: 'regional_2', label: 'Wasit Pembantu 2 / Wasit Nasional 2' },
+                                                { value: 'assistant_1', label: 'Wasit Pembantu 3 / Wasit Daerah 1' },
+                                                { value: 'assistant_2', label: 'Wasit Pembantu 4 / Wasit Daerah 2' },
+                                            ]).map((r) => {
+                                                const roleValue = r.value || r.key;
+                                                const roleLabel = r.label || r.name;
+                                                return (
+                                                    <option key={roleValue} value={roleValue} className="bg-white text-[#17120f]">
+                                                        {roleLabel} {roleValue === 'chief' ? '(Wajib IV DAN+)' : ''}
+                                                    </option>
+                                                );
+                                            })}
+                                            <option value="reserve" className="bg-white text-[#17120f]">Wasit Cadangan / Rotasi Court</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {swapForm.data.target_role === 'chief' && !selectedSwapSource.is_chief_qualified && (
+                                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-800">
+                                        <p className="font-bold flex items-center gap-1.5 text-red-900">
+                                            <i className="fa-solid fa-triangle-exclamation text-red-600" />
+                                            Kualifikasi Tidak Memenuhi:
+                                        </p>
+                                        <p className="mt-1">
+                                            Wasit <strong>{selectedSwapSource.referee_name}</strong> ({selectedSwapSource.dan_grade}) berstatus III DAN ke bawah. Posisi <strong>Wasit Utama</strong> wajib dipegang oleh pemegang minimal <strong>IV DAN ke atas</strong> atau Wasit Nasional.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="rounded-xl border border-[#e8e1d8] bg-[#faf8f5] p-3 text-xs text-[#625b54] leading-relaxed">
+                                    <p className="font-bold text-[#17120f] mb-1">
+                                        <i className="fa-solid fa-circle-info mr-1 text-amber-600" />
+                                        Informasi Pemindahan:
+                                    </p>
+                                    <p>
+                                        Jika di posisi court tujuan sudah ada wasit yang bertugas, wasit tersebut akan secara otomatis bertukar tempat dengan <strong>{selectedSwapSource.referee_name}</strong>. Wasit yang berpindah posisi wajib melakukan pemindaian (scan) QR code pada posisi barunya.
+                                    </p>
+                                </div>
+
+                                <div className="flex justify-end pt-2">
+                                    <Button
+                                        type="submit"
+                                        loading={swapForm.processing}
+                                        disabled={
+                                            swapForm.processing ||
+                                            (swapForm.data.target_role === 'chief' && !selectedSwapSource.is_chief_qualified)
+                                        }
+                                        className="bg-[#17120f] text-[#f0c060] hover:bg-[#2b2520] font-bold"
+                                    >
+                                        <i className="fa-solid fa-check mr-2" />
+                                        Konfirmasi Pindah Posisi
+                                    </Button>
+                                </div>
+                            </form>
+                        )}
+                    </div>
+                )}
             </Modal>
         </AdminLayout>
     );
