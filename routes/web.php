@@ -163,11 +163,14 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::post('event/{event}/referee', [EventDetailController::class, 'storeEventReferee'])->name('event.referee.store');
     Route::put('event/{event}/referee/{referee}', [EventDetailController::class, 'updateEventReferee'])->name('event.referee.update');
     Route::delete('event/{event}/referee/{referee}', [EventDetailController::class, 'destroyEventReferee'])->name('event.referee.destroy');
+    Route::post('event/{event}/referee/{referee}/transfer-to-coordinator', [EventDetailController::class, 'transferRefereeToCoordinator'])->name('event.referee.transfer-to-coordinator');
 
     Route::post('event/{event}/clerk', [EventDetailController::class, 'storeEventClerk'])->name('event.clerk.store');
     Route::delete('event/{event}/clerk/{clerk}', [EventDetailController::class, 'destroyEventClerk'])->name('event.clerk.destroy');
     Route::post('event/{event}/field-coordinator', [EventDetailController::class, 'storeEventFieldCoordinator'])->name('event.field-coordinator.store');
+    Route::put('event/{event}/field-coordinator/{fieldCoordinator}', [EventDetailController::class, 'updateEventFieldCoordinator'])->name('event.field-coordinator.update');
     Route::delete('event/{event}/field-coordinator/{fieldCoordinator}', [EventDetailController::class, 'destroyEventFieldCoordinator'])->name('event.field-coordinator.destroy');
+    Route::post('event/{event}/field-coordinator/{fieldCoordinator}/transfer-to-referee', [EventDetailController::class, 'transferCoordinatorToReferee'])->name('event.field-coordinator.transfer-to-referee');
 
     // Event Rundowns (Sesi Acara & Rundown)
     Route::post('event/{event}/rundown', [EventDetailController::class, 'storeRundown'])->name('event.rundown.store');

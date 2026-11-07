@@ -160,13 +160,16 @@ class EventDetailViewService
                 ->where('is_active', true)
                 ->orWhereIn('id', $selectedCoordinatorIds))
             ->orderBy('name')
-            ->get(['id', 'name', 'coordinator_number', 'region', 'is_active']);
+            ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email', 'is_active']);
 
         $eventFieldCoordinators = $event->fieldCoordinators->map(fn (FieldCoordinator $coordinator) => [
             'id' => $coordinator->id,
             'name' => $coordinator->name,
             'coordinator_number' => $coordinator->coordinator_number,
             'region' => $coordinator->region,
+            'phone' => $coordinator->phone,
+            'email' => $coordinator->email,
+            'notes' => $coordinator->notes,
             'assignment_area' => $coordinator->pivot->assignment_area,
         ]);
 

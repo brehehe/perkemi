@@ -192,12 +192,18 @@ export default function EventDetail({
     const [editingRundown, setEditingRundown] = useState(null);
     const [deletingRundown, setDeletingRundown] = useState(null);
 
-    // 5. Event Referee Modal
+    // 5. Event Referee & Field Coordinator State & Modals
     const [isRefereeModalOpen, setIsRefereeModalOpen] = useState(false);
     const [editingReferee, setEditingReferee] = useState(null);
     const [refereeSearch, setRefereeSearch] = useState('');
     const [isNewClerkModalOpen, setIsNewClerkModalOpen] = useState(false);
-    const [isNewFieldCoordinatorModalOpen, setIsNewFieldCoordinatorModalOpen] = useState(false);
+    const [isFieldCoordinatorModalOpen, setIsFieldCoordinatorModalOpen] = useState(false);
+    const [editingFieldCoordinator, setEditingFieldCoordinator] = useState(null);
+    const [fieldCoordinatorSearch, setFieldCoordinatorSearch] = useState('');
+
+    // Transfer Modal (Wasit <-> Koordinator Lapangan)
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    const [transferTarget, setTransferTarget] = useState(null); // { type: 'to_coordinator' | 'to_referee', source: referee | coordinator }
     const [selectedEventUserId, setSelectedEventUserId] = useState('');
     const [selectedEventUserRole, setSelectedEventUserRole] = useState('responsible');
     const [generalSaveFeedback, setGeneralSaveFeedback] = useState(null);
@@ -366,7 +372,24 @@ export default function EventDetail({
     const clerkAssignmentForm = useForm({ clerk_id: '', role: 'operator' });
     const newClerkForm = useForm({ create_new: true, name: '', employee_number: '', certification: '', region: '', phone: '', email: '', password: '', password_confirmation: '', role: 'operator' });
     const fieldCoordinatorAssignmentForm = useForm({ field_coordinator_id: '', assignment_area: 'court' });
-    const newFieldCoordinatorForm = useForm({ create_new: true, name: '', coordinator_number: '', region: '', phone: '', email: '', password: '', password_confirmation: '', assignment_area: 'court' });
+    const fieldCoordinatorForm = useForm({
+        name: '',
+        coordinator_number: '',
+        region: '',
+        phone: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        assignment_area: 'court',
+    });
+    const transferForm = useForm({
+        role: 'referee',
+        assignment_area: 'court',
+        dan_grade: '',
+        certification_level: '',
+        license_number: '',
+        detach_source: true,
+    });
 
     // Helper: format currency IDR
     const formatIDR = (val) => {
@@ -529,9 +552,129 @@ export default function EventDetail({
     };
 
     const removeEventClerk = (clerk) => router.delete(`/admin/master/event/${event.id}/clerk/${clerk.id}`, { preserveScroll: true });
-    const submitFieldCoordinatorAssignment = (e) => { e.preventDefault(); fieldCoordinatorAssignmentForm.post(`/admin/master/event/${event.id}/field-coordinator`, { preserveScroll: true, onSuccess: () => fieldCoordinatorAssignmentForm.setData({ field_coordinator_id: '', assignment_area: 'court' }) }); };
-    const submitNewFieldCoordinator = (e) => { e.preventDefault(); newFieldCoordinatorForm.post(`/admin/master/event/${event.id}/field-coordinator`, { preserveScroll: true, onSuccess: () => { setIsNewFieldCoordinatorModalOpen(false); newFieldCoordinatorForm.reset(); } }); };
-    const removeEventFieldCoordinator = (coordinator) => router.delete(`/admin/master/event/${event.id}/field-coordinator/${coordinator.id}`, { preserveScroll: true });
+
+    // Field Coordinator Handlers
+    const submitFieldCoordinatorAssignment = (e) => {
+        e.preventDefault();
+        fieldCoordinatorAssignmentForm.post(`/admin/master/event/${event.id}/field-coordinator`, {
+            preserveScroll: true,
+            onSuccess: () => fieldCoordinatorAssignmentForm.setData({ field_coordinator_id: '', assignment_area: 'court' }),
+        });
+    };
+
+    const openCreateFieldCoordinatorModal = () => {
+        setEditingFieldCoordinator(null);
+        fieldCoordinatorForm.reset();
+        fieldCoordinatorForm.clearErrors();
+        fieldCoordinatorForm.setData({
+            name: '',
+            coordinator_number: '',
+            region: '',
+            phone: '',
+            email: '',
+            password: '',
+            password_confirmation: '',
+            assignment_area: 'court',
+        });
+        setIsFieldCoordinatorModalOpen(true);
+    };
+
+    const openEditFieldCoordinatorModal = (coordinator) => {
+        setEditingFieldCoordinator(coordinator);
+        fieldCoordinatorForm.clearErrors();
+        fieldCoordinatorForm.setData({
+            name: coordinator.name || '',
+            coordinator_number: coordinator.coordinator_number || '',
+            region: coordinator.region || '',
+            phone: coordinator.phone || '',
+            email: coordinator.email || '',
+            password: '',
+            password_confirmation: '',
+            assignment_area: coordinator.assignment_area || 'court',
+        });
+        setIsFieldCoordinatorModalOpen(true);
+    };
+
+    const submitFieldCoordinator = (e) => {
+        e.preventDefault();
+        if (editingFieldCoordinator) {
+            fieldCoordinatorForm.put(`/admin/master/event/${event.id}/field-coordinator/${editingFieldCoordinator.id}`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsFieldCoordinatorModalOpen(false);
+                    setEditingFieldCoordinator(null);
+                    fieldCoordinatorForm.reset();
+                },
+            });
+        } else {
+            fieldCoordinatorForm.transform((data) => ({ ...data, create_new: true }));
+            fieldCoordinatorForm.post(`/admin/master/event/${event.id}/field-coordinator`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsFieldCoordinatorModalOpen(false);
+                    fieldCoordinatorForm.reset();
+                },
+            });
+        }
+    };
+
+    const removeEventFieldCoordinator = (coordinator) => {
+        router.delete(`/admin/master/event/${event.id}/field-coordinator/${coordinator.id}`, { preserveScroll: true });
+    };
+
+    // Transfer Handlers (Wasit <-> Koordinator Lapangan)
+    const openTransferToCoordinatorModal = (referee) => {
+        setTransferTarget({ type: 'to_coordinator', source: referee });
+        transferForm.clearErrors();
+        transferForm.setData({
+            role: 'referee',
+            assignment_area: 'court',
+            dan_grade: '',
+            certification_level: '',
+            license_number: '',
+            detach_source: true,
+        });
+        setIsTransferModalOpen(true);
+    };
+
+    const openTransferToRefereeModal = (coordinator) => {
+        setTransferTarget({ type: 'to_referee', source: coordinator });
+        transferForm.clearErrors();
+        transferForm.setData({
+            role: 'referee',
+            assignment_area: 'court',
+            dan_grade: '',
+            certification_level: '',
+            license_number: coordinator.coordinator_number || '',
+            detach_source: true,
+        });
+        setIsTransferModalOpen(true);
+    };
+
+    const submitTransfer = (e) => {
+        e.preventDefault();
+        if (!transferTarget) return;
+
+        if (transferTarget.type === 'to_coordinator') {
+            transferForm.post(`/admin/master/event/${event.id}/referee/${transferTarget.source.id}/transfer-to-coordinator`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsTransferModalOpen(false);
+                    setTransferTarget(null);
+                    transferForm.reset();
+                },
+            });
+        } else {
+            transferForm.post(`/admin/master/event/${event.id}/field-coordinator/${transferTarget.source.id}/transfer-to-referee`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsTransferModalOpen(false);
+                    setTransferTarget(null);
+                    transferForm.reset();
+                },
+            });
+        }
+    };
 
     // Age Category Handlers
     const openCreateAgeModal = () => {
@@ -2696,7 +2839,168 @@ export default function EventDetail({
 
                 {/* ════ TAB 7: KOORDINATOR LAPANGAN ════ */}
                 {activeTab === 'field_coordinators' && (
-                    <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800"><div><h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Koordinator Lapangan Event</h3><p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Tentukan koordinator utama, court, logistik, dan liaison event.</p></div><Button type="button" onClick={() => setIsNewFieldCoordinatorModalOpen(true)} className="bg-[#141210] text-amber-400 hover:bg-black"><i className="fa-solid fa-user-plus mr-2" />Tambah Koordinator Baru</Button></div><div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40"><form onSubmit={submitFieldCoordinatorAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end"><Combobox label="Pilih dari Master Koordinator" value={fieldCoordinatorAssignmentForm.data.field_coordinator_id} onChange={(value) => fieldCoordinatorAssignmentForm.setData('field_coordinator_id', value)} options={fieldCoordinatorOptions} placeholder="Cari koordinator..." error={fieldCoordinatorAssignmentForm.errors.field_coordinator_id} /><Combobox label="Area Penugasan" value={fieldCoordinatorAssignmentForm.data.assignment_area} onChange={(value) => fieldCoordinatorAssignmentForm.setData('assignment_area', value)} options={fieldCoordinatorAreaOptions} clearable={false} error={fieldCoordinatorAssignmentForm.errors.assignment_area} /><Button type="submit" loading={fieldCoordinatorAssignmentForm.processing} disabled={!fieldCoordinatorAssignmentForm.data.field_coordinator_id}><i className="fa-solid fa-plus mr-2" />Tugaskan</Button></form></div>{eventFieldCoordinators.length ? <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">{eventFieldCoordinators.map((coordinator) => <div key={coordinator.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-lime-50 text-lime-700"><i className="fa-solid fa-people-group" /></span><div><p className="font-semibold text-[#141210] dark:text-white">{coordinator.name}</p><p className="text-xs text-[#706860] dark:text-slate-400">{[coordinator.coordinator_number, coordinator.region].filter(Boolean).join(' · ') || 'Profil koordinator'}</p></div></div><div className="flex items-center gap-2"><span className="rounded-full bg-lime-50 px-2.5 py-1 text-xs font-semibold text-lime-700">{fieldCoordinatorAreaOptions.find((option) => option.value === coordinator.assignment_area)?.label || coordinator.assignment_area}</span><Button variant="unstyled" size="none" type="button" onClick={() => removeEventFieldCoordinator(coordinator)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Hapus ${coordinator.name} dari event`}><i className="fa-solid fa-trash" /></Button></div></div>)}</div> : <div className="p-8 text-center"><i className="fa-solid fa-people-group text-3xl text-[#d8d0c7]" /><p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada koordinator yang ditugaskan</p></div>}</div>
+                    <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800">
+                            <div>
+                                <h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Koordinator Lapangan</h3>
+                                <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Pilih koordinator lapangan dari master data untuk event ini atau edit langsung data koordinator.</p>
+                            </div>
+                            <Button type="button" onClick={openCreateFieldCoordinatorModal} className="bg-[#141210] text-amber-400 hover:bg-black">
+                                <i className="fa-solid fa-user-plus mr-2" />
+                                Tambah Koordinator Baru
+                            </Button>
+                        </div>
+
+                        <div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40">
+                            <form onSubmit={submitFieldCoordinatorAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end">
+                                <Combobox
+                                    label="Pilih dari Master Data Koordinator"
+                                    value={fieldCoordinatorAssignmentForm.data.field_coordinator_id}
+                                    onChange={(value) => fieldCoordinatorAssignmentForm.setData('field_coordinator_id', value)}
+                                    options={fieldCoordinatorOptions}
+                                    placeholder="Cari koordinator..."
+                                    searchPlaceholder="Cari koordinator..."
+                                    error={fieldCoordinatorAssignmentForm.errors.field_coordinator_id}
+                                />
+                                <Combobox
+                                    label="Area Penugasan di Event"
+                                    value={fieldCoordinatorAssignmentForm.data.assignment_area}
+                                    onChange={(value) => fieldCoordinatorAssignmentForm.setData('assignment_area', value)}
+                                    options={fieldCoordinatorAreaOptions}
+                                    clearable={false}
+                                    error={fieldCoordinatorAssignmentForm.errors.assignment_area}
+                                />
+                                <Button type="submit" loading={fieldCoordinatorAssignmentForm.processing} disabled={!fieldCoordinatorAssignmentForm.data.field_coordinator_id}>
+                                    <i className="fa-solid fa-plus mr-2" />
+                                    Tugaskan
+                                </Button>
+                            </form>
+                        </div>
+
+                        {eventFieldCoordinators.length > 0 && (
+                            <div className="flex items-center justify-between border-b border-[#ede9e1] bg-[#fbfaf8] px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+                                <p className="text-xs font-semibold text-[#706860] dark:text-slate-400">
+                                    Total Ditugaskan: <span className="font-bold text-[#0f0d0b] dark:text-white">{eventFieldCoordinators.length} Koordinator</span>
+                                </p>
+                                <div className="w-full max-w-xs">
+                                    <Input
+                                        placeholder="Cari koordinator event..."
+                                        value={fieldCoordinatorSearch}
+                                        onChange={(e) => setFieldCoordinatorSearch(e.target.value)}
+                                        iconLeft={<i className="fa-solid fa-magnifying-glass text-[#a89f91]" />}
+                                        containerClassName="text-xs"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {(() => {
+                            const filteredCoordinators = eventFieldCoordinators.filter((coordinator) => {
+                                if (!fieldCoordinatorSearch) return true;
+                                const q = fieldCoordinatorSearch.toLowerCase();
+                                return (
+                                    coordinator.name?.toLowerCase().includes(q) ||
+                                    coordinator.coordinator_number?.toLowerCase().includes(q) ||
+                                    coordinator.region?.toLowerCase().includes(q) ||
+                                    coordinator.email?.toLowerCase().includes(q) ||
+                                    coordinator.phone?.toLowerCase().includes(q) ||
+                                    coordinator.notes?.toLowerCase().includes(q)
+                                );
+                            });
+
+                            if (!eventFieldCoordinators.length) {
+                                return (
+                                    <div className="p-8 text-center">
+                                        <i className="fa-solid fa-people-group text-3xl text-[#d8d0c7]" />
+                                        <p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada koordinator yang ditugaskan</p>
+                                        <p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambahkan koordinator baru langsung dari event ini.</p>
+                                    </div>
+                                );
+                            }
+
+                            if (!filteredCoordinators.length) {
+                                return (
+                                    <div className="p-8 text-center">
+                                        <i className="fa-solid fa-magnifying-glass text-2xl text-[#d8d0c7]" />
+                                        <p className="mt-2 text-sm font-semibold text-[#141210] dark:text-white">Tidak ada koordinator yang cocok dengan pencarian "{fieldCoordinatorSearch}"</p>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">
+                                    {filteredCoordinators.map((coordinator) => (
+                                        <div key={coordinator.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime-50 font-bold text-lime-700 dark:bg-lime-950/40 dark:text-lime-400">
+                                                    <i className="fa-solid fa-people-group" />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="truncate font-semibold text-[#141210] dark:text-white">{coordinator.name}</p>
+                                                        {coordinator.coordinator_number && (
+                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
+                                                                ID: {coordinator.coordinator_number}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
+                                                        {[coordinator.region, coordinator.phone].filter(Boolean).join(' · ') || 'Profil koordinator'}
+                                                    </p>
+                                                    {(coordinator.email || coordinator.notes) && (
+                                                        <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
+                                                            {[
+                                                                coordinator.email ? `Email: ${coordinator.email}` : null,
+                                                                coordinator.notes ? `Catatan: ${coordinator.notes}` : null,
+                                                            ].filter(Boolean).join(' · ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="rounded-full bg-lime-50 px-2.5 py-1 text-xs font-semibold text-lime-700 dark:bg-lime-950/40 dark:text-lime-400">
+                                                    {fieldCoordinatorAreaOptions.find((option) => option.value === coordinator.assignment_area)?.label || coordinator.assignment_area}
+                                                </span>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => openTransferToRefereeModal(coordinator)}
+                                                    className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                    aria-label={`Alihkan ${coordinator.name} ke Wasit & Juri`}
+                                                    title="Alihkan / Pindahkan ke Wasit & Juri"
+                                                >
+                                                    <i className="fa-solid fa-right-left" />
+                                                </Button>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => openEditFieldCoordinatorModal(coordinator)}
+                                                    className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                                    aria-label={`Edit ${coordinator.name}`}
+                                                    title="Edit data koordinator langsung"
+                                                >
+                                                    <i className="fa-solid fa-pen-to-square" />
+                                                </Button>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => removeEventFieldCoordinator(coordinator)}
+                                                    className="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                                    aria-label={`Hapus ${coordinator.name} dari event`}
+                                                    title="Hapus koordinator dari event"
+                                                >
+                                                    <i className="fa-solid fa-trash" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                    </div>
                 )}
 
                 {/* ════ TAB 8: PANITERA ════ */}
@@ -2815,6 +3119,17 @@ export default function EventDetail({
                                                 <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
                                                     {refereeRoleOptions.find((option) => option.value === referee.role)?.label || referee.role}
                                                 </span>
+                                                <Button
+                                                    variant="unstyled"
+                                                    size="none"
+                                                    type="button"
+                                                    onClick={() => openTransferToCoordinatorModal(referee)}
+                                                    className="rounded-lg p-2 text-lime-600 hover:bg-lime-50 dark:hover:bg-lime-950/30"
+                                                    aria-label={`Alihkan ${referee.name} ke Koordinator Lapangan`}
+                                                    title="Alihkan / Pindahkan ke Koordinator Lapangan"
+                                                >
+                                                    <i className="fa-solid fa-right-left" />
+                                                </Button>
                                                 <Button
                                                     variant="unstyled"
                                                     size="none"
@@ -3851,7 +4166,234 @@ export default function EventDetail({
                 <form onSubmit={submitNewClerk} className="space-y-4"><Input label="Nama Panitera" required value={newClerkForm.data.name} onChange={(e) => newClerkForm.setData('name', e.target.value)} error={newClerkForm.errors.name} placeholder="Contoh: Dewi Lestari" /><div className="grid gap-4 sm:grid-cols-2"><Input label="ID Panitia / Nomor Pegawai" value={newClerkForm.data.employee_number} onChange={(e) => newClerkForm.setData('employee_number', e.target.value)} error={newClerkForm.errors.employee_number} /><Combobox label="Peran di Event" value={newClerkForm.data.role} onChange={(value) => newClerkForm.setData('role', value)} options={clerkRoleOptions} clearable={false} error={newClerkForm.errors.role} /></div><div className="grid gap-4 sm:grid-cols-2"><Input label="Sertifikasi" value={newClerkForm.data.certification} onChange={(e) => newClerkForm.setData('certification', e.target.value)} error={newClerkForm.errors.certification} /><Input label="Wilayah / Pengda" value={newClerkForm.data.region} onChange={(e) => newClerkForm.setData('region', e.target.value)} error={newClerkForm.errors.region} /></div><Input label="Nomor Telepon" value={newClerkForm.data.phone} onChange={(e) => newClerkForm.setData('phone', e.target.value)} error={newClerkForm.errors.phone} /><div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Akun login opsional.</strong> Isi email dan password agar Panitera dapat login ke event ini.</div><Input label="Email Login" type="email" value={newClerkForm.data.email} onChange={(e) => newClerkForm.setData('email', e.target.value)} error={newClerkForm.errors.email} autoComplete="username" /><div className="grid gap-4 sm:grid-cols-2"><Input label="Password" type="password" value={newClerkForm.data.password} onChange={(e) => newClerkForm.setData('password', e.target.value)} error={newClerkForm.errors.password} autoComplete="new-password" /><Input label="Konfirmasi Password" type="password" value={newClerkForm.data.password_confirmation} onChange={(e) => newClerkForm.setData('password_confirmation', e.target.value)} autoComplete="new-password" /></div></form>
             </Modal>
 
-            <Modal isOpen={isNewFieldCoordinatorModalOpen} onClose={() => setIsNewFieldCoordinatorModalOpen(false)} title="Tambah Koordinator Lapangan Baru" footer={<><Button variant="outline" onClick={() => setIsNewFieldCoordinatorModalOpen(false)}>Batal</Button><Button onClick={submitNewFieldCoordinator} loading={newFieldCoordinatorForm.processing}>Simpan & Tugaskan</Button></>}><form onSubmit={submitNewFieldCoordinator} className="space-y-4"><Input label="Nama Koordinator" required value={newFieldCoordinatorForm.data.name} onChange={(e) => newFieldCoordinatorForm.setData('name', e.target.value)} error={newFieldCoordinatorForm.errors.name} /><div className="grid gap-4 sm:grid-cols-2"><Input label="ID Koordinator" value={newFieldCoordinatorForm.data.coordinator_number} onChange={(e) => newFieldCoordinatorForm.setData('coordinator_number', e.target.value)} error={newFieldCoordinatorForm.errors.coordinator_number} /><Combobox label="Area Penugasan" value={newFieldCoordinatorForm.data.assignment_area} onChange={(value) => newFieldCoordinatorForm.setData('assignment_area', value)} options={fieldCoordinatorAreaOptions} clearable={false} error={newFieldCoordinatorForm.errors.assignment_area} /></div><div className="grid gap-4 sm:grid-cols-2"><Input label="Wilayah / Pengda" value={newFieldCoordinatorForm.data.region} onChange={(e) => newFieldCoordinatorForm.setData('region', e.target.value)} error={newFieldCoordinatorForm.errors.region} /><Input label="Nomor Telepon" value={newFieldCoordinatorForm.data.phone} onChange={(e) => newFieldCoordinatorForm.setData('phone', e.target.value)} error={newFieldCoordinatorForm.errors.phone} /></div><div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Akun login opsional.</strong> Isi email dan password agar Koordinator dapat login ke event ini.</div><Input label="Email Login" type="email" value={newFieldCoordinatorForm.data.email} onChange={(e) => newFieldCoordinatorForm.setData('email', e.target.value)} error={newFieldCoordinatorForm.errors.email} autoComplete="username" /><div className="grid gap-4 sm:grid-cols-2"><Input label="Password" type="password" value={newFieldCoordinatorForm.data.password} onChange={(e) => newFieldCoordinatorForm.setData('password', e.target.value)} error={newFieldCoordinatorForm.errors.password} autoComplete="new-password" /><Input label="Konfirmasi Password" type="password" value={newFieldCoordinatorForm.data.password_confirmation} onChange={(e) => newFieldCoordinatorForm.setData('password_confirmation', e.target.value)} autoComplete="new-password" /></div></form></Modal>
+            {/* Modal Tambah / Edit Koordinator Lapangan */}
+            <Modal
+                isOpen={isFieldCoordinatorModalOpen}
+                onClose={() => {
+                    setIsFieldCoordinatorModalOpen(false);
+                    setEditingFieldCoordinator(null);
+                }}
+                title={editingFieldCoordinator ? 'Edit Data Koordinator & Penugasan' : 'Tambah Koordinator Baru ke Event'}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setIsFieldCoordinatorModalOpen(false);
+                                setEditingFieldCoordinator(null);
+                            }}
+                        >
+                            Batal
+                        </Button>
+                        <Button onClick={submitFieldCoordinator} loading={fieldCoordinatorForm.processing}>
+                            {editingFieldCoordinator ? 'Simpan Perubahan' : 'Simpan & Tugaskan'}
+                        </Button>
+                    </>
+                }
+            >
+                <form onSubmit={submitFieldCoordinator} className="space-y-4">
+                    <Input
+                        label="Nama Koordinator"
+                        required
+                        value={fieldCoordinatorForm.data.name}
+                        onChange={(e) => fieldCoordinatorForm.setData('name', e.target.value)}
+                        error={fieldCoordinatorForm.errors.name}
+                        placeholder="Contoh: Sensei Bambang Sugiono"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="ID / Lisensi Koordinator"
+                            value={fieldCoordinatorForm.data.coordinator_number}
+                            onChange={(e) => fieldCoordinatorForm.setData('coordinator_number', e.target.value)}
+                            error={fieldCoordinatorForm.errors.coordinator_number}
+                            placeholder="Contoh: KORD-001"
+                        />
+                        <Combobox
+                            label="Area Penugasan di Event"
+                            value={fieldCoordinatorForm.data.assignment_area}
+                            onChange={(value) => fieldCoordinatorForm.setData('assignment_area', value)}
+                            options={fieldCoordinatorAreaOptions}
+                            clearable={false}
+                            error={fieldCoordinatorForm.errors.assignment_area}
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Wilayah / Pengda"
+                            value={fieldCoordinatorForm.data.region}
+                            onChange={(e) => fieldCoordinatorForm.setData('region', e.target.value)}
+                            error={fieldCoordinatorForm.errors.region}
+                            placeholder="Contoh: Jawa Timur"
+                        />
+                        <Input
+                            label="Nomor Telepon"
+                            value={fieldCoordinatorForm.data.phone}
+                            onChange={(e) => fieldCoordinatorForm.setData('phone', e.target.value)}
+                            error={fieldCoordinatorForm.errors.phone}
+                            placeholder="08xxxxxxxxxx"
+                        />
+                    </div>
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                        <strong>Akun login {editingFieldCoordinator ? '(Opsional)' : 'opsional'}.</strong>{' '}
+                        {editingFieldCoordinator
+                            ? 'Isi email untuk sinkronisasi akun login. Kosongkan kolom password jika tidak ingin mengubah password saat ini.'
+                            : 'Isi email dan password agar Koordinator dapat login ke event ini.'}
+                    </div>
+
+                    <Input
+                        label="Email Login"
+                        type="email"
+                        value={fieldCoordinatorForm.data.email}
+                        onChange={(e) => fieldCoordinatorForm.setData('email', e.target.value)}
+                        error={fieldCoordinatorForm.errors.email}
+                        autoComplete="username"
+                        placeholder="koordinator@perkemi.id"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label={editingFieldCoordinator ? 'Password Baru (Kosongkan jika tetap)' : 'Password'}
+                            type="password"
+                            value={fieldCoordinatorForm.data.password}
+                            onChange={(e) => fieldCoordinatorForm.setData('password', e.target.value)}
+                            error={fieldCoordinatorForm.errors.password}
+                            autoComplete="new-password"
+                        />
+                        <Input
+                            label="Konfirmasi Password"
+                            type="password"
+                            value={fieldCoordinatorForm.data.password_confirmation}
+                            onChange={(e) => fieldCoordinatorForm.setData('password_confirmation', e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal Transfer Penugasan (Wasit <-> Koordinator Lapangan) */}
+            <Modal
+                isOpen={isTransferModalOpen}
+                onClose={() => {
+                    setIsTransferModalOpen(false);
+                    setTransferTarget(null);
+                }}
+                title={
+                    transferTarget?.type === 'to_coordinator'
+                        ? 'Alihkan Penugasan: Wasit ke Koordinator Lapangan'
+                        : 'Alihkan Penugasan: Koordinator Lapangan ke Wasit & Juri'
+                }
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setIsTransferModalOpen(false);
+                                setTransferTarget(null);
+                            }}
+                        >
+                            Batal
+                        </Button>
+                        <Button onClick={submitTransfer} loading={transferForm.processing} className="bg-amber-600 hover:bg-amber-700 text-white">
+                            <i className="fa-solid fa-right-left mr-2" />
+                            Lanjutkan Pengalihan
+                        </Button>
+                    </>
+                }
+            >
+                {transferTarget && (
+                    <form onSubmit={submitTransfer} className="space-y-4">
+                        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300">
+                            <div className="flex items-center gap-2 font-semibold">
+                                <i className="fa-solid fa-circle-info text-blue-600 dark:text-blue-400" />
+                                <span>Personil yang dialihkan:</span>
+                            </div>
+                            <p className="mt-1 font-bold text-sm text-[#0f0d0b] dark:text-white">
+                                {transferTarget.source.name}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
+                                {transferTarget.type === 'to_coordinator'
+                                    ? `Saat ini bertugas sebagai: Wasit (${refereeRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role})`
+                                    : `Saat ini bertugas sebagai: Koordinator Lapangan (${fieldCoordinatorAreaOptions.find(o => o.value === transferTarget.source.assignment_area)?.label || transferTarget.source.assignment_area})`}
+                            </p>
+                        </div>
+
+                        {transferTarget.type === 'to_coordinator' ? (
+                            <div>
+                                <Combobox
+                                    label="Target Area Penugasan Koordinator"
+                                    value={transferForm.data.assignment_area}
+                                    onChange={(value) => transferForm.setData('assignment_area', value)}
+                                    options={fieldCoordinatorAreaOptions}
+                                    clearable={false}
+                                    error={transferForm.errors.assignment_area}
+                                />
+                                <p className="mt-1.5 text-xs text-[#706860] dark:text-slate-400">
+                                    Pilih fungsi dan tanggung jawab koordinator di event ini. Role akun login juga akan disesuaikan otomatis menjadi Koordinator Lapangan.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <Combobox
+                                    label="Target Peran Wasit / Juri"
+                                    value={transferForm.data.role}
+                                    onChange={(value) => transferForm.setData('role', value)}
+                                    options={refereeRoleOptions}
+                                    clearable={false}
+                                    error={transferForm.errors.role}
+                                />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <Input
+                                        label="Tingkatan Dan (Opsional)"
+                                        value={transferForm.data.dan_grade}
+                                        onChange={(e) => transferForm.setData('dan_grade', e.target.value)}
+                                        error={transferForm.errors.dan_grade}
+                                        placeholder="Contoh: III DAN"
+                                    />
+                                    <Input
+                                        label="Tingkat Sertifikasi (Opsional)"
+                                        value={transferForm.data.certification_level}
+                                        onChange={(e) => transferForm.setData('certification_level', e.target.value)}
+                                        error={transferForm.errors.certification_level}
+                                        placeholder="Contoh: Wasit Nasional"
+                                    />
+                                </div>
+                                <Input
+                                    label="Nomor Lisensi (Opsional)"
+                                    value={transferForm.data.license_number}
+                                    onChange={(e) => transferForm.setData('license_number', e.target.value)}
+                                    error={transferForm.errors.license_number}
+                                    placeholder="Contoh: 69.1.13.03.99.001"
+                                />
+                                <p className="text-xs text-[#706860] dark:text-slate-400">
+                                    Role akun login personil akan disesuaikan otomatis menjadi Wasit dengan hak akses penjurian.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="rounded-xl border border-[#ede9e1] bg-[#fbfaf8] p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={transferForm.data.detach_source}
+                                    onChange={(e) => transferForm.setData('detach_source', e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                <div className="text-xs">
+                                    <span className="font-semibold text-[#0f0d0b] dark:text-white">
+                                        Lepaskan dari penugasan sebelumnya di event ini
+                                    </span>
+                                    <p className="mt-0.5 text-[#706860] dark:text-slate-400">
+                                        Jika dicentang, personil akan dipindahkan secara penuh (dihapus dari daftar {transferTarget.type === 'to_coordinator' ? 'wasit' : 'koordinator'} dan penugasan court sebelumnya akan dibersihkan). Jika tidak dicentang, personil dapat bertugas ganda.
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+                    </form>
+                )}
+            </Modal>
         </AdminLayout>
     );
 }

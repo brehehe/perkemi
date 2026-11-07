@@ -21,9 +21,11 @@ use App\Models\Clerk;
 use App\Models\Event;
 use App\Models\EventAgeCategory;
 use App\Models\EventCourt;
+use App\Models\EventCourtAssignment;
 use App\Models\EventMatchCategory;
 use App\Models\FieldCoordinator;
 use App\Models\Referee;
+use App\Models\Role;
 use App\Models\Rundown;
 use App\Models\TournamentResult;
 use App\Models\User;
@@ -474,8 +476,93 @@ class EventDetailController extends Controller
     public function destroyEventReferee(Event $event, Referee $referee): RedirectResponse
     {
         $event->referees()->detach($referee->id);
+        EventCourtAssignment::query()
+            ->whereIn('event_court_id', $event->courts()->select('id'))
+            ->where('staff_type', 'referee')
+            ->where('staff_id', $referee->id)
+            ->delete();
 
         return back()->with('success', "Wasit '{$referee->name}' telah dihapus dari event.");
+    }
+
+    public function transferRefereeToCoordinator(
+        Request $request,
+        Event $event,
+        Referee $referee,
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'assignment_area' => ['required', 'in:chief,court,logistics,liaison'],
+            'detach_source' => ['nullable', 'boolean'],
+        ]);
+
+        $detachSource = $request->boolean('detach_source', true);
+        $area = $validated['assignment_area'];
+
+        DB::transaction(function () use ($event, $referee, $area, $detachSource): void {
+            $coordinator = null;
+            if (filled($referee->email)) {
+                $coordinator = FieldCoordinator::query()
+                    ->whereRaw('LOWER(email) = ?', [mb_strtolower($referee->email)])
+                    ->first();
+            }
+            if (! $coordinator && filled($referee->phone)) {
+                $coordinator = FieldCoordinator::query()
+                    ->where('phone', $referee->phone)
+                    ->first();
+            }
+            if (! $coordinator) {
+                $coordinator = FieldCoordinator::query()
+                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($referee->name)])
+                    ->first();
+            }
+
+            if (! $coordinator) {
+                $coordinator = FieldCoordinator::create([
+                    'name' => $referee->name,
+                    'coordinator_number' => $referee->license_number ?? null,
+                    'region' => $referee->region ?? null,
+                    'phone' => $referee->phone ?? null,
+                    'email' => $referee->email ?? null,
+                    'notes' => $referee->dan_grade ? "Dialihkan dari Wasit ({$referee->dan_grade})" : null,
+                    'is_active' => true,
+                ]);
+            }
+
+            $event->fieldCoordinators()->syncWithoutDetaching([
+                $coordinator->id => ['assignment_area' => $area],
+            ]);
+
+            $user = $referee->user;
+            if (! $user && filled($referee->email)) {
+                $user = User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($referee->email)])->first();
+            }
+            if ($user) {
+                $user->assignRole(Role::findOrCreate('Koordinator Lapangan', 'web'));
+                $event->users()->syncWithoutDetaching([
+                    $user->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
+            }
+
+            if ($detachSource) {
+                $event->referees()->detach($referee->id);
+                EventCourtAssignment::query()
+                    ->whereIn('event_court_id', $event->courts()->select('id'))
+                    ->where('staff_type', 'referee')
+                    ->where('staff_id', $referee->id)
+                    ->delete();
+            }
+        });
+
+        $actionText = $detachSource ? 'dialihkan menjadi' : 'ditugaskan juga sebagai';
+        $areaLabels = [
+            'chief' => 'Koordinator Utama',
+            'court' => 'Koordinator Lapangan / Court',
+            'logistics' => 'Koordinator Logistik',
+            'liaison' => 'Liaison / Penghubung',
+        ];
+        $areaLabel = $areaLabels[$area] ?? $area;
+
+        return back()->with('success', "Wasit '{$referee->name}' berhasil {$actionText} Koordinator Lapangan ({$areaLabel}).");
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -596,11 +683,178 @@ class EventDetailController extends Controller
         return back()->with('success', "Koordinator '{$fieldCoordinator->name}' berhasil ditugaskan ke event.");
     }
 
+    public function updateEventFieldCoordinator(
+        Request $request,
+        Event $event,
+        FieldCoordinator $fieldCoordinator,
+        SyncLoginAccountAction $syncLoginAccount,
+    ): RedirectResponse {
+        $areaRules = ['required', 'in:chief,court,logistics,liaison'];
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'coordinator_number' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('field_coordinators', 'coordinator_number')->ignore($fieldCoordinator->id)->withoutTrashed(),
+            ],
+            'region' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:150'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
+            'assignment_area' => $areaRules,
+        ]);
+
+        $password = filled($validated['password'] ?? null) ? (string) $validated['password'] : null;
+
+        DB::transaction(function () use ($event, $fieldCoordinator, $validated, $password, $syncLoginAccount): void {
+            $fieldCoordinator->update([
+                'name' => $validated['name'],
+                'coordinator_number' => $validated['coordinator_number'] ?? null,
+                'region' => $validated['region'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+            ]);
+
+            $existingUser = $fieldCoordinator->email
+                ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])->first()
+                : null;
+
+            $user = $syncLoginAccount->execute(
+                $fieldCoordinator->name,
+                $fieldCoordinator->email,
+                $password,
+                'Koordinator Lapangan',
+                $existingUser,
+                phone: $fieldCoordinator->phone,
+            );
+
+            $event->fieldCoordinators()->updateExistingPivot($fieldCoordinator->id, [
+                'assignment_area' => $validated['assignment_area'],
+            ]);
+
+            if ($user) {
+                $event->users()->syncWithoutDetaching([
+                    $user->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
+            }
+        });
+
+        return back()->with('success', "Data koordinator '{$fieldCoordinator->name}' berhasil diperbarui.");
+    }
+
     public function destroyEventFieldCoordinator(Event $event, FieldCoordinator $fieldCoordinator): RedirectResponse
     {
         $event->fieldCoordinators()->detach($fieldCoordinator->id);
+        EventCourtAssignment::query()
+            ->whereIn('event_court_id', $event->courts()->select('id'))
+            ->where('staff_type', 'field_coordinator')
+            ->where('staff_id', $fieldCoordinator->id)
+            ->delete();
 
         return back()->with('success', "Koordinator '{$fieldCoordinator->name}' telah dihapus dari event.");
+    }
+
+    public function transferCoordinatorToReferee(
+        Request $request,
+        Event $event,
+        FieldCoordinator $fieldCoordinator,
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'role' => ['required', 'in:chief,referee,judge,reserve'],
+            'dan_grade' => ['nullable', 'string', 'max:50'],
+            'certification_level' => ['nullable', 'string', 'max:100'],
+            'license_number' => ['nullable', 'string', 'max:100'],
+            'detach_source' => ['nullable', 'boolean'],
+        ]);
+
+        $detachSource = $request->boolean('detach_source', true);
+        $role = $validated['role'];
+
+        DB::transaction(function () use ($event, $fieldCoordinator, $validated, $role, $detachSource): void {
+            $referee = null;
+            if (filled($fieldCoordinator->email)) {
+                $referee = Referee::query()
+                    ->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])
+                    ->first();
+            }
+            if (! $referee && filled($fieldCoordinator->phone)) {
+                $referee = Referee::query()
+                    ->where('phone', $fieldCoordinator->phone)
+                    ->first();
+            }
+            if (! $referee) {
+                $referee = Referee::query()
+                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($fieldCoordinator->name)])
+                    ->first();
+            }
+
+            if (! $referee) {
+                $referee = Referee::create([
+                    'name' => $fieldCoordinator->name,
+                    'gender' => 'male',
+                    'dan_grade' => $validated['dan_grade'] ?? null,
+                    'certification_level' => $validated['certification_level'] ?? null,
+                    'license_number' => $validated['license_number'] ?? $fieldCoordinator->coordinator_number ?? null,
+                    'region' => $fieldCoordinator->region ?? null,
+                    'phone' => $fieldCoordinator->phone ?? null,
+                    'email' => $fieldCoordinator->email ?? null,
+                    'is_active' => true,
+                ]);
+            } else {
+                $updates = [];
+                if (filled($validated['dan_grade'] ?? null) && blank($referee->dan_grade)) {
+                    $updates['dan_grade'] = $validated['dan_grade'];
+                }
+                if (filled($validated['certification_level'] ?? null) && blank($referee->certification_level)) {
+                    $updates['certification_level'] = $validated['certification_level'];
+                }
+                if (filled($validated['license_number'] ?? null) && blank($referee->license_number)) {
+                    $updates['license_number'] = $validated['license_number'];
+                }
+                if ($updates) {
+                    $referee->update($updates);
+                }
+            }
+
+            $event->referees()->syncWithoutDetaching([
+                $referee->id => ['role' => $role],
+            ]);
+
+            $user = $referee->user;
+            if (! $user && filled($fieldCoordinator->email)) {
+                $user = User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])->first();
+            }
+            if ($user) {
+                $user->assignRole(Role::findOrCreate('Wasit', 'web'));
+                if (! $referee->user_id) {
+                    $referee->update(['user_id' => $user->id]);
+                }
+                $event->users()->syncWithoutDetaching([
+                    $user->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
+            }
+
+            if ($detachSource) {
+                $event->fieldCoordinators()->detach($fieldCoordinator->id);
+                EventCourtAssignment::query()
+                    ->whereIn('event_court_id', $event->courts()->select('id'))
+                    ->where('staff_type', 'field_coordinator')
+                    ->where('staff_id', $fieldCoordinator->id)
+                    ->delete();
+            }
+        });
+
+        $actionText = $detachSource ? 'dialihkan menjadi' : 'ditugaskan juga sebagai';
+        $roleLabels = [
+            'chief' => 'Wasit Utama',
+            'referee' => 'Wasit Juri',
+            'judge' => 'Juri Nilai',
+            'reserve' => 'Wasit Cadangan',
+        ];
+        $roleLabel = $roleLabels[$role] ?? $role;
+
+        return back()->with('success', "Koordinator '{$fieldCoordinator->name}' berhasil {$actionText} Wasit ({$roleLabel}).");
     }
 
     // ─────────────────────────────────────────────────────────────
