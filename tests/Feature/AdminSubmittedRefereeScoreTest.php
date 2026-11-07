@@ -124,15 +124,88 @@ test('a complete referee draft can be submitted without a signature', function (
     );
 });
 
+test('authorized admin can submit every complete draft at once and leave incomplete drafts unchanged', function (): void {
+    EventFacade::fake([EmbuJudgeScoreUpdated::class]);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    [$event, $firstScore] = submittedRefereeScoreFixture('bulk');
+    $secondUser = User::factory()->create();
+    $secondReferee = Referee::query()->create([
+        'user_id' => $secondUser->id,
+        'name' => 'Wasit Bulk Kedua',
+        'gender' => 'female',
+        'is_active' => true,
+    ]);
+    $secondScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $firstScore->tournament_match_id,
+        'event_court_id' => $firstScore->event_court_id,
+        'referee_id' => $secondReferee->id,
+        'user_id' => $secondUser->id,
+        'judge_number' => 2,
+        'role' => 'judge_1',
+        'status' => 'draft',
+        'signature' => null,
+        'signed_at' => null,
+        'submitted_at' => null,
+    ]);
+    $incompleteUser = User::factory()->create();
+    $incompleteReferee = Referee::query()->create([
+        'user_id' => $incompleteUser->id,
+        'name' => 'Wasit Bulk Belum Lengkap',
+        'gender' => 'male',
+        'is_active' => true,
+    ]);
+    $incompleteScores = $firstScore->aspect_scores;
+    $incompleteScores['goho_attack'] = null;
+    $incompleteScore = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $firstScore->tournament_match_id,
+        'event_court_id' => $firstScore->event_court_id,
+        'referee_id' => $incompleteReferee->id,
+        'user_id' => $incompleteUser->id,
+        'judge_number' => 3,
+        'role' => 'judge_2',
+        'aspect_scores' => $incompleteScores,
+        'completed_items' => 9,
+        'status' => 'draft',
+        'submitted_at' => null,
+    ]);
+    $reportUrl = route('admin.laporan.index', ['event_id' => $event->id, 'report' => 'referee-scores']);
+
+    $response = $this->actingAs($admin)
+        ->from($reportUrl)
+        ->post(route('admin.laporan.referee-scores.submitted.store-all', ['event' => $event]));
+
+    $response->assertRedirect($reportUrl)
+        ->assertSessionHas('success', '2 penilaian draft berhasil disimpan sebagai Sudah Dikirim.');
+    $this->assertDatabaseHas('embu_judge_scores', ['id' => $firstScore->id, 'status' => 'submitted']);
+    $this->assertDatabaseHas('embu_judge_scores', ['id' => $secondScore->id, 'status' => 'submitted', 'signed_at' => null]);
+    $this->assertDatabaseHas('embu_judge_scores', ['id' => $incompleteScore->id, 'status' => 'draft', 'submitted_at' => null]);
+    EventFacade::assertDispatchedTimes(EmbuJudgeScoreUpdated::class, 2);
+});
+
+test('bulk submission reports when no complete draft is available', function (): void {
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    [$event, $score] = submittedRefereeScoreFixture('bulk-empty');
+    $aspectScores = $score->aspect_scores;
+    $aspectScores['goho_attack'] = null;
+    $score->update(['aspect_scores' => $aspectScores, 'completed_items' => 9]);
+
+    $response = $this->actingAs($admin)
+        ->post(route('admin.laporan.referee-scores.submitted.store-all', ['event' => $event]));
+
+    $response->assertSessionHas('info', 'Tidak ada draft dengan 10 aspek nilai lengkap yang perlu dikirim.');
+    $this->assertDatabaseHas('embu_judge_scores', ['id' => $score->id, 'status' => 'draft']);
+});
+
 test('a user without report management access cannot submit a referee draft', function (): void {
     $user = User::factory()->create();
     [$event, $score] = submittedRefereeScoreFixture('forbidden');
 
     $this->actingAs($user)
-        ->post(route('admin.laporan.referee-scores.submitted.store', [
-            'event' => $event,
-            'embuJudgeScore' => $score,
-        ]))
+        ->post(route('admin.laporan.referee-scores.submitted.store-all', ['event' => $event]))
         ->assertForbidden();
 
     $this->assertDatabaseHas('embu_judge_scores', [
