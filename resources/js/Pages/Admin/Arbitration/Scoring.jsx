@@ -348,15 +348,11 @@ function EmbuScoreForm({ activeEvent, session, onBusyChange }) {
             },
             onHttpException: (response) => {
                 setSaveState('error');
+                const serverMsg = response?.data?.message || response?.data?.error;
                 const isInactive = response.status === 409;
-                setSaveMessage(isInactive
-                    ? 'Partai tidak lagi aktif atau telah ditutup. Mengalihkan ke portal wasit…'
-                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset). Mengalihkan ke portal wasit…');
-                if (activeEvent?.id) {
-                    window.setTimeout(() => {
-                        router.visit(`/wasit?event_id=${encodeURIComponent(activeEvent.id)}`, { replace: true, preserveState: false });
-                    }, 1200);
-                }
+                setSaveMessage(serverMsg || (isInactive
+                    ? 'Partai tidak lagi aktif atau telah ditutup.'
+                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset).'));
                 return false;
             },
             onFinish: () => onBusyChange(false),

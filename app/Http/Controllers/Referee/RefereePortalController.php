@@ -70,8 +70,13 @@ class RefereePortalController extends Controller
         $activeMatch = TournamentMatch::query()
             ->whereBelongsTo($event)
             ->whereIn('event_court_id', $assignedCourtIds)
-            ->whereIn('status', ['ready', 'in_progress'])
-            ->where('call_status', 'participants_called')
+            ->where(function ($q) {
+                $q->where('status', 'in_progress')
+                    ->orWhere(function ($q2) {
+                        $q2->where('status', 'ready')
+                            ->whereIn('call_status', ['participants_called', 'officials_called', 'waiting']);
+                    });
+            })
             ->with(['matchCategory:id,name,type', 'court:id,name'])
             ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
             ->orderByRaw('scheduled_start_at IS NULL')

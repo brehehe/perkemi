@@ -318,8 +318,60 @@ class ArbitrationController extends Controller
         $requestedCourtId = $request->string('court_id')->toString();
         $today = now()->toDateString();
 
-        // Jika court_id tidak diberikan di URL, utamakan court tempat wasit sudah check-in hari ini
-        if ($requestedCourtId === '') {
+        $findActiveMatchOnCourt = function (string $cId) use ($activeEvent): ?TournamentMatch {
+            return TournamentMatch::query()
+                ->whereBelongsTo($activeEvent)
+                ->where('event_court_id', $cId)
+                ->where(function ($q) {
+                    $q->where('status', 'in_progress')
+                        ->orWhere(function ($q2) {
+                            $q2->where('status', 'ready')
+                                ->whereIn('call_status', ['participants_called', 'officials_called', 'waiting']);
+                        });
+                })
+                ->with('matchCategory:id,name,type')
+                ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
+                ->orderByRaw('scheduled_start_at IS NULL')
+                ->orderBy('scheduled_start_at')
+                ->orderBy('match_sequence')
+                ->first();
+        };
+
+        $allRefereeAssignments = EventCourtAssignment::query()
+            ->whereIn('event_court_id', $courtIds)
+            ->where('staff_type', 'referee')
+            ->where('staff_id', $referee->id)
+            ->get();
+
+        if ($allRefereeAssignments->isEmpty()) {
+            return redirect()->route('wasit.portal', array_filter(['event_id' => $activeEvent->id]))
+                ->with('error', 'Anda belum memiliki penugasan court pada event ini.');
+        }
+
+        // Cari penugasan wasit yang sedang memiliki partai aktif di arena
+        $assignmentWithActiveMatch = $allRefereeAssignments->first(function ($asn) use ($findActiveMatchOnCourt) {
+            return $findActiveMatchOnCourt($asn->event_court_id) !== null;
+        });
+
+        $assignment = null;
+
+        if ($requestedCourtId !== '') {
+            $assignment = $allRefereeAssignments->firstWhere('event_court_id', $requestedCourtId);
+
+            // Jika court yang diminta tidak ada partai aktif, tetapi wasit memiliki penugasan di court lain yang sedang aktif
+            if ($assignmentWithActiveMatch && $assignment && $assignment->event_court_id !== $assignmentWithActiveMatch->event_court_id) {
+                $requestedHasActive = $findActiveMatchOnCourt($assignment->event_court_id) !== null;
+                if (! $requestedHasActive) {
+                    $assignment = $assignmentWithActiveMatch;
+                }
+            }
+        }
+
+        // Jika belum terpilih, utamakan court dengan partai aktif
+        $assignment ??= $assignmentWithActiveMatch;
+
+        // Jika masih belum ada, coba court tempat wasit check-in hari ini
+        if (! $assignment) {
             $todayCourtAttendance = RefereeCourtAttendance::query()
                 ->whereBelongsTo($activeEvent)
                 ->whereBelongsTo($referee)
@@ -330,38 +382,13 @@ class ArbitrationController extends Controller
                 ->latest('checked_in_at')
                 ->first();
 
-            if ($todayCourtAttendance && $courtIds->contains($todayCourtAttendance->event_court_id)) {
-                $requestedCourtId = (string) $todayCourtAttendance->event_court_id;
+            if ($todayCourtAttendance) {
+                $assignment = $allRefereeAssignments->firstWhere('event_court_id', $todayCourtAttendance->event_court_id);
             }
         }
 
-        $assignment = EventCourtAssignment::query()
-            ->whereIn('event_court_id', $courtIds)
-            ->where('staff_type', 'referee')
-            ->where('staff_id', $referee->id)
-            ->when($requestedCourtId !== '', fn ($query) => $query->where('event_court_id', $requestedCourtId))
-            ->first();
-
-        // Jika requested court_id tidak ditemukan, namun wasit memiliki penugasan di court lain pada event ini, arahkan ke court tersebut
-        if (! $assignment && $requestedCourtId !== '') {
-            $fallbackAssignment = EventCourtAssignment::query()
-                ->whereIn('event_court_id', $courtIds)
-                ->where('staff_type', 'referee')
-                ->where('staff_id', $referee->id)
-                ->first();
-
-            if ($fallbackAssignment) {
-                return redirect()->route('admin.arbitrase.scoring', [
-                    'event_id' => $activeEvent->id,
-                    'court_id' => $fallbackAssignment->event_court_id,
-                ]);
-            }
-        }
-
-        if (! $assignment) {
-            return redirect()->route('wasit.portal', array_filter(['event_id' => $activeEvent->id]))
-                ->with('error', 'Anda belum memiliki penugasan court pada event ini.');
-        }
+        // Fallback ke assignment pertama
+        $assignment ??= $allRefereeAssignments->first();
 
         $role = RefereeCourtRole::tryFrom($assignment->role);
         if (! $role) {
@@ -370,17 +397,7 @@ class ArbitrationController extends Controller
         }
 
         $court = $activeEvent->courts()->findOrFail($assignment->event_court_id);
-        $activeMatch = TournamentMatch::query()
-            ->whereBelongsTo($activeEvent)
-            ->whereBelongsTo($court, 'court')
-            ->whereIn('status', ['ready', 'in_progress'])
-            ->where('call_status', 'participants_called')
-            ->with('matchCategory:id,name,type')
-            ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
-            ->orderByRaw('scheduled_start_at IS NULL')
-            ->orderBy('scheduled_start_at')
-            ->orderBy('match_sequence')
-            ->first();
+        $activeMatch = $findActiveMatchOnCourt($court->id);
         $judgeScore = $activeMatch?->matchCategory?->type === 'embu'
             ? $activeMatch->embuJudgeScores()
                 ->where('tiebreak_round', 0)
@@ -410,6 +427,7 @@ class ArbitrationController extends Controller
                     'session_id' => $currentSessionId,
                     'user_id' => (string) $user->id,
                     'referee_id' => (string) $referee->id,
+                    'acquired_at' => now()->toIso8601String(),
                 ], now()->addHours(6));
             } else {
                 $isTakenOver = true;
@@ -419,6 +437,7 @@ class ArbitrationController extends Controller
                 'session_id' => $currentSessionId,
                 'user_id' => (string) $user->id,
                 'referee_id' => (string) $referee->id,
+                'acquired_at' => now()->toIso8601String(),
             ], now()->addHours(6));
         }
 
@@ -829,8 +848,13 @@ class ArbitrationController extends Controller
                     ->whereBelongsTo($event)
                     ->whereBelongsTo($court, 'court')
                     ->where('is_bye', false)
-                    ->whereIn('status', ['ready', 'in_progress'])
-                    ->where('call_status', 'participants_called')
+                    ->where(function ($q) {
+                        $q->where('status', 'in_progress')
+                            ->orWhere(function ($q2) {
+                                $q2->where('status', 'ready')
+                                    ->whereIn('call_status', ['participants_called', 'officials_called', 'waiting']);
+                            });
+                    })
                     ->with('matchCategory:id,name,type')
                     ->first()
                     ?: TournamentMatch::query()

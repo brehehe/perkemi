@@ -1797,6 +1797,95 @@ test('referee scoring page only lists scores for the active match category and p
             ->where('refereeSession.completed_category_scores.0.match_id', $match1PoolA->id));
 });
 
+test('referee scoring saves successfully when match is in_progress even if call_status is not participants_called', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('in-progress-scoring');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::RegionalOne->value,
+    ]);
+    createDailyRefereeAttendance($event, $court, $referee);
+
+    $match = createActiveEmbuMatch($event, $court);
+    $match->update([
+        'status' => 'in_progress',
+        'call_status' => 'officials_called',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->from(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id]))
+        ->put(route('admin.arbitrase.scoring.embu.update', [
+            'event' => $event->id,
+            'tournamentMatch' => $match->id,
+        ]), [
+            'event_id' => $event->id,
+            'aspect_scores' => refereeAspectScores([8, 8, 8, 8, 8, 8, 8, 8, 8, 8]),
+            'status' => 'draft',
+        ]);
+
+    $response->assertSessionHasNoErrors();
+    $response->assertRedirect();
+
+    $this->assertDatabaseHas('embu_judge_scores', [
+        'tournament_match_id' => $match->id,
+        'judge_number' => RefereeCourtRole::RegionalOne->judgeNumber(),
+        'status' => 'draft',
+    ]);
+});
+
+test('referee scoring automatically selects court with active match when assigned to multiple courts', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('multi-court-active');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court1 = $courts[0];
+    $court2 = $courts[1];
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court1->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::RegionalOne->value,
+    ]);
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court2->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::RegionalTwo->value,
+    ]);
+
+    createDailyRefereeAttendance($event, $court1, $referee);
+    RefereeCourtAttendance::query()->create([
+        'event_id' => $event->id,
+        'event_court_id' => $court2->id,
+        'referee_id' => $referee->id,
+        'attendance_date' => now()->toDateString(),
+        'checked_in_at' => now(),
+        'method' => 'qr',
+    ]);
+
+    // Only Court 2 has an active match
+    $matchOnCourt2 = createActiveEmbuMatch($event, $court2);
+    $matchOnCourt2->update([
+        'status' => 'in_progress',
+        'call_status' => 'participants_called',
+    ]);
+
+    // Referee accesses Court 1 (which has no active match)
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court1->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/ScoringNew')
+            ->where('refereeSession.court_id', $court2->id)
+            ->where('refereeSession.active_match.id', $matchOnCourt2->id));
+});
+
 /** @return array{Event, Collection<int, EventCourt>} */
 function createRefereeWorkflowEvent(?string $identifier = null): array
 {

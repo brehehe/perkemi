@@ -149,16 +149,12 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange, referee
                 return false;
             },
             onHttpException: (response) => {
+                const serverMsg = response?.data?.message || response?.data?.error;
                 const isInactive = response.status === 409;
-                const msg = isInactive
-                    ? 'Partai tidak lagi aktif atau telah ditutup. Mengalihkan ke portal wasit...'
-                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset). Mengalihkan ke portal wasit...';
+                const msg = serverMsg || (isInactive
+                    ? 'Partai tidak lagi aktif atau telah ditutup.'
+                    : 'Akses penilaian ditolak (sesi absensi/court telah di-reset).');
                 setError(msg);
-                if (refereePortalUrl) {
-                    window.setTimeout(() => {
-                        router.visit(refereePortalUrl, { replace: true, preserveState: false });
-                    }, 1200);
-                }
                 return false;
             },
             onFinish: () => {
@@ -469,7 +465,8 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
     const [busy, setBusy] = useState(false);
     const [liveScore, setLiveScore] = useState(null);
     const activeMatch = refereeSession?.active_match;
-    const canScore = refereeSession?.is_checked_in && activeMatch?.category_type === 'embu';
+    const isTakenOver = Boolean(refereeSession?.is_taken_over);
+    const canScore = refereeSession?.is_checked_in && !isTakenOver && activeMatch?.category_type === 'embu';
     const storedScores = refereeSession?.completed_category_scores ?? completedCategoryScores ?? [];
     const updateLiveScore = useCallback((score) => setLiveScore(score), []);
     const judgedScores = useMemo(() => {
@@ -530,7 +527,37 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
                     </div>
                 )}
 
-                {canScore ? (
+                {isTakenOver ? (
+                    <section role="alert" className="p-6 my-4 mx-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-950 shadow-sm">
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-600 text-white shadow-sm">
+                                <i className="fa-solid fa-triangle-exclamation text-xl" aria-hidden="true" />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Peringatan Sesi Aktif</p>
+                                <h2 className="mt-1 text-2xl font-black text-amber-950">Sesi Sedang Dibuka di Perangkat Lain</h2>
+                                <p className="mt-2 text-sm leading-6 text-amber-900">
+                                    Posisi <strong>{refereeSession?.role}</strong> di <strong>{refereeSession?.court_name}</strong> saat ini tercatat aktif pada sesi atau perangkat lain. Jika ini adalah perangkat Anda yang benar, klik tombol di bawah untuk mengambil alih sesi penilaian.
+                                </p>
+                                <div className="mt-5 flex flex-wrap gap-3">
+                                    <a
+                                        href={refereeSession?.takeover_url}
+                                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-700 px-5 text-sm font-bold text-white transition hover:bg-amber-800"
+                                    >
+                                        <i className="fa-solid fa-right-left" aria-hidden="true" />
+                                        <span>Ambil Alih Posisi Ini</span>
+                                    </a>
+                                    <Link
+                                        href={refereePortalUrl}
+                                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-amber-300 bg-white px-5 text-sm font-bold text-amber-950 transition hover:bg-amber-100"
+                                    >
+                                        Kembali ke Portal Wasit
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                ) : canScore ? (
                     <>
                         <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} onScoreChange={updateLiveScore} refereePortalUrl={refereePortalUrl} />
                         <JudgedAthletesTable

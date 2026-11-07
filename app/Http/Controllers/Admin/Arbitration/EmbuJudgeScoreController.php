@@ -63,23 +63,14 @@ class EmbuJudgeScoreController extends Controller
         abort_unless($isCheckedIn, 403, 'Scan QR event dan court terlebih dahulu.');
 
         $lockKey = "referee_session_lock:court_{$tournamentMatch->event_court_id}:role_{$role->value}";
-        $currentHolder = Cache::get($lockKey);
-        if ($currentHolder) {
-            $holderSessionId = is_array($currentHolder) ? ($currentHolder['session_id'] ?? null) : $currentHolder;
-            $holderUserId = is_array($currentHolder) ? ($currentHolder['user_id'] ?? null) : null;
-            $holderRefereeId = is_array($currentHolder) ? ($currentHolder['referee_id'] ?? null) : null;
+        Cache::put($lockKey, [
+            'session_id' => $request->session()->getId(),
+            'user_id' => (string) $user->id,
+            'referee_id' => (string) $referee->id,
+            'acquired_at' => now()->toIso8601String(),
+        ], now()->addHours(6));
 
-            $isSameReferee = ($holderUserId && $holderUserId === (string) $user->id)
-                || ($holderRefereeId && $holderRefereeId === (string) $referee->id)
-                || ($holderSessionId === $request->session()->getId());
-
-            if (! $isSameReferee) {
-                abort(409, 'Posisi telah diambil alih oleh perangkat lain. Sesi Anda dihentikan.');
-            }
-        }
-
-        $isMatchActive = $tournamentMatch->call_status === 'participants_called'
-            && in_array($tournamentMatch->status, ['ready', 'in_progress'], true);
+        $isMatchActive = in_array($tournamentMatch->status, ['ready', 'in_progress'], true);
 
         if (! $isMatchActive) {
             $existingScore = $tournamentMatch->embuJudgeScores()
@@ -92,7 +83,11 @@ class EmbuJudgeScoreController extends Controller
                     ->with('info', 'Penilaian Anda untuk partai ini telah selesai dan dikirim.');
             }
 
-            abort(409, 'Pertandingan Embu belum dipanggil atau sudah tidak aktif.');
+            if ($tournamentMatch->status === 'completed') {
+                abort(409, 'Pertandingan ini telah selesai dan ditutup oleh Panitera.');
+            }
+
+            abort(409, 'Pertandingan Embu belum dipanggil atau sedang tidak aktif.');
         }
 
         $validated = $request->validated();
