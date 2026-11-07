@@ -9,7 +9,21 @@ import RandoriBracketTree from './Partials/RandoriBracketTree';
 import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
 
-const getEmbuJudgeTrimming = (judgeScores = [], result = null, embuParams = null) => {
+const getEmbuJudgeTrimming = (judgeScores = [], result = null, embuParams = null, isSaved = false) => {
+    if (!isSaved) {
+        return {
+            hasTrimmed: false,
+            minJudgeNum: null,
+            maxJudgeNum: null,
+            middleJudgeNumbers: [],
+            middleJudgesLabel: null,
+            param1_score: null,
+            param2_technique: null,
+            param3_chief_total: null,
+            param4_chief_technique: null,
+        };
+    }
+
     if (embuParams && embuParams.trimmed_min_judge !== undefined && embuParams.trimmed_min_judge !== null) {
         return {
             hasTrimmed: Boolean(embuParams.trimmed_min_judge && embuParams.trimmed_max_judge),
@@ -431,9 +445,16 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     bellRef.current = bell;
     const elapsedSeconds = useMemo(() => Math.floor(elapsedMilliseconds / 1000), [elapsedMilliseconds]);
 
-    const timerDirection = activeMatch?.timer.direction || 'up';
-    const timerDuration = Number(activeMatch?.timer.duration_seconds) || 120;
-    const displayedSeconds = displayedTimerSeconds(activeMatch?.timer, elapsedMilliseconds);
+    const displayMatch = activeMatch || snapshot.last_result;
+    const isResultSaved = Boolean(
+        displayMatch?.is_result_saved ||
+        displayMatch?.result?.is_saved ||
+        displayMatch?.result?.status === 'verified'
+    );
+
+    const timerDirection = displayMatch?.timer?.direction || 'up';
+    const timerDuration = Number(displayMatch?.timer?.duration_seconds) || 120;
+    const displayedSeconds = displayedTimerSeconds(displayMatch?.timer, elapsedMilliseconds);
     const timerText = formatTimer(displayedSeconds);
     const isExpired = timerDirection === 'down' && elapsedSeconds >= timerDuration;
     const resultMatch = activeMatch?.result ? activeMatch : snapshot.last_result;
@@ -539,8 +560,8 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                     )}
 
                     {mode === 'match' && (
-                        activeMatch ? (
-                            activeMatch.category_type === 'embu' ? (
+                        displayMatch ? (
+                            displayMatch.category_type === 'embu' ? (
                                 <div className="space-y-6">
                                     {/* Header & Match Details */}
                                     <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 shadow-xl">
@@ -548,39 +569,56 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                             <div>
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <span className="rounded-full bg-amber-500 text-slate-950 px-3.5 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
-                                                        EMBU · PARTAI #{activeMatch.sequence}
+                                                        EMBU · PARTAI #{displayMatch.sequence}
                                                     </span>
                                                     <span className="rounded-full bg-blue-100 text-blue-900 dark:bg-blue-500/20 dark:text-blue-300 px-3 py-1 text-xs font-bold border border-blue-200 dark:border-transparent">
-                                                        {activeMatch.round_label}{activeMatch.pool ? ` · Pool ${activeMatch.pool}` : ''}
+                                                        {displayMatch.round_label}{displayMatch.pool ? ` · Pool ${displayMatch.pool}` : ''}
                                                     </span>
                                                     <span className="rounded-full border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-transparent px-3 py-1 text-xs font-bold text-slate-700 dark:text-white/60">
-                                                        {activeMatch.call_status_label}
+                                                        {displayMatch.call_status_label}
                                                     </span>
                                                 </div>
-                                                <h2 className="mt-3 text-2xl font-black text-slate-950 dark:text-white md:text-4xl tracking-tight">{activeMatch.category_name}</h2>
-                                                <p className="mt-1 text-lg font-bold text-amber-700 dark:text-[#f2cd73]">{activeMatch.participant_label || 'Peserta Embu'}</p>
+                                                <h2 className="mt-3 text-2xl font-black text-slate-950 dark:text-white md:text-4xl tracking-tight">{displayMatch.category_name}</h2>
+                                                <p className="mt-1 text-lg font-bold text-amber-700 dark:text-[#f2cd73]">{displayMatch.participant_label || 'Peserta Embu'}</p>
                                             </div>
 
                                             {/* Digital Timer Block */}
                                             <div className="flex items-center gap-5 rounded-3xl border-2 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 px-6 py-4 shadow-inner">
                                                 <div>
                                                     <p className="text-[10px] font-black uppercase tracking-[.25em] text-amber-700 dark:text-[#f2cd73]">
-                                                        {timerDirection === 'down' ? 'Waktu Sisa' : 'Waktu Berjalan'}
+                                                        {isResultSaved ? 'Durasi Resmi' : (timerDirection === 'down' ? 'Waktu Sisa' : 'Waktu Berjalan')}
                                                     </p>
                                                     <p className="font-mono text-5xl font-black text-slate-950 dark:text-white sm:text-6xl tracking-tight">
-                                                        {timerText}
+                                                        {isResultSaved && displayMatch.result?.duration_seconds
+                                                            ? formatTimer(displayMatch.result.duration_seconds)
+                                                            : timerText}
                                                     </p>
                                                 </div>
                                                 <div className="border-l-2 border-slate-200 dark:border-white/10 pl-5 text-xs font-bold space-y-1.5">
-                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${activeMatch.timer?.status === 'running'
-                                                        ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                                        : activeMatch.timer?.status === 'paused'
-                                                            ? 'bg-amber-500 text-slate-950'
-                                                            : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
-                                                        }`}>
-                                                        {activeMatch.timer?.is_finished ? 'Selesai' : isExpired ? 'Waktu Habis' : activeMatch.timer?.status === 'running' ? 'Berjalan' : activeMatch.timer?.status === 'paused' ? 'Dijeda' : 'Menunggu'}
+                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${
+                                                        isResultSaved
+                                                            ? 'bg-emerald-600 text-white force-white'
+                                                            : displayMatch.timer?.status === 'running'
+                                                                ? 'bg-emerald-600 text-white animate-pulse force-white'
+                                                                : displayMatch.timer?.status === 'paused'
+                                                                    ? 'bg-amber-500 text-slate-950'
+                                                                    : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
+                                                    }`}>
+                                                        {isResultSaved
+                                                            ? 'Disahkan'
+                                                            : displayMatch.timer?.is_finished
+                                                                ? 'Selesai'
+                                                                : isExpired
+                                                                    ? 'Waktu Habis'
+                                                                    : displayMatch.timer?.status === 'running'
+                                                                        ? 'Berjalan'
+                                                                        : displayMatch.timer?.status === 'paused'
+                                                                            ? 'Dijeda'
+                                                                            : 'Menunggu'}
                                                     </span>
-                                                    <p className="text-slate-500 dark:text-white/50 text-[11px]">Durasi: {timerDuration}s</p>
+                                                    <p className="text-slate-500 dark:text-white/50 text-[11px]">
+                                                        Durasi: {isResultSaved && displayMatch.result?.duration_seconds ? displayMatch.result.duration_seconds : timerDuration}s
+                                                    </p>
                                                 </div>
                                             </div>
                                         </div>
@@ -596,30 +634,38 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 </h3>
                                                 <p className="text-xs text-slate-600 dark:text-white/50">Skor penguasaan teknik (maks. 60) dan penghayatan ekspresi (maks. 40)</p>
                                             </div>
-                                            <span className="rounded-full border border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-300 px-3 py-1 text-xs font-bold">
-                                                Update Otomatis Real-Time
+                                            <span className={`rounded-full px-3 py-1 text-xs font-bold border ${
+                                                isResultSaved
+                                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                                    : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+                                            }`}>
+                                                {isResultSaved ? 'Disahkan & Disimpan Panitera' : 'Menunggu Pengesahan Nilai Embu'}
                                             </span>
                                         </div>
 
                                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                                             {(() => {
                                                 const embuTrimming = getEmbuJudgeTrimming(
-                                                    activeMatch.judge_scores,
-                                                    activeMatch.result,
-                                                    activeMatch.embu_parameters,
+                                                    displayMatch.judge_scores,
+                                                    displayMatch.result,
+                                                    displayMatch.embu_parameters,
+                                                    isResultSaved,
                                                 );
 
                                                 return [1, 2, 3, 4, 5].map((judgeNum) => {
-                                                    const liveScore = activeMatch.judge_scores?.find((s) => s.judge_number === judgeNum);
-                                                    const verifiedScore = activeMatch.result?.judge_scores?.[judgeNum - 1];
-                                                    const totalScoreVal = verifiedScore !== undefined
-                                                        ? Number(verifiedScore).toFixed(2)
-                                                        : liveScore?.total_score ? Number(liveScore.total_score).toFixed(2) : '—';
+                                                    const liveScore = displayMatch.judge_scores?.find((s) => s.judge_number === judgeNum);
+                                                    const verifiedScore = displayMatch.result?.judge_scores?.[judgeNum - 1];
                                                     const isSubmitted = liveScore?.status === 'submitted' || verifiedScore !== undefined;
 
-                                                    const isMaxTrimmed = embuTrimming.hasTrimmed && judgeNum === embuTrimming.maxJudgeNum;
-                                                    const isMinTrimmed = embuTrimming.hasTrimmed && judgeNum === embuTrimming.minJudgeNum;
-                                                    const isMiddle = embuTrimming.hasTrimmed && embuTrimming.middleJudgeNumbers.includes(judgeNum);
+                                                    const isMaxTrimmed = isResultSaved && embuTrimming.hasTrimmed && judgeNum === embuTrimming.maxJudgeNum;
+                                                    const isMinTrimmed = isResultSaved && embuTrimming.hasTrimmed && judgeNum === embuTrimming.minJudgeNum;
+                                                    const isMiddle = isResultSaved && embuTrimming.hasTrimmed && embuTrimming.middleJudgeNumbers.includes(judgeNum);
+
+                                                    const totalScoreVal = isResultSaved
+                                                        ? (verifiedScore !== undefined
+                                                            ? Number(verifiedScore).toFixed(2)
+                                                            : liveScore?.total_score ? Number(liveScore.total_score).toFixed(2) : '—')
+                                                        : '—';
 
                                                     return (
                                                         <div
@@ -630,7 +676,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                     : isMiddle
                                                                     ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-500/40 dark:bg-emerald-950/35 shadow-md ring-1 ring-emerald-400/20'
                                                                     : isSubmitted
-                                                                    ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
+                                                                    ? 'border-emerald-500/60 bg-emerald-50/40 dark:bg-emerald-950/20'
                                                                     : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
                                                             }`}
                                                         >
@@ -667,7 +713,9 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                         ? 'text-rose-600 dark:text-rose-400 line-through opacity-75'
                                                                         : isMiddle
                                                                         ? 'text-emerald-700 dark:text-emerald-300'
-                                                                        : 'text-slate-950 dark:text-white'
+                                                                        : isResultSaved
+                                                                        ? 'text-slate-950 dark:text-white'
+                                                                        : 'text-slate-400 dark:text-white/40'
                                                                 }`}>
                                                                     {totalScoreVal}
                                                                 </p>
@@ -678,7 +726,9 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                         ? 'text-rose-600 dark:text-rose-400'
                                                                         : isMiddle
                                                                         ? 'text-emerald-700 dark:text-emerald-300'
-                                                                        : 'text-slate-500 dark:text-white/40'
+                                                                        : isResultSaved
+                                                                        ? 'text-slate-500 dark:text-white/40'
+                                                                        : 'text-amber-600 dark:text-amber-400/80'
                                                                 }`}>
                                                                     {isMaxTrimmed
                                                                         ? 'Dicoret · Nilai Tertinggi'
@@ -686,7 +736,9 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                         ? 'Dicoret · Nilai Terendah'
                                                                         : isMiddle
                                                                         ? 'Dihitung · 3 Wasit Tengah'
-                                                                        : 'Total Nilai'}
+                                                                        : isResultSaved
+                                                                        ? 'Total Nilai'
+                                                                        : (isSubmitted ? 'Nilai Masuk · Menunggu Disimpan' : 'Sedang Dinilai')}
                                                                 </p>
                                                             </div>
 
@@ -694,13 +746,13 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                 <div>
                                                                     <span className="block text-slate-500 dark:text-white/50">Teknik</span>
                                                                     <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                        {liveScore?.technique_subtotal ? Number(liveScore.technique_subtotal).toFixed(1) : '—'}
+                                                                        {isResultSaved && liveScore?.technique_subtotal ? Number(liveScore.technique_subtotal).toFixed(1) : '—'}
                                                                     </span>
                                                                 </div>
                                                                 <div>
                                                                     <span className="block text-slate-500 dark:text-white/50">Ekspresi</span>
                                                                     <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                        {liveScore?.expression_subtotal ? Number(liveScore.expression_subtotal).toFixed(1) : '—'}
+                                                                        {isResultSaved && liveScore?.expression_subtotal ? Number(liveScore.expression_subtotal).toFixed(1) : '—'}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -715,31 +767,53 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                             <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[.03] p-4 text-center">
                                                 <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-white/50">Durasi Penampilan</p>
                                                 <p className="mt-2 font-mono text-3xl font-black text-slate-950 dark:text-white">
-                                                    {activeMatch.result?.duration_seconds ?? Math.floor(elapsedSeconds)}s
+                                                    {isResultSaved && displayMatch.result?.duration_seconds
+                                                        ? `${displayMatch.result.duration_seconds}s`
+                                                        : (displayMatch.timer?.is_finished || elapsedSeconds > 0 ? `${Math.floor(elapsedSeconds)}s` : '—')}
                                                 </p>
                                             </div>
 
                                             <div className="rounded-2xl border-2 border-rose-300 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 p-4 text-center">
                                                 <p className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Total Denda / Penalti</p>
                                                 <p className="mt-2 font-mono text-3xl font-black text-rose-700 dark:text-rose-300">
-                                                    -{Number(activeMatch.result?.total_penalty ?? activeMatch.result?.time_penalty ?? 0).toFixed(2)}
+                                                    {isResultSaved
+                                                        ? `-${Number(displayMatch.result?.total_penalty ?? displayMatch.result?.time_penalty ?? 0).toFixed(2)}`
+                                                        : '—'}
                                                 </p>
                                             </div>
 
-                                            <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-600 text-white dark:bg-gradient-to-br dark:from-emerald-600/40 dark:to-emerald-950/60 p-4 text-center shadow-xl force-white">
-                                                <p className="text-xs font-black uppercase tracking-widest text-emerald-100 dark:text-emerald-300 force-white">NILAI AKHIR RESMI</p>
-                                                <p className="mt-2 font-mono text-4xl font-black text-white dark:text-emerald-200 force-white">
-                                                    {activeMatch.result?.final_score ? Number(activeMatch.result.final_score).toFixed(2) : 'Menunggu Rekap'}
+                                            <div className={`rounded-2xl border-2 p-4 text-center shadow-xl transition-all ${
+                                                isResultSaved
+                                                    ? 'border-emerald-500 bg-emerald-600 text-white dark:bg-gradient-to-br dark:from-emerald-600/40 dark:to-emerald-950/60 force-white'
+                                                    : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[.04] dark:text-white/70'
+                                            }`}>
+                                                <p className={`text-xs font-black uppercase tracking-widest ${
+                                                    isResultSaved ? 'text-emerald-100 dark:text-emerald-300 force-white' : 'text-slate-500 dark:text-white/50'
+                                                }`}>
+                                                    {isResultSaved ? 'NILAI AKHIR RESMI' : 'NILAI AKHIR'}
                                                 </p>
+                                                <p className={`mt-2 font-mono text-4xl font-black ${
+                                                    isResultSaved ? 'text-white dark:text-emerald-200 force-white' : 'text-slate-400 dark:text-white/40'
+                                                }`}>
+                                                    {isResultSaved && displayMatch.result?.final_score
+                                                        ? Number(displayMatch.result.final_score).toFixed(2)
+                                                        : '—'}
+                                                </p>
+                                                {!isResultSaved && (
+                                                    <p className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                                        Menunggu Simpan Nilai Embu
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
 
                                         {/* Panel 5 Parameter PB PERKEMI */}
                                         {(() => {
                                             const embuParams = getEmbuJudgeTrimming(
-                                                activeMatch.judge_scores,
-                                                activeMatch.result,
-                                                activeMatch.embu_parameters,
+                                                displayMatch.judge_scores,
+                                                displayMatch.result,
+                                                displayMatch.embu_parameters,
+                                                isResultSaved,
                                             );
 
                                             return (
@@ -758,14 +832,27 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                 </p>
                                                             </div>
                                                         </div>
-                                                        <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 px-3 py-1 text-xs font-bold border border-amber-300 dark:border-transparent">
-                                                            {embuParams.middleJudgesLabel ? (
+                                                        <span className={`rounded-full px-3 py-1 text-xs font-bold border ${
+                                                            isResultSaved && embuParams.middleJudgesLabel
+                                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 border-amber-300 dark:border-transparent'
+                                                                : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/60 border-transparent'
+                                                        }`}>
+                                                            {isResultSaved && embuParams.middleJudgesLabel ? (
                                                                 <>3 Wasit Tengah: <strong>{embuParams.middleJudgesLabel}</strong></>
                                                             ) : (
-                                                                'Menunggu 5 Nilai Lengkap'
+                                                                'Menunggu Simpan Nilai Embu'
                                                             )}
                                                         </span>
                                                     </div>
+
+                                                    {!isResultSaved && (
+                                                        <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-100/70 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                                            <i className="fa-solid fa-circle-info text-amber-600 dark:text-amber-400 text-sm shrink-0" aria-hidden="true" />
+                                                            <span>
+                                                                Nilai resmi para wasit, pencoretan nilai tertinggi/terendah, dan 5 parameter PB PERKEMI akan dimunculkan setelah Panitera menekan tombol <strong>Simpan Nilai Embu</strong>.
+                                                            </span>
+                                                        </div>
+                                                    )}
 
                                                     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs">
                                                         {/* Parameter 1 */}
@@ -775,14 +862,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                             <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Nilai Akhir (Trimmed)</p>
                                                             <p className="mt-1 font-mono text-xl font-black text-amber-700 dark:text-amber-300">
-                                                                {activeMatch.result?.final_score !== undefined && activeMatch.result?.final_score !== null
-                                                                    ? Number(activeMatch.result.final_score).toFixed(2)
-                                                                    : embuParams.param1_score !== null
-                                                                    ? Number(embuParams.param1_score).toFixed(2)
+                                                                {isResultSaved && (displayMatch.result?.final_score !== undefined || embuParams.param1_score !== null)
+                                                                    ? Number(displayMatch.result?.final_score ?? embuParams.param1_score).toFixed(2)
                                                                     : '—'}
                                                             </p>
                                                             <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                Tertinggi ({embuParams.maxJudgeNum ? `J${embuParams.maxJudgeNum}` : '—'}) & Terendah ({embuParams.minJudgeNum ? `J${embuParams.minJudgeNum}` : '—'}) dicoret
+                                                                {isResultSaved && (embuParams.maxJudgeNum || embuParams.minJudgeNum)
+                                                                    ? `Tertinggi (${embuParams.maxJudgeNum ? `J${embuParams.maxJudgeNum}` : '—'}) & Terendah (${embuParams.minJudgeNum ? `J${embuParams.minJudgeNum}` : '—'}) dicoret`
+                                                                    : 'Nilai tertinggi dan terendah dicoret'}
                                                             </p>
                                                         </div>
 
@@ -793,12 +880,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                             <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik 3 Wasit Tengah</p>
                                                             <p className="mt-1 font-mono text-xl font-black text-emerald-600 dark:text-emerald-400">
-                                                                {embuParams.param2_technique !== null
+                                                                {isResultSaved && embuParams.param2_technique !== null
                                                                     ? Number(embuParams.param2_technique).toFixed(2)
                                                                     : '—'}
                                                             </p>
                                                             <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                {embuParams.middleJudgesLabel ? `Fokus teknik ${embuParams.middleJudgesLabel}` : 'Fokus nilai teknik 3 wasit tidak dicoret'}
+                                                                {isResultSaved && embuParams.middleJudgesLabel
+                                                                    ? `Fokus teknik ${embuParams.middleJudgesLabel}`
+                                                                    : 'Fokus nilai teknik 3 wasit tidak dicoret'}
                                                             </p>
                                                         </div>
 
@@ -809,7 +898,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                             <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Total Wasit Utama (W1)</p>
                                                             <p className="mt-1 font-mono text-xl font-black text-blue-700 dark:text-blue-300">
-                                                                {embuParams.param3_chief_total !== null
+                                                                {isResultSaved && embuParams.param3_chief_total !== null
                                                                     ? Number(embuParams.param3_chief_total).toFixed(2)
                                                                     : '—'}
                                                             </p>
@@ -825,7 +914,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </span>
                                                             <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik Wasit Utama (W1)</p>
                                                             <p className="mt-1 font-mono text-xl font-black text-indigo-700 dark:text-indigo-300">
-                                                                {embuParams.param4_chief_technique !== null
+                                                                {isResultSaved && embuParams.param4_chief_technique !== null
                                                                     ? Number(embuParams.param4_chief_technique).toFixed(2)
                                                                     : '—'}
                                                             </p>
@@ -1343,9 +1432,11 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                 const jScore = activeMatch.judge_scores?.find((s) => s.judge_number === jNum);
                                                                 const verifiedScore = activeMatch.result?.judge_scores?.[jNum - 1];
                                                                 const hasScore = verifiedScore !== undefined || (jScore && Number(jScore.total_score) > 0);
-                                                                const scoreVal = verifiedScore !== undefined
-                                                                    ? Number(verifiedScore).toFixed(2)
-                                                                    : jScore?.total_score ? Number(jScore.total_score).toFixed(2) : '—';
+                                                                const scoreVal = isResultSaved
+                                                                    ? (verifiedScore !== undefined
+                                                                        ? Number(verifiedScore).toFixed(2)
+                                                                        : jScore?.total_score ? Number(jScore.total_score).toFixed(2) : '—')
+                                                                    : '—';
                                                                 const isSubmitted = jScore?.status === 'submitted' || verifiedScore !== undefined;
 
                                                                 return (

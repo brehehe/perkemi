@@ -33,16 +33,18 @@ class PaniteraCourtMonitorController extends Controller
 
         $requestedMode = $request->string('mode')->toString();
         $mode = in_array($requestedMode, self::Modes, true) ? $requestedMode : 'arena';
+        $targetMatchId = $request->string('match_id')->toString() ?: null;
 
         return Inertia::render('Admin/Panitera/CourtMonitor', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue']),
             'court' => $eventCourt->only(['id', 'name', 'location', 'order', 'var_url', 'raw_var_url']),
             'mode' => $mode,
-            'monitor' => $this->monitorService->monitorData($event, $eventCourt),
+            'monitor' => $this->monitorService->monitorData($event, $eventCourt, $targetMatchId),
             'timerStateUrl' => route('admin.panitera.monitors.timer', ['eventCourt' => $eventCourt, 'event_id' => $event->id]),
             'stateUrl' => route('admin.panitera.monitors.state', [
                 'eventCourt' => $eventCourt,
                 'event_id' => $event->id,
+                ...($targetMatchId ? ['match_id' => $targetMatchId] : []),
             ]),
             'backUrl' => '/admin/panitera/scoring?event_id='.urlencode($event->id),
             'backLabel' => 'Panitera',
@@ -58,7 +60,8 @@ class PaniteraCourtMonitorController extends Controller
         $event = $eventContext->eventFor($request);
         abort_unless($eventCourt->event_id === $event->id, 404);
         $courtAccess->ensureCourtIsAccessible($request, $event, $eventCourt);
+        $targetMatchId = $request->string('match_id')->toString() ?: null;
 
-        return response()->json($this->monitorService->monitorData($event, $eventCourt));
+        return response()->json($this->monitorService->monitorData($event, $eventCourt, $targetMatchId));
     }
 }

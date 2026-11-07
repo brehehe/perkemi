@@ -26,7 +26,7 @@ class CourtMonitorDataService
     ) {}
 
     /** @return array<string, mixed> */
-    public function monitorData(Event $event, EventCourt $court): array
+    public function monitorData(Event $event, EventCourt $court, ?string $targetMatchId = null): array
     {
         $relations = [
             'matchCategory:id,name,type',
@@ -44,7 +44,17 @@ class CourtMonitorDataService
             ->whereBelongsTo($court, 'court')
             ->where('is_bye', false);
 
-        $activeMatch = $baseQuery()
+        $targetMatch = null;
+        if ($targetMatchId) {
+            $targetMatch = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->whereBelongsTo($court, 'court')
+                ->whereKey($targetMatchId)
+                ->with($relations)
+                ->first();
+        }
+
+        $activeMatch = $targetMatch ?? $baseQuery()
             ->whereIn('status', ['ready', 'in_progress'])
             ->with($relations)
             ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
@@ -398,9 +408,15 @@ class CourtMonitorDataService
     /** @return array<string, mixed> */
     public function matchData(Event $event, TournamentMatch $match): array
     {
-        $embuScore = $match->embuScores->first();
+        $embuScore = $match->relationLoaded('embuScores')
+            ? ($match->embuScores->firstWhere('tiebreak_round', 0) ?? $match->embuScores->first())
+            : $match->embuScores()->where('tiebreak_round', 0)->first();
         $randoriScore = $match->randoriScore;
         $type = $match->matchCategory?->type;
+
+        $isResultSaved = $type === 'embu'
+            ? ($embuScore !== null && $embuScore->status === 'verified')
+            : ($randoriScore !== null && (bool) ($randoriScore->is_verified ?? false));
 
         $redContingent = data_get($match->metadata, 'red.contingent_name')
             ?? data_get($match->metadata, 'red.contingent')
@@ -486,6 +502,7 @@ class CourtMonitorDataService
             'call_status' => $match->call_status,
             'call_status_label' => $this->callStatusLabel($match->call_status),
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
+            'is_result_saved' => $isResultSaved,
             'timer' => $this->timerState->timer($match),
             'result' => $resultData,
             'embu_parameters' => $embuParams,
@@ -523,7 +540,12 @@ class CourtMonitorDataService
             return null;
         }
 
+        $isVerified = $score->status === 'verified';
+
         return [
+            'status' => $score->status,
+            'is_saved' => $isVerified,
+            'is_verified' => $isVerified,
             'judge_scores' => $score->judge_scores,
             'time_penalty' => (float) $score->time_penalty,
             'violation_penalty' => (float) $score->violation_penalty,
@@ -533,7 +555,7 @@ class CourtMonitorDataService
             'final_score' => (float) $score->final_score,
             'duration_seconds' => $score->duration_seconds,
             'verified_at' => $score->verified_at?->translatedFormat('d M Y, H:i'),
-            'is_live' => $score->status !== 'verified',
+            'is_live' => ! $isVerified,
         ];
     }
 
@@ -566,6 +588,9 @@ class CourtMonitorDataService
         );
 
         return [
+            'status' => 'draft',
+            'is_saved' => false,
+            'is_verified' => false,
             'judge_scores' => $totals,
             'time_penalty' => 0.0,
             'violation_penalty' => 0.0,
