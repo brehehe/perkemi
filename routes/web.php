@@ -96,6 +96,7 @@ Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.
     Route::get('hasil/embu', [ContingentPortalController::class, 'embuResults'])->name('hasil.embu');
     Route::get('hasil/embu/{embuScore}/cetak', [ContingentPortalController::class, 'printEmbuResult'])->name('hasil.embu.print');
     Route::get('hasil/randori', [ContingentPortalController::class, 'randoriResults'])->name('hasil.randori');
+    Route::get('hasil/nomor-pertandingan', [ContingentPortalController::class, 'categoryResults'])->name('hasil.nomor-pertandingan');
     Route::get('atlet', [ContingentPortalController::class, 'athletes'])->name('atlet');
     Route::post('atlet', [ContingentAthleteController::class, 'store'])->name('atlet.store');
     Route::put('atlet/{athlete}', [ContingentAthleteController::class, 'update'])->name('atlet.update');

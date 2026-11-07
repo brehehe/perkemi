@@ -3,15 +3,16 @@ import SchoolFields, { schoolData, schoolDefaults } from '@/Components/UI/Forms/
 import { AlertConfirm, Button, Input, Modal, Select, Textarea } from '@/Components/UI';
 import RandoriBracketTree from '@/Pages/Admin/Panitera/Partials/RandoriBracketTree';
 import { Link, router, useForm } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const sectionMeta = {
     registration: ['Registrasi', 'Kelola berkas pendaftaran kontingen untuk event aktif.', 'fa-file-signature'],
     schedule: ['Jadwal', 'Pantau rundown event dan jadwal pertandingan kontingen.', 'fa-calendar-days'],
     bracket: ['Bagan Randori', 'Pantau bagan undian dan skema tanding atlet kontingen.', 'fa-sitemap'],
     results: ['Hasil Juara', 'Lihat perolehan medali resmi kontingen pada event terpilih.', 'fa-trophy'],
-    'embu-results': ['Hasil Embu', 'Rincian nilai Embu yang telah diverifikasi untuk kontingen.', 'fa-ranking-star'],
-    'randori-results': ['Hasil Randori', 'Rincian skor Randori yang telah disahkan untuk kontingen.', 'fa-hand-fist'],
+    'embu-results': ['Hasil Embu', 'Rincian nilai Embu kontingen (tanding maupun belum tanding).', 'fa-ranking-star'],
+    'randori-results': ['Hasil Randori', 'Rincian skor Randori kontingen (tanding maupun belum tanding).', 'fa-hand-fist'],
+    'category-results': ['Laporan Nomor Pertandingan', 'Pantau seluruh hasil nomor pertandingan yang diikuti beserta perbandingan kontingen lain.', 'fa-layer-group'],
     athletes: ['Data Atlet', 'Master atlet kontingen lintas event, tanpa bergantung pada event aktif.', 'fa-user-group'],
     officials: ['Data Official', 'Master official kontingen lintas event, tanpa bergantung pada event aktif.', 'fa-id-badge'],
     history: ['Riwayat Pendaftaran', 'Arsip pendaftaran kontingen pada seluruh event.', 'fa-clock-rotate-left'],
@@ -42,6 +43,7 @@ const sectionPath = {
     results: '/kontingen/hasil/juara',
     'embu-results': '/kontingen/hasil/embu',
     'randori-results': '/kontingen/hasil/randori',
+    'category-results': '/kontingen/hasil/nomor-pertandingan',
     athletes: '/kontingen/atlet',
     officials: '/kontingen/official',
     history: '/kontingen/riwayat-pendaftaran',
@@ -315,17 +317,15 @@ function BracketSection({
                                         key={cat.id}
                                         type="button"
                                         onClick={() => switchCategory(cat.id)}
-                                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-2xs ${
-                                            isSelected
+                                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-2xs ${isSelected
                                                 ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-500/50 font-black'
                                                 : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
-                                        }`}
+                                            }`}
                                     >
                                         <i className={`fa-solid ${isSelected ? 'fa-circle-check text-amber-800' : 'fa-star text-amber-500'} text-[10px]`} />
                                         <span>{cat.name}</span>
-                                        <span className={`rounded px-1.5 py-0.2 text-[10px] font-black ${
-                                            isSelected ? 'bg-amber-500/50 text-slate-950' : 'bg-amber-200/80 text-amber-900'
-                                        }`}>
+                                        <span className={`rounded px-1.5 py-0.2 text-[10px] font-black ${isSelected ? 'bg-amber-500/50 text-slate-950' : 'bg-amber-200/80 text-amber-900'
+                                            }`}>
                                             {cat.my_athletes_count} Atlet
                                         </span>
                                     </button>
@@ -389,78 +389,1038 @@ function ResultsSection({ results = [], medalSummary = {} }) {
     </div>;
 }
 
-function EmbuJudgeBreakdown({ judge }) {
+const EMBU_TECHNIQUE_ASPECTS = [
+    { key: 'goho_attack', label: 'GOHO 1 · Serangan (Kougeki)' },
+    { key: 'goho_defense', label: 'GOHO 2 · Bertahan (Bougyo)' },
+    { key: 'goho_counter', label: 'GOHO 3 · Serangan Balasan & 5 Unsur Serangan' },
+    { key: 'juho_escape', label: 'JUHO 1 · Shuha & Nukiwaza' },
+    { key: 'juho_lock_throw', label: 'JUHO 2 · Gyakuwaza & Nagewaza' },
+    { key: 'juho_ground', label: 'JUHO 3 · Katamewaza' },
+];
+
+const EMBU_EXPRESSION_ASPECTS = [
+    { key: 'expression_sequence', label: 'EKSPRESI 1 · Rangkaian, Irama & Harmoni' },
+    { key: 'expression_stance', label: 'EKSPRESI 2 · Tai Gamae, Kuda-kuda & Keindahan Gerak' },
+    { key: 'expression_spirit', label: 'EKSPRESI 3 · Semangat & Disiplin' },
+    { key: 'expression_breath_zanshin', label: 'EKSPRESI 4 · Nafas, Pandangan Mata & Zanshin' },
+];
+
+function EmbuJudgeTableMatrix({ judges = [] }) {
+    if (!judges.length) {
+        return (
+            <div className="p-5 text-center text-xs italic text-[#817970] dark:text-slate-400">
+                <i className="fa-solid fa-circle-info mr-1.5 text-amber-600 dark:text-amber-400" />
+                Rincian 10 aspek per wasit belum tersedia untuk partai ini.
+            </div>
+        );
+    }
+
     return (
-        <section className="rounded-xl border border-[#e7dfd5] bg-[#fcfbf9] p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#a37019]">Juri {judge.judge_number} · {judge.role_label}</p>
-                    <h3 className="mt-1 text-sm font-black text-[#201a16]">{judge.referee_name}</h3>
-                </div>
-                <div className="text-right">
-                    <p className="font-mono text-xl font-black text-[#bd3428]">{Number(judge.total_score || 0).toFixed(2)}</p>
-                    <p className={`text-[9px] font-bold uppercase ${judge.is_signed ? 'text-emerald-700' : 'text-amber-700'}`}>{judge.is_signed ? 'TTD tercatat' : 'Belum TTD'}</p>
-                </div>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {Object.entries(judge.aspect_labels || {}).map(([key, label], index) => (
-                    <div key={key} className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-[#eee7de] bg-white px-3 py-2">
-                        <span className="text-[11px] leading-4 text-[#5f5750]"><strong className="mr-1 text-[#9b6c18]">{index + 1}.</strong>{label}</span>
-                        <strong className="shrink-0 font-mono text-base text-[#17120f]">{judge.aspect_scores?.[key] ?? '-'}</strong>
-                    </div>
-                ))}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
-                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">Teknik {Number(judge.technique_subtotal || 0).toFixed(2)}</span>
-                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">Ekspresi {Number(judge.expression_subtotal || 0).toFixed(2)}</span>
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">{judge.completed_items || 0}/10 aspek</span>
-            </div>
-        </section>
+        <div className="overflow-x-auto">
+            <table className="w-full min-w-[750px] border-collapse text-left text-xs">
+                <thead>
+                    <tr className="border-b border-[#e6dfd6] bg-[#fbf9f6] text-[11px] text-slate-700 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300">
+                        <th className="w-10 px-3 py-3 text-center font-bold">No</th>
+                        <th className="px-4 py-3 font-bold">Aspek Penilaian (PERKEMI)</th>
+                        {judges.map((j) => (
+                            <th
+                                key={j.id || j.judge_number}
+                                className={`px-3 py-2.5 text-center font-bold transition-colors ${j.is_middle
+                                        ? 'bg-amber-100/40 dark:bg-amber-950/20'
+                                        : ''
+                                    }`}
+                            >
+                                <div className="flex flex-col items-center">
+                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${j.judge_number === 1
+                                            ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
+                                            : 'bg-stone-200 text-stone-800 dark:bg-slate-700 dark:text-slate-200'
+                                        }`}>
+                                        Wasit {j.judge_number}
+                                    </span>
+                                    <span className="mt-1 max-w-[120px] truncate text-[10px] font-bold text-slate-900 dark:text-white" title={j.referee_name}>
+                                        {j.referee_name || `Wasit ${j.judge_number}`}
+                                    </span>
+                                    <span className="text-[9px] text-[#857d75] dark:text-slate-400">
+                                        {j.role_label || (j.judge_number === 1 ? 'Wasit Utama' : 'Juri')}
+                                    </span>
+                                </div>
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-[#eee8e0] dark:divide-slate-800">
+                    {/* Section I: Penguasaan Teknik */}
+                    <tr className="bg-[#f5f2ec]/90 dark:bg-slate-800/90">
+                        <td colSpan={2 + judges.length} className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#695f54] dark:text-slate-300">
+                            I. Penguasaan Teknik (Maksimal 60.00)
+                        </td>
+                    </tr>
+                    {EMBU_TECHNIQUE_ASPECTS.map((aspect, idx) => (
+                        <tr key={aspect.key} className="transition-colors hover:bg-amber-50/20 dark:hover:bg-slate-800/30">
+                            <td className="px-3 py-2 text-center font-mono text-[#8a7f74] dark:text-slate-500">{idx + 1}</td>
+                            <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-200">
+                                {aspect.label}
+                            </td>
+                            {judges.map((j) => (
+                                <td
+                                    key={j.id || j.judge_number}
+                                    className={`px-3 py-2 text-center font-mono font-semibold ${j.is_middle ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
+                                        }`}
+                                >
+                                    {j.aspect_scores?.[aspect.key] !== undefined && j.aspect_scores?.[aspect.key] !== null
+                                        ? Number(j.aspect_scores[aspect.key]).toFixed(2)
+                                        : '—'}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                    {/* Subtotal Teknik */}
+                    <tr className="border-t-2 border-stone-200 bg-[#faf6ee] font-bold text-slate-900 dark:border-slate-700 dark:bg-amber-950/30 dark:text-amber-200">
+                        <td className="px-3 py-2 text-center font-mono font-black text-amber-700 dark:text-amber-400">Σ</td>
+                        <td className="px-4 py-2 text-[11px] font-black uppercase tracking-wide text-amber-950 dark:text-amber-200">
+                            Subtotal Penguasaan Teknik (Maks. 60)
+                        </td>
+                        {judges.map((j) => (
+                            <td
+                                key={j.id || j.judge_number}
+                                className="px-3 py-2 text-center font-mono text-sm font-black text-amber-900 dark:text-amber-300"
+                            >
+                                {j.technique_subtotal !== undefined && j.technique_subtotal !== null
+                                    ? Number(j.technique_subtotal).toFixed(2)
+                                    : '—'}
+                            </td>
+                        ))}
+                    </tr>
+
+                    {/* Section II: Penghayatan & Keserasian */}
+                    <tr className="bg-[#f5f2ec]/90 dark:bg-slate-800/90">
+                        <td colSpan={2 + judges.length} className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#695f54] dark:text-slate-300">
+                            II. Penghayatan & Keserasian (Maksimal 40.00)
+                        </td>
+                    </tr>
+                    {EMBU_EXPRESSION_ASPECTS.map((aspect, idx) => (
+                        <tr key={aspect.key} className="transition-colors hover:bg-amber-50/20 dark:hover:bg-slate-800/30">
+                            <td className="px-3 py-2 text-center font-mono text-[#8a7f74] dark:text-slate-500">{idx + 7}</td>
+                            <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-200">
+                                {aspect.label}
+                            </td>
+                            {judges.map((j) => (
+                                <td
+                                    key={j.id || j.judge_number}
+                                    className={`px-3 py-2 text-center font-mono font-semibold ${j.is_middle ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
+                                        }`}
+                                >
+                                    {j.aspect_scores?.[aspect.key] !== undefined && j.aspect_scores?.[aspect.key] !== null
+                                        ? Number(j.aspect_scores[aspect.key]).toFixed(2)
+                                        : '—'}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                    {/* Subtotal Penghayatan */}
+                    <tr className="border-t-2 border-stone-200 bg-[#faf6ee] font-bold text-slate-900 dark:border-slate-700 dark:bg-amber-950/30 dark:text-amber-200">
+                        <td className="px-3 py-2 text-center font-mono font-black text-amber-700 dark:text-amber-400">Σ</td>
+                        <td className="px-4 py-2 text-[11px] font-black uppercase tracking-wide text-amber-950 dark:text-amber-200">
+                            Subtotal Penghayatan & Keserasian (Maks. 40)
+                        </td>
+                        {judges.map((j) => (
+                            <td
+                                key={j.id || j.judge_number}
+                                className="px-3 py-2 text-center font-mono text-sm font-black text-amber-900 dark:text-amber-300"
+                            >
+                                {j.expression_subtotal !== undefined && j.expression_subtotal !== null
+                                    ? Number(j.expression_subtotal).toFixed(2)
+                                    : '—'}
+                            </td>
+                        ))}
+                    </tr>
+
+                    {/* Total Nilai Wasit */}
+                    <tr className="border-t-2 border-stone-300 bg-stone-100 font-black dark:border-slate-700 dark:bg-slate-800">
+                        <td className="px-3 py-2.5 text-center font-mono text-amber-600 dark:text-amber-400">★</td>
+                        <td className="px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-900 dark:text-white">
+                            Total Nilai Wasit (Maks. 100)
+                        </td>
+                        {judges.map((j) => (
+                            <td
+                                key={j.id || j.judge_number}
+                                className={`px-3 py-2.5 text-center font-mono text-base font-black ${j.is_trimmed
+                                        ? 'text-stone-400 line-through dark:text-slate-500'
+                                        : 'text-[#b17c13] dark:text-[#f0c060]'
+                                    }`}
+                            >
+                                {j.total_score !== undefined && j.total_score !== null
+                                    ? Number(j.total_score).toFixed(2)
+                                    : '—'}
+                            </td>
+                        ))}
+                    </tr>
+
+                    {/* Status Perhitungan Wasit (Dicoret / Dihitung) */}
+                    <tr className="bg-[#fcfaf7] dark:bg-slate-900">
+                        <td className="px-3 py-2 text-center text-xs">⚖</td>
+                        <td className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-[#797168] dark:text-slate-400">
+                            Status Perhitungan
+                        </td>
+                        {judges.map((j) => (
+                            <td key={j.id || j.judge_number} className="px-3 py-2 text-center">
+                                {j.is_trimmed_max ? (
+                                    <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-bold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                        Dicoret (Tertinggi)
+                                    </span>
+                                ) : j.is_trimmed_min ? (
+                                    <span className="inline-flex rounded-full bg-stone-200 px-2 py-0.5 text-[9px] font-bold text-stone-700 dark:bg-slate-800 dark:text-slate-300">
+                                        Dicoret (Terendah)
+                                    </span>
+                                ) : j.is_middle ? (
+                                    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                        ✓ Dihitung
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[9px] font-medium text-stone-600 dark:bg-slate-800 dark:text-slate-400">
+                                        Tercatat
+                                    </span>
+                                )}
+                            </td>
+                        ))}
+                    </tr>
+
+                    {/* Tanda Tangan Digital */}
+                    <tr className="bg-white text-[10px] dark:bg-slate-950">
+                        <td className="px-3 py-2 text-center text-xs">✍</td>
+                        <td className="px-4 py-2 font-medium text-slate-500 dark:text-slate-400">
+                            Tanda Tangan Digital
+                        </td>
+                        {judges.map((j) => (
+                            <td key={j.id || j.judge_number} className="px-3 py-2 text-center">
+                                {j.is_signed ? (
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                        <i className="fa-solid fa-signature mr-1" /> Tercatat
+                                    </span>
+                                ) : (
+                                    <span className="italic text-stone-400 dark:text-slate-500">
+                                        Belum TTD
+                                    </span>
+                                )}
+                            </td>
+                        ))}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     );
 }
 
-function EmbuResultsSection({ results = [] }) {
-    return results.length ? <div className="space-y-4">{results.map((result) => (
-        <article key={result.id} className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm">
-            <div className="border-b border-[#eee8e0] p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">Embu · Partai #{result.sequence || '-'}</p><h2 className="mt-1 text-sm font-black">{result.category || 'Nomor Embu'}</h2><p className="mt-1 text-xs text-[#817970]">{result.participant_details?.contingent_name || result.participant || 'Tim kontingen'}</p></div>
-                    <div className="flex shrink-0 items-center gap-2">
-                        <a href={result.print_url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9d0c5] bg-white px-3 text-xs font-bold text-[#4e4640] transition-colors hover:bg-[#f8f5f1]"><i className="fa-solid fa-print" aria-hidden="true" />Cetak Detail</a>
-                        <div className="rounded-xl bg-amber-50 px-4 py-2 text-right"><p className="text-[9px] font-bold uppercase text-amber-700">Nilai akhir</p><p className="font-mono text-2xl font-black text-[#b17c13]">{Number(result.final_score || 0).toFixed(2)}</p></div>
+function EmbuResultsSection({ results = [], categories = [] }) {
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'completed', 'pending'
+    const [search, setSearch] = useState('');
+
+    const completedCount = useMemo(() => {
+        return results.filter((r) => r.status === 'completed' || r.status === 'verified' || (r.final_score !== null && r.final_score !== undefined)).length;
+    }, [results]);
+
+    const pendingCount = useMemo(() => {
+        return results.filter((r) => r.status !== 'completed' && r.status !== 'verified' && (r.final_score === null || r.final_score === undefined)).length;
+    }, [results]);
+
+    const filteredResults = useMemo(() => {
+        return results.filter((item) => {
+            // Filter kategori
+            if (selectedCategory !== 'all') {
+                if (item.category_id && item.category_id !== selectedCategory) {
+                    return false;
+                }
+                if (!item.category_id && item.category !== selectedCategory) {
+                    return false;
+                }
+            }
+            // Filter status
+            if (statusFilter === 'completed') {
+                if (item.status !== 'completed' && item.status !== 'verified' && (item.final_score === null || item.final_score === undefined)) {
+                    return false;
+                }
+            } else if (statusFilter === 'pending') {
+                if (item.status === 'completed' || item.status === 'verified' || (item.final_score !== null && item.final_score !== undefined)) {
+                    return false;
+                }
+            }
+            // Filter text search
+            if (search.trim()) {
+                const query = search.toLowerCase();
+                const athleteMatch = (item.athlete_name || '').toLowerCase().includes(query);
+                const categoryMatch = (item.category || item.category_name || '').toLowerCase().includes(query);
+                const courtMatch = (item.court || '').toLowerCase().includes(query);
+                const roundMatch = (item.round || item.round_label || '').toLowerCase().includes(query);
+                const seqMatch = String(item.sequence || '').includes(query);
+                if (!athleteMatch && !categoryMatch && !courtMatch && !roundMatch && !seqMatch) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }, [results, selectedCategory, statusFilter, search]);
+
+    return (
+        <div className="space-y-5">
+            {/* Filter Bar: Kategori (Select Dropdown) & Status */}
+            <div className="rounded-2xl border border-[#e6dfd6] bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex flex-col gap-4">
+                    {/* Top Row: Dropdown Select Kategori */}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-1 flex-col gap-1.5 sm:flex-row sm:items-center">
+                            <label htmlFor="embu-category-select" className="text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400 shrink-0 sm:mr-2">
+                                <i className="fa-solid fa-ranking-star mr-1.5 text-amber-500" />
+                                Nomor Pertandingan:
+                            </label>
+                            <div className="relative flex-1 max-w-xl">
+                                <select
+                                    id="embu-category-select"
+                                    value={selectedCategory}
+                                    onChange={(e) => setSelectedCategory(e.target.value)}
+                                    className="w-full rounded-xl border border-[#d9d0c5] bg-[#fcfbf9] px-3.5 py-2 pr-9 text-xs font-bold text-[#201a16] transition-colors focus:border-[#b17c13] focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                    <option value="all">
+                                        Semua Nomor Pertandingan ({results.length} Partai)
+                                    </option>
+                                    {categories.map((cat) => {
+                                        const catResultsCount = results.filter(
+                                            (r) => (r.category_id && r.category_id === cat.id) || r.category === cat.name
+                                        ).length;
+                                        return (
+                                            <option key={cat.id} value={cat.id}>
+                                                {cat.name} ({catResultsCount || cat.own_athletes_count} Partai)
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
+                        </div>
+
+                        {(selectedCategory !== 'all' || statusFilter !== 'all' || search) && (
+                            <button
+                                type="button"
+                                onClick={() => { setSelectedCategory('all'); setStatusFilter('all'); setSearch(''); }}
+                                className="self-start text-xs font-bold text-[#b17c13] hover:underline dark:text-amber-400 sm:self-auto"
+                            >
+                                <i className="fa-solid fa-rotate-left mr-1" />
+                                Reset Filter
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Secondary Bar: Status Filter + Search */}
+                    <div className="flex flex-col gap-3 border-t border-[#eee8e0] pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter('all')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${statusFilter === 'all'
+                                        ? 'bg-stone-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                                        : 'bg-[#f5f2ec] text-[#635a51] hover:bg-[#eae5dd] dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                            >
+                                Semua Status ({results.length})
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter('completed')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${statusFilter === 'completed'
+                                        ? 'bg-emerald-700 text-white dark:bg-emerald-600'
+                                        : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                    }`}
+                            >
+                                ✓ Selesai ({completedCount})
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter('pending')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${statusFilter === 'pending'
+                                        ? 'bg-amber-600 text-white dark:bg-amber-500'
+                                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300'
+                                    }`}
+                            >
+                                ⏳ Belum Tanding ({pendingCount})
+                            </button>
+                        </div>
+
+                        <div className="relative w-full sm:w-72">
+                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#9c9389] dark:text-slate-400" />
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Cari atlet, nomor, arena..."
+                                className="w-full rounded-xl border border-[#d9d0c5] bg-white py-1.5 pl-8 pr-8 text-xs text-[#201a16] placeholder:text-[#a0978c] focus:border-[#b17c13] focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400"
+                            />
+                            {search && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSearch('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#9c9389] hover:text-stone-700 dark:text-slate-400"
+                                >
+                                    <i className="fa-solid fa-xmark" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
-            <div className="grid grid-cols-3 gap-3 p-5 text-center text-xs">
-                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Skor tengah</p><p className="mt-1 font-bold">{Number(result.middle_score || 0).toFixed(2)}</p></div>
-                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Total denda</p><p className="mt-1 font-bold text-red-600">{Number(result.total_penalty ?? result.time_penalty ?? 0).toFixed(2)}</p></div>
-                <div className="rounded-xl bg-[#f8f5f1] p-3"><p className="text-[9px] uppercase text-[#918980]">Durasi</p><p className="mt-1 font-bold">{result.duration_seconds || 0} dtk</p></div>
-            </div>
-            <div className="flex flex-wrap gap-2 border-t border-[#eee8e0] px-5 py-4">{(result.judge_scores || []).map((score, index) => <span key={`${result.id}-${index}`} className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">J{index + 1}: {Number(score).toFixed(2)}</span>)}</div>
-            <details className="group border-t border-[#eee8e0] px-5 py-4">
-                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl bg-[#f8f5f1] px-4 text-xs font-black text-[#4f4740] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b17c13]">
-                    <span><i className="fa-solid fa-list-check mr-2 text-[#b17c13]" aria-hidden="true" />Rincian 10 Aspek per Wasit</span>
-                    <i className="fa-solid fa-chevron-down transition-transform group-open:rotate-180" aria-hidden="true" />
-                </summary>
-                <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                    {(result.judges || []).length ? result.judges.map((judge) => <EmbuJudgeBreakdown key={judge.id} judge={judge} />) : <p className="rounded-xl border border-dashed border-[#ddd4c9] px-4 py-6 text-center text-xs text-[#847c74] xl:col-span-2">Rincian nilai per Wasit belum tersedia.</p>}
+
+            {/* Results List */}
+            {filteredResults.length ? (
+                <div className="space-y-4">
+                    {filteredResults.map((result) => {
+                        const hasScore = result.final_score !== null && result.final_score !== undefined;
+                        const hasJudges = (result.judges || []).length > 0;
+
+                        return (
+                            <article
+                                key={result.id}
+                                className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                            >
+                                {/* Header Card */}
+                                <div className="p-5">
+                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#b17c13] dark:text-amber-400">
+                                                    Embu · Partai #{result.sequence || '-'} · {result.round || result.round_label || '-'}
+                                                </span>
+                                                <span className={`rounded-full px-2.5 py-0.5 text-[9px] font-bold ${result.status === 'verified'
+                                                        ? 'border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                                        : result.status === 'in_progress'
+                                                            ? 'border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                                                            : result.status === 'ready'
+                                                                ? 'border border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                                                                : 'border border-stone-200 bg-stone-100 text-stone-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                    {result.status_label || (hasScore ? 'Selesai' : 'Belum Tanding')}
+                                                </span>
+                                            </div>
+                                            <h2 className="mt-1.5 text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                                                {result.athlete_name || result.participant_details?.contingent_name || result.participant || 'Tim Kontingen'}
+                                            </h2>
+                                            <p className="mt-1 text-xs text-[#817970] dark:text-slate-400">
+                                                <strong>{result.category || result.category_name || 'Nomor Embu'}</strong> · Arena: {result.court || 'Court belum tercatat'}
+                                            </p>
+                                        </div>
+
+                                        <div className="flex shrink-0 items-center gap-2">
+                                            {result.print_url && (
+                                                <a
+                                                    href={result.print_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9d0c5] bg-white px-3.5 text-xs font-bold text-[#4e4640] transition-colors hover:bg-[#f8f5f1] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                                                >
+                                                    <i className="fa-solid fa-print" aria-hidden="true" />
+                                                    Cetak Detail
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Calculation Summary Bar: Nilai Awal | Denda | Nilai Akhir */}
+                                <div className="grid grid-cols-1 divide-y divide-stone-200 border-t border-b border-[#eee8e0] bg-[#faf8f5] md:grid-cols-3 md:divide-y-0 md:divide-x dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/60">
+                                    {/* Kolom 1: Nilai Awal */}
+                                    <div className="p-4 sm:p-5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                                                Nilai Awal (Skor Juri)
+                                            </span>
+                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                                                Skor Tengah
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 font-mono text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
+                                            {result.middle_score !== null && result.middle_score !== undefined
+                                                ? Number(result.middle_score).toFixed(2)
+                                                : '—'}
+                                        </p>
+                                        <p className="mt-2 text-[11px] text-[#766e67] dark:text-slate-400">
+                                            Skor 3 wasit tengah (sebelum denda)
+                                        </p>
+                                    </div>
+
+                                    {/* Kolom 2: Denda */}
+                                    <div className="p-4 sm:p-5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                                                Denda (Pengurangan)
+                                            </span>
+                                            {result.duration_seconds ? (
+                                                <span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[9px] font-bold text-stone-700 dark:bg-slate-800 dark:text-slate-300">
+                                                    Durasi: {result.duration_seconds} dtk
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <p className={`mt-1 font-mono text-2xl sm:text-3xl font-black ${Number(result.total_penalty) > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'
+                                            }`}>
+                                            {result.total_penalty !== null && result.total_penalty !== undefined
+                                                ? (Number(result.total_penalty) > 0 ? `- ${Number(result.total_penalty).toFixed(2)}` : '0.00')
+                                                : '—'}
+                                        </p>
+                                        <p className="mt-2 text-[11px] text-[#766e67] dark:text-slate-400">
+                                            Waktu: <strong className="font-mono text-slate-800 dark:text-slate-200">{Number(result.time_penalty || 0).toFixed(2)}</strong>
+                                            <span className="mx-1.5">|</span>
+                                            Pelanggaran: <strong className="font-mono text-slate-800 dark:text-slate-200">{Number(result.violation_penalty || 0).toFixed(2)}</strong>
+                                        </p>
+                                    </div>
+
+                                    {/* Kolom 3: Nilai Akhir */}
+                                    <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-50/50 via-yellow-50/30 to-amber-100/20 dark:from-amber-950/20 dark:via-yellow-950/10 dark:to-transparent">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-[#b17c13] dark:text-[#f0c060]">
+                                                Nilai Akhir
+                                            </span>
+                                            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[9px] font-black uppercase text-[#925f00] dark:text-amber-300">
+                                                Skor Resmi
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 font-mono text-3xl sm:text-4xl font-black text-[#b17c13] dark:text-[#f0c060]">
+                                            {result.final_score !== null && result.final_score !== undefined
+                                                ? Number(result.final_score).toFixed(2)
+                                                : '—'}
+                                        </p>
+                                        <p className="mt-2 text-[11px] font-medium text-[#7a6b57] dark:text-amber-300/80">
+                                            {result.final_score !== null && result.final_score !== undefined
+                                                ? `Nilai Awal (${Number(result.middle_score || 0).toFixed(2)}) − Denda (${Number(result.total_penalty || 0).toFixed(2)})`
+                                                : 'Menunggu hasil pertandingan'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Rincian 10 Aspek Table Matrix */}
+                                {hasJudges ? (
+                                    <details open className="group border-t border-[#eee8e0] p-4 sm:p-5 dark:border-slate-800">
+                                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl bg-[#f8f5f1] px-4 text-xs font-black text-[#4f4740] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b17c13] dark:bg-slate-800 dark:text-slate-200">
+                                            <span className="flex items-center gap-2">
+                                                <i className="fa-solid fa-table-list text-[#b17c13] dark:text-amber-400" />
+                                                <span>Rincian 10 Aspek per Wasit ({result.judges.length} Wasit Penilai)</span>
+                                            </span>
+                                            <i className="fa-solid fa-chevron-down transition-transform group-open:rotate-180 text-stone-500" />
+                                        </summary>
+                                        <div className="mt-4 rounded-xl border border-[#eee8e0] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-950">
+                                            <EmbuJudgeTableMatrix judges={result.judges} />
+                                        </div>
+                                    </details>
+                                ) : (
+                                    <div className="border-t border-[#eee8e0] px-5 py-4 text-xs italic text-[#817970] dark:border-slate-800 dark:text-slate-400">
+                                        <i className="fa-solid fa-hourglass-half mr-1.5 text-amber-500" />
+                                        Partai ini belum dinilai oleh dewan wasit atau sedang menunggu giliran tampil di arena.
+                                    </div>
+                                )}
+                            </article>
+                        );
+                    })}
                 </div>
-            </details>
-        </article>
-    ))}</div> : <EmptyState icon="fa-ranking-star" title="Belum ada hasil Embu" description="Nilai Embu kontingen akan tampil setelah disimpan dan diverifikasi panitera." />;
+            ) : (
+                <EmptyState
+                    icon="fa-ranking-star"
+                    title="Tidak Ada Pertandingan Embu"
+                    description="Tidak ditemukan pertandingan Embu yang sesuai dengan filter yang Anda pilih."
+                />
+            )}
+        </div>
+    );
 }
 
-function RandoriResultsSection({ results = [] }) {
-    return results.length ? <div className="space-y-4">{results.map((result) => (
-        <article key={result.id} className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${result.is_winner ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{result.is_winner ? 'MENANG' : 'SELESAI'}</span><span className="text-[10px] font-bold uppercase text-[#a47c25]">Partai #{result.sequence || '-'} · {result.round || '-'}</span></div><h2 className="mt-2 text-sm font-black">{result.category || 'Nomor Randori'}</h2><p className="mt-1 text-xs text-[#817970]">{result.court || 'Court belum tercatat'} · {result.signatures_count}/6 tanda tangan</p></div>
-                <div className="grid min-w-[280px] grid-cols-[1fr_auto_1fr] items-center overflow-hidden rounded-xl border border-[#e6dfd6] text-center">
-                    <div className={`p-3 ${result.winner_corner === 'aka' ? 'bg-red-50' : ''}`}><p className="truncate text-[10px] font-bold text-red-700">{result.aka_label || 'AKA'}</p><p className="font-mono text-2xl font-black text-red-600">{result.aka_total}</p></div><span className="px-2 text-[10px] font-bold text-[#aaa29a]">VS</span><div className={`p-3 ${result.winner_corner === 'shiro' ? 'bg-blue-50' : ''}`}><p className="truncate text-[10px] font-bold text-blue-700">{result.shiro_label || 'SHIRO'}</p><p className="font-mono text-2xl font-black text-blue-600">{result.shiro_total}</p></div>
+function RandoriResultsSection({
+    results = [],
+    categories = [],
+    selectedCategory = null,
+    bracketMatches = [],
+    myContingent = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
+    activeEvent = null,
+}) {
+    const hasAnyData = results.length > 0 || (bracketMatches && bracketMatches.length > 0) || (categories && categories.length > 0);
+
+    if (!hasAnyData) {
+        return (
+            <EmptyState
+                icon="fa-hand-fist"
+                title="Belum ada hasil Randori"
+                description="Nomor pertandingan Randori yang diikuti kontingen akan tampil di sini baik yang sudah maupun belum bertanding."
+            />
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* Category Selector Dropdown if categories available */}
+            {categories && categories.length > 0 && (
+                <div className="rounded-2xl border border-[#e6dfd6] bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-1 flex-col gap-1.5 sm:flex-row sm:items-center">
+                            <label htmlFor="randori-category-select" className="shrink-0 text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400 sm:mr-2">
+                                <i className="fa-solid fa-hand-fist mr-1.5 text-red-500" />
+                                Nomor Randori:
+                            </label>
+                            <div className="relative flex-1 max-w-xl">
+                                <select
+                                    id="randori-category-select"
+                                    value={selectedCategory?.id || ''}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            router.visit(`/kontingen/hasil/randori?event_id=${encodeURIComponent(activeEvent?.id || '')}&category_id=${e.target.value}`, {
+                                                preserveScroll: true,
+                                                preserveState: true,
+                                            });
+                                        }
+                                    }}
+                                    className="w-full rounded-xl border border-[#d9d0c5] bg-[#fcfbf9] px-3.5 py-2.5 pr-9 text-xs font-bold text-[#201a16] transition-colors focus:border-[#b17c13] focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.name} ({cat.own_athletes_count} Atlet Anda)
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {selectedCategory && (
+                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                                <span className="rounded-lg bg-amber-200/80 px-2.5 py-1 text-xs font-black text-amber-900 dark:bg-amber-900 dark:text-amber-200">
+                                    {selectedCategory.own_athletes_count ?? categories.find(c => c.id === selectedCategory.id)?.own_athletes_count ?? 1} Atlet Kontingen Anda
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Interactive Tournament Bracket Tree */}
+            {bracketMatches && bracketMatches.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <RandoriBracketTree
+                        matches={bracketMatches}
+                        activeEvent={activeEvent}
+                        categoryName={selectedCategory?.name || ''}
+                        categoryFormat={selectedCategory?.format || 'single_elimination'}
+                        highlightContingentId={myContingent?.id}
+                        highlightContingentName={myContingent?.name}
+                        highlightEntryIds={highlightEntryIds}
+                        highlightAthleteNames={highlightAthleteNames}
+                    />
+                </div>
+            )}
+
+            {/* List of Matches for Contingent */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                        Daftar Partai Randori Kontingen Anda ({results.length} Partai)
+                    </h3>
+                </div>
+
+                {results.length ? (
+                    results.map((result) => (
+                        <article key={result.id} className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${result.is_winner
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                                : result.is_played
+                                                    ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                                    : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300'
+                                            }`}>
+                                            {result.status_label || (result.is_winner ? 'MENANG' : 'SELESAI')}
+                                        </span>
+                                        <span className="text-[10px] font-bold uppercase text-[#a47c25] dark:text-[#f0c060]">
+                                            Partai #{result.sequence || '-'} · {result.round || '-'}
+                                        </span>
+                                    </div>
+                                    <h2 className="mt-2 text-sm font-black text-slate-900 dark:text-white">{result.category || 'Nomor Randori'}</h2>
+                                    <p className="mt-1 text-xs text-[#817970] dark:text-slate-400">
+                                        {result.court || 'Court belum tercatat'} · {result.signatures_count ? `${result.signatures_count}/6 tanda tangan` : 'Belum selesai'}
+                                    </p>
+                                </div>
+                                <div className="grid min-w-[280px] grid-cols-[1fr_auto_1fr] items-center overflow-hidden rounded-xl border border-[#e6dfd6] text-center dark:border-slate-800">
+                                    <div className={`p-3 ${result.winner_corner === 'aka' ? 'bg-red-50 dark:bg-red-950/30' : ''}`}>
+                                        <p className="truncate text-[10px] font-bold text-red-700 dark:text-red-400">{result.aka_label || 'AKA'}</p>
+                                        <p className="font-mono text-2xl font-black text-red-600 dark:text-red-400">{result.aka_total ?? '-'}</p>
+                                    </div>
+                                    <span className="px-2 text-[10px] font-bold text-[#aaa29a]">VS</span>
+                                    <div className={`p-3 ${result.winner_corner === 'shiro' ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}>
+                                        <p className="truncate text-[10px] font-bold text-blue-700 dark:text-blue-400">{result.shiro_label || 'SHIRO'}</p>
+                                        <p className="font-mono text-2xl font-black text-blue-600 dark:text-blue-400">{result.shiro_total ?? '-'}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    ))
+                ) : (
+                    <div className="rounded-2xl border border-dashed border-[#ddd4c9] bg-white p-8 text-center text-xs text-[#817970] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                        Belum ada partai Randori yang terdaftar untuk kontingen Anda.
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function CategoryResultsSection({
+    categories = [],
+    selectedCategory = null,
+    champions = [],
+    matches = [],
+    myContingent = null,
+    activeEvent = null,
+    highlightEntryIds = [],
+    highlightAthleteNames = [],
+}) {
+    if (!categories.length) {
+        return (
+            <EmptyState
+                icon="fa-layer-group"
+                title="Belum Ada Nomor Pertandingan"
+                description="Kontingen Anda belum terdaftar pada nomor pertandingan di event ini atau nomor pertandingan belum diaktifkan."
+            />
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* Category Selector Dropdown */}
+            <div className="rounded-2xl border border-[#e6dfd6] bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-1 flex-col gap-1.5 sm:flex-row sm:items-center">
+                        <label htmlFor="category-report-select" className="shrink-0 text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400 sm:mr-2">
+                            <i className="fa-solid fa-layer-group mr-1.5 text-amber-500" />
+                            Pilih Nomor Pertandingan:
+                        </label>
+                        <div className="relative flex-1 max-w-xl">
+                            <select
+                                id="category-report-select"
+                                value={selectedCategory?.id || ''}
+                                onChange={(e) => {
+                                    if (e.target.value) {
+                                        router.visit(`/kontingen/hasil/nomor-pertandingan?event_id=${encodeURIComponent(activeEvent?.id || '')}&category_id=${e.target.value}`, {
+                                            preserveScroll: true,
+                                            preserveState: true,
+                                        });
+                                    }
+                                }}
+                                className="w-full rounded-xl border border-[#d9d0c5] bg-[#fcfbf9] px-3.5 py-2.5 pr-9 text-xs font-bold text-[#201a16] transition-colors focus:border-[#b17c13] focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <optgroup label="Nomor Embu">
+                                    {categories.filter((c) => c.type === 'embu').map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            [EMBU] {cat.name} ({cat.own_athletes_count} Atlet Anda)
+                                        </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="Nomor Randori">
+                                    {categories.filter((c) => c.type === 'randori').map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            [RANDORI] {cat.name} ({cat.own_athletes_count} Atlet Anda)
+                                        </option>
+                                    ))}
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+
+                    {selectedCategory && (
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-black ${
+                                selectedCategory.type === 'embu'
+                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200'
+                                    : 'bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200'
+                            }`}>
+                                <i className={`fa-solid ${selectedCategory.type === 'embu' ? 'fa-ranking-star' : 'fa-hand-fist'}`} />
+                                {selectedCategory.type === 'embu' ? 'Embu' : 'Randori'}
+                            </span>
+                            <span className="rounded-lg bg-amber-200/80 px-2.5 py-1 text-xs font-black text-amber-900 dark:bg-amber-900 dark:text-amber-200">
+                                {selectedCategory.own_athletes_count ?? categories.find((c) => c.id === selectedCategory.id)?.own_athletes_count ?? 1} Atlet Kontingen Anda
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
-        </article>
-    ))}</div> : <EmptyState icon="fa-hand-fist" title="Belum ada hasil Randori" description="Skor Randori kontingen akan tampil setelah hasil disahkan panitera." />;
+
+            {/* Selected Category Header & Notice */}
+            {selectedCategory && (
+                <div className="rounded-2xl border border-amber-300/80 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-yellow-50/80 p-4 shadow-sm dark:border-amber-600/40 dark:from-amber-950/40 dark:via-amber-900/30 dark:to-yellow-950/20">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase text-slate-950">
+                                    {selectedCategory.type === 'embu' ? 'EMBU' : 'RANDORI'}
+                                </span>
+                                <h2 className="text-base font-black text-amber-950 dark:text-amber-100">
+                                    {selectedCategory.name}
+                                </h2>
+                            </div>
+                            <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
+                                <i className="fa-solid fa-circle-info mr-1 text-amber-600" />
+                                Peserta dari <strong>{myContingent?.name || 'Kontingen Anda'}</strong> ditandai khusus dengan <strong>warna kuning emas</strong> agar mudah dibandingkan dengan kontingen lain.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Podium / Juara Resmi jika ada */}
+            {champions && champions.length > 0 && (
+                <div className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <h3 className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                        <i className="fa-solid fa-trophy text-amber-500" />
+                        Hasil Juara Resmi
+                    </h3>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {champions.map((champ) => {
+                            const medalTone = champ.rank === 1 ? 'border-yellow-400 bg-yellow-50/80 text-yellow-950' : champ.rank === 2 ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-amber-400 bg-amber-50/70 text-amber-950';
+                            return (
+                                <div
+                                    key={champ.id}
+                                    className={`relative overflow-hidden rounded-xl border p-3.5 transition-all ${champ.is_own
+                                            ? 'border-2 border-amber-400 bg-amber-100/90 text-amber-950 shadow-md ring-2 ring-amber-300/50'
+                                            : medalTone
+                                        }`}
+                                >
+                                    {champ.is_own && (
+                                        <div className="absolute right-2 top-2 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-950 shadow-xs">
+                                            Kontingen Anda
+                                        </div>
+                                    )}
+                                    <p className="text-[10px] font-black uppercase tracking-wide text-amber-700">
+                                        {champ.rank_label}
+                                    </p>
+                                    <h4 className="mt-1 font-black text-sm text-slate-900 dark:text-white">
+                                        {champ.athlete_name}
+                                    </h4>
+                                    <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 font-semibold">
+                                        {champ.contingent_name}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* Matches / Participants list */}
+            {selectedCategory?.type === 'embu' ? (
+                <div className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="border-b border-[#eee8e0] px-5 py-3.5 dark:border-slate-800">
+                        <h3 className="text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                            Daftar Penampilan & Nilai Peserta Embu ({matches.length} Peserta)
+                        </h3>
+                    </div>
+                    {matches.length ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[750px] text-left text-xs">
+                                <thead className="bg-[#f8f5f1] text-[10px] uppercase tracking-[0.08em] text-[#7e766e] dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        <th className="px-4 py-3">Giliran</th>
+                                        <th className="px-4 py-3">Babak / Pool</th>
+                                        <th className="px-4 py-3">Nama Atlet / Tim</th>
+                                        <th className="px-4 py-3">Kontingen</th>
+                                        <th className="px-4 py-3">Arena</th>
+                                        <th className="px-4 py-3 text-center">Skor Tengah</th>
+                                        <th className="px-4 py-3 text-center">Denda</th>
+                                        <th className="px-4 py-3 text-center">Nilai Akhir</th>
+                                        <th className="px-4 py-3 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#eee8e0] dark:divide-slate-800">
+                                    {matches.map((m) => (
+                                        <tr
+                                            key={m.id}
+                                            className={`transition-colors ${m.is_own
+                                                    ? 'bg-amber-100/90 font-bold text-amber-950 dark:bg-amber-950/50 dark:text-amber-100 hover:bg-amber-200/90'
+                                                    : 'hover:bg-[#fcfaf7] dark:hover:bg-slate-800/40 text-[#2c2621] dark:text-slate-200'
+                                                }`}
+                                        >
+                                            <td className="px-4 py-3 font-mono font-black">
+                                                #{m.sequence || '-'}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {m.round_label} {m.pool ? `(Pool ${m.pool})` : ''}
+                                            </td>
+                                            <td className="px-4 py-3 font-extrabold">
+                                                {m.participant_label}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <span>{m.contingent_name}</span>
+                                                    {m.is_own && (
+                                                        <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-950 shadow-xs">
+                                                            Kontingen Anda
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-[#766e67] dark:text-slate-400">
+                                                {m.court}
+                                            </td>
+                                            <td className="px-4 py-3 text-center font-mono font-semibold">
+                                                {m.middle_score !== null && m.middle_score !== undefined ? Number(m.middle_score).toFixed(2) : '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-center font-mono font-semibold">
+                                                {m.total_penalty !== null && m.total_penalty !== undefined ? (
+                                                    <span className={Number(m.total_penalty) > 0 ? 'text-red-600' : 'text-slate-600 dark:text-slate-300'}>
+                                                        {Number(m.total_penalty).toFixed(2)}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[#817970] dark:text-slate-400">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {m.final_score !== null && m.final_score !== undefined ? (
+                                                    <span className={`font-mono text-sm font-black ${m.is_own ? 'text-[#854d0e] dark:text-amber-300' : 'text-[#b17c13] dark:text-amber-400'}`}>
+                                                        {Number(m.final_score).toFixed(2)}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-[#817970] dark:text-slate-400">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${m.status === 'completed'
+                                                        ? 'bg-emerald-100 text-emerald-800'
+                                                        : m.status === 'in_progress'
+                                                            ? 'bg-amber-200 text-amber-900'
+                                                            : m.status === 'ready'
+                                                                ? 'bg-blue-100 text-blue-800'
+                                                                : 'bg-stone-100 text-stone-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                    {m.status_label}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-xs text-[#817970] dark:text-slate-400">
+                            Bagan atau jadwal pertandingan Embu belum dibuat untuk nomor ini.
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="space-y-6">
+                    {/* Interactive Tournament Bracket Tree */}
+                    {matches && matches.length > 0 && (
+                        <div className="overflow-hidden rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                            <RandoriBracketTree
+                                matches={matches}
+                                activeEvent={activeEvent}
+                                categoryName={selectedCategory?.name || ''}
+                                categoryFormat={selectedCategory?.format || 'single_elimination'}
+                                highlightContingentId={myContingent?.id}
+                                highlightContingentName={myContingent?.name}
+                                highlightEntryIds={highlightEntryIds}
+                                highlightAthleteNames={highlightAthleteNames}
+                            />
+                        </div>
+                    )}
+
+                    {/* Match Cards List */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-[#817970] dark:text-slate-400">
+                                Daftar Partai Tanding Randori ({matches.length} Partai)
+                            </h3>
+                        </div>
+                        {matches.length ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {matches.map((m) => (
+                                    <div
+                                        key={m.id}
+                                        className={`overflow-hidden rounded-2xl border p-4 transition-all ${m.is_involving_own
+                                                ? 'border-2 border-amber-400/90 bg-amber-50/50 dark:border-amber-500/70 dark:bg-amber-950/20 shadow-sm'
+                                                : 'border-[#e6dfd6] bg-white dark:border-slate-800 dark:bg-slate-900'
+                                            }`}
+                                    >
+                                        <div className="mb-3 flex items-center justify-between text-[11px]">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono font-black text-amber-700 dark:text-amber-400">
+                                                    Partai #{m.sequence || '-'}
+                                                </span>
+                                                <span className="text-[#817970] dark:text-slate-400">· {m.round_label}</span>
+                                                <span className="text-[#817970] dark:text-slate-400">· {m.court}</span>
+                                            </div>
+                                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${m.status === 'completed'
+                                                    ? 'bg-emerald-100 text-emerald-800'
+                                                    : m.status === 'in_progress'
+                                                        ? 'bg-amber-200 text-amber-900'
+                                                        : 'bg-stone-100 text-stone-600 dark:bg-slate-800 dark:text-slate-400'
+                                                }`}>
+                                                {m.status_label}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs">
+                                            {/* AKA */}
+                                            <div className={`rounded-xl border p-2.5 ${m.red?.is_own
+                                                    ? 'border-2 border-amber-400 bg-amber-100/90 text-amber-950 font-bold dark:bg-amber-950/60 dark:text-amber-100'
+                                                    : 'border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20'
+                                                }`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-black uppercase text-red-600">AKA</span>
+                                                    {m.red?.is_own && (
+                                                        <span className="rounded bg-amber-400 px-1 py-0.2 text-[8px] font-black uppercase text-slate-950">
+                                                            Anda
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-1 font-bold text-slate-900 dark:text-white truncate">
+                                                    {m.red?.athlete_name || m.aka_label}
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                                    {m.red?.contingent_name || m.aka_contingent}
+                                                </p>
+                                                <p className="mt-1 font-mono text-xl font-black text-red-600">
+                                                    {m.red?.score ?? (m.score?.aka_total ?? '-')}
+                                                </p>
+                                            </div>
+
+                                            <span className="px-1 text-center font-black text-[#aaa29a]">VS</span>
+
+                                            {/* SHIRO */}
+                                            <div className={`rounded-xl border p-2.5 ${m.blue?.is_own
+                                                    ? 'border-2 border-amber-400 bg-amber-100/90 text-amber-950 font-bold dark:bg-amber-950/60 dark:text-amber-100'
+                                                    : 'border-blue-200 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/20'
+                                                }`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-black uppercase text-blue-600">SHIRO</span>
+                                                    {m.blue?.is_own && (
+                                                        <span className="rounded bg-amber-400 px-1 py-0.2 text-[8px] font-black uppercase text-slate-950">
+                                                            Anda
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-1 font-bold text-slate-900 dark:text-white truncate">
+                                                    {m.blue?.athlete_name || m.shiro_label}
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                                    {m.blue?.contingent_name || m.shiro_contingent}
+                                                </p>
+                                                <p className="mt-1 font-mono text-xl font-black text-blue-600">
+                                                    {m.blue?.score ?? (m.score?.shiro_total ?? '-')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-dashed border-[#ddd4c9] bg-white p-8 text-center text-xs text-[#817970] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                                Bagan atau jadwal pertandingan Randori belum dibuat untuk nomor ini.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 const athleteDefaults = {
@@ -735,8 +1695,37 @@ export default function ContingentPortal(props) {
             />
         ),
         results: <ResultsSection results={props.results} medalSummary={props.medal_summary} />,
-        'embu-results': <EmbuResultsSection results={props.embu_results} />,
-        'randori-results': <RandoriResultsSection results={props.randori_results} />,
+        'embu-results': (
+            <EmbuResultsSection
+                results={props.embu_results}
+                categories={props.categories}
+                activeEvent={props.portal?.event}
+            />
+        ),
+        'randori-results': (
+            <RandoriResultsSection
+                results={props.randori_results}
+                categories={props.categories}
+                selectedCategory={props.selected_category}
+                bracketMatches={props.bracket_matches}
+                myContingent={props.my_contingent}
+                highlightEntryIds={props.highlight_entry_ids}
+                highlightAthleteNames={props.highlight_athlete_names}
+                activeEvent={props.portal?.event}
+            />
+        ),
+        'category-results': (
+            <CategoryResultsSection
+                categories={props.categories}
+                selectedCategory={props.selected_category}
+                champions={props.champions}
+                matches={props.matches}
+                myContingent={props.my_contingent}
+                activeEvent={props.portal?.event}
+                highlightEntryIds={props.highlight_entry_ids}
+                highlightAthleteNames={props.highlight_athlete_names}
+            />
+        ),
         athletes: <AthletesSection athletes={props.athletes} kyus={props.kyus} />,
         officials: <OfficialsSection officials={props.officials} />,
         history: <HistorySection registrations={props.registrations} />,
@@ -752,7 +1741,7 @@ export default function ContingentPortal(props) {
                         <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#d7a93e]">{props.portal?.contingent?.name}</p><h1 className="mt-1 font-cinzel text-xl font-bold md:text-2xl">{meta[0]}</h1><p className="mt-1 max-w-2xl text-xs leading-5 text-[#bdb4ac]">{meta[1]}</p></div>
                     </div>
                 </section>
-                {['schedule', 'bracket', 'results', 'embu-results', 'randori-results'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
+                {['schedule', 'bracket', 'results', 'embu-results', 'randori-results', 'category-results'].includes(props.section) && <EventFilter portal={props.portal} section={props.section} />}
                 {content}
             </div>
         </ContingentLayout>

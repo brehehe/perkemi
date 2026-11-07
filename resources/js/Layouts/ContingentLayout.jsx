@@ -16,6 +16,7 @@ const navigation = [
         { label: 'Hasil Juara', href: '/kontingen/hasil/juara', icon: 'fa-trophy' },
         { label: 'Hasil Embu', href: '/kontingen/hasil/embu', icon: 'fa-ranking-star' },
         { label: 'Hasil Randori', href: '/kontingen/hasil/randori', icon: 'fa-hand-fist' },
+        { label: 'Laporan Nomor Pertandingan', href: '/kontingen/hasil/nomor-pertandingan', icon: 'fa-layer-group' },
     ] },
     { id: 'master', label: 'Data Kontingen', items: [
         { label: 'Atlet / Kenshi', href: '/kontingen/atlet', icon: 'fa-user-group' },

@@ -11,12 +11,12 @@ use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\Kyu;
 use App\Models\Official;
-use App\Models\RandoriScore;
 use App\Models\Registration;
 use App\Models\Rundown;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\TournamentResult;
+use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Reports\ScoreReportFormatter;
 use App\Services\TournamentDrawingGenerator;
 use Illuminate\Http\RedirectResponse;
@@ -335,54 +335,175 @@ class PortalController extends Controller
     {
         [$contingent, $event, $eventOptions] = $this->context($request);
         $entryIds = $this->entryIds($event, $contingent);
+        $embuCalculator = app(EmbuScoreCalculator::class);
 
-        $scores = EmbuScore::query()
+        $embuCategoryIds = AthleteMatchCategoryEntry::query()
             ->whereBelongsTo($event)
-            ->where('status', 'verified')
-            ->whereHas('tournamentMatch', fn ($query) => $query->whereIn('participant_entry_id', $entryIds))
+            ->whereIn('id', $entryIds)
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'embu'))
+            ->pluck('event_match_category_id')
+            ->filter()
+            ->unique();
+
+        $embuCategories = EventMatchCategory::query()
+            ->whereBelongsTo($event)
+            ->whereIn('id', $embuCategoryIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'gender'])
+            ->map(function (EventMatchCategory $cat) use ($entryIds, $event): array {
+                $count = AthleteMatchCategoryEntry::query()
+                    ->whereBelongsTo($event)
+                    ->where('event_match_category_id', $cat->id)
+                    ->whereIn('id', $entryIds)
+                    ->count();
+
+                return [
+                    'id' => $cat->id,
+                    'name' => $cat->name,
+                    'gender' => $cat->gender,
+                    'own_athletes_count' => $count,
+                ];
+            })
+            ->values();
+
+        $matches = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->whereIn('participant_entry_id', $entryIds)
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'embu'))
             ->with([
-                'verifier:id,name',
-                'tournamentMatch:id,event_id,event_match_category_id,event_court_id,participant_entry_id,participant_label,round_label,pool,match_sequence,scheduled_start_at,metadata',
-                'tournamentMatch.matchCategory:id,name,type',
-                'tournamentMatch.court:id,name',
-                'tournamentMatch.embuJudgeScores' => fn ($query) => $query
+                'court:id,name',
+                'matchCategory:id,name,type',
+                'embuScores' => fn ($query) => $query->with('verifier:id,name')->orderByDesc('tiebreak_round'),
+                'embuJudgeScores' => fn ($query) => $query
                     ->with([
                         'referee:id,name,license_number,certification_level',
                         'court:id,name',
                     ])
                     ->orderBy('judge_number'),
             ])
-            ->latest('verified_at')
-            ->get([
-                'id', 'event_id', 'tournament_match_id', 'tiebreak_round', 'judge_scores', 'duration_seconds',
-                'time_penalty', 'violation_penalties', 'violation_penalty', 'total_penalty', 'is_disqualified',
-                'disqualification_reason', 'middle_score', 'final_score', 'status', 'verified_by', 'verified_at', 'notes',
-            ])
-            ->map(function (EmbuScore $score) use ($event, $scoreFormatter): array {
+            ->orderByRaw("CASE 
+                WHEN status = 'completed' THEN 0 
+                WHEN status = 'in_progress' THEN 1 
+                WHEN status = 'ready' THEN 2 
+                ELSE 3 END")
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->get();
+
+        $scores = $matches->map(function (TournamentMatch $match) use ($event, $scoreFormatter, $embuCalculator): array {
+            $score = $match->embuScores->firstWhere('status', 'verified') ?? $match->embuScores->first();
+
+            if ($score) {
+                $score->setRelation('tournamentMatch', $match);
                 $item = $scoreFormatter->embuResult($score, $event);
+
+                $rawJudges = collect($item['judges'] ?? [])
+                    ->map(fn (array $judge): array => collect($judge)->only([
+                        'id', 'referee_name', 'judge_number', 'role_label', 'aspect_scores',
+                        'aspect_labels', 'completed_items', 'technique_subtotal',
+                        'expression_subtotal', 'total_score', 'status_label', 'is_signed',
+                    ])->all())
+                    ->values()
+                    ->all();
+
+                $trimming = $embuCalculator->calculateTrimmingAndParameters($rawJudges, (float) $score->final_score);
 
                 return [
                     ...$item,
-                    'category' => $item['category_name'],
-                    'round' => $item['round_label'],
-                    'judges' => collect($item['judges'])
-                        ->map(fn (array $judge): array => collect($judge)->only([
-                            'id', 'referee_name', 'judge_number', 'role_label', 'aspect_scores',
-                            'aspect_labels', 'completed_items', 'technique_subtotal',
-                            'expression_subtotal', 'total_score', 'status_label', 'is_signed',
-                        ])->all())
-                        ->values()
-                        ->all(),
+                    'category_id' => $match->event_match_category_id,
+                    'category' => $item['category_name'] ?? $match->matchCategory?->name,
+                    'round' => $item['round_label'] ?? $match->round_label,
+                    'athlete_name' => $item['participant'] ?? $match->participant_label,
+                    'judges' => $trimming['judges'],
+                    'trimmed_min_judge' => $trimming['trimmed_min_judge'],
+                    'trimmed_max_judge' => $trimming['trimmed_max_judge'],
+                    'middle_judge_numbers' => $trimming['middle_judge_numbers'],
+                    'middle_judges_label' => $trimming['middle_judges_label'],
+                    'status' => $score->status,
+                    'status_label' => $score->status === 'verified' ? 'Selesai & Diverifikasi' : 'Menunggu Verifikasi',
+                    'is_verified' => $score->status === 'verified',
                     'verified_at' => $score->verified_at?->toIso8601String(),
-                    'print_url' => route('kontingen.hasil.embu.print', [
+                    'print_url' => $score->status === 'verified' ? route('kontingen.hasil.embu.print', [
                         'embuScore' => $score->id,
                         'event_id' => $event->id,
-                    ], false),
+                    ], false) : null,
                 ];
-            });
+            }
+
+            return [
+                'id' => $match->id,
+                'category_id' => $match->event_match_category_id,
+                'category' => $match->matchCategory?->name,
+                'category_name' => $match->matchCategory?->name,
+                'round' => $match->round_label,
+                'round_label' => $match->round_label,
+                'sequence' => $match->match_sequence,
+                'court' => $match->court?->name ?? 'Belum Ditentukan',
+                'athlete_name' => $match->participant_label ?: 'Atlet Kontingen',
+                'final_score' => null,
+                'middle_score' => null,
+                'total_penalty' => null,
+                'time_penalty' => null,
+                'violation_penalty' => null,
+                'duration_seconds' => 0,
+                'duration' => '-',
+                'judge_scores' => [],
+                'judges' => [],
+                'status' => $match->status,
+                'status_label' => match ($match->status) {
+                    'in_progress' => 'Sedang Tanding',
+                    'ready' => 'Siap Tanding',
+                    default => 'Belum Tanding',
+                },
+                'is_verified' => false,
+                'verified_at' => null,
+                'print_url' => null,
+            ];
+        });
+
+        // Sertakan entry yang belum digenerate bagan/partainya jika ada
+        $matchedEntryIds = $matches->pluck('participant_entry_id')->filter();
+        $unmatchedEntries = AthleteMatchCategoryEntry::query()
+            ->whereBelongsTo($event)
+            ->whereIn('id', $entryIds)
+            ->whereNotIn('id', $matchedEntryIds)
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'embu'))
+            ->with(['matchCategory:id,name,type', 'athlete:id,name'])
+            ->get();
+
+        $unmatchedScores = $unmatchedEntries->map(function (AthleteMatchCategoryEntry $entry): array {
+            return [
+                'id' => $entry->id,
+                'category_id' => $entry->event_match_category_id,
+                'category' => $entry->matchCategory?->name,
+                'category_name' => $entry->matchCategory?->name,
+                'round' => 'Menunggu Bagan',
+                'round_label' => 'Menunggu Bagan',
+                'sequence' => '-',
+                'court' => '-',
+                'athlete_name' => $entry->athlete?->name ?? 'Atlet Kontingen',
+                'final_score' => null,
+                'middle_score' => null,
+                'total_penalty' => null,
+                'time_penalty' => null,
+                'violation_penalty' => null,
+                'duration_seconds' => 0,
+                'duration' => '-',
+                'judge_scores' => [],
+                'judges' => [],
+                'status' => 'pending',
+                'status_label' => 'Bagan Belum Rilis',
+                'is_verified' => false,
+                'verified_at' => null,
+                'print_url' => null,
+            ];
+        });
+
+        $allEmbuResults = $scores->concat($unmatchedScores)->values();
 
         return $this->render('embu-results', $contingent, $event, $eventOptions, [
-            'embu_results' => $scores,
+            'embu_results' => $allEmbuResults,
+            'categories' => $embuCategories,
         ]);
     }
 
@@ -421,47 +542,440 @@ class PortalController extends Controller
         [$contingent, $event, $eventOptions] = $this->context($request);
         $entryIds = $this->entryIds($event, $contingent);
 
-        $scores = RandoriScore::query()
+        $myRandoriEntries = AthleteMatchCategoryEntry::query()
             ->whereBelongsTo($event)
-            ->where('status', 'verified')
-            ->whereHas('tournamentMatch', fn ($query) => $query->where(function ($matchQuery) use ($entryIds): void {
+            ->whereIn('id', $entryIds)
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'randori'))
+            ->with(['athlete:id,name,contingent_id', 'matchCategory:id,name,type,gender,preferred_bracket_type'])
+            ->get();
+
+        $myCategoryIds = $myRandoriEntries->pluck('event_match_category_id')->filter()->unique()->values();
+
+        $categories = EventMatchCategory::query()
+            ->whereBelongsTo($event)
+            ->where('type', 'randori')
+            ->whereIn('id', $myCategoryIds)
+            ->orderBy('name')
+            ->get(['id', 'event_id', 'name', 'type', 'gender', 'preferred_bracket_type'])
+            ->map(function (EventMatchCategory $cat) use ($myRandoriEntries): array {
+                return [
+                    'id' => $cat->id,
+                    'name' => $cat->name,
+                    'gender' => $cat->gender,
+                    'own_athletes_count' => $myRandoriEntries->where('event_match_category_id', $cat->id)->count(),
+                ];
+            })
+            ->values();
+
+        $requestedCategoryId = $request->string('category_id')->toString();
+        $selectedCategoryId = $categories->firstWhere('id', $requestedCategoryId)['id'] ?? $categories->first()['id'] ?? null;
+        $selectedCategory = $selectedCategoryId ? EventMatchCategory::find($selectedCategoryId) : null;
+
+        $bracketMatches = collect();
+        $format = 'single_elimination';
+
+        if ($selectedCategory) {
+            $drawing = TournamentDrawing::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $selectedCategory->id)
+                ->with([
+                    'matches' => fn ($query) => $query->orderBy('bracket_position')->orderBy('match_sequence'),
+                    'matches.court:id,name',
+                    'matches.rundown:id,name',
+                    'matches.randoriScore',
+                    'matches.redEntry.athlete.contingent:id,name',
+                    'matches.blueEntry.athlete.contingent:id,name',
+                ])
+                ->first();
+
+            if ($drawing) {
+                $format = $drawing->bracket_type ?? $selectedCategory->preferred_bracket_type ?? 'single_elimination';
+                $bracketMatches = $drawing->matches->map(function (TournamentMatch $match) use ($contingent, $entryIds): array {
+                    $akaContingent = $match->metadata['red']['contingent_name']
+                        ?? $match->metadata['red']['city']
+                        ?? $match->redEntry?->athlete?->contingent?->name;
+                    $shiroContingent = $match->metadata['blue']['contingent_name']
+                        ?? $match->metadata['blue']['city']
+                        ?? $match->blueEntry?->athlete?->contingent?->name;
+
+                    $isRedOwn = ($match->red_entry_id && $entryIds->contains($match->red_entry_id))
+                        || ($match->redEntry?->athlete?->contingent_id === $contingent->id)
+                        || (($match->metadata['red']['contingent_id'] ?? null) === $contingent->id);
+
+                    $isBlueOwn = ($match->blue_entry_id && $entryIds->contains($match->blue_entry_id))
+                        || ($match->blueEntry?->athlete?->contingent_id === $contingent->id)
+                        || (($match->metadata['blue']['contingent_id'] ?? null) === $contingent->id);
+
+                    return [
+                        'id' => $match->id,
+                        'phase' => $match->phase,
+                        'round_label' => $match->round_label,
+                        'pool' => $match->pool,
+                        'sequence' => $match->match_sequence,
+                        'match_sequence' => $match->match_sequence,
+                        'position' => $match->bracket_position,
+                        'bracket_position' => $match->bracket_position,
+                        'red_label' => $match->red_label ?: ($match->redEntry?->athlete?->name ?? 'AKA'),
+                        'blue_label' => $match->blue_label ?: ($match->blueEntry?->athlete?->name ?? 'SHIRO'),
+                        'aka_label' => $match->red_label ?: ($match->redEntry?->athlete?->name ?? 'AKA'),
+                        'shiro_label' => $match->blue_label ?: ($match->blueEntry?->athlete?->name ?? 'SHIRO'),
+                        'red_entry_id' => $match->red_entry_id ?? ($match->metadata['red']['entry_id'] ?? null),
+                        'blue_entry_id' => $match->blue_entry_id ?? ($match->metadata['blue']['entry_id'] ?? null),
+                        'aka_contingent' => $akaContingent,
+                        'shiro_contingent' => $shiroContingent,
+                        'red_contingent' => $akaContingent,
+                        'blue_contingent' => $shiroContingent,
+                        'is_involving_own' => $isRedOwn || $isBlueOwn,
+                        'is_bye' => (bool) $match->is_bye,
+                        'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                        'status' => $match->status,
+                        'court' => $match->court?->name ?? 'Belum Ditentukan',
+                        'metadata' => $match->metadata,
+                        'score' => $match->randoriScore ? [
+                            'winner_corner' => $match->randoriScore->winner_corner,
+                            'aka_total' => $match->randoriScore->aka_total,
+                            'shiro_total' => $match->randoriScore->shiro_total,
+                            'is_locked' => $match->randoriScore->locked_at !== null,
+                        ] : null,
+                    ];
+                })->values();
+            }
+        }
+
+        $matches = TournamentMatch::query()
+            ->whereBelongsTo($event)
+            ->where(function ($matchQuery) use ($entryIds): void {
                 $matchQuery->whereIn('red_entry_id', $entryIds)
                     ->orWhereIn('blue_entry_id', $entryIds);
-            }))
+            })
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'randori'))
             ->with([
-                'tournamentMatch:id,event_match_category_id,event_court_id,red_entry_id,blue_entry_id,red_label,blue_label,round_label,match_sequence,scheduled_start_at',
-                'tournamentMatch.matchCategory:id,name,type',
-                'tournamentMatch.court:id,name',
+                'matchCategory:id,name,type',
+                'court:id,name',
+                'randoriScore',
+                'redEntry.athlete:id,name',
+                'blueEntry.athlete:id,name',
             ])
-            ->latest('verified_at')
-            ->get([
-                'id', 'event_id', 'tournament_match_id', 'aka_total', 'shiro_total',
-                'winner_corner', 'signatures', 'status', 'verified_at',
-            ])
-            ->map(function (RandoriScore $score) use ($entryIds): array {
-                $match = $score->tournamentMatch;
-                $ownCorner = $match && $entryIds->contains($match->red_entry_id) ? 'aka' : 'shiro';
+            ->orderByRaw("CASE 
+                WHEN status = 'completed' THEN 0 
+                WHEN status = 'in_progress' THEN 1 
+                WHEN status = 'ready' THEN 2 
+                ELSE 3 END")
+            ->orderBy('scheduled_start_at')
+            ->orderBy('match_sequence')
+            ->get();
 
-                return [
-                    'id' => $score->id,
-                    'category' => $match?->matchCategory?->name,
-                    'round' => $match?->round_label,
-                    'sequence' => $match?->match_sequence,
-                    'court' => $match?->court?->name,
-                    'aka_label' => $match?->red_label,
-                    'shiro_label' => $match?->blue_label,
-                    'aka_total' => (int) $score->aka_total,
-                    'shiro_total' => (int) $score->shiro_total,
-                    'winner_corner' => $score->winner_corner,
-                    'own_corner' => $ownCorner,
-                    'is_winner' => $score->winner_corner === $ownCorner,
-                    'signatures_count' => collect($score->signatures ?? [])->filter()->count(),
-                    'verified_at' => $score->verified_at?->toIso8601String(),
-                ];
-            });
+        $scores = $matches->map(function (TournamentMatch $match) use ($entryIds): array {
+            $score = $match->randoriScore;
+            $ownCorner = $entryIds->contains($match->red_entry_id) ? 'aka' : 'shiro';
+            $isVerified = $score && $score->status === 'verified';
+
+            return [
+                'id' => $score?->id ?? $match->id,
+                'match_id' => $match->id,
+                'category_id' => $match->event_match_category_id,
+                'category' => $match->matchCategory?->name,
+                'round' => $match->round_label,
+                'sequence' => $match->match_sequence,
+                'court' => $match->court?->name ?? 'Belum Ditentukan',
+                'aka_label' => $match->red_label ?: ($match->redEntry?->athlete?->name ?? 'AKA'),
+                'shiro_label' => $match->blue_label ?: ($match->blueEntry?->athlete?->name ?? 'SHIRO'),
+                'aka_total' => $isVerified ? (int) $score->aka_total : '-',
+                'shiro_total' => $isVerified ? (int) $score->shiro_total : '-',
+                'winner_corner' => $isVerified ? $score->winner_corner : null,
+                'own_corner' => $ownCorner,
+                'is_winner' => $isVerified && $score->winner_corner === $ownCorner,
+                'is_played' => $isVerified,
+                'signatures_count' => $score ? collect($score->signatures ?? [])->filter()->count() : 0,
+                'status' => $match->status,
+                'status_label' => $isVerified
+                    ? ($score->winner_corner === $ownCorner ? 'MENANG' : ($score->winner_corner ? 'KALAH' : 'SELESAI'))
+                    : match ($match->status) {
+                        'in_progress' => 'Sedang Berlangsung',
+                        'ready' => 'Siap Tanding',
+                        default => 'Belum Tanding',
+                    },
+                'verified_at' => $score?->verified_at?->toIso8601String(),
+            ];
+        });
+
+        // Entry randori yang belum digenerate bagan/partainya
+        $matchedRedBlueIds = $matches->pluck('red_entry_id')->merge($matches->pluck('blue_entry_id'))->filter();
+        $unmatchedRandoriEntries = AthleteMatchCategoryEntry::query()
+            ->whereBelongsTo($event)
+            ->whereIn('id', $entryIds)
+            ->whereNotIn('id', $matchedRedBlueIds)
+            ->whereHas('matchCategory', fn ($query) => $query->where('type', 'randori'))
+            ->with(['matchCategory:id,name,type', 'athlete:id,name'])
+            ->get();
+
+        $unmatchedScores = $unmatchedRandoriEntries->map(function (AthleteMatchCategoryEntry $entry): array {
+            return [
+                'id' => $entry->id,
+                'match_id' => null,
+                'category_id' => $entry->event_match_category_id,
+                'category' => $entry->matchCategory?->name,
+                'round' => 'Menunggu Bagan',
+                'sequence' => '-',
+                'court' => '-',
+                'aka_label' => $entry->athlete?->name ?? 'Atlet Kontingen',
+                'shiro_label' => 'Menunggu Lawan',
+                'aka_total' => '-',
+                'shiro_total' => '-',
+                'winner_corner' => null,
+                'own_corner' => 'aka',
+                'is_winner' => false,
+                'is_played' => false,
+                'status' => 'pending',
+                'status_label' => 'Bagan Belum Rilis',
+                'signatures_count' => 0,
+                'verified_at' => null,
+            ];
+        });
+
+        $allRandoriResults = $scores->concat($unmatchedScores)->values();
 
         return $this->render('randori-results', $contingent, $event, $eventOptions, [
-            'randori_results' => $scores,
+            'randori_results' => $allRandoriResults,
+            'categories' => $categories,
+            'selected_category' => $selectedCategory ? [
+                'id' => $selectedCategory->id,
+                'name' => $selectedCategory->name,
+                'gender' => $selectedCategory->gender,
+                'format' => $format,
+            ] : null,
+            'bracket_matches' => $bracketMatches,
+            'my_contingent' => [
+                'id' => $contingent->id,
+                'name' => $contingent->name,
+            ],
+            'highlight_entry_ids' => $entryIds->values()->all(),
+            'highlight_athlete_names' => $myRandoriEntries->pluck('athlete.name')->filter()->unique()->values()->all(),
+        ]);
+    }
+
+    public function categoryResults(Request $request): Response
+    {
+        [$contingent, $event, $eventOptions] = $this->context($request);
+        $entryIds = $this->entryIds($event, $contingent);
+
+        $myEntries = AthleteMatchCategoryEntry::query()
+            ->whereBelongsTo($event)
+            ->whereIn('id', $entryIds)
+            ->with(['athlete:id,name,contingent_id', 'matchCategory:id,name,type,gender'])
+            ->get();
+
+        $myCategoryIds = $myEntries->pluck('event_match_category_id')->filter()->unique()->values();
+
+        $categories = EventMatchCategory::query()
+            ->whereBelongsTo($event)
+            ->whereIn('id', $myCategoryIds)
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get(['id', 'event_id', 'name', 'type', 'gender', 'capacity']);
+
+        $categoryOptions = $categories->map(function (EventMatchCategory $cat) use ($myEntries): array {
+            $ownCount = $myEntries->where('event_match_category_id', $cat->id)->count();
+
+            return [
+                'id' => $cat->id,
+                'name' => $cat->name,
+                'type' => $cat->type,
+                'gender' => $cat->gender,
+                'own_athletes_count' => $ownCount,
+            ];
+        })->values();
+
+        $requestedCategoryId = $request->string('category_id')->toString();
+        $selectedCategoryId = $myCategoryIds->contains($requestedCategoryId)
+            ? $requestedCategoryId
+            : $myCategoryIds->first();
+
+        $selectedCategory = $categories->firstWhere('id', $selectedCategoryId);
+
+        $champions = collect();
+        $matches = collect();
+
+        if ($selectedCategory) {
+            $champions = TournamentResult::query()
+                ->whereBelongsTo($event)
+                ->where('event_match_category_id', $selectedCategory->id)
+                ->with(['contingent:id,name', 'athlete:id,name'])
+                ->orderBy('rank')
+                ->get()
+                ->map(function (TournamentResult $res) use ($contingent): array {
+                    return [
+                        'id' => $res->id,
+                        'rank' => (int) $res->rank->value,
+                        'rank_label' => $res->rank->label(),
+                        'contingent_id' => $res->contingent_id,
+                        'contingent_name' => $res->contingent?->name ?? $res->contingent_name ?? '—',
+                        'athlete_name' => $res->athlete?->name ?? $res->participant_key ?? '—',
+                        'is_own' => $res->contingent_id === $contingent->id,
+                    ];
+                });
+
+            if ($selectedCategory->type === 'embu') {
+                $matches = TournamentMatch::query()
+                    ->whereBelongsTo($event)
+                    ->where('event_match_category_id', $selectedCategory->id)
+                    ->with([
+                        'court:id,name',
+                        'embuScores' => fn ($query) => $query->orderByDesc('tiebreak_round'),
+                        'participantEntry.athlete.contingent:id,name',
+                    ])
+                    ->orderBy('round_label')
+                    ->orderBy('pool')
+                    ->orderBy('match_sequence')
+                    ->get()
+                    ->map(function (TournamentMatch $match) use ($contingent, $entryIds): array {
+                        $embuScore = $match->embuScores->first();
+                        $isVerified = $embuScore?->status === 'verified';
+                        $participantContingent = $match->metadata['contingent_name']
+                            ?? $match->participantEntry?->athlete?->contingent?->name
+                            ?? '—';
+                        $isOwn = $entryIds->contains($match->participant_entry_id)
+                            || ($match->participantEntry?->athlete?->contingent_id === $contingent->id)
+                            || (($match->metadata['contingent_id'] ?? null) === $contingent->id);
+
+                        return [
+                            'id' => $match->id,
+                            'sequence' => $match->match_sequence,
+                            'round_label' => $match->round_label,
+                            'pool' => $match->pool,
+                            'court' => $match->court?->name ?? 'Belum Ditentukan',
+                            'participant_label' => $match->participant_label ?: ($match->participantEntry?->athlete?->name ?? '—'),
+                            'contingent_name' => $participantContingent,
+                            'is_own' => $isOwn,
+                            'final_score' => $isVerified ? (float) $embuScore->final_score : ($embuScore?->final_score ? (float) $embuScore->final_score : null),
+                            'middle_score' => $isVerified ? (float) $embuScore->middle_score : null,
+                            'total_penalty' => $isVerified ? $embuScore->effectiveTotalPenalty() : null,
+                            'duration_seconds' => $isVerified ? $embuScore->duration_seconds : null,
+                            'status' => $match->status,
+                            'status_label' => match ($match->status) {
+                                'completed' => $isVerified ? 'Selesai' : 'Menunggu Verifikasi',
+                                'in_progress' => 'Sedang Tanding',
+                                'ready' => 'Siap Tanding',
+                                default => 'Belum Tanding',
+                            },
+                        ];
+                    });
+            } else {
+                $drawing = TournamentDrawing::query()
+                    ->whereBelongsTo($event)
+                    ->where('event_match_category_id', $selectedCategory->id)
+                    ->first();
+                $format = $drawing?->bracket_type ?? $selectedCategory->preferred_bracket_type ?? 'single_elimination';
+
+                $matches = TournamentMatch::query()
+                    ->whereBelongsTo($event)
+                    ->where('event_match_category_id', $selectedCategory->id)
+                    ->with([
+                        'court:id,name',
+                        'randoriScore',
+                        'redEntry.athlete.contingent:id,name',
+                        'blueEntry.athlete.contingent:id,name',
+                    ])
+                    ->orderBy('bracket_position')
+                    ->orderBy('match_sequence')
+                    ->get()
+                    ->map(function (TournamentMatch $match) use ($contingent, $entryIds): array {
+                        $score = $match->randoriScore;
+                        $isVerified = $score && $score->status === 'verified';
+
+                        $redContingent = $match->metadata['red']['contingent_name']
+                            ?? $match->metadata['red']['city']
+                            ?? $match->redEntry?->athlete?->contingent?->name
+                            ?? '—';
+                        $isRedOwn = ($match->red_entry_id && $entryIds->contains($match->red_entry_id))
+                            || ($match->redEntry?->athlete?->contingent_id === $contingent->id)
+                            || (($match->metadata['red']['contingent_id'] ?? null) === $contingent->id);
+
+                        $blueContingent = $match->metadata['blue']['contingent_name']
+                            ?? $match->metadata['blue']['city']
+                            ?? $match->blueEntry?->athlete?->contingent?->name
+                            ?? '—';
+                        $isBlueOwn = ($match->blue_entry_id && $entryIds->contains($match->blue_entry_id))
+                            || ($match->blueEntry?->athlete?->contingent_id === $contingent->id)
+                            || (($match->metadata['blue']['contingent_id'] ?? null) === $contingent->id);
+
+                        $redLabel = $match->red_label ?: ($match->redEntry?->athlete?->name ?? 'AKA');
+                        $blueLabel = $match->blue_label ?: ($match->blueEntry?->athlete?->name ?? 'SHIRO');
+
+                        return [
+                            'id' => $match->id,
+                            'phase' => $match->phase,
+                            'round_label' => $match->round_label,
+                            'pool' => $match->pool,
+                            'sequence' => $match->match_sequence,
+                            'match_sequence' => $match->match_sequence,
+                            'position' => $match->bracket_position,
+                            'bracket_position' => $match->bracket_position,
+                            'red_label' => $redLabel,
+                            'blue_label' => $blueLabel,
+                            'aka_label' => $redLabel,
+                            'shiro_label' => $blueLabel,
+                            'red_entry_id' => $match->red_entry_id ?? ($match->metadata['red']['entry_id'] ?? null),
+                            'blue_entry_id' => $match->blue_entry_id ?? ($match->metadata['blue']['entry_id'] ?? null),
+                            'aka_contingent' => $redContingent,
+                            'shiro_contingent' => $blueContingent,
+                            'red_contingent' => $redContingent,
+                            'blue_contingent' => $blueContingent,
+                            'aka_contingent_id' => $match->redEntry?->athlete?->contingent_id ?? ($match->metadata['red']['contingent_id'] ?? null),
+                            'shiro_contingent_id' => $match->blueEntry?->athlete?->contingent_id ?? ($match->metadata['blue']['contingent_id'] ?? null),
+                            'court' => $match->court?->name ?? 'Belum Ditentukan',
+                            'is_involving_own' => $isRedOwn || $isBlueOwn,
+                            'is_bye' => (bool) $match->is_bye,
+                            'is_ready' => ! ($match->metadata['placeholder'] ?? false),
+                            'status' => $match->status,
+                            'status_label' => match ($match->status) {
+                                'completed' => 'Selesai',
+                                'in_progress' => 'Sedang Tanding',
+                                'ready' => 'Siap Tanding',
+                                default => 'Belum Tanding',
+                            },
+                            'metadata' => $match->metadata,
+                            'score' => $score ? [
+                                'winner_corner' => $score->winner_corner,
+                                'aka_total' => $score->aka_total,
+                                'shiro_total' => $score->shiro_total,
+                                'is_locked' => $score->locked_at !== null,
+                            ] : null,
+                            'red' => [
+                                'athlete_name' => $redLabel,
+                                'contingent_name' => $redContingent,
+                                'is_own' => $isRedOwn,
+                                'score' => $isVerified ? (int) $score->aka_total : '-',
+                            ],
+                            'blue' => [
+                                'athlete_name' => $blueLabel,
+                                'contingent_name' => $blueContingent,
+                                'is_own' => $isBlueOwn,
+                                'score' => $isVerified ? (int) $score->shiro_total : '-',
+                            ],
+                            'winner_corner' => $isVerified ? $score->winner_corner : null,
+                        ];
+                    });
+            }
+        }
+
+        return $this->render('category-results', $contingent, $event, $eventOptions, [
+            'categories' => $categoryOptions,
+            'selected_category' => $selectedCategory ? [
+                'id' => $selectedCategory->id,
+                'name' => $selectedCategory->name,
+                'type' => $selectedCategory->type,
+                'gender' => $selectedCategory->gender,
+                'format' => $format ?? 'single_elimination',
+            ] : null,
+            'champions' => $champions,
+            'matches' => $matches,
+            'my_contingent' => [
+                'id' => $contingent->id,
+                'name' => $contingent->name,
+            ],
+            'highlight_entry_ids' => $entryIds->values()->all(),
+            'highlight_athlete_names' => $myEntries->pluck('athlete.name')->filter()->unique()->values()->all(),
         ]);
     }
 

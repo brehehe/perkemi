@@ -354,7 +354,10 @@ test('contingent has separate embu and randori reports limited to its own partic
         ->assertInertia(fn (Assert $page) => $page
             ->component('Contingent/Portal')
             ->where('section', 'embu-results')
+            ->has('categories', 1)
+            ->where('categories.0.name', 'Embu Tandoku Putra')
             ->has('embu_results', 1)
+            ->where('embu_results.0.category_id', $embuCategory->id)
             ->where('embu_results.0.final_score', 245)
             ->has('embu_results.0.judges', 1)
             ->where('embu_results.0.judges.0.aspect_labels.goho_attack', 'GOHO 1 · Serangan (Kougeki)')
@@ -710,4 +713,165 @@ test('contingent randori bracket prioritizes entered categories over others', fu
             ->component('Contingent/Portal')
             ->where('section', 'bracket')
             ->where('selected_category.id', $catOther->id));
+});
+
+test('contingent embu and randori reports include both played and unplayed matches', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('Event Uji Hasil Lengkap', 'event-uji-hasil-lengkap', true);
+    $contingent = portalContingent($owner, $event, 'Kontingen Pelajar');
+
+    $athlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Tanding',
+        'gender' => 'male',
+        'kyu_dan' => '1 Kyu',
+    ]);
+
+    $embuCat = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Embu Tandoku Remaja',
+        'type' => 'embu',
+        'gender' => 'male',
+    ]);
+    $embuEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $athlete->id,
+        'event_match_category_id' => $embuCat->id,
+    ]);
+    $embuDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCat->id,
+        'bracket_type' => 'embu_direct_final',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCat->id,
+        'participant_entry_id' => $embuEntry->id,
+        'participant_label' => 'Kenshi Tanding',
+        'status' => 'ready',
+        'match_sequence' => 1,
+    ]);
+
+    $randoriCat = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Remaja 50 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+    ]);
+    $randoriEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $athlete->id,
+        'event_match_category_id' => $randoriCat->id,
+    ]);
+    $randoriDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCat->id,
+        'bracket_type' => 'single_elimination',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCat->id,
+        'red_entry_id' => $randoriEntry->id,
+        'red_label' => 'Kenshi Tanding',
+        'blue_label' => 'Lawan Belum Hadir',
+        'status' => 'pending',
+        'match_sequence' => 1,
+    ]);
+
+    // Embu: unplayed match is returned with status label
+    $this->actingAs($owner)->get('/kontingen/hasil/embu?event_id='.$event->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'embu-results')
+            ->has('embu_results', 1)
+            ->where('embu_results.0.final_score', null)
+            ->where('embu_results.0.status_label', 'Siap Tanding'));
+
+    // Randori: unplayed match is returned with score '-'
+    $this->actingAs($owner)->get('/kontingen/hasil/randori?event_id='.$event->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'randori-results')
+            ->has('randori_results', 1)
+            ->where('randori_results.0.aka_total', '-')
+            ->where('randori_results.0.status_label', 'Belum Tanding'));
+});
+
+test('contingent category results report lists all matches and marks own contingent', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+    $event = portalEvent('Event Uji Laporan Nomor', 'event-uji-laporan-nomor', true);
+    $contingent = portalContingent($owner, $event, 'Dojo Rajawali');
+
+    $otherOwner = User::factory()->create();
+    $otherOwner->assignRole('kontingen');
+    $otherContingent = portalContingent($otherOwner, $event, 'Dojo Macan');
+
+    $myAthlete = Athlete::create([
+        'contingent_id' => $contingent->id,
+        'name' => 'Kenshi Rajawali',
+        'gender' => 'male',
+        'kyu_dan' => '1 Kyu',
+    ]);
+    $otherAthlete = Athlete::create([
+        'contingent_id' => $otherContingent->id,
+        'name' => 'Kenshi Macan',
+        'gender' => 'male',
+        'kyu_dan' => '1 Kyu',
+    ]);
+
+    $embuCat = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Embu Pasangan Remaja',
+        'type' => 'embu',
+        'gender' => 'male',
+    ]);
+    $myEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $myAthlete->id,
+        'event_match_category_id' => $embuCat->id,
+    ]);
+    $otherEntry = AthleteMatchCategoryEntry::create([
+        'event_id' => $event->id,
+        'athlete_id' => $otherAthlete->id,
+        'event_match_category_id' => $embuCat->id,
+    ]);
+
+    $drawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCat->id,
+        'bracket_type' => 'embu_direct_final',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCat->id,
+        'participant_entry_id' => $myEntry->id,
+        'participant_label' => 'Kenshi Rajawali',
+        'status' => 'ready',
+        'match_sequence' => 1,
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCat->id,
+        'participant_entry_id' => $otherEntry->id,
+        'participant_label' => 'Kenshi Macan',
+        'status' => 'ready',
+        'match_sequence' => 2,
+    ]);
+
+    $this->actingAs($owner)->get('/kontingen/hasil/nomor-pertandingan?event_id='.$event->id)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'category-results')
+            ->has('categories', 1)
+            ->where('categories.0.id', $embuCat->id)
+            ->where('selected_category.id', $embuCat->id)
+            ->has('matches', 2)
+            ->where('matches.0.is_own', true)
+            ->where('matches.1.is_own', false));
 });
