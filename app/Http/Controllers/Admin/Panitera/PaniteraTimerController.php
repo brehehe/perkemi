@@ -19,8 +19,9 @@ class PaniteraTimerController extends Controller
         $event = $context->eventFor($request);
         abort_unless($tournamentMatch->event_id === $event->id, 404);
         $access->ensureMatchIsAccessible($request, $event, $tournamentMatch);
+        $tournamentMatch->loadMissing('matchCategory:id,name,type');
 
-        return $state->response($request, $tournamentMatch->fresh(), $event->id, $tournamentMatch->event_court_id, $observedAt);
+        return $state->response($request, $tournamentMatch, $event->id, $tournamentMatch->event_court_id, $observedAt);
     }
 
     public function court(Request $request, EventCourt $eventCourt, EventContext $context, PaniteraCourtAccess $access, PaniteraTimerState $state): JsonResponse
@@ -34,6 +35,7 @@ class PaniteraTimerController extends Controller
             ->whereBelongsTo($eventCourt, 'court')
             ->where('is_bye', false)
             ->whereIn('status', ['ready', 'in_progress'])
+            ->with('matchCategory:id,name,type')
             ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
             ->orderByDesc('called_at')
             ->first();

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { acceptTimerState, calculateElapsedMilliseconds, createServerClock, displayedTimerSeconds } from './timerSynchronization.js';
+import {
+    acceptTimerState,
+    calculateElapsedMilliseconds,
+    createServerClock,
+    displayedTimerSeconds,
+    timerSynchronizationPollDelay,
+} from './timerSynchronization.js';
 
 const epoch = 1790000000000;
 const running = { status: 'running', started_at_ms: epoch, elapsed_ms: 0, direction: 'down', duration_ms: 120000, version: 2 };
@@ -118,4 +124,13 @@ test('returning from device sleep discards the pre-sleep clock calibration', () 
     }
     assert.equal(clock.synchronized, true);
     assert.equal(clock.now(), epoch + 60520);
+});
+
+test('timer fallback polling stays responsive without refreshing idle connected screens every second', () => {
+    assert.equal(timerSynchronizationPollDelay({ connected: true, synchronized: false, timerStatus: 'stopped' }), 300);
+    assert.equal(timerSynchronizationPollDelay({ connected: true, synchronized: true, timerStatus: 'running' }), 2000);
+    assert.equal(timerSynchronizationPollDelay({ connected: true, synchronized: true, timerStatus: 'paused' }), 5000);
+    assert.equal(timerSynchronizationPollDelay({ connected: false, synchronized: true, timerStatus: 'running' }), 1000);
+    assert.equal(timerSynchronizationPollDelay({ connected: false, synchronized: true, timerStatus: 'paused' }), 2000);
+    assert.equal(timerSynchronizationPollDelay({ connected: false, synchronized: true, timerStatus: 'running', visible: false }), 30000);
 });

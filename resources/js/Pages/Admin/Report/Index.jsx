@@ -1,17 +1,118 @@
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
+import AlertConfirm from '@/Components/UI/Feedback/AlertConfirm';
 import Combobox from '@/Components/UI/Forms/Combobox';
 import { Button } from '@/Components/UI';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router } from '@inertiajs/react';
+import { useState } from 'react';
 
 const formatValue = (value) => {
-    if (value === null || value === undefined || value === '') return '-';
+    if (value === null || value === undefined || value === '' || value === '-') return '-';
     if (typeof value === 'boolean') return value ? 'Ya' : 'Tidak';
-    if (typeof value === 'object') return JSON.stringify(value);
+    if (typeof value === 'object' && value !== null) {
+        if ('athlete_label' in value) {
+            return value.contingent ? `${value.athlete_label} (${value.contingent})` : value.athlete_label;
+        }
+        return JSON.stringify(value);
+    }
     return String(value);
 };
 
-export default function ReportIndex({ activeEvent, events = [], reportOptions = [], dataset }) {
+const renderCell = (row, column) => {
+    const value = row[column.key];
+
+    if (value === null || value === undefined || value === '' || value === '-') {
+        return <span className="text-[#9a938c] dark:text-slate-500 font-medium">-</span>;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+        if ('athlete_label' in value) {
+            return (
+                <div className="space-y-0.5 min-w-[170px]">
+                    <p className="font-extrabold text-[#17120f] dark:text-white leading-snug">
+                        {value.athlete_label || '-'}
+                    </p>
+                    {value.contingent ? (
+                        <p className="text-[11px] font-semibold text-[#8b837b] dark:text-slate-400">
+                            {value.contingent}
+                        </p>
+                    ) : null}
+                </div>
+            );
+        }
+
+        return String(JSON.stringify(value));
+    }
+
+    if (column.key === 'type') {
+        const isEmbu = String(value).toLowerCase() === 'embu';
+        return (
+            <span className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                isEmbu
+                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300'
+                    : 'bg-red-100 text-red-900 dark:bg-red-950/70 dark:text-red-300'
+            }`}>
+                <i className={`fa-solid ${isEmbu ? 'fa-ranking-star' : 'fa-hand-fist'} text-[9px]`} />
+                {value}
+            </span>
+        );
+    }
+
+    if (column.key === 'classification') {
+        const isExhibition = String(value).toLowerCase().includes('ekshibisi') && !String(value).toLowerCase().includes('non');
+        return (
+            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                isExhibition
+                    ? 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300'
+                    : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300'
+            }`}>
+                {value}
+            </span>
+        );
+    }
+
+    if (column.key === 'confirmed_at') {
+        if (value === 'Belum Dikonfirmasi' || value === '-') {
+            return <span className="text-[11px] font-medium text-[#9a938c] dark:text-slate-500">Belum Dikonfirmasi</span>;
+        }
+        return (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#3d3630] dark:text-slate-300">
+                <i className="fa-solid fa-circle-check text-emerald-600 text-[10px]" />
+                {value}
+            </span>
+        );
+    }
+
+    if (column.key === 'category') {
+        return <span className="font-bold text-[#17120f] dark:text-slate-100">{value}</span>;
+    }
+
+    if (column.key === 'status' && row.status_value) {
+        const isSubmitted = row.status_value === 'submitted';
+
+        return (
+            <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                isSubmitted
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+            }`}>
+                {value}
+            </span>
+        );
+    }
+
+    if (typeof value === 'boolean') {
+        return value ? 'Ya' : 'Tidak';
+    }
+
+    return String(value);
+};
+
+export default function ReportIndex({ activeEvent, events = [], reportOptions = [], dataset, canSubmitRefereeScores = false }) {
+    const [submittingScoreId, setSubmittingScoreId] = useState(null);
+    const [scoreToSubmit, setScoreToSubmit] = useState(null);
+    const [submissionError, setSubmissionError] = useState('');
+    const [submissionFeedback, setSubmissionFeedback] = useState('');
     const eventOptions = events.map((event) => ({
         value: event.id,
         label: event.name,
@@ -28,6 +129,28 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
 
     const exportUrl = `/admin/laporan/export?event_id=${encodeURIComponent(activeEvent.id)}&report=${encodeURIComponent(dataset.key)}`;
     const hasDetailPrint = dataset.rows.some((row) => Boolean(row.print_url));
+    const hasRefereeScoreAction = dataset.key === 'referee-scores' && canSubmitRefereeScores;
+
+    const submitRefereeScore = () => {
+        if (!scoreToSubmit || submittingScoreId) return;
+
+        setSubmissionError('');
+        setSubmissionFeedback('');
+        router.post(
+            `/admin/laporan/events/${encodeURIComponent(activeEvent.id)}/submitted-referee-scores/${encodeURIComponent(scoreToSubmit.score_id)}`,
+            {},
+            {
+                preserveScroll: true,
+                onStart: () => setSubmittingScoreId(scoreToSubmit.score_id),
+                onSuccess: () => {
+                    setScoreToSubmit(null);
+                    setSubmissionFeedback('Penilaian berhasil disimpan sebagai Sudah Dikirim.');
+                },
+                onError: (errors) => setSubmissionError(Object.values(errors).flat().join(' ') || 'Penilaian belum dapat dikirim.'),
+                onFinish: () => setSubmittingScoreId(null),
+            },
+        );
+    };
 
     return (
         <AdminLayout title="Pusat Laporan & Hasil">
@@ -127,21 +250,47 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
                         </div>
                     </div>
 
+                    {submissionFeedback ? (
+                        <div role="status" className="report-no-print border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <i className="fa-solid fa-circle-check mr-2" aria-hidden="true" />
+                            {submissionFeedback}
+                        </div>
+                    ) : null}
+
                     {dataset.rows.length > 0 ? (
                         <TableContainer className="custom-scrollbar" ariaLabel={`Tabel ${dataset.title}`}>
                             <table className="w-full min-w-max border-collapse text-left text-xs">
                                 <thead>
                                     <tr className="border-b border-[#e7dfd5] bg-[#17120f] text-white dark:border-slate-600 dark:bg-slate-950">
                                         <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider">No.</th>
-                                        {dataset.columns.map((column) => <th key={column.key} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider">{column.label}</th>)}
+                                        {dataset.columns.map((column) => (
+                                            <th key={column.key} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider">
+                                                {column.key === 'champion_1' && <i className="fa-solid fa-medal mr-1.5 text-yellow-400" />}
+                                                {column.key === 'champion_2' && <i className="fa-solid fa-medal mr-1.5 text-slate-300" />}
+                                                {(column.key === 'champion_3_a' || column.key === 'champion_3_b') && <i className="fa-solid fa-medal mr-1.5 text-amber-500" />}
+                                                {column.label}
+                                            </th>
+                                        ))}
                                         {hasDetailPrint && <th className="report-no-print px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider">Cetak</th>}
+                                        {hasRefereeScoreAction && <th className="report-no-print px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider">Aksi</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#eee8e0] dark:divide-slate-700">
                                     {dataset.rows.map((row, index) => (
-                                        <tr key={`${dataset.key}-${index}`} className="align-top odd:bg-white even:bg-[#fcfbf9] hover:bg-amber-50/50 dark:odd:bg-[#171a20] dark:even:bg-[#1b1f26] dark:hover:bg-[#272d36]">
+                                        <tr key={`${dataset.key}-${row.score_id || index}`} className="align-top odd:bg-white even:bg-[#fcfbf9] hover:bg-amber-50/50 dark:odd:bg-[#171a20] dark:even:bg-[#1b1f26] dark:hover:bg-[#272d36]">
                                             <td className="px-4 py-3 text-center font-bold text-[#9a7128] dark:text-amber-300">{index + 1}</td>
-                                            {dataset.columns.map((column) => <td key={column.key} className="max-w-sm px-4 py-3 leading-5 text-[#403a35] dark:text-slate-200">{formatValue(row[column.key])}</td>)}
+                                            {dataset.columns.map((column) => (
+                                                <td
+                                                    key={column.key}
+                                                    className={`px-4 py-3 leading-5 text-[#403a35] dark:text-slate-200 ${
+                                                        ['champion_1', 'champion_2', 'champion_3_a', 'champion_3_b'].includes(column.key)
+                                                            ? 'min-w-[170px]'
+                                                            : 'max-w-sm'
+                                                    }`}
+                                                >
+                                                    {renderCell(row, column)}
+                                                </td>
+                                            ))}
                                             {hasDetailPrint && (
                                                 <td className="report-no-print px-4 py-3 text-center">
                                                     {row.print_url ? (
@@ -158,6 +307,33 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
                                                     ) : <span className="text-[#9a938c] dark:text-slate-500">-</span>}
                                                 </td>
                                             )}
+                                            {hasRefereeScoreAction && (
+                                                <td className="report-no-print px-4 py-3 text-center">
+                                                    {row.status_value === 'submitted' ? (
+                                                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                            <i className="fa-solid fa-circle-check" aria-hidden="true" />Sudah Dikirim
+                                                        </span>
+                                                    ) : row.can_submit ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            disabled={Boolean(submittingScoreId)}
+                                                            onClick={() => {
+                                                                setSubmissionError('');
+                                                                setScoreToSubmit(row);
+                                                            }}
+                                                            className="whitespace-nowrap border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                                                        >
+                                                            <i className="fa-solid fa-paper-plane mr-2" aria-hidden="true" />Simpan ke Sudah Dikirim
+                                                        </Button>
+                                                    ) : (
+                                                        <span className="inline-block max-w-36 text-[11px] font-semibold leading-4 text-amber-700 dark:text-amber-300">
+                                                            Lengkapi 10 aspek nilai
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -172,6 +348,23 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
                     )}
                 </section>
             </div>
+
+            <AlertConfirm
+                isOpen={Boolean(scoreToSubmit)}
+                title="Simpan sebagai Sudah Dikirim?"
+                message={`${scoreToSubmit?.referee || 'Penilaian Wasit'} · ${scoreToSubmit?.category || 'Nomor pertandingan'}. Status draft akan menjadi nilai resmi yang dikirim ke Panitera.`}
+                confirmText="Ya, Simpan & Kirim"
+                variant="primary"
+                error={submissionError}
+                isLoading={Boolean(submittingScoreId)}
+                onConfirm={submitRefereeScore}
+                onCancel={() => {
+                    if (!submittingScoreId) {
+                        setScoreToSubmit(null);
+                        setSubmissionError('');
+                    }
+                }}
+            />
         </AdminLayout>
     );
 }

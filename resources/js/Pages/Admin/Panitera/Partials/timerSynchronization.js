@@ -112,3 +112,14 @@ export function nextTimerTickDelay(timer, elapsedMilliseconds) {
     const remainingInSecond = 1000 - (elapsedMilliseconds % 1000);
     return Math.max(16, remainingInSecond + 2);
 }
+
+export function timerSynchronizationPollDelay({ connected, synchronized, timerStatus, visible = true }) {
+    if (!visible) return 30000;
+    if (!synchronized) return 300;
+
+    const isRunning = timerStatus === 'running';
+
+    if (!connected) return isRunning ? 1000 : 2000;
+
+    return isRunning ? 2000 : 5000;
+}

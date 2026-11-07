@@ -30,7 +30,6 @@ const optionalSignatureKeys = ['arbitrase', 'field_coordinator'];
 const requiredSignatureKeys = ['referee', 'clerk', 'red_manager', 'white_manager'];
 
 const emptyBreakdown = () => Object.fromEntries(scoreKeys.map(([key]) => [key, 0]));
-const emptySignatures = () => Object.fromEntries(signatureLabels.map(([key]) => [key, '']));
 const normalizeSignatures = (signatures = {}) => Object.fromEntries(signatureLabels.map(([key]) => [key, typeof signatures?.[key] === 'string' ? signatures[key] : '']));
 const normalizeSignatureNames = (names = {}) => Object.fromEntries(signatureLabels.map(([key]) => [key, typeof names?.[key] === 'string' ? names[key] : '']));
 const calculateTotal = (breakdown) => scoreKeys.reduce((total, [key, , weight]) => total + (Number(breakdown[key]) || 0) * weight, 0);
@@ -194,7 +193,6 @@ export default function RandoriScoreForm({ activeEvent, match }) {
     const isLocked = Boolean(match.category_is_locked) || Boolean(existingScore?.is_locked);
     const clientIdRef = useRef(createSyncClientId());
     const persistedSignatures = normalizeSignatures(draft.signatures || existingScore?.signatures);
-    const hasCompletePersistedSignatures = requiredSignatureKeys.every((key) => Boolean(persistedSignatures[key]));
     const initialDecisionOverride = draft.decision_override || existingScore?.decision_override || match.metadata?.result?.decision_override || null;
     const form = useForm({
         event_id: activeEvent.id,
@@ -379,10 +377,6 @@ export default function RandoriScoreForm({ activeEvent, match }) {
             formDataRef.current = nextData;
             formSetDataRef.current(nextData);
             setSyncStatus('remote');
-
-            if (changes.aka || changes.shiro || Object.hasOwn(changes, 'notes') || Object.hasOwn(changes, 'decision_override')) {
-                setRequiresResignature(Boolean(existingScore) || signatureLabels.some(([key]) => Boolean(nextData.signatures[key])));
-            }
 
             if (event.action === 'result_saved' || event.action === 'result_locked') {
                 router.reload({

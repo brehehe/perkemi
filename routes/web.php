@@ -40,6 +40,7 @@ use App\Http\Controllers\Admin\Panitera\VerifiedEmbuResultController;
 use App\Http\Controllers\Admin\Registration\RegistrationController;
 use App\Http\Controllers\Admin\Registration\RegistrationWizardController;
 use App\Http\Controllers\Admin\Report\ReportController;
+use App\Http\Controllers\Admin\Report\SubmittedRefereeScoreController;
 use App\Http\Controllers\Admin\Simulation\TrainingModeController;
 use App\Http\Controllers\Admin\Tournament\EventRefereeController;
 use App\Http\Controllers\Admin\Tournament\TournamentController;
@@ -428,6 +429,9 @@ Route::prefix('admin/simulation')->middleware(['auth', 'event.tenant'])->name('a
 // Laporan & Hasil
 Route::prefix('admin/laporan')->middleware(['auth', 'event.tenant'])->name('admin.laporan.')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('index');
+    Route::post('events/{event}/submitted-referee-scores/{embuJudgeScore}', SubmittedRefereeScoreController::class)
+        ->scopeBindings()
+        ->name('referee-scores.submitted.store');
     Route::get('export', [ReportController::class, 'export'])->name('export');
     Route::get('berita-acara', [ReportController::class, 'printBeritaAcara'])->name('berita-acara');
     Route::get('cetak/embu/{embuScore}', [ReportController::class, 'printEmbu'])->name('print.embu');

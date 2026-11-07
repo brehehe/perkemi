@@ -5,6 +5,7 @@ namespace App\Services\Panitera;
 use App\Events\PaniteraMatchStateUpdated;
 use App\Models\EmbuScore;
 use App\Models\Event;
+use App\Models\EventCourt;
 use App\Models\TournamentMatch;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -62,14 +63,20 @@ class PaniteraMatchWorkflow
         }
 
         return DB::transaction(function () use ($event, $match, $action, $operatorId, $options): TournamentMatch {
-            $courtMatches = TournamentMatch::query()
+            $court = EventCourt::query()
                 ->whereBelongsTo($event)
-                ->where('event_court_id', $match->event_court_id)
+                ->whereKey($match->event_court_id)
                 ->lockForUpdate()
-                ->get();
+                ->first();
+            abort_unless($court instanceof EventCourt, 404);
 
             /** @var TournamentMatch $lockedMatch */
-            $lockedMatch = $courtMatches->firstWhere('id', $match->id);
+            $lockedMatch = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->whereBelongsTo($court, 'court')
+                ->whereKey($match->id)
+                ->lockForUpdate()
+                ->first();
             abort_unless($lockedMatch instanceof TournamentMatch, 404);
             $lockedMatch->loadMissing('matchCategory:id,name,type');
 
@@ -107,6 +114,13 @@ class PaniteraMatchWorkflow
             }
 
             if (in_array($action, [self::ActionCallOfficials, self::ActionCallParticipants, self::ActionStart], true)) {
+                $courtMatches = TournamentMatch::query()
+                    ->whereBelongsTo($event)
+                    ->whereBelongsTo($court, 'court')
+                    ->whereKeyNot($lockedMatch->id)
+                    ->whereIn('status', ['ready', 'in_progress'])
+                    ->lockForUpdate()
+                    ->get();
                 $this->releaseOtherMatches($courtMatches, $lockedMatch);
             }
 

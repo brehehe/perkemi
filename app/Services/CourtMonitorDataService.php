@@ -87,6 +87,7 @@ class CourtMonitorDataService
         $activeCategoryId = $categoryRecap['id'] ?? null;
 
         $categoriesOnCourt = TournamentMatch::query()
+            ->select(['id', 'event_match_category_id', 'status'])
             ->whereBelongsTo($event)
             ->whereBelongsTo($court, 'court')
             ->where('is_bye', false)
@@ -224,7 +225,9 @@ class CourtMonitorDataService
         $completedMatches = $matches->where('status', 'completed')->count();
 
         // Calculate temporary rank for embu completed matches
-        $completedEmbu = $matches->filter(fn (TournamentMatch $m) => $m->status === 'completed' && $m->embuScores->isNotEmpty());
+        $completedEmbu = $category->type === 'embu'
+            ? $matches->filter(fn (TournamentMatch $m) => $m->status === 'completed' && $m->embuScores->isNotEmpty())
+            : collect();
         $sortedEmbu = $completedEmbu->sortByDesc(function (TournamentMatch $m) {
             $score = $m->embuScores->first();
             if ($score?->is_disqualified) {
@@ -246,7 +249,7 @@ class CourtMonitorDataService
         }
 
         $matchRows = $matches->map(function (TournamentMatch $match) use ($event, $category, $activeMatch, $ranksByMatchId): array {
-            $embuScore = $match->embuScores->first();
+            $embuScore = $category->type === 'embu' ? $match->embuScores->first() : null;
             $randoriScore = $match->randoriScore;
             $isActive = $activeMatch && $match->id === $activeMatch->id;
             $athletes = [];

@@ -297,7 +297,7 @@ class DashboardMetricsService
      */
     public function getMedalDistribution(?Event $event = null): array
     {
-        $key = 'dashboard:distribution:'.($event?->id ?? 'global');
+        $key = 'dashboard:distribution:'.($event?->id ?? 'global').':'.($event?->champion_ranking_system ?? 'medals');
 
         return Cache::remember($key, 60, function () use ($event): array {
             $goldVal = TournamentRank::Gold->value;

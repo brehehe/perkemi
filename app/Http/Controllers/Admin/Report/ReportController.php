@@ -39,6 +39,8 @@ class ReportController extends Controller
 
         return Inertia::render('Admin/Report/Index', [
             'activeEvent' => $activeEvent->only(['id', 'name', 'city', 'start_date', 'end_date', 'status']),
+            'canSubmitRefereeScores' => $report === 'referee-scores'
+                && $this->canSubmitRefereeScores($request, $activeEvent),
             'events' => $this->eventOptions($request),
             'rankingMethod' => $rankingMethod,
             'reportOptions' => collect(ReportDatasetBuilder::Reports)
@@ -268,6 +270,20 @@ class ReportController extends Controller
             ?? Event::query()->orderByDesc('start_date')->orderByDesc('id')->first();
     }
 
+    private function canSubmitRefereeScores(Request $request, Event $event): bool
+    {
+        $user = $request->user();
+        if ($user?->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase', 'Panitera'])) {
+            return true;
+        }
+
+        return $user !== null && in_array(
+            $event->accessRoleFor($user),
+            [Event::AccessRoleResponsible, Event::AccessRoleAdmin],
+            true,
+        );
+    }
+
     private function requestedEventId(Request $request): ?string
     {
         $eventId = $request->input('event_id');
@@ -308,6 +324,14 @@ class ReportController extends Controller
 
     private function exportValue(mixed $value): int|float|string|null
     {
+        if (is_array($value) && isset($value['athlete_label'])) {
+            $contingent = ! empty($value['contingent']) && $value['contingent'] !== '-'
+                ? ' ('.$value['contingent'].')'
+                : '';
+
+            return $value['athlete_label'].$contingent;
+        }
+
         if (is_int($value) || is_float($value) || is_string($value) || $value === null) {
             return $value;
         }

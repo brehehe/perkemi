@@ -152,6 +152,62 @@ class EmbuRefereeScoreService
             return $judgeScore;
         });
 
+        $this->dispatchUpdate($score);
+
+        return $score;
+    }
+
+    public function submitDraft(EmbuJudgeScore $score): EmbuJudgeScore
+    {
+        $submittedScore = DB::transaction(function () use ($score): EmbuJudgeScore {
+            $lockedMatch = TournamentMatch::query()
+                ->whereKey($score->tournament_match_id)
+                ->where('event_id', $score->event_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedMatch->loadMissing('matchCategory:id,name,type');
+
+            $lockedScore = EmbuJudgeScore::query()
+                ->whereKey($score->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedScore->status === 'submitted') {
+                return $lockedScore;
+            }
+
+            $hasCompleteScores = collect(self::AspectKeys)->every(function (string $key) use ($lockedScore): bool {
+                $value = $lockedScore->aspect_scores[$key] ?? null;
+
+                return $value !== null && in_array((int) $value, [0, 7, 8, 9, 10], true);
+            });
+
+            if (! $hasCompleteScores) {
+                throw ValidationException::withMessages([
+                    'score' => 'Lengkapi seluruh 10 aspek penilaian sebelum menyimpan sebagai Sudah Dikirim.',
+                ]);
+            }
+
+            $lockedScore->forceFill([
+                'status' => 'submitted',
+                'signed_at' => filled($lockedScore->signature)
+                    ? ($lockedScore->signed_at ?? now())
+                    : null,
+                'submitted_at' => $lockedScore->submitted_at ?? now(),
+            ])->save();
+
+            $this->synchronizeAggregate($lockedMatch);
+
+            return $lockedScore;
+        });
+
+        $this->dispatchUpdate($submittedScore);
+
+        return $submittedScore;
+    }
+
+    private function dispatchUpdate(EmbuJudgeScore $score): void
+    {
         EmbuJudgeScoreUpdated::dispatch(
             eventId: $score->event_id,
             matchId: $score->tournament_match_id,
@@ -164,8 +220,6 @@ class EmbuRefereeScoreService
             updatedAt: $score->updated_at->toIso8601String(),
             isSigned: filled($score->signature) || $score->signed_at !== null,
         );
-
-        return $score;
     }
 
     /**

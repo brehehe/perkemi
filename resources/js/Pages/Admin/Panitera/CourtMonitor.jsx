@@ -360,7 +360,6 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         channel.listen('.var.updated', refreshSnapshot);
         channel.listen('.embu.score.updated', refreshSnapshot);
         channel.listen('.score.updated', refreshSnapshot);
-        channel.listen('.panitera.match-state.updated', refreshSnapshot);
         channel.listen('.embu.judge-score.updated', refreshSnapshot);
         channel.listen('.embu.penalties.updated', refreshSnapshot);
         channel.listen('.randori.score-state.updated', refreshSnapshot);
@@ -373,7 +372,6 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             matchChannel.listen('.embu.penalties.updated', refreshSnapshot);
             matchChannel.listen('.score.updated', refreshSnapshot);
             matchChannel.listen('.var.updated', refreshSnapshot);
-            matchChannel.listen('.panitera.match-state.updated', refreshSnapshot);
             matchChannel.listen('.randori.score-state.updated', refreshSnapshot);
         }
 
@@ -381,7 +379,6 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             channel.stopListening('.var.updated');
             channel.stopListening('.embu.score.updated');
             channel.stopListening('.score.updated');
-            channel.stopListening('.panitera.match-state.updated');
             channel.stopListening('.embu.judge-score.updated');
             channel.stopListening('.embu.penalties.updated');
             channel.stopListening('.randori.score-state.updated');
@@ -390,7 +387,6 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                 matchChannel.stopListening('.embu.penalties.updated');
                 matchChannel.stopListening('.score.updated');
                 matchChannel.stopListening('.var.updated');
-                matchChannel.stopListening('.panitera.match-state.updated');
                 matchChannel.stopListening('.randori.score-state.updated');
             }
         };

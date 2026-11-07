@@ -1,5 +1,8 @@
 <?php
 
+use App\Enums\TournamentRank;
+use App\Models\Athlete;
+use App\Models\Contingent;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
 use App\Models\Event;
@@ -9,6 +12,7 @@ use App\Models\RandoriScore;
 use App\Models\Referee;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
+use App\Models\TournamentResult;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -326,3 +330,158 @@ function reportMatch(Event $event, EventCourt $court, string $type, int $sequenc
         'scheduled_start_at' => '2026-11-07 09:00:00',
     ]);
 }
+
+test('the champions report is structured per match category with Juara 1, 2, and 3 Bersama columns and formatted pairings', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('champions-per-category');
+
+    $contingentA = Contingent::create([
+        'user_id' => User::factory()->create()->id,
+        'event_id' => $event->id,
+        'name' => 'Kontingen Pasuruan',
+        'city' => 'Pasuruan',
+        'manager_name' => 'Manager Pasuruan',
+        'phone' => '081234567890',
+    ]);
+    $contingentB = Contingent::create([
+        'user_id' => User::factory()->create()->id,
+        'event_id' => $event->id,
+        'name' => 'Kontingen Malang',
+        'city' => 'Malang',
+        'manager_name' => 'Manager Malang',
+        'phone' => '081234567891',
+    ]);
+
+    $categoryRandori = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 55 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $categoryEmbu = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Berpasangan Putra Kyu I',
+        'type' => 'embu',
+        'gender' => 'male',
+        'max_athletes_per_team' => 2,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+
+    $athRandori1 = Athlete::create(['name' => 'Budi Santoso', 'gender' => 'male', 'contingent_id' => $contingentA->id]);
+    $athRandori2 = Athlete::create(['name' => 'Rahmat Hidayat', 'gender' => 'male', 'contingent_id' => $contingentB->id]);
+
+    $athEmbu1A = Athlete::create(['name' => 'Kenshi Pasangan 1A', 'gender' => 'male', 'contingent_id' => $contingentA->id]);
+    $athEmbu1B = Athlete::create(['name' => 'Kenshi Pasangan 1B', 'gender' => 'male', 'contingent_id' => $contingentA->id]);
+
+    // Embu Drawing with metadata members
+    $drawingEmbu = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $categoryEmbu->id,
+        'status' => 'published',
+        'participant_count' => 2,
+        'contingent_count' => 2,
+    ]);
+
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court Embu',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawingEmbu->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $categoryEmbu->id,
+        'event_court_id' => $court->id,
+        'match_sequence' => 1,
+        'participant_label' => 'Kontingen Pasuruan · Tim 1',
+        'metadata' => [
+            'key' => "{$categoryEmbu->id}:{$contingentA->id}:1",
+            'entry_id' => 'entry-embu-1',
+            'athlete_ids' => [$athEmbu1A->id, $athEmbu1B->id],
+            'contingent_id' => $contingentA->id,
+            'contingent_name' => $contingentA->name,
+            'members' => [$athEmbu1A->name, $athEmbu1B->name],
+            'team_number' => 1,
+        ],
+    ]);
+
+    // Create TournamentResults
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $categoryRandori->id,
+        'athlete_id' => $athRandori1->id,
+        'contingent_id' => $contingentA->id,
+        'contingent_name' => $contingentA->name,
+        'rank' => TournamentRank::Gold,
+        'match_category' => $categoryRandori->name,
+        'is_exhibition' => false,
+    ]);
+
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $categoryRandori->id,
+        'athlete_id' => $athRandori2->id,
+        'contingent_id' => $contingentB->id,
+        'contingent_name' => $contingentB->name,
+        'rank' => TournamentRank::Silver,
+        'match_category' => $categoryRandori->name,
+        'is_exhibition' => false,
+    ]);
+
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $categoryEmbu->id,
+        'participant_key' => "{$categoryEmbu->id}:{$contingentA->id}:1",
+        'athlete_id' => $athEmbu1A->id,
+        'contingent_id' => $contingentA->id,
+        'contingent_name' => $contingentA->name,
+        'rank' => TournamentRank::Gold,
+        'match_category' => $categoryEmbu->name,
+        'is_exhibition' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.index', ['event_id' => $event->id, 'report' => 'champions']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Index')
+            ->where('dataset.key', 'champions')
+            ->has('dataset.columns', 8)
+            ->where('dataset.columns.0.key', 'category')
+            ->where('dataset.columns.1.key', 'type')
+            ->where('dataset.columns.2.key', 'champion_1')
+            ->where('dataset.columns.3.key', 'champion_2')
+            ->where('dataset.columns.4.key', 'champion_3_a')
+            ->where('dataset.columns.5.key', 'champion_3_b')
+            ->where('dataset.columns.6.key', 'classification')
+            ->where('dataset.columns.7.key', 'confirmed_at')
+            ->has('dataset.rows', 2)
+            // Randori Row
+            ->where('dataset.rows.0.category', 'Randori Putra 55 kg')
+            ->where('dataset.rows.0.type', 'Randori')
+            ->where('dataset.rows.0.champion_1.athlete_label', 'Budi Santoso')
+            ->where('dataset.rows.0.champion_1.contingent', 'Kontingen Pasuruan')
+            ->where('dataset.rows.0.champion_2.athlete_label', 'Rahmat Hidayat')
+            ->where('dataset.rows.0.champion_2.contingent', 'Kontingen Malang')
+            ->where('dataset.rows.0.champion_3_a', null)
+            ->where('dataset.rows.0.champion_3_b', null)
+            // Embu Row (paired athletes)
+            ->where('dataset.rows.1.category', 'Embu Berpasangan Putra Kyu I')
+            ->where('dataset.rows.1.type', 'Embu')
+            ->where('dataset.rows.1.champion_1.athlete_label', 'Kenshi Pasangan 1A & Kenshi Pasangan 1B')
+            ->where('dataset.rows.1.champion_1.contingent', 'Kontingen Pasuruan')
+        );
+
+    // Test Excel export for champions report
+    $exportResponse = $this->actingAs($user)
+        ->get(route('admin.laporan.export', ['event_id' => $event->id, 'report' => 'champions']));
+
+    $exportResponse->assertOk()
+        ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});

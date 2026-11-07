@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { acceptTimerState, createServerClock, monotonicNow } from './timerSynchronization';
+import {
+    acceptTimerState,
+    createServerClock,
+    monotonicNow,
+    timerSynchronizationPollDelay,
+} from './timerSynchronization';
 
 export default function useLiveTimer({ initialState, stateUrl, channelName, eventId, courtId, onChange }) {
     const [state, setState] = useState(initialState);
@@ -20,10 +25,6 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
         const current = stateRef.current;
         const next = acceptTimerState(current, incoming);
         if (next === current) return;
-        if (incoming?.server_now_ms && clockRef.current?.seed) {
-            clockRef.current.seed(Number(incoming.server_now_ms));
-            setSynchronized(true);
-        }
         stateRef.current = next;
         setState(next);
         if (next.match_id !== current?.match_id || next.timer?.version !== current?.timer?.version
@@ -79,23 +80,36 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
         let timeout;
         const poll = async () => {
             await refresh();
-            if (!cancelled) timeout = window.setTimeout(poll, !clockRef.current.synchronized ? 300 : connected ? 15000 : 1000);
+            if (!cancelled) {
+                timeout = window.setTimeout(poll, timerSynchronizationPollDelay({
+                    connected,
+                    synchronized: clockRef.current.synchronized,
+                    timerStatus: stateRef.current?.timer?.status,
+                    visible: document.visibilityState === 'visible',
+                }));
+            }
         };
         poll();
         return () => { cancelled = true; window.clearTimeout(timeout); };
     }, [refresh, connected, syncGeneration]);
 
     useEffect(() => {
-        const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-        window.addEventListener('online', refresh);
+        const reconnect = () => {
+            resynchronize();
+            refresh();
+        };
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') reconnect();
+        };
+        window.addEventListener('online', reconnect);
         document.addEventListener('visibilitychange', onVisible);
         return () => {
-            window.removeEventListener('online', refresh);
+            window.removeEventListener('online', reconnect);
             document.removeEventListener('visibilitychange', onVisible);
             requestRef.current?.abort();
             requestRef.current = null;
         };
-    }, [refresh]);
+    }, [refresh, resynchronize]);
 
     useEffect(() => {
         if (!window.Echo || !channelName) return undefined;
@@ -107,11 +121,8 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             if (expectedMatchId && incoming.match_id !== expectedMatchId) return;
             if (courtId && incoming.action === 'release') { refresh(); return; }
             const cleared = courtId && incoming.match_status === 'completed';
-            if (incoming.server_now_ms && clockRef.current?.seed) {
-                clockRef.current.seed(Number(incoming.server_now_ms));
-                setSynchronized(true);
-            }
             acceptState(cleared ? { ...incoming, match_id: null, timer: null } : incoming);
+            if (!clockRef.current.synchronized) refresh();
         };
         const connection = window.Echo.connector?.pusher?.connection;
         const onConnectionChange = ({ current }) => {
@@ -130,7 +141,7 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             channel.subscription?.unbind('pusher:subscription_error', disconnected);
             window.Echo.leave(channelName);
         };
-    }, [acceptState, channelName, courtId, eventId, expectedMatchId, refresh, resynchronize]);
+    }, [acceptState, channelName, courtId, eventId, expectedMatchId, refresh]);
 
     return { state, acceptState, refresh, serverClock: clockRef.current, connected, httpConnected, synchronized };
 }

@@ -5,6 +5,7 @@ namespace App\Services\Reports;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
 use App\Models\Event;
+use App\Models\EventMatchCategory;
 use App\Models\RandoriScore;
 use App\Models\TournamentResult;
 use Illuminate\Support\Collection;
@@ -50,22 +51,237 @@ class ReportDatasetBuilder
     /** @return array<string, mixed> */
     private function champions(Event $event, string $report): array
     {
-        $rows = TournamentResult::query()->whereBelongsTo($event)
-            ->with(['matchCategory:id,name,type', 'contingent:id,name,city', 'athlete:id,name,kyu_dan'])
-            ->orderBy('event_match_category_id')->orderBy('rank')->get()
-            ->map(fn (TournamentResult $result): array => [
-                'category' => $result->matchCategory?->name ?? $result->match_category ?? '-',
-                'type' => ucfirst((string) ($result->matchCategory?->type ?? '-')),
-                'rank' => $this->rankLabel((int) $result->rank->value),
-                'participant' => $result->athlete?->name ?? $result->participant_key ?? '-',
-                'contingent' => $result->contingent?->name ?? $result->contingent_name,
-                'classification' => $result->is_exhibition ? 'Ekshibisi' : 'Non-ekshibisi',
-                'confirmed_at' => $result->updated_at?->translatedFormat('d M Y, H:i'),
+        $categories = $event->matchCategories()
+            ->where('is_active', true)
+            ->with([
+                'tournamentDrawing.matches',
+                'athleteEntries.athlete.contingent:id,name,city',
+            ])
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
+
+        $allResults = TournamentResult::query()
+            ->whereBelongsTo($event)
+            ->with(['matchCategory:id,name,type', 'contingent:id,name,city', 'athlete:id,name,contingent_id'])
+            ->orderBy('rank')
+            ->get();
+
+        $resultsByCategory = $allResults->groupBy(fn (TournamentResult $r) => $r->event_match_category_id ?: $r->match_category);
+
+        $rows = $categories->map(function (EventMatchCategory $category) use ($resultsByCategory): array {
+            $categoryResults = $resultsByCategory->get($category->id)
+                ?? $resultsByCategory->get($category->name)
+                ?? collect();
+
+            $gold = $categoryResults->first(function (TournamentResult $res): bool {
+                $val = $res->rank instanceof \BackedEnum ? (int) $res->rank->value : (int) $res->rank;
+
+                return $val === 1;
+            });
+            $silver = $categoryResults->first(function (TournamentResult $res): bool {
+                $val = $res->rank instanceof \BackedEnum ? (int) $res->rank->value : (int) $res->rank;
+
+                return $val === 2;
+            });
+            $bronzes = $categoryResults->filter(function (TournamentResult $res): bool {
+                $val = $res->rank instanceof \BackedEnum ? (int) $res->rank->value : (int) $res->rank;
+
+                return $val === 3 || $val === 4;
+            })->values();
+
+            $bronze1 = $bronzes->get(0);
+            $bronze2 = $bronzes->get(1);
+
+            $isExhibition = $categoryResults->isNotEmpty()
+                ? (bool) ($categoryResults->first()->is_exhibition ?? $category->is_exhibition)
+                : (bool) $category->is_exhibition;
+
+            $confirmedAt = $categoryResults->isNotEmpty()
+                ? $categoryResults->max('updated_at')?->translatedFormat('d M Y, H:i')
+                : 'Belum Dikonfirmasi';
+
+            return [
+                'category' => $category->name,
+                'type' => ucfirst((string) $category->type),
+                'champion_1' => $this->formatChampionCell($gold, $category),
+                'champion_2' => $this->formatChampionCell($silver, $category),
+                'champion_3_a' => $this->formatChampionCell($bronze1, $category),
+                'champion_3_b' => $this->formatChampionCell($bronze2, $category),
+                'classification' => $isExhibition ? 'Ekshibisi' : 'Non-ekshibisi',
+                'confirmed_at' => $confirmedAt,
+            ];
+        })->values();
+
+        // Kategori tambahan jika ada hasil tanpa kategori aktif di event
+        $unmatchedCategories = $resultsByCategory->keys()->filter(function ($key) use ($categories): bool {
+            return ! $categories->contains(fn ($c) => $c->id === $key || $c->name === $key);
+        });
+
+        foreach ($unmatchedCategories as $key) {
+            $catResults = $resultsByCategory->get($key);
+            if (! $catResults || $catResults->isEmpty()) {
+                continue;
+            }
+            $first = $catResults->first();
+            $gold = $catResults->first(fn ($r) => ((int) ($r->rank->value ?? $r->rank)) === 1);
+            $silver = $catResults->first(fn ($r) => ((int) ($r->rank->value ?? $r->rank)) === 2);
+            $bronzes = $catResults->filter(fn ($r) => in_array((int) ($r->rank->value ?? $r->rank), [3, 4], true))->values();
+            $bronze1 = $bronzes->get(0);
+            $bronze2 = $bronzes->get(1);
+
+            $dummyCat = $first->matchCategory ?? new EventMatchCategory([
+                'name' => $first->match_category ?: (string) $key,
+                'type' => 'randori',
             ]);
 
-        return $this->dataset($report, [
-            ['key' => 'category', 'label' => 'Nomor Pertandingan'], ['key' => 'type', 'label' => 'Jenis'], ['key' => 'rank', 'label' => 'Posisi Juara'], ['key' => 'participant', 'label' => 'Atlet / Tim'], ['key' => 'contingent', 'label' => 'Kontingen'], ['key' => 'classification', 'label' => 'Klasifikasi'], ['key' => 'confirmed_at', 'label' => 'Dikonfirmasi'],
-        ], $rows, [['label' => 'Total posisi juara', 'value' => $rows->count()], ['label' => 'Nomor pertandingan', 'value' => $rows->pluck('category')->unique()->count()], ['label' => 'Kontingen peraih juara', 'value' => $rows->pluck('contingent')->filter()->unique()->count()]]);
+            $rows->push([
+                'category' => $dummyCat->name,
+                'type' => ucfirst((string) ($dummyCat->type ?? 'Randori')),
+                'champion_1' => $this->formatChampionCell($gold, $dummyCat),
+                'champion_2' => $this->formatChampionCell($silver, $dummyCat),
+                'champion_3_a' => $this->formatChampionCell($bronze1, $dummyCat),
+                'champion_3_b' => $this->formatChampionCell($bronze2, $dummyCat),
+                'classification' => $first->is_exhibition ? 'Ekshibisi' : 'Non-ekshibisi',
+                'confirmed_at' => $catResults->max('updated_at')?->translatedFormat('d M Y, H:i') ?? 'Belum Dikonfirmasi',
+            ]);
+        }
+
+        $confirmedCount = $rows->filter(fn (array $r): bool => $r['champion_1'] !== null)->count();
+        $totalChampions = $allResults->count();
+        $championContingents = $allResults->pluck('contingent_name')
+            ->merge($allResults->pluck('contingent.name'))
+            ->filter()
+            ->unique()
+            ->count();
+
+        return $this->dataset(
+            $report,
+            [
+                ['key' => 'category', 'label' => 'Nomor Pertandingan'],
+                ['key' => 'type', 'label' => 'Jenis'],
+                ['key' => 'champion_1', 'label' => 'Juara 1'],
+                ['key' => 'champion_2', 'label' => 'Juara 2'],
+                ['key' => 'champion_3_a', 'label' => 'Juara 3 Bersama'],
+                ['key' => 'champion_3_b', 'label' => 'Juara 3 Bersama'],
+                ['key' => 'classification', 'label' => 'Klasifikasi'],
+                ['key' => 'confirmed_at', 'label' => 'Dikonfirmasi'],
+            ],
+            $rows,
+            [
+                ['label' => 'Total Nomor Pertandingan', 'value' => $rows->count()],
+                ['label' => 'Nomor Sudah Dikonfirmasi', 'value' => $confirmedCount],
+                ['label' => 'Total Posisi Juara', 'value' => $totalChampions],
+                ['label' => 'Kontingen Peraih Juara', 'value' => $championContingents],
+            ]
+        );
+    }
+
+    /**
+     * Format a champion cell containing athlete name(s) and contingent name.
+     * Handles Tandoku (1 atlet), Pasangan (2 atlet), and Beregu (3+ atlet).
+     *
+     * @return array{athlete_label: string, contingent: string}|null
+     */
+    private function formatChampionCell(?TournamentResult $result, EventMatchCategory $category): ?array
+    {
+        if ($result === null) {
+            return null;
+        }
+
+        $contingent = $result->contingent?->name ?: ($result->contingent_name ?: '-');
+        $athleteLabel = $this->resolveParticipantAthleteLabel($result, $category);
+
+        return [
+            'athlete_label' => $athleteLabel,
+            'contingent' => $contingent,
+        ];
+    }
+
+    /**
+     * Resolve the athlete name(s) for a tournament result.
+     * Automatically formats:
+     * - Tandoku / Randori: "Nama Atlet"
+     * - Pasangan: "Atlet A & Atlet B"
+     * - Beregu: "Atlet A, Atlet B, Atlet C, Atlet D"
+     */
+    private function resolveParticipantAthleteLabel(TournamentResult $result, EventMatchCategory $category): string
+    {
+        $isEmbu = $category->type === 'embu';
+        $categoryNameLower = mb_strtolower($category->name);
+        $isExplicitTandoku = str_contains($categoryNameLower, 'tandoku');
+        $isPairOrTeam = $isEmbu && ! $isExplicitTandoku && (
+            $category->max_athletes_per_team > 1 ||
+            str_contains($categoryNameLower, 'pasangan') ||
+            str_contains($categoryNameLower, 'berpasangan') ||
+            str_contains($categoryNameLower, 'beregu')
+        );
+
+        // 1. Cek metadata match pada tournamentDrawing (sudah memiliki members array)
+        if ($isPairOrTeam && $category->relationLoaded('tournamentDrawing') && $category->tournamentDrawing) {
+            $matches = $category->tournamentDrawing->matches ?? collect();
+            foreach ($matches as $match) {
+                $meta = $match->metadata ?? [];
+                if (empty($meta) || ($meta['placeholder'] ?? false)) {
+                    continue;
+                }
+
+                $keyMatch = ($meta['key'] ?? null) === $result->participant_key;
+                $entryMatch = ($meta['entry_id'] ?? null) === $result->participant_key;
+                $athleteMatch = in_array($result->athlete_id, $meta['athlete_ids'] ?? [], true);
+                $entriesMatch = in_array($result->participant_key, $meta['entry_ids'] ?? [], true);
+
+                if (($keyMatch || $entryMatch || $athleteMatch || $entriesMatch) && ! empty($meta['members'])) {
+                    $members = array_values(array_filter($meta['members']));
+                    if (count($members) === 2) {
+                        return "{$members[0]} & {$members[1]}";
+                    }
+                    if (count($members) > 2) {
+                        return implode(', ', $members);
+                    }
+                    if (count($members) === 1) {
+                        return $members[0];
+                    }
+                }
+            }
+        }
+
+        // 2. Cek pendaftaran AthleteMatchCategoryEntry per nomor kategori dan team_number
+        if ($isPairOrTeam && $category->relationLoaded('athleteEntries')) {
+            $entries = $category->athleteEntries;
+            $matchedEntry = $entries->first(function ($e) use ($result) {
+                return $e->athlete_id === $result->athlete_id || $e->id === $result->participant_key;
+            });
+
+            if ($matchedEntry) {
+                $contingentId = $matchedEntry->athlete?->contingent_id ?? $result->contingent_id;
+                $teamNumber = $matchedEntry->team_number;
+
+                $teamEntries = $entries->filter(function ($e) use ($contingentId, $teamNumber) {
+                    $entryContingentId = $e->athlete?->contingent_id;
+                    $sameContingent = $contingentId && $entryContingentId === $contingentId;
+                    $sameTeam = $teamNumber !== null ? $e->team_number === $teamNumber : true;
+
+                    return $sameContingent && $sameTeam;
+                })->values();
+
+                if ($teamEntries->isNotEmpty()) {
+                    $names = $teamEntries->map(fn ($e) => $e->athlete?->name)->filter()->unique()->values()->all();
+                    if (count($names) === 2) {
+                        return "{$names[0]} & {$names[1]}";
+                    }
+                    if (count($names) > 2) {
+                        return implode(', ', $names);
+                    }
+                    if (count($names) === 1) {
+                        return $names[0];
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback nama atlet tunggal
+        return $result->athlete?->name ?: ($result->participant_key ?: '-');
     }
 
     /** @return array<string, mixed> */
@@ -112,7 +328,7 @@ class ReportDatasetBuilder
         $rows = EmbuJudgeScore::query()->whereBelongsTo($event)->with($this->embuJudgeRelations())->latest('updated_at')->get()->map(function (EmbuJudgeScore $score) use ($event): array {
             $item = $this->scoreFormatter->embu($score, $event);
 
-            return ['category' => $item['category_name'], 'match' => 'Partai #'.$item['sequence'].' · '.$item['round_label'], 'participant' => $item['participant_details']['contingent_name'] ?: $item['participant'], 'athletes' => collect($item['participant_details']['athletes'])->pluck('name')->implode(', '), 'referee' => $item['referee_name'], 'position' => 'Juri '.$item['judge_number'].' · '.$item['role_label'], 'technique' => $item['technique_subtotal'], 'expression' => $item['expression_subtotal'], 'total' => $item['total_score'], 'signature' => $item['is_signed'] ? 'Tercatat' : 'Belum ada', 'status' => $item['status_label']];
+            return ['score_id' => $score->id, 'status_value' => $score->status, 'can_submit' => $score->status === 'draft' && $score->completed_items === 10, 'category' => $item['category_name'], 'match' => 'Partai #'.$item['sequence'].' · '.$item['round_label'], 'participant' => $item['participant_details']['contingent_name'] ?: $item['participant'], 'athletes' => collect($item['participant_details']['athletes'])->pluck('name')->implode(', '), 'referee' => $item['referee_name'], 'position' => 'Juri '.$item['judge_number'].' · '.$item['role_label'], 'technique' => $item['technique_subtotal'], 'expression' => $item['expression_subtotal'], 'total' => $item['total_score'], 'signature' => $item['is_signed'] ? 'Tercatat' : 'Belum ada', 'status' => $item['status_label']];
         });
 
         return $this->dataset($report, [['key' => 'category', 'label' => 'Nomor Pertandingan'], ['key' => 'match', 'label' => 'Partai'], ['key' => 'participant', 'label' => 'Kontingen / Tim'], ['key' => 'athletes', 'label' => 'Atlet'], ['key' => 'referee', 'label' => 'Wasit'], ['key' => 'position', 'label' => 'Posisi'], ['key' => 'technique', 'label' => 'Teknik'], ['key' => 'expression', 'label' => 'Ekspresi'], ['key' => 'total', 'label' => 'Total'], ['key' => 'signature', 'label' => 'TTD'], ['key' => 'status', 'label' => 'Status']], $rows, [['label' => 'Total penilaian', 'value' => $rows->count()], ['label' => 'Wasit menilai', 'value' => $rows->pluck('referee')->unique()->count()], ['label' => 'TTD tercatat', 'value' => $rows->where('signature', 'Tercatat')->count()]]);

@@ -75,6 +75,7 @@ class PublicCourtMonitorController extends Controller
             ->whereBelongsTo($court, 'court')
             ->where('is_bye', false)
             ->whereIn('status', ['ready', 'in_progress'])
+            ->with('matchCategory:id,name,type')
             ->orderByRaw("CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END")
             ->orderByDesc('called_at')
             ->first();
