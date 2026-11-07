@@ -4,6 +4,7 @@ namespace App\Services\Admin\Master;
 
 use App\Enums\EventStatus;
 use App\Models\Clerk;
+use App\Models\EmbuJudgeScore;
 use App\Models\Event;
 use App\Models\EventAgeCategory;
 use App\Models\EventCourt;
@@ -11,8 +12,11 @@ use App\Models\EventMatchCategory;
 use App\Models\FieldCoordinator;
 use App\Models\Kyu;
 use App\Models\PaymentMethod;
+use App\Models\RandoriScore;
 use App\Models\Referee;
+use App\Models\RefereeAttendance;
 use App\Models\Rundown;
+use App\Models\TournamentResult;
 use App\Models\User;
 use App\Models\WeightClass;
 use Illuminate\Http\Request;
@@ -329,6 +333,77 @@ class EventDetailViewService
                 'total_matches' => $event->tournamentMatches()->count(),
                 'match_sessions' => $event->rundowns()->where('is_match_session', true)->count(),
             ],
+            'arbitrationSummary' => [
+                'referees_count' => $eventReferees->count(),
+                'total_matches' => $event->tournamentMatches()->count(),
+                'completed_matches' => $event->tournamentMatches()->where('status', 'completed')->count(),
+                'attendance_count' => RefereeAttendance::whereBelongsTo($event)->count(),
+                'embu_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count(),
+                'randori_scores_count' => RandoriScore::whereBelongsTo($event)->count(),
+                'total_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count() + RandoriScore::whereBelongsTo($event)->count(),
+                'champions_count' => TournamentResult::whereBelongsTo($event)->count(),
+            ],
+            'arbitrationAttendances' => RefereeAttendance::query()
+                ->whereBelongsTo($event)
+                ->with(['referee:id,name,dan_grade,license_number,certification_level,region'])
+                ->orderByDesc('attendance_date')
+                ->orderByDesc('checked_in_at')
+                ->take(30)
+                ->get()
+                ->map(fn (RefereeAttendance $att) => [
+                    'id' => $att->id,
+                    'referee_name' => $att->referee?->name ?? 'Wasit #'.$att->referee_id,
+                    'dan_grade' => $att->referee?->dan_grade ?? '-',
+                    'license_number' => $att->referee?->license_number ?? '-',
+                    'certification_level' => $att->referee?->certification_level ?? '-',
+                    'region' => $att->referee?->region ?? '-',
+                    'date' => $att->attendance_date?->format('d/m/Y') ?? $att->checked_in_at?->format('d/m/Y') ?? '-',
+                    'time' => $att->checked_in_at ? $att->checked_in_at->format('H:i').' WIB' : '-',
+                    'method' => $att->method ?: ($att->is_present ? 'QR Code' : '-'),
+                    'is_present' => (bool) $att->is_present,
+                    'notes' => $att->notes,
+                ]),
+            'arbitrationScores' => EmbuJudgeScore::query()
+                ->whereBelongsTo($event)
+                ->with([
+                    'referee:id,name',
+                    'tournamentMatch:id,match_sequence,participant_label,event_match_category_id,event_court_id',
+                    'tournamentMatch.matchCategory:id,name',
+                    'tournamentMatch.court:id,name',
+                ])
+                ->latest()
+                ->take(20)
+                ->get()
+                ->map(fn (EmbuJudgeScore $s) => [
+                    'id' => $s->id,
+                    'type' => 'EMBU',
+                    'match_sequence' => $s->tournamentMatch?->match_sequence ?? '-',
+                    'category_name' => $s->tournamentMatch?->matchCategory?->name ?? '-',
+                    'court_name' => $s->tournamentMatch?->court?->name ?? '-',
+                    'participant' => $s->tournamentMatch?->participant_label ?? '-',
+                    'referee_name' => $s->referee?->name ?? ('Juri Wasit #'.$s->judge_number),
+                    'judge_number' => $s->judge_number,
+                    'technique_subtotal' => (float) $s->technique_subtotal,
+                    'expression_subtotal' => (float) $s->expression_subtotal,
+                    'violation_penalty' => (float) $s->violation_penalty,
+                    'total_score' => (float) $s->total_score,
+                    'signed' => ! empty($s->signature),
+                    'status' => $s->status ?: 'submitted',
+                    'time' => $s->updated_at?->translatedFormat('d M H:i') ?? '-',
+                ]),
+            'arbitrationPersonnel' => $this->buildArbitrationPersonnel($event),
+            'arbitrationRoleUsers' => $event->users()
+                ->whereHas('roles', fn ($q) => $q->where('name', 'Arbitrase'))
+                ->with('roles:id,name')
+                ->get()
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'roles' => $user->roles->pluck('name')->all(),
+                    'access_role' => $user->pivot->access_role ?? 'staff',
+                    'avatar_letter' => strtoupper(substr($user->name, 0, 1)),
+                ]),
             'counts' => [
                 'age_categories' => $ageCategories->count(),
                 'courts' => $courts->count(),
@@ -337,6 +412,7 @@ class EventDetailViewService
                 'referees' => $eventReferees->count(),
                 'clerks' => $eventClerks->count(),
                 'field_coordinators' => $eventFieldCoordinators->count(),
+                'arbitration' => $eventReferees->count(),
             ],
             'auth' => [
                 'user' => $request->user() ? [
@@ -361,5 +437,126 @@ class EventDetailViewService
     public function adminTenantUrl(Event $event): string
     {
         return url('/event/'.$event->slug.'/admin');
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function buildArbitrationPersonnel(Event $event): array
+    {
+        $event->loadMissing(['referees', 'clerks', 'fieldCoordinators']);
+
+        $presentRefereeIds = RefereeAttendance::whereBelongsTo($event)
+            ->where('is_present', true)
+            ->pluck('referee_id')
+            ->unique()
+            ->flip();
+
+        $personnel = [];
+
+        // 1. Petugas yang memiliki ROLE ARBITRASE yang dipilih untuk event ini
+        $arbitrationUsers = $event->users()
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Arbitrase'))
+            ->with('roles:id,name')
+            ->get();
+
+        foreach ($arbitrationUsers as $user) {
+            $personnel[] = [
+                'id' => 'arb-user-'.$user->id,
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'category' => 'arbitrase_role',
+                'category_label' => 'Dewan Arbitrase (Role Arbitrase)',
+                'role_title' => 'Dewan Arbitrase Event',
+                'dan_grade' => '-',
+                'certification_level' => 'Dewan Arbitrase Resmi',
+                'license_number' => 'ARB-'.substr($user->id, 0, 8),
+                'region' => 'Pengurus Arbitrase Event',
+                'phone' => '-',
+                'email' => $user->email,
+                'is_present' => true,
+                'attendance_status' => 'Ditugaskan (Role Arbitrase)',
+                'avatar_letter' => strtoupper(substr($user->name, 0, 1)),
+                'is_role_arbitrase' => true,
+            ];
+        }
+
+        // 2. Dewan Hakim & Pengawas Pertandingan
+        foreach ($event->fieldCoordinators as $fc) {
+            $roleTitle = match (strtolower((string) $fc->pivot->assignment_area)) {
+                'chief' => 'Dewan Hakim / Koordinator Utama',
+                'court' => 'Pengawas Lapangan (Tatami)',
+                default => 'Dewan Pengawas / Korlap',
+            };
+
+            $personnel[] = [
+                'id' => 'fc-'.$fc->id,
+                'name' => $fc->name,
+                'category' => 'dewan',
+                'category_label' => 'Dewan Hakim & Pengawas',
+                'role_title' => $roleTitle,
+                'dan_grade' => '-',
+                'certification_level' => 'Pengawas Pertandingan',
+                'license_number' => $fc->coordinator_number ?: '-',
+                'region' => $fc->region ?: '-',
+                'phone' => $fc->phone ?: '-',
+                'email' => $fc->email ?: '-',
+                'is_present' => true,
+                'attendance_status' => 'Bertugas',
+                'avatar_letter' => strtoupper(substr($fc->name, 0, 1)),
+            ];
+        }
+
+        // 2. Wasit & Juri Pertandingan
+        foreach ($event->referees as $ref) {
+            $isPresent = isset($presentRefereeIds[$ref->id]);
+
+            $roleTitle = match (strtolower((string) $ref->pivot->role)) {
+                'chief_referee' => 'Wasit Kepala (Chief Referee)',
+                'chief_judge' => 'Ketua Juri',
+                'deputy_chief' => 'Wakil Wasit Kepala',
+                'arbitration' => 'Dewan Arbitrase Wasit',
+                default => 'Wasit & Juri Pertandingan',
+            };
+
+            $personnel[] = [
+                'id' => 'ref-'.$ref->id,
+                'name' => $ref->name,
+                'category' => 'wasit',
+                'category_label' => 'Wasit & Juri',
+                'role_title' => $roleTitle,
+                'dan_grade' => $ref->dan_grade ?: '-',
+                'certification_level' => $ref->certification_level ?: '-',
+                'license_number' => $ref->license_number ?: '-',
+                'region' => $ref->region ?: '-',
+                'phone' => $ref->phone ?: '-',
+                'email' => $ref->email ?: '-',
+                'is_present' => $isPresent,
+                'attendance_status' => $isPresent ? 'Hadir Presensi' : 'Belum Presensi',
+                'avatar_letter' => strtoupper(substr($ref->name, 0, 1)),
+            ];
+        }
+
+        // 3. Panitera Meja
+        foreach ($event->clerks as $clerk) {
+            $personnel[] = [
+                'id' => 'clerk-'.$clerk->id,
+                'name' => $clerk->name,
+                'category' => 'panitera',
+                'category_label' => 'Panitera Meja',
+                'role_title' => $clerk->pivot->role ?: 'Panitera Meja',
+                'dan_grade' => '-',
+                'certification_level' => $clerk->certification ?: '-',
+                'license_number' => $clerk->employee_number ?: '-',
+                'region' => $clerk->region ?: '-',
+                'phone' => '-',
+                'email' => '-',
+                'is_present' => true,
+                'attendance_status' => 'Bertugas',
+                'avatar_letter' => strtoupper(substr($clerk->name, 0, 1)),
+            ];
+        }
+
+        return $personnel;
     }
 }

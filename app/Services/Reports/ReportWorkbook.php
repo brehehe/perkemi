@@ -19,6 +19,30 @@ class ReportWorkbook
      */
     public function build(string $title, string $subtitle, array $headers, array $rows): string
     {
+        return $this->buildMultiSheet($title, [
+            [
+                'sheet_name' => Str::limit($title, 31, ''),
+                'title' => $title,
+                'subtitle' => $subtitle,
+                'headers' => $headers,
+                'rows' => $rows,
+            ],
+        ]);
+    }
+
+    /**
+     * Build a multi-sheet XLSX workbook.
+     *
+     * @param  list<array{
+     *     sheet_name: string,
+     *     title: string,
+     *     subtitle: string,
+     *     headers: list<string>,
+     *     rows: list<list<int|float|string|null>>
+     * }>  $sheets
+     */
+    public function buildMultiSheet(string $mainTitle, array $sheets): string
+    {
         $temporaryFile = tempnam(sys_get_temp_dir(), 'smart-perkemi-report-');
 
         if ($temporaryFile === false) {
@@ -33,7 +57,7 @@ class ReportWorkbook
                 throw new RuntimeException('Tidak dapat membuka arsip Excel laporan.');
             }
 
-            foreach ($this->workbookFiles($title, $subtitle, $headers, $rows) as $path => $contents) {
+            foreach ($this->multiSheetFiles($mainTitle, $sheets) as $path => $contents) {
                 if (! $archive->addFromString($path, $contents)) {
                     $archive->close();
 
@@ -60,38 +84,60 @@ class ReportWorkbook
     }
 
     /**
-     * @param  list<string>  $headers
-     * @param  list<list<int|float|string|null>>  $rows
+     * @param  list<array{
+     *     sheet_name: string,
+     *     title: string,
+     *     subtitle: string,
+     *     headers: list<string>,
+     *     rows: list<list<int|float|string|null>>
+     * }>  $sheets
      * @return array<string, string>
      */
-    private function workbookFiles(string $title, string $subtitle, array $headers, array $rows): array
+    private function multiSheetFiles(string $mainTitle, array $sheets): array
     {
-        return [
-            '[Content_Types].xml' => $this->contentTypesXml(),
+        $sheetCount = count($sheets);
+        $sheetNames = array_map(fn (array $s): string => Str::limit($s['sheet_name'], 31, ''), $sheets);
+
+        $files = [
+            '[Content_Types].xml' => $this->contentTypesXml($sheetCount),
             '_rels/.rels' => $this->rootRelationshipsXml(),
             'docProps/app.xml' => $this->appPropertiesXml(),
-            'docProps/core.xml' => $this->corePropertiesXml($title),
-            'xl/workbook.xml' => $this->workbookXml(Str::limit($title, 31, '')),
-            'xl/_rels/workbook.xml.rels' => $this->workbookRelationshipsXml(),
+            'docProps/core.xml' => $this->corePropertiesXml($mainTitle),
+            'xl/workbook.xml' => $this->workbookXml($sheetNames),
+            'xl/_rels/workbook.xml.rels' => $this->workbookRelationshipsXml($sheetCount),
             'xl/styles.xml' => $this->stylesXml(),
-            'xl/worksheets/sheet1.xml' => $this->worksheetXml($title, $subtitle, $headers, $rows),
         ];
+
+        foreach ($sheets as $index => $sheet) {
+            $sheetNumber = $index + 1;
+            $files["xl/worksheets/sheet{$sheetNumber}.xml"] = $this->worksheetXml(
+                $sheet['title'],
+                $sheet['subtitle'],
+                $sheet['headers'],
+                $sheet['rows'],
+            );
+        }
+
+        return $files;
     }
 
-    private function contentTypesXml(): string
+    private function contentTypesXml(int $sheetCount): string
     {
-        return <<<'XML'
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-</Types>
-XML;
+        $overrides = '';
+        for ($i = 1; $i <= $sheetCount; $i++) {
+            $overrides .= '<Override PartName="/xl/worksheets/sheet'.$i.'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            .'<Default Extension="xml" ContentType="application/xml"/>'
+            .'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            .$overrides
+            .'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            .'<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+            .'<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
+            .'</Types>';
     }
 
     private function rootRelationshipsXml(): string
@@ -125,22 +171,36 @@ XML;
             .'<dcterms:modified xsi:type="dcterms:W3CDTF">'.$createdAt.'</dcterms:modified></cp:coreProperties>';
     }
 
-    private function workbookXml(string $sheetName): string
+    /**
+     * @param  list<string>  $sheetNames
+     */
+    private function workbookXml(array $sheetNames): string
     {
+        $sheetsXml = '';
+        foreach ($sheetNames as $index => $name) {
+            $sheetId = $index + 1;
+            $sheetsXml .= '<sheet name="'.$this->escape($name).'" sheetId="'.$sheetId.'" r:id="rId'.$sheetId.'"/>';
+        }
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            .'<sheets><sheet name="'.$this->escape($sheetName).'" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="0" fullCalcOnLoad="1"/></workbook>';
+            .'<sheets>'.$sheetsXml.'</sheets><calcPr calcId="0" fullCalcOnLoad="1"/></workbook>';
     }
 
-    private function workbookRelationshipsXml(): string
+    private function workbookRelationshipsXml(int $sheetCount): string
     {
-        return <<<'XML'
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>
-XML;
+        $relationships = '';
+        for ($i = 1; $i <= $sheetCount; $i++) {
+            $relationships .= '<Relationship Id="rId'.$i.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'.$i.'.xml"/>';
+        }
+
+        $stylesId = $sheetCount + 1;
+        $relationships .= '<Relationship Id="rId'.$stylesId.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .$relationships
+            .'</Relationships>';
     }
 
     private function stylesXml(): string

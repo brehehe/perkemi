@@ -2,12 +2,14 @@
 
 namespace App\Services\Referee;
 
+use App\Models\Contingent;
 use App\Models\EmbuJudgeScore;
 use App\Models\Event;
 use App\Models\Referee;
 use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class RefereeEvaluationService
@@ -33,7 +35,61 @@ class RefereeEvaluationService
         $certificationFilter = trim((string) ($filters['certification'] ?? ''));
         $statusFilter = trim((string) ($filters['status'] ?? 'all'));
 
-        // Load all active or assigned referees in this event
+        $cacheVersion = $this->resolveCacheVersion($event);
+        $cacheKey = "event:{$event->id}:referee_eval_base:{$cacheVersion}";
+
+        $baseData = Cache::remember($cacheKey, 60, function () use ($event): array {
+            return $this->computeBaseEvaluation($event);
+        });
+
+        $filteredReferees = $this->applyFilters(
+            $baseData['referees'],
+            $search,
+            $certificationFilter,
+            $statusFilter,
+        );
+
+        return [
+            'summary' => $baseData['summary'],
+            'referees' => $filteredReferees,
+            'heatmap' => $baseData['heatmap'],
+            'certification_options' => $baseData['certification_options'],
+        ];
+    }
+
+    /**
+     * Generate cache invalidation fingerprint based on score count, referee count, and timestamp.
+     */
+    private function resolveCacheVersion(Event $event): string
+    {
+        $latestScore = EmbuJudgeScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'submitted')
+            ->max('updated_at');
+
+        $scoreCount = EmbuJudgeScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'submitted')
+            ->count();
+
+        $assignedCount = $event->referees()->count();
+
+        return md5("{$event->id}_{$event->updated_at?->timestamp}_{$scoreCount}_{$latestScore}_{$assignedCount}");
+    }
+
+    /**
+     * Compute base evaluation metrics across all referees in the event.
+     *
+     * @return array{
+     *     summary: array<string, mixed>,
+     *     referees: list<array<string, mixed>>,
+     *     heatmap: array<string, mixed>,
+     *     certification_options: list<string>
+     * }
+     */
+    private function computeBaseEvaluation(Event $event): array
+    {
+        // 1. Load referee IDs
         $assignedRefereeIds = $event->referees()->pluck('referees.id');
         $scoringRefereeIds = EmbuJudgeScore::query()
             ->whereBelongsTo($event)
@@ -45,26 +101,96 @@ class RefereeEvaluationService
 
         $referees = Referee::query()
             ->whereIn('id', $allRefereeIds)
+            ->select(['id', 'name', 'gender', 'region', 'certification_level', 'dan_grade', 'license_number', 'is_active'])
             ->orderBy('name')
             ->get();
 
-        // Preload matches and scores for this event to avoid N+1 queries
-        $matchesWithScores = TournamentMatch::query()
+        // 2. Preload matches and relationships with eager loading
+        $matches = TournamentMatch::query()
             ->whereBelongsTo($event)
             ->whereHas('matchCategory', fn ($q) => $q->where('type', 'embu'))
+            ->select([
+                'id',
+                'event_id',
+                'event_court_id',
+                'event_match_category_id',
+                'match_sequence',
+                'round_label',
+                'participant_label',
+                'participant_entry_id',
+                'metadata',
+            ])
             ->with([
                 'matchCategory:id,name,type',
                 'court:id,name',
-                'embuJudgeScores' => fn ($q) => $q->where('status', 'submitted'),
                 'participantEntry.athlete.contingent:id,name,city',
             ])
             ->get()
             ->keyBy('id');
 
+        // Batch load any contingent IDs found solely in match metadata
+        $missingContingentIds = $matches
+            ->filter(fn (TournamentMatch $m): bool => ! $m->participantEntry?->athlete?->contingent)
+            ->map(fn (TournamentMatch $m) => data_get($m->metadata, 'contingent_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $extraContingents = $missingContingentIds->isNotEmpty()
+            ? Contingent::query()->whereIn('id', $missingContingentIds)->get(['id', 'name', 'city'])->keyBy('id')
+            : collect();
+
+        // 3. Load submitted judge scores
+        $judgeScores = EmbuJudgeScore::query()
+            ->whereBelongsTo($event)
+            ->where('status', 'submitted')
+            ->select(['id', 'event_id', 'tournament_match_id', 'referee_id', 'total_score'])
+            ->get();
+
+        // 4. Precompute per-match statistics in O(M)
+        $scoresByMatch = $judgeScores->groupBy('tournament_match_id');
+        $matchStats = [];
+        $contingentCities = collect();
+
+        foreach ($matches as $match) {
+            $mScores = $scoresByMatch->get($match->id, collect());
+            $allVals = $mScores->pluck('total_score')->map(fn ($v): float => (float) $v);
+            $count = $allVals->count();
+
+            $contingent = $match->participantEntry?->athlete?->contingent
+                ?? ($match->metadata && isset($extraContingents[data_get($match->metadata, 'contingent_id')])
+                    ? $extraContingents[data_get($match->metadata, 'contingent_id')]
+                    : null);
+
+            $contingentName = $contingent?->name
+                ?? data_get($match->metadata, 'contingent_name')
+                ?? 'Kontingen';
+
+            $contingentCity = $contingent?->city
+                ?? data_get($match->metadata, 'city')
+                ?? data_get($match->metadata, 'contingent_city')
+                ?? $contingentName;
+
+            if ($contingentCity) {
+                $contingentCities->push($contingentCity);
+            }
+
+            $matchStats[$match->id] = [
+                'match' => $match,
+                'contingent_name' => $contingentName,
+                'contingent_city' => $contingentCity,
+                'score_count' => $count,
+                'min_score' => $count >= 3 ? $allVals->min() : null,
+                'max_score' => $count >= 3 ? $allVals->max() : null,
+                'sum_score' => (float) $allVals->sum(),
+            ];
+        }
+
+        // 5. Invert score lookup: group submitted scores by referee
+        $scoresByReferee = $judgeScores->groupBy('referee_id');
         $evaluations = [];
         $certificationSet = collect();
         $regionalMatrix = [];
-        $contingentCities = collect();
 
         foreach ($referees as $referee) {
             $certification = trim((string) ($referee->certification_level ?: 'Wasit Daerah'));
@@ -77,49 +203,44 @@ class RefereeEvaluationService
             $sameRegionPeerScores = [];
             $otherRegionScores = [];
 
-            // Group referee's submitted scores across matches
-            foreach ($matchesWithScores as $match) {
-                /** @var EmbuJudgeScore|null $judgeScore */
-                $judgeScore = $match->embuJudgeScores->firstWhere('referee_id', $referee->id);
+            $refScores = $scoresByReferee->get($referee->id, collect());
 
-                if (! $judgeScore || $judgeScore->status !== 'submitted') {
+            foreach ($refScores as $scoreRecord) {
+                $matchStat = $matchStats[$scoreRecord->tournament_match_id] ?? null;
+                if (! $matchStat) {
                     continue;
                 }
 
-                $scoreVal = (float) $judgeScore->total_score;
+                /** @var TournamentMatch $match */
+                $match = $matchStat['match'];
+                $scoreVal = (float) $scoreRecord->total_score;
                 $refereeScores->push($scoreVal);
 
-                // Analyze peer scores in this match
-                $allMatchScores = $match->embuJudgeScores->pluck('total_score')->map(fn ($v) => (float) $v);
-                $peerScores = $match->embuJudgeScores
-                    ->filter(fn ($s) => $s->id !== $judgeScore->id)
-                    ->pluck('total_score')
-                    ->map(fn ($v) => (float) $v);
-
+                $mCount = $matchStat['score_count'];
                 $isTrimmed = false;
-                if ($allMatchScores->count() >= 3) {
-                    $minVal = $allMatchScores->min();
-                    $maxVal = $allMatchScores->max();
-                    if ($scoreVal === $minVal || $scoreVal === $maxVal) {
+                if ($mCount >= 3) {
+                    if ($scoreVal === $matchStat['min_score'] || $scoreVal === $matchStat['max_score']) {
                         $isTrimmed = true;
                         $trimmedCount++;
                     }
                 }
 
-                // Check participant contingent region/city
-                $participant = $this->participantDetails->forMatch($event, $match);
-                $contingentName = $participant['contingent_name'] ?? ($match->participantEntry?->athlete?->contingent?->name ?? 'Kontingen');
-                $contingentCity = $match->participantEntry?->athlete?->contingent?->city ?? $contingentName;
+                $peerAvgUnrounded = $mCount > 1
+                    ? ($matchStat['sum_score'] - $scoreVal) / ($mCount - 1)
+                    : $scoreVal;
+                $peerAvg = round($peerAvgUnrounded, 2);
+                $peerDev = $mCount > 1
+                    ? round($scoreVal - $peerAvgUnrounded, 2)
+                    : 0.0;
 
-                if ($contingentCity) {
-                    $contingentCities->push($contingentCity);
-                }
+                $contingentName = $matchStat['contingent_name'];
+                $contingentCity = $matchStat['contingent_city'];
 
                 $isSameRegion = $this->isSameOrigin($referee->region, $contingentCity, $contingentName);
                 if ($isSameRegion) {
                     $sameRegionScores[] = $scoreVal;
-                    if ($peerScores->isNotEmpty()) {
-                        $sameRegionPeerScores[] = $peerScores->avg();
+                    if ($mCount > 1) {
+                        $sameRegionPeerScores[] = $peerAvgUnrounded;
                     }
                 } else {
                     $otherRegionScores[] = $scoreVal;
@@ -131,11 +252,11 @@ class RefereeEvaluationService
                     'category' => $match->matchCategory?->name ?? 'Embu',
                     'round' => $match->round_label,
                     'court' => $match->court?->name,
-                    'participant' => $participant['contingent_name'] ?: $match->participant_label,
+                    'participant' => $contingentName ?: $match->participant_label,
                     'contingent_city' => $contingentCity,
                     'score' => $scoreVal,
-                    'peer_average' => $peerScores->isNotEmpty() ? round($peerScores->avg(), 2) : $scoreVal,
-                    'peer_deviation' => $peerScores->isNotEmpty() ? round($scoreVal - $peerScores->avg(), 2) : 0.0,
+                    'peer_average' => $peerAvg,
+                    'peer_deviation' => $peerDev,
                     'is_trimmed' => $isTrimmed,
                     'is_same_region' => $isSameRegion,
                 ];
@@ -144,8 +265,8 @@ class RefereeEvaluationService
                 $cityKey = $contingentCity ?: 'Lainnya';
                 $regionalMatrix[$referee->id][$cityKey][] = [
                     'referee_score' => $scoreVal,
-                    'peer_avg' => $peerScores->isNotEmpty() ? $peerScores->avg() : $scoreVal,
-                    'deviation' => $peerScores->isNotEmpty() ? round($scoreVal - $peerScores->avg(), 2) : 0.0,
+                    'peer_avg' => $peerAvgUnrounded,
+                    'deviation' => $peerDev,
                     'is_same_origin' => $isSameRegion,
                 ];
             }
@@ -254,8 +375,90 @@ class RefereeEvaluationService
             ];
         }
 
-        // Apply search filter
-        $filteredEvaluations = collect($evaluations)
+        // Compute aggregate metrics
+        $allEvaluatedReferees = collect($evaluations)->filter(fn ($r): bool => $r['matches_judged_count'] > 0);
+        $totalActiveJudges = $allEvaluatedReferees->count();
+        $overallAvgScore = $totalActiveJudges > 0 ? round((float) $allEvaluatedReferees->avg('average_score'), 2) : 0.0;
+        $overallAvgStdDev = $totalActiveJudges > 0 ? round((float) $allEvaluatedReferees->avg('std_dev'), 2) : 0.0;
+        $totalFlagged = collect($evaluations)->where('status', 'flagged')->count();
+        $totalWarning = collect($evaluations)->where('status', 'warning')->count();
+        $totalNormal = collect($evaluations)->where('status', 'normal')->count();
+        $objectivityRate = count($evaluations) > 0 ? round(($totalNormal / count($evaluations)) * 100, 1) : 100.0;
+
+        // Compile Heatmap data
+        $uniqueCities = $contingentCities->filter()->unique()->sort()->values()->all();
+        $heatmapMatrix = [];
+        foreach ($evaluations as $item) {
+            $refId = $item['id'];
+            $row = [
+                'referee_id' => $refId,
+                'referee_name' => $item['name'],
+                'referee_region' => $item['region'],
+                'cells' => [],
+            ];
+
+            foreach ($uniqueCities as $city) {
+                $scoresInCity = $regionalMatrix[$refId][$city] ?? [];
+                if (empty($scoresInCity)) {
+                    $row['cells'][$city] = null;
+                } else {
+                    $avgDev = round((float) collect($scoresInCity)->avg('deviation'), 2);
+                    $avgScore = round((float) collect($scoresInCity)->avg('referee_score'), 2);
+                    $isSame = collect($scoresInCity)->contains('is_same_origin', true);
+                    $row['cells'][$city] = [
+                        'count' => count($scoresInCity),
+                        'avg_score' => $avgScore,
+                        'deviation' => $avgDev,
+                        'delta' => $avgDev,
+                        'is_same_origin' => $isSame,
+                        'bias_level' => $avgDev >= 3.0 ? 'danger' : ($avgDev >= 1.5 ? 'warning' : 'none'),
+                        'intensity' => $avgDev >= 3.0 ? 'high_positive' : ($avgDev >= 1.5 ? 'med_positive' : ($avgDev <= -3.0 ? 'high_negative' : ($avgDev <= -1.5 ? 'med_negative' : 'neutral'))),
+                    ];
+                }
+            }
+
+            $heatmapMatrix[] = $row;
+        }
+
+        return [
+            'summary' => [
+                'total_referees' => count($evaluations),
+                'active_scoring_referees' => $totalActiveJudges,
+                'active_judged_referees' => $totalActiveJudges,
+                'overall_average_score' => $overallAvgScore,
+                'average_score' => $overallAvgScore,
+                'overall_std_dev' => $overallAvgStdDev,
+                'average_std_dev' => $overallAvgStdDev,
+                'total_scores_recorded' => $judgeScores->count(),
+                'flagged_count' => $totalFlagged,
+                'warning_count' => $totalWarning,
+                'needs_attention_count' => $totalWarning,
+                'normal_count' => $totalNormal,
+                'objectivity_rate' => $objectivityRate,
+            ],
+            'referees' => $evaluations,
+            'heatmap' => [
+                'cities' => $uniqueCities,
+                'contingent_cities' => $uniqueCities,
+                'rows' => $heatmapMatrix,
+            ],
+            'certification_options' => $certificationSet->filter()->unique()->values()->all(),
+        ];
+    }
+
+    /**
+     * Apply search, certification, and status filters in memory on evaluated referee collection.
+     *
+     * @param  list<array<string, mixed>>  $evaluations
+     * @return list<array<string, mixed>>
+     */
+    private function applyFilters(
+        array $evaluations,
+        string $search,
+        string $certificationFilter,
+        string $statusFilter,
+    ): array {
+        return collect($evaluations)
             ->when($search !== '', function (Collection $items) use ($search): Collection {
                 $needle = Str::lower($search);
 
@@ -283,68 +486,6 @@ class RefereeEvaluationService
             })
             ->values()
             ->all();
-
-        // Compute aggregate metrics
-        $allEvaluatedReferees = collect($evaluations)->filter(fn ($r) => $r['matches_judged_count'] > 0);
-        $totalActiveJudges = $allEvaluatedReferees->count();
-        $overallAvgScore = $totalActiveJudges > 0 ? round($allEvaluatedReferees->avg('average_score'), 2) : 0.0;
-        $overallAvgStdDev = $totalActiveJudges > 0 ? round($allEvaluatedReferees->avg('std_dev'), 2) : 0.0;
-        $totalFlagged = collect($evaluations)->where('status', 'flagged')->count();
-        $totalWarning = collect($evaluations)->where('status', 'warning')->count();
-        $totalNormal = collect($evaluations)->where('status', 'normal')->count();
-        $objectivityRate = count($evaluations) > 0 ? round(($totalNormal / count($evaluations)) * 100, 1) : 100.0;
-
-        // Compile Heatmap data
-        $uniqueCities = $contingentCities->filter()->unique()->sort()->values()->all();
-        $heatmapMatrix = [];
-        foreach ($evaluations as $item) {
-            $refId = $item['id'];
-            $row = [
-                'referee_id' => $refId,
-                'referee_name' => $item['name'],
-                'referee_region' => $item['region'],
-                'cells' => [],
-            ];
-
-            foreach ($uniqueCities as $city) {
-                $scoresInCity = $regionalMatrix[$refId][$city] ?? [];
-                if (empty($scoresInCity)) {
-                    $row['cells'][$city] = null;
-                } else {
-                    $avgDev = round(collect($scoresInCity)->avg('deviation'), 2);
-                    $avgScore = round(collect($scoresInCity)->avg('referee_score'), 2);
-                    $isSame = collect($scoresInCity)->contains('is_same_origin', true);
-                    $row['cells'][$city] = [
-                        'count' => count($scoresInCity),
-                        'avg_score' => $avgScore,
-                        'deviation' => $avgDev,
-                        'is_same_origin' => $isSame,
-                        'intensity' => $avgDev >= 3.0 ? 'high_positive' : ($avgDev >= 1.5 ? 'med_positive' : ($avgDev <= -3.0 ? 'high_negative' : ($avgDev <= -1.5 ? 'med_negative' : 'neutral'))),
-                    ];
-                }
-            }
-
-            $heatmapMatrix[] = $row;
-        }
-
-        return [
-            'summary' => [
-                'total_referees' => count($evaluations),
-                'active_scoring_referees' => $totalActiveJudges,
-                'overall_average_score' => $overallAvgScore,
-                'overall_std_dev' => $overallAvgStdDev,
-                'flagged_count' => $totalFlagged,
-                'warning_count' => $totalWarning,
-                'normal_count' => $totalNormal,
-                'objectivity_rate' => $objectivityRate,
-            ],
-            'referees' => $filteredEvaluations,
-            'heatmap' => [
-                'cities' => $uniqueCities,
-                'rows' => $heatmapMatrix,
-            ],
-            'certification_options' => $certificationSet->filter()->unique()->values()->all(),
-        ];
     }
 
     /**
@@ -376,9 +517,9 @@ class RefereeEvaluationService
             return false;
         }
 
-        $cleanRef = Str::lower(preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', $refereeRegion));
-        $cleanCity = Str::lower(preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', (string) $contingentCity));
-        $cleanName = Str::lower(preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', (string) $contingentName));
+        $cleanRef = Str::lower((string) preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', $refereeRegion));
+        $cleanCity = Str::lower((string) preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', (string) $contingentCity));
+        $cleanName = Str::lower((string) preg_replace('/(kabupaten|kab\.|kota|provinsi|prov\.|dojo)/i', '', (string) $contingentName));
 
         $cleanRef = trim($cleanRef);
         $cleanCity = trim($cleanCity);
@@ -398,6 +539,13 @@ class RefereeEvaluationService
      * Generate narrative evaluation report based on referee metrics.
      *
      * @param  list<array<string, mixed>>  $flags
+     * @return array{
+     *     headline: string,
+     *     consistency: string,
+     *     trimmed_analysis: string,
+     *     regional_bias: string,
+     *     recommendation: string
+     * }
      */
     private function generateNarrative(
         Referee $referee,

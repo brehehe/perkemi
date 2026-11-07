@@ -1,5 +1,6 @@
 import ParticipantRulesForm from './ParticipantRulesForm';
 import EventDataSyncForm from './EventDataSyncForm';
+import ArbitrationTab from './ArbitrationTab';
 import EventRefereeImport from '@/Components/Admin/EventRefereeImport';
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
@@ -43,6 +44,11 @@ export default function EventDetail({
         total_matches: 0,
         match_sessions: 0,
     },
+    arbitrationSummary = {},
+    arbitrationPersonnel = [],
+    arbitrationRoleUsers = [],
+    arbitrationAttendances = [],
+    arbitrationScores = [],
     tenantBaseDomain = 'localhost',
     counts = {
         age_categories: 0,
@@ -1183,8 +1189,18 @@ export default function EventDetail({
                                 />
                             </div>
 
-                            {/* Tombol Aksi: Ekspor, Impor, Menu Sync, Daftar Event */}
+                            {/* Tombol Aksi: Export Excel, Ekspor JSON, Impor JSON, Menu Sync, Daftar Event */}
                             <div className="flex flex-wrap items-center gap-2">
+                                <a
+                                    href={`/admin/master/event/${event.id}/arbitration/export`}
+                                    download
+                                    title="Export Excel lengkap seluruh tab menu event & arbitrase (11 Sheet Otomatis .xlsx)"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-3.5 py-2 text-xs transition-all whitespace-nowrap shadow-md shadow-emerald-950/20 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                                >
+                                    <i className="fa-solid fa-file-excel text-xs" />
+                                    <span>Export Excel (.xlsx)</span>
+                                </a>
+
                                 <a
                                     href={`/admin/master/event/${event.id}/export-package`}
                                     download
@@ -1230,7 +1246,7 @@ export default function EventDetail({
                     </div>
 
                     {/* Stats pills */}
-                    <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                             <p className="text-[11px] font-medium text-white/60">Kelompok Umur</p>
                             <p className="text-xl font-bold text-amber-400 mt-0.5">
@@ -1253,6 +1269,12 @@ export default function EventDetail({
                             <p className="text-[11px] font-medium text-white/60">Sesi Acara Rundown</p>
                             <p className="text-xl font-bold text-amber-400 mt-0.5">
                                 {counts.rundowns} <span className="text-xs font-normal text-white/50">Sesi</span>
+                            </p>
+                        </div>
+                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                            <p className="text-[11px] font-medium text-white/60">Korps Arbitrase</p>
+                            <p className="text-xl font-bold text-amber-400 mt-0.5">
+                                {counts.referees} <span className="text-xs font-normal text-white/50">Wasit</span>
                             </p>
                         </div>
                     </div>
@@ -1309,6 +1331,13 @@ export default function EventDetail({
                                 icon: 'fa-scale-balanced',
                                 count: counts.referees,
                                 badgeColor: 'bg-rose-100 text-rose-800',
+                            },
+                            {
+                                id: 'arbitration',
+                                label: 'Arbitrase',
+                                icon: 'fa-gavel',
+                                count: arbitrationSummary.attendance_count ?? counts.referees,
+                                badgeColor: 'bg-amber-100 text-amber-800',
                             },
                             {
                                 id: 'clerks',
@@ -3278,6 +3307,19 @@ export default function EventDetail({
                             </div>
                         </form>
                     </div>
+                )}
+
+                {/* ════ TAB: ARBITRASE & REKAPITULASI WASIT ════ */}
+                {activeTab === 'arbitration' && (
+                    <ArbitrationTab
+                        event={event}
+                        arbitrationSummary={arbitrationSummary}
+                        arbitrationPersonnel={arbitrationPersonnel}
+                        arbitrationRoleUsers={arbitrationRoleUsers}
+                        arbitrationAttendances={arbitrationAttendances}
+                        arbitrationScores={arbitrationScores}
+                        eventReferees={eventReferees}
+                    />
                 )}
 
                 {/* ════ TAB: SINKRONISASI & BACKUP EVENT (OFFLINE / ONLINE) ════ */}

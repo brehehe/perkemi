@@ -98,6 +98,39 @@ test('the selected report can be exported as a native Excel workbook', function 
         ->and(substr($response->getContent(), 0, 2))->toBe('PK');
 });
 
+test('the selected report can be generated as a native PDF document', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('pdf');
+
+    $response = $this->actingAs($user)
+        ->get(route('admin.laporan.pdf', [
+            'event_id' => $event->id,
+            'report' => 'scoring-summary',
+        ]));
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+
+    expect($response->headers->get('content-disposition'))->toContain('attachment; filename=')
+        ->and(substr($response->getContent(), 0, 4))->toBe('%PDF');
+});
+
+test('the selected report can be previewed as html for PDF verification', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('pdf-preview');
+
+    $response = $this->actingAs($user)
+        ->get(route('admin.laporan.pdf', [
+            'event_id' => $event->id,
+            'report' => 'scoring-summary',
+            'preview' => 1,
+        ]));
+
+    $response->assertOk()
+        ->assertHeader('content-type', 'text/html; charset=UTF-8')
+        ->assertSee('PERSAUDARAAN BELADIRI SHORINJI KEMPO INDONESIA');
+});
+
 test('the category recap report can be exported as Excel workbook', function (): void {
     $user = User::factory()->create();
     $event = reportEvent('export-category-recap');

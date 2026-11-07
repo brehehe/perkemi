@@ -30,8 +30,10 @@ use App\Models\Rundown;
 use App\Models\TournamentResult;
 use App\Models\User;
 use App\Services\Admin\Master\EventDetailViewService;
+use App\Services\Arbitration\ArbitrationExportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -67,6 +69,33 @@ class EventDetailController extends Controller
         }
 
         return Inertia::render('Admin/Master/Event/Detail', $viewService->build($request, $event));
+    }
+
+    /**
+     * Export multi-sheet Excel report for unified arbitration (Jadwal, History Absensi, History Penilaian, Hasil Juara).
+     */
+    public function exportArbitration(
+        Request $request,
+        EventDetailViewService $viewService,
+        ArbitrationExportService $exportService,
+        ?Event $event = null,
+    ): HttpResponse {
+        $event = $viewService->resolveEvent($request, $event);
+
+        if (! $event) {
+            abort(404, 'Event tidak ditemukan.');
+        }
+
+        $binary = $exportService->export($event);
+        $filename = $exportService->filename($event);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Content-Length' => strlen($binary),
+            'Cache-Control' => 'max-age=0, must-revalidate',
+            'Pragma' => 'public',
+        ]);
     }
 
     public function updateTournamentSettings(UpdateEventTournamentSettingsRequest $request, Event $event): RedirectResponse

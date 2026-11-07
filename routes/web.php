@@ -132,6 +132,8 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     // Event Detail & Configuration
     Route::get('event/detail', [EventDetailController::class, 'show'])->name('event.detail.default');
     Route::get('event/{event}/detail', [EventDetailController::class, 'show'])->name('event.detail');
+    Route::get('event/arbitration/export', [EventDetailController::class, 'exportArbitration'])->name('event.arbitration.export.default');
+    Route::get('event/{event}/arbitration/export', [EventDetailController::class, 'exportArbitration'])->name('event.arbitration.export');
     Route::get('event/{event}/export-package', [EventDataSyncController::class, 'export'])->name('event.export-package');
     Route::post('event/import-package', [EventDataSyncController::class, 'import'])->name('event.import-package');
     Route::put('event/{event}/general', [EventDetailController::class, 'updateGeneral'])->name('event.update.general');
@@ -436,6 +438,7 @@ Route::prefix('admin/laporan')->middleware(['auth', 'event.tenant'])->name('admi
         ->scopeBindings()
         ->name('referee-scores.submitted.store');
     Route::get('export', [ReportController::class, 'export'])->name('export');
+    Route::get('pdf', [ReportController::class, 'pdf'])->name('pdf');
     Route::get('berita-acara', [ReportController::class, 'printBeritaAcara'])->name('berita-acara');
     Route::get('cetak/embu/{embuScore}', [ReportController::class, 'printEmbu'])->name('print.embu');
     Route::get('cetak/randori/{randoriScore}', [ReportController::class, 'printRandori'])->name('print.randori');

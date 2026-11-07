@@ -12,6 +12,7 @@ use App\Services\Admin\DashboardMetricsService;
 use App\Services\Reports\ReportDatasetBuilder;
 use App\Services\Reports\ReportWorkbook;
 use App\Services\Reports\ScoreReportFormatter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Str;
@@ -84,6 +85,48 @@ class ReportController extends Controller
             'Content-Length' => (string) strlen($contents),
             'Cache-Control' => 'private, no-store, max-age=0',
         ]);
+    }
+
+    /**
+     * Generate and download or stream official PDF report.
+     */
+    public function pdf(
+        Request $request,
+        ReportDatasetBuilder $datasetBuilder,
+    ): HttpResponse {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event, 404, 'Event belum tersedia.');
+
+        $report = $request->string('report')->toString();
+        $report = array_key_exists($report, ReportDatasetBuilder::Reports) ? $report : 'champions';
+        $rankingMethod = $request->string('ranking_method', 'medals')->toString();
+        $dataset = $datasetBuilder->build($activeEvent, $report, $rankingMethod);
+
+        $viewData = [
+            'event' => $activeEvent,
+            'dataset' => $dataset,
+            'printedAt' => now()->translatedFormat('d F Y, H:i'),
+            'documentNumber' => 'LAP/PERKEMI/'.now()->year.'/'.strtoupper(substr($activeEvent->id, 0, 8)),
+        ];
+
+        if ($request->boolean('preview')) {
+            return response(view('reports.general-report-pdf', $viewData)->render(), 200, [
+                'Content-Type' => 'text/html; charset=UTF-8',
+            ]);
+        }
+
+        $pdf = Pdf::loadView('reports.general-report-pdf', $viewData)
+            ->setPaper('a4', 'landscape');
+
+        $safeEvent = Str::slug($activeEvent->name, '_');
+        $safeTitle = Str::slug($dataset['title'], '_');
+        $filename = "Laporan_{$safeTitle}_{$safeEvent}_".now()->format('Ymd_His').'.pdf';
+
+        if ($request->boolean('stream')) {
+            return $pdf->stream($filename);
+        }
+
+        return $pdf->download($filename);
     }
 
     /**
