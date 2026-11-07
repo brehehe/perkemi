@@ -9,7 +9,7 @@ import FlashMessage from './Partials/FlashMessage';
 import CourtMonitorLinks from './Partials/CourtMonitorLinks';
 import PaniteraHeader from './Partials/PaniteraHeader';
 import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const formatScore = (value) => value === null || value === undefined ? '—' : Number(value).toFixed(2);
