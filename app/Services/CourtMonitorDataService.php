@@ -7,8 +7,10 @@ use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventCourtAssignment;
+use App\Models\EventMatchCategory;
 use App\Models\RefereeAttendance;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\PaniteraTimerState;
 use App\Services\Panitera\RandoriScoreDraftStore;
@@ -102,6 +104,14 @@ class CourtMonitorDataService
             ->values()
             ->all();
 
+        $embuTies = [];
+        if ($activeCategoryId) {
+            $activeCat = EventMatchCategory::find($activeCategoryId);
+            if ($activeCat && $activeCat->type === 'embu') {
+                $embuTies = app(EmbuResultService::class)->activeTies($activeCat)->all();
+            }
+        }
+
         return [
             'server_now' => $serverNow->toIso8601String(),
             'server_now_ms' => $serverNow->getTimestampMs(),
@@ -116,6 +126,7 @@ class CourtMonitorDataService
             ],
             'category_recap' => $categoryRecap,
             'categories_on_court' => $categoriesOnCourt,
+            'embu_ties' => $embuTies,
         ];
     }
 
@@ -405,6 +416,54 @@ class CourtMonitorDataService
         $shiroPhotoUrl = data_get($match->metadata, 'blue.photo_url')
             ?? (filled($match->blueEntry?->athlete?->profile_photo_path) ? route('athletes.photo', $match->blueEntry->athlete->id) : null);
 
+        $rawJudges = $type === 'embu' && $match->relationLoaded('embuJudgeScores')
+            ? $match->embuJudgeScores
+                ->where('tiebreak_round', 0)
+                ->sortBy('judge_number')
+                ->map(fn ($score): array => [
+                    'judge_number' => (int) $score->judge_number,
+                    'role' => $score->role,
+                    'referee_name' => $score->referee?->name ?? 'Juri '.$score->judge_number,
+                    'technique_subtotal' => (float) $score->technique_subtotal,
+                    'expression_subtotal' => (float) $score->expression_subtotal,
+                    'total_score' => (float) $score->total_score,
+                    'completed_items' => (int) $score->completed_items,
+                    'status' => $score->status,
+                    'is_signed' => filled($score->signature) || filled($score->signed_at),
+                ])
+                ->values()
+                ->all()
+            : [];
+
+        $resultData = $type === 'embu'
+            ? ($this->embuResultData($embuScore) ?? $this->liveEmbuResultData($match))
+            : ($randoriScore ? [
+                'aka_total' => $randoriScore->aka_total,
+                'shiro_total' => $randoriScore->shiro_total,
+                'aka_breakdown' => $randoriScore->aka_breakdown ?? [],
+                'shiro_breakdown' => $randoriScore->shiro_breakdown ?? [],
+                'winner_corner' => $randoriScore->winner_corner,
+                'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
+            ] : null);
+
+        $enrichedJudges = $rawJudges;
+        $embuParams = null;
+        if ($type === 'embu' && ! empty($rawJudges)) {
+            $finalScoreVal = isset($resultData['final_score']) ? (float) $resultData['final_score'] : null;
+            $paramsCalc = $this->calculator->calculateTrimmingAndParameters($rawJudges, $finalScoreVal);
+            $enrichedJudges = $paramsCalc['judges'];
+            $embuParams = [
+                'trimmed_min_judge' => $paramsCalc['trimmed_min_judge'],
+                'trimmed_max_judge' => $paramsCalc['trimmed_max_judge'],
+                'middle_judge_numbers' => $paramsCalc['middle_judge_numbers'],
+                'middle_judges_label' => $paramsCalc['middle_judges_label'],
+                'param1_score' => $paramsCalc['param1_score'],
+                'param2_technique' => $paramsCalc['param2_technique'],
+                'param3_chief_total' => $paramsCalc['param3_chief_total'],
+                'param4_chief_technique' => $paramsCalc['param4_chief_technique'],
+            ];
+        }
+
         return [
             'id' => $match->id,
             'category_name' => $match->matchCategory?->name,
@@ -428,34 +487,9 @@ class CourtMonitorDataService
             'call_status_label' => $this->callStatusLabel($match->call_status),
             'scheduled_at' => $match->scheduled_start_at?->translatedFormat('d M Y, H:i'),
             'timer' => $this->timerState->timer($match),
-            'result' => $type === 'embu'
-                ? ($this->embuResultData($embuScore) ?? $this->liveEmbuResultData($match))
-                : ($randoriScore ? [
-                    'aka_total' => $randoriScore->aka_total,
-                    'shiro_total' => $randoriScore->shiro_total,
-                    'aka_breakdown' => $randoriScore->aka_breakdown ?? [],
-                    'shiro_breakdown' => $randoriScore->shiro_breakdown ?? [],
-                    'winner_corner' => $randoriScore->winner_corner,
-                    'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
-                ] : null),
-            'judge_scores' => $type === 'embu' && $match->relationLoaded('embuJudgeScores')
-                ? $match->embuJudgeScores
-                    ->where('tiebreak_round', 0)
-                    ->sortBy('judge_number')
-                    ->map(fn ($score): array => [
-                        'judge_number' => $score->judge_number,
-                        'role' => $score->role,
-                        'referee_name' => $score->referee?->name ?? 'Juri '.$score->judge_number,
-                        'technique_subtotal' => (float) $score->technique_subtotal,
-                        'expression_subtotal' => (float) $score->expression_subtotal,
-                        'total_score' => (float) $score->total_score,
-                        'completed_items' => (int) $score->completed_items,
-                        'status' => $score->status,
-                        'is_signed' => filled($score->signature) || filled($score->signed_at),
-                    ])
-                    ->values()
-                    ->all()
-                : [],
+            'result' => $resultData,
+            'embu_parameters' => $embuParams,
+            'judge_scores' => $enrichedJudges,
             'var_stream_url' => data_get($match->metadata, 'var_stream_url')
                 ?? $match->court?->var_url
                 ?? 'https://var.smart-perkemi.id/kempo/demo/live_stream.html',

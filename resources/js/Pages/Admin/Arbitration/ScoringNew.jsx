@@ -319,13 +319,27 @@ function ScoreBoard({ activeEvent, session, onBusyChange, onScoreChange, referee
     );
 }
 
-function JudgedAthletesTable({ scores = [] }) {
+function JudgedAthletesTable({ scores = [], activeCategoryName = null, activeRoundLabel = null, activePool = null }) {
     const [viewMode, setViewMode] = useState('auto'); // 'auto', 'card', 'table'
 
     return (
         <section className="judged-athletes-card" aria-label="Daftar atlet yang telah dinilai">
             <header className="judged-athletes-header">
-                <h2>DAFTAR ATLET YANG TELAH DINILAI</h2>
+                <div>
+                    <h2>DAFTAR ATLET YANG TELAH DINILAI</h2>
+                    {(activeCategoryName || activeRoundLabel) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-600">
+                                {activeCategoryName}
+                            </span>
+                            {activeRoundLabel && (
+                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-300">
+                                    {activeRoundLabel}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <div className="judged-athletes-header-right">
                     <span className="judged-athletes-total">Total: {scores.length} Atlet</span>
                     {scores.length > 0 && (
@@ -345,11 +359,12 @@ function JudgedAthletesTable({ scores = [] }) {
             {scores.length === 0 ? (
                 <div className="judged-empty-state">
                     <i className="fa-solid fa-clipboard-list" aria-hidden="true" />
-                    <p>Belum ada atlet yang mulai dinilai pada event ini.</p>
+                    <p>
+                        Belum ada atlet yang dinilai pada nomor pertandingan {activeCategoryName ? `"${activeCategoryName}"` : ''} {activeRoundLabel ? `(${activeRoundLabel})` : ''}.
+                    </p>
                 </div>
             ) : (
                 <>
-                    {/* Tampilan Tabel (Default pada Layar Desktop & Tablet) */}
                     <div className={`judged-athletes-table-wrap ${viewMode === 'card' ? 'hidden' : viewMode === 'table' ? 'block' : 'hidden sm:block'}`}>
                         <table className="judged-athletes-table">
                             <thead>
@@ -390,7 +405,6 @@ function JudgedAthletesTable({ scores = [] }) {
                         </div>
                     </div>
 
-                    {/* Tampilan Kartu Responsif (Default pada Layar Mobile Ponsel) */}
                     <div className={`judged-athletes-mobile-list ${viewMode === 'table' ? 'hidden' : viewMode === 'card' ? 'flex' : 'flex sm:hidden'}`}>
                         {scores.map((item, index) => (
                             <article key={item.id || item.match_id || index} className="judged-athlete-card-item">
@@ -519,7 +533,12 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
                 {canScore ? (
                     <>
                         <ScoreBoard key={`${activeMatch.id}-${refereeSession.judge_number}`} activeEvent={activeEvent} session={refereeSession} onBusyChange={setBusy} onScoreChange={updateLiveScore} refereePortalUrl={refereePortalUrl} />
-                        <JudgedAthletesTable scores={judgedScores} />
+                        <JudgedAthletesTable
+                            scores={judgedScores}
+                            activeCategoryName={refereeSession?.active_category_name || activeMatch?.category_name}
+                            activeRoundLabel={refereeSession?.active_round_label || activeMatch?.round_label}
+                            activePool={refereeSession?.active_pool || activeMatch?.pool}
+                        />
                     </>
                 ) : (
                     <>
@@ -529,7 +548,14 @@ export default function ScoringNew({ activeEvent, refereeSession = null, complet
                             <p>{!refereeSession?.is_checked_in ? 'Pastikan kehadiran hari ini sudah tercatat agar lembar penilaian dapat dibuka.' : activeMatch ? 'Lembar ini digunakan untuk penilaian Embu. Nilai Randori dicatat melalui alur Panitera.' : 'Lembar penilaian akan terbuka otomatis setelah peserta Embu dipanggil di court Anda.'}</p>
                             <Link href={refereePortalUrl}>Buka portal wasit</Link>
                         </section>
-                        {judgedScores.length > 0 && <JudgedAthletesTable scores={judgedScores} />}
+                        {judgedScores.length > 0 && (
+                            <JudgedAthletesTable
+                                scores={judgedScores}
+                                activeCategoryName={refereeSession?.active_category_name || activeMatch?.category_name}
+                                activeRoundLabel={refereeSession?.active_round_label || activeMatch?.round_label}
+                                activePool={refereeSession?.active_pool || activeMatch?.pool}
+                            />
+                        )}
                     </>
                 )}
             </div>

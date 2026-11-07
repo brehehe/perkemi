@@ -6,7 +6,75 @@ import useLiveTimer from './Partials/useLiveTimer';
 import useTimerBell from './Partials/useTimerBell';
 import TimerBellControls from './Partials/TimerBellControls';
 import RandoriBracketTree from './Partials/RandoriBracketTree';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
+
+const getEmbuJudgeTrimming = (judgeScores = [], result = null, embuParams = null) => {
+    if (embuParams && embuParams.trimmed_min_judge !== undefined && embuParams.trimmed_min_judge !== null) {
+        return {
+            hasTrimmed: Boolean(embuParams.trimmed_min_judge && embuParams.trimmed_max_judge),
+            minJudgeNum: embuParams.trimmed_min_judge,
+            maxJudgeNum: embuParams.trimmed_max_judge,
+            middleJudgeNumbers: embuParams.middle_judge_numbers || [],
+            middleJudgesLabel: embuParams.middle_judges_label || (embuParams.middle_judge_numbers?.length ? `Wasit ${embuParams.middle_judge_numbers.join(', Wasit ')}` : null),
+            param1_score: embuParams.param1_score ?? result?.final_score ?? null,
+            param2_technique: embuParams.param2_technique,
+            param3_chief_total: embuParams.param3_chief_total,
+            param4_chief_technique: embuParams.param4_chief_technique,
+        };
+    }
+
+    const scores = [1, 2, 3, 4, 5].map((num) => {
+        const live = judgeScores?.find((s) => s.judge_number === num);
+        const verified = result?.judge_scores?.[num - 1];
+        const val = verified !== undefined ? Number(verified) : (live?.total_score ? Number(live.total_score) : 0);
+        const tech = live?.technique_subtotal !== undefined && live?.technique_subtotal !== null ? Number(live.technique_subtotal) : null;
+        return {
+            judge_number: num,
+            total_score: val,
+            technique_subtotal: tech,
+            live,
+        };
+    });
+
+    const nonZero = scores.filter((s) => s.total_score > 0);
+    if (nonZero.length === 5) {
+        const sorted = [...nonZero].sort((a, b) => (a.total_score - b.total_score) || (a.judge_number - b.judge_number));
+        const minJudge = sorted[0];
+        const maxJudge = sorted[4];
+        const middleJudges = sorted.slice(1, 4);
+        const middleJudgeNumbers = middleJudges.map((j) => j.judge_number);
+        const middleTechSum = middleJudges.every((j) => j.technique_subtotal !== null)
+            ? Number(middleJudges.reduce((sum, j) => sum + (j.technique_subtotal || 0), 0).toFixed(2))
+            : null;
+        const chiefJudge = scores.find((s) => s.judge_number === 1);
+
+        return {
+            hasTrimmed: true,
+            minJudgeNum: minJudge.judge_number,
+            maxJudgeNum: maxJudge.judge_number,
+            middleJudgeNumbers,
+            middleJudgesLabel: `Wasit ${middleJudgeNumbers.join(', Wasit ')}`,
+            param1_score: result?.final_score ?? null,
+            param2_technique: middleTechSum,
+            param3_chief_total: chiefJudge?.total_score || null,
+            param4_chief_technique: chiefJudge?.technique_subtotal || null,
+        };
+    }
+
+    const chiefJudge = scores.find((s) => s.judge_number === 1);
+    return {
+        hasTrimmed: false,
+        minJudgeNum: null,
+        maxJudgeNum: null,
+        middleJudgeNumbers: [],
+        middleJudgesLabel: null,
+        param1_score: result?.final_score ?? null,
+        param2_technique: null,
+        param3_chief_total: chiefJudge?.total_score || null,
+        param4_chief_technique: chiefJudge?.technique_subtotal || null,
+    };
+};
 
 const modes = [
     ['arena', 'Arena', 'fa-tv'],
@@ -534,60 +602,112 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                         </div>
 
                                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                                            {[1, 2, 3, 4, 5].map((judgeNum) => {
-                                                const liveScore = activeMatch.judge_scores?.find((s) => s.judge_number === judgeNum);
-                                                const verifiedScore = activeMatch.result?.judge_scores?.[judgeNum - 1];
-                                                const totalScoreVal = verifiedScore !== undefined
-                                                    ? Number(verifiedScore).toFixed(2)
-                                                    : liveScore?.total_score ? Number(liveScore.total_score).toFixed(2) : '—';
-                                                const isSubmitted = liveScore?.status === 'submitted' || verifiedScore !== undefined;
-
-                                                return (
-                                                    <div
-                                                        key={judgeNum}
-                                                        className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${isSubmitted
-                                                            ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
-                                                            : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-center justify-between gap-1">
-                                                            <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-[#d4a843]/20 dark:text-[#f2cd73] px-2.5 py-0.5 text-[10px] font-black uppercase">
-                                                                Juri {judgeNum} {judgeNum === 1 ? '(Utama)' : ''}
-                                                            </span>
-                                                            <span className={`text-[10px] font-bold uppercase ${isSubmitted ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'
-                                                                }`}>
-                                                                {isSubmitted ? 'Terkirim' : 'Menilai'}
-                                                            </span>
-                                                        </div>
-
-                                                        <p className="mt-2 text-xs font-bold text-slate-700 dark:text-white/80 truncate">
-                                                            {liveScore?.referee_name || `Juri ${judgeNum}`}
-                                                        </p>
-
-                                                        <div className="mt-4 text-center">
-                                                            <p className="text-3xl font-black text-slate-950 dark:text-white sm:text-4xl">
-                                                                {totalScoreVal}
-                                                            </p>
-                                                            <p className="mt-1 text-[10px] uppercase font-bold text-slate-500 dark:text-white/40">Total Nilai</p>
-                                                        </div>
-
-                                                        <div className="mt-3 grid grid-cols-2 gap-1 border-t border-slate-200 dark:border-white/10 pt-2 text-center text-[11px]">
-                                                            <div>
-                                                                <span className="block text-slate-500 dark:text-white/50">Teknik</span>
-                                                                <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                    {liveScore?.technique_subtotal ? Number(liveScore.technique_subtotal).toFixed(1) : '—'}
-                                                                </span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="block text-slate-500 dark:text-white/50">Ekspresi</span>
-                                                                <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                    {liveScore?.expression_subtotal ? Number(liveScore.expression_subtotal).toFixed(1) : '—'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                            {(() => {
+                                                const embuTrimming = getEmbuJudgeTrimming(
+                                                    activeMatch.judge_scores,
+                                                    activeMatch.result,
+                                                    activeMatch.embu_parameters,
                                                 );
-                                            })}
+
+                                                return [1, 2, 3, 4, 5].map((judgeNum) => {
+                                                    const liveScore = activeMatch.judge_scores?.find((s) => s.judge_number === judgeNum);
+                                                    const verifiedScore = activeMatch.result?.judge_scores?.[judgeNum - 1];
+                                                    const totalScoreVal = verifiedScore !== undefined
+                                                        ? Number(verifiedScore).toFixed(2)
+                                                        : liveScore?.total_score ? Number(liveScore.total_score).toFixed(2) : '—';
+                                                    const isSubmitted = liveScore?.status === 'submitted' || verifiedScore !== undefined;
+
+                                                    const isMaxTrimmed = embuTrimming.hasTrimmed && judgeNum === embuTrimming.maxJudgeNum;
+                                                    const isMinTrimmed = embuTrimming.hasTrimmed && judgeNum === embuTrimming.minJudgeNum;
+                                                    const isMiddle = embuTrimming.hasTrimmed && embuTrimming.middleJudgeNumbers.includes(judgeNum);
+
+                                                    return (
+                                                        <div
+                                                            key={judgeNum}
+                                                            className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${
+                                                                isMaxTrimmed || isMinTrimmed
+                                                                    ? 'border-rose-400 bg-rose-50/70 dark:border-rose-500/40 dark:bg-rose-950/25'
+                                                                    : isMiddle
+                                                                    ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-500/40 dark:bg-emerald-950/35 shadow-md ring-1 ring-emerald-400/20'
+                                                                    : isSubmitted
+                                                                    ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
+                                                                    : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center justify-between gap-1">
+                                                                <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-[#d4a843]/20 dark:text-[#f2cd73] px-2.5 py-0.5 text-[10px] font-black uppercase">
+                                                                    Juri {judgeNum} {judgeNum === 1 ? '(Utama)' : ''}
+                                                                </span>
+                                                                {isMaxTrimmed ? (
+                                                                    <span className="rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 text-[9px] font-black uppercase">
+                                                                        <i className="fa-solid fa-xmark mr-1" />Dicoret (Tertinggi)
+                                                                    </span>
+                                                                ) : isMinTrimmed ? (
+                                                                    <span className="rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 text-[9px] font-black uppercase">
+                                                                        <i className="fa-solid fa-xmark mr-1" />Dicoret (Terendah)
+                                                                    </span>
+                                                                ) : isMiddle ? (
+                                                                    <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 px-2 py-0.5 text-[9px] font-black uppercase">
+                                                                        <i className="fa-solid fa-check mr-1" />Dihitung (Wasit Tengah)
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className={`text-[10px] font-bold uppercase ${isSubmitted ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'}`}>
+                                                                        {isSubmitted ? 'Terkirim' : 'Menilai'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            <p className="mt-2 text-xs font-bold text-slate-700 dark:text-white/80 truncate">
+                                                                {liveScore?.referee_name || `Juri ${judgeNum}`}
+                                                            </p>
+
+                                                            <div className="mt-4 text-center">
+                                                                <p className={`text-3xl font-black sm:text-4xl ${
+                                                                    isMaxTrimmed || isMinTrimmed
+                                                                        ? 'text-rose-600 dark:text-rose-400 line-through opacity-75'
+                                                                        : isMiddle
+                                                                        ? 'text-emerald-700 dark:text-emerald-300'
+                                                                        : 'text-slate-950 dark:text-white'
+                                                                }`}>
+                                                                    {totalScoreVal}
+                                                                </p>
+                                                                <p className={`mt-1 text-[10px] uppercase font-bold ${
+                                                                    isMaxTrimmed
+                                                                        ? 'text-rose-600 dark:text-rose-400'
+                                                                        : isMinTrimmed
+                                                                        ? 'text-rose-600 dark:text-rose-400'
+                                                                        : isMiddle
+                                                                        ? 'text-emerald-700 dark:text-emerald-300'
+                                                                        : 'text-slate-500 dark:text-white/40'
+                                                                }`}>
+                                                                    {isMaxTrimmed
+                                                                        ? 'Dicoret · Nilai Tertinggi'
+                                                                        : isMinTrimmed
+                                                                        ? 'Dicoret · Nilai Terendah'
+                                                                        : isMiddle
+                                                                        ? 'Dihitung · 3 Wasit Tengah'
+                                                                        : 'Total Nilai'}
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="mt-3 grid grid-cols-2 gap-1 border-t border-slate-200 dark:border-white/10 pt-2 text-center text-[11px]">
+                                                                <div>
+                                                                    <span className="block text-slate-500 dark:text-white/50">Teknik</span>
+                                                                    <span className="font-bold text-slate-900 dark:text-white/90">
+                                                                        {liveScore?.technique_subtotal ? Number(liveScore.technique_subtotal).toFixed(1) : '—'}
+                                                                    </span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="block text-slate-500 dark:text-white/50">Ekspresi</span>
+                                                                    <span className="font-bold text-slate-900 dark:text-white/90">
+                                                                        {liveScore?.expression_subtotal ? Number(liveScore.expression_subtotal).toFixed(1) : '—'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
 
                                         {/* Rekap Nilai Akhir & Penalti */}
@@ -613,7 +733,141 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 </p>
                                             </div>
                                         </div>
+
+                                        {/* Panel 5 Parameter PB PERKEMI */}
+                                        {(() => {
+                                            const embuParams = getEmbuJudgeTrimming(
+                                                activeMatch.judge_scores,
+                                                activeMatch.result,
+                                                activeMatch.embu_parameters,
+                                            );
+
+                                            return (
+                                                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/40 dark:border-amber-900/30 dark:bg-amber-950/15 p-4 sm:p-5">
+                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-amber-200/60 dark:border-amber-900/30 pb-3">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-slate-950 font-black text-xs shadow-2xs">
+                                                                <i className="fa-solid fa-scale-balanced" />
+                                                            </span>
+                                                            <div>
+                                                                <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                                                                    5 Parameter Penilaian & Pemutus Nilai Seri (Regulasi PB PERKEMI)
+                                                                </h4>
+                                                                <p className="text-[11px] text-slate-600 dark:text-white/60 mt-0.5">
+                                                                    Urutan prioritas penentuan peringkat jika terjadi kesamaan nilai antar kontingen.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 px-3 py-1 text-xs font-bold border border-amber-300 dark:border-transparent">
+                                                            {embuParams.middleJudgesLabel ? (
+                                                                <>3 Wasit Tengah: <strong>{embuParams.middleJudgesLabel}</strong></>
+                                                            ) : (
+                                                                'Menunggu 5 Nilai Lengkap'
+                                                            )}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs">
+                                                        {/* Parameter 1 */}
+                                                        <div className="rounded-xl border border-amber-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
+                                                            <span className="rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                Parameter 1
+                                                            </span>
+                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Nilai Akhir (Trimmed)</p>
+                                                            <p className="mt-1 font-mono text-xl font-black text-amber-700 dark:text-amber-300">
+                                                                {activeMatch.result?.final_score !== undefined && activeMatch.result?.final_score !== null
+                                                                    ? Number(activeMatch.result.final_score).toFixed(2)
+                                                                    : embuParams.param1_score !== null
+                                                                    ? Number(embuParams.param1_score).toFixed(2)
+                                                                    : '—'}
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
+                                                                Tertinggi ({embuParams.maxJudgeNum ? `J${embuParams.maxJudgeNum}` : '—'}) & Terendah ({embuParams.minJudgeNum ? `J${embuParams.minJudgeNum}` : '—'}) dicoret
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Parameter 2 */}
+                                                        <div className="rounded-xl border border-emerald-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
+                                                            <span className="rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                Parameter 2
+                                                            </span>
+                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik 3 Wasit Tengah</p>
+                                                            <p className="mt-1 font-mono text-xl font-black text-emerald-600 dark:text-emerald-400">
+                                                                {embuParams.param2_technique !== null
+                                                                    ? Number(embuParams.param2_technique).toFixed(2)
+                                                                    : '—'}
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
+                                                                {embuParams.middleJudgesLabel ? `Fokus teknik ${embuParams.middleJudgesLabel}` : 'Fokus nilai teknik 3 wasit tidak dicoret'}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Parameter 3 */}
+                                                        <div className="rounded-xl border border-blue-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
+                                                            <span className="rounded-md bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300 px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                Parameter 3
+                                                            </span>
+                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Total Wasit Utama (W1)</p>
+                                                            <p className="mt-1 font-mono text-xl font-black text-blue-700 dark:text-blue-300">
+                                                                {embuParams.param3_chief_total !== null
+                                                                    ? Number(embuParams.param3_chief_total).toFixed(2)
+                                                                    : '—'}
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
+                                                                Nilai keseluruhan W1 (meski sempat dicoret di P1)
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Parameter 4 */}
+                                                        <div className="rounded-xl border border-indigo-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
+                                                            <span className="rounded-md bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300 px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                Parameter 4
+                                                            </span>
+                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik Wasit Utama (W1)</p>
+                                                            <p className="mt-1 font-mono text-xl font-black text-indigo-700 dark:text-indigo-300">
+                                                                {embuParams.param4_chief_technique !== null
+                                                                    ? Number(embuParams.param4_chief_technique).toFixed(2)
+                                                                    : '—'}
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
+                                                                Khusus nilai penguasaan teknik Wasit Utama
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Parameter 5 */}
+                                                        <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50/80 to-white dark:border-amber-900/40 dark:bg-slate-900/80 p-3 shadow-2xs">
+                                                            <span className="rounded-md bg-amber-200 text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 px-2 py-0.5 text-[10px] font-black uppercase">
+                                                                Parameter 5
+                                                            </span>
+                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Keputusan Wasit Utama</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-amber-800 dark:text-amber-300">
+                                                                Manual / Request
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-600 dark:text-white/60 mt-1">
+                                                                Panitera request ke Wasit Utama jika P1–P4 seri
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </section>
+
+                                    {/* Panel Kasus Nilai Seri (Tie-Break) untuk Panitera */}
+                                    {monitor?.embu_ties && monitor.embu_ties.length > 0 && (
+                                        <section className="space-y-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="relative flex h-3 w-3">
+                                                    <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+                                                    <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
+                                                </span>
+                                                <h3 className="text-base font-black uppercase tracking-wider text-slate-950 dark:text-white">
+                                                    Penetapan Nilai Seri Kategori Ini (Parameter 5 Wasit Utama)
+                                                </h3>
+                                            </div>
+                                            <EmbuTiebreakPanel ties={monitor.embu_ties} isArbitration={false} />
+                                        </section>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="grid gap-6 items-start lg:grid-cols-12">

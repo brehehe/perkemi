@@ -1395,7 +1395,7 @@ test('new scoring lists a referee draft immediately and keeps it after the activ
         'status' => 'completed',
         'call_status' => 'completed',
     ]);
-    $nextMatch = createActiveEmbuMatch($event, $court);
+    $nextMatch = createActiveEmbuMatch($event, $court, $match->matchCategory);
 
     $this->actingAs($user)
         ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id], false))
@@ -1641,6 +1641,162 @@ test('referee session lock detects foreign takeover and allows explicit takeover
             ->where('refereeSession.is_taken_over', false));
 });
 
+test('referee scoring page only lists scores for the active match category and pool', function () {
+    config(['app.wasit_scoring_version' => 'new']);
+    [$event, $courts] = createRefereeWorkflowEvent('score-history-filter');
+    $user = createRefereeWorkflowUser($event, 'Wasit');
+    $referee = createEventReferee($event, 1, $user);
+    $court = $courts->first();
+
+    EventCourtAssignment::query()->create([
+        'event_court_id' => $court->id,
+        'staff_type' => 'referee',
+        'staff_id' => $referee->id,
+        'role' => RefereeCourtRole::Chief->value,
+    ]);
+
+    // Category 1, Pool A match (completed, scored)
+    $cat1 = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Beregu Putra',
+        'type' => 'embu',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $draw1 = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat1->id,
+        'status' => 'in_progress',
+        'bracket_type' => 'embu_direct_final',
+        'participant_count' => 4,
+        'contingent_count' => 4,
+        'generated_at' => now(),
+    ]);
+
+    $match1PoolA = TournamentMatch::query()->create([
+        'tournament_drawing_id' => $draw1->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat1->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan Pool A',
+        'pool' => 'A',
+        'match_sequence' => 1,
+        'participant_label' => 'Atlet Cat1 Pool A',
+        'status' => 'completed',
+        'call_status' => 'completed',
+    ]);
+    $score1 = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match1PoolA->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'judge_number' => 1,
+        'completed_items' => 10,
+        'total_score' => 90,
+        'status' => 'submitted',
+    ]);
+
+    // Category 1, Pool B match (completed, scored)
+    $match2PoolB = TournamentMatch::query()->create([
+        'tournament_drawing_id' => $draw1->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat1->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan Pool B',
+        'pool' => 'B',
+        'match_sequence' => 2,
+        'participant_label' => 'Atlet Cat1 Pool B',
+        'status' => 'completed',
+        'call_status' => 'completed',
+    ]);
+    $score2 = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match2PoolB->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'judge_number' => 1,
+        'completed_items' => 10,
+        'total_score' => 88,
+        'status' => 'submitted',
+    ]);
+
+    // Category 2 match (completed, scored)
+    $cat2 = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Tandoku Remaja',
+        'type' => 'embu',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $draw2 = TournamentDrawing::query()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat2->id,
+        'status' => 'in_progress',
+        'bracket_type' => 'embu_direct_final',
+        'participant_count' => 4,
+        'contingent_count' => 4,
+        'generated_at' => now(),
+    ]);
+    $match3Cat2 = TournamentMatch::query()->create([
+        'tournament_drawing_id' => $draw2->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat2->id,
+        'event_court_id' => $court->id,
+        'phase' => 'final',
+        'round_label' => 'Final',
+        'match_sequence' => 1,
+        'participant_label' => 'Atlet Cat2 Final',
+        'status' => 'completed',
+        'call_status' => 'completed',
+    ]);
+    $score3 = EmbuJudgeScore::factory()->create([
+        'event_id' => $event->id,
+        'tournament_match_id' => $match3Cat2->id,
+        'event_court_id' => $court->id,
+        'referee_id' => $referee->id,
+        'user_id' => $user->id,
+        'judge_number' => 1,
+        'completed_items' => 10,
+        'total_score' => 95,
+        'status' => 'submitted',
+    ]);
+
+    // Active match on court is Category 1, Pool A
+    $activeMatch = TournamentMatch::query()->create([
+        'tournament_drawing_id' => $draw1->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $cat1->id,
+        'event_court_id' => $court->id,
+        'phase' => 'preliminary',
+        'round_label' => 'Penyisihan Pool A',
+        'pool' => 'A',
+        'match_sequence' => 3,
+        'participant_label' => 'Atlet Aktif Pool A',
+        'status' => 'ready',
+        'call_status' => 'participants_called',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.arbitrase.scoring', ['event_id' => $event->id, 'court_id' => $court->id], false))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/ScoringNew')
+            ->where('refereeSession.active_match.id', $activeMatch->id)
+            ->where('refereeSession.active_category_name', 'Embu Beregu Putra')
+            ->where('refereeSession.active_round_label', 'Penyisihan Pool A')
+            ->where('refereeSession.active_pool', 'A')
+            ->has('refereeSession.completed_category_scores', 1)
+            ->where('refereeSession.completed_category_scores.0.id', $score1->id)
+            ->where('refereeSession.completed_category_scores.0.match_id', $match1PoolA->id));
+});
+
 /** @return array{Event, Collection<int, EventCourt>} */
 function createRefereeWorkflowEvent(?string $identifier = null): array
 {
@@ -1696,9 +1852,9 @@ function createEventReferee(Event $event, int $number, ?User $user = null): Refe
     return $referee;
 }
 
-function createActiveEmbuMatch(Event $event, EventCourt $court): TournamentMatch
+function createActiveEmbuMatch(Event $event, EventCourt $court, ?EventMatchCategory $category = null): TournamentMatch
 {
-    $category = EventMatchCategory::query()->create([
+    $category ??= EventMatchCategory::query()->create([
         'event_id' => $event->id,
         'name' => 'Embu Pasangan Putra Kyu III',
         'type' => 'embu',
@@ -1707,15 +1863,20 @@ function createActiveEmbuMatch(Event $event, EventCourt $court): TournamentMatch
         'order' => 1,
         'is_active' => true,
     ]);
-    $drawing = TournamentDrawing::query()->create([
-        'event_id' => $event->id,
-        'event_match_category_id' => $category->id,
-        'status' => 'in_progress',
-        'bracket_type' => 'embu_direct_final',
-        'participant_count' => 4,
-        'contingent_count' => 4,
-        'generated_at' => now(),
-    ]);
+    $drawing = TournamentDrawing::query()->firstOrCreate(
+        ['event_id' => $event->id, 'event_match_category_id' => $category->id],
+        [
+            'status' => 'in_progress',
+            'bracket_type' => 'embu_direct_final',
+            'participant_count' => 4,
+            'contingent_count' => 4,
+            'generated_at' => now(),
+        ]
+    );
+
+    $nextSeq = (int) TournamentMatch::query()
+        ->where('tournament_drawing_id', $drawing->id)
+        ->max('match_sequence') + 1;
 
     return TournamentMatch::query()->create([
         'tournament_drawing_id' => $drawing->id,
@@ -1724,7 +1885,7 @@ function createActiveEmbuMatch(Event $event, EventCourt $court): TournamentMatch
         'event_court_id' => $court->id,
         'phase' => 'preliminary',
         'round_label' => 'Penyisihan',
-        'match_sequence' => 1,
+        'match_sequence' => $nextSeq,
         'participant_label' => 'Tim Embu Aktif',
         'status' => 'ready',
         'call_status' => 'participants_called',

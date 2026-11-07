@@ -12,6 +12,7 @@ import useTimerBell from './Partials/useTimerBell';
 import TimerBellControls from './Partials/TimerBellControls';
 import useAnnouncer from './Partials/useAnnouncer';
 import VarReviewModal from './Partials/VarReviewModal';
+import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
 import { displayedTimerSeconds } from './Partials/timerSynchronization';
 import { http } from '@inertiajs/core';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -61,7 +62,36 @@ function ResultSummary({ match }) {
                     <span className="text-xs text-[#7a746e]">Skor tengah: {Number(match.result.middle_score).toFixed(2)}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    {match.result.judge_scores.map((score, index) => <Badge key={index} variant="blue">Juri {match.result.judge_numbers?.[index] || index + 1}: {Number(score).toFixed(2)}</Badge>)}
+                    {match.result.judge_scores.map((score, index) => {
+                        const jNum = match.result.judge_numbers?.[index] || index + 1;
+                        const embuParams = match.result.embu_parameters;
+                        const isMin = embuParams?.trimmed_min_judge === jNum;
+                        const isMax = embuParams?.trimmed_max_judge === jNum;
+                        const isMiddle = embuParams?.middle_judge_numbers?.includes(jNum);
+
+                        let variant = 'blue';
+                        let label = `Juri ${jNum}: ${Number(score).toFixed(2)}`;
+                        let extraClass = '';
+
+                        if (isMax) {
+                            variant = 'red';
+                            label = `Juri ${jNum}: ${Number(score).toFixed(2)} (Dicoret: Tertinggi)`;
+                            extraClass = 'line-through opacity-85';
+                        } else if (isMin) {
+                            variant = 'red';
+                            label = `Juri ${jNum}: ${Number(score).toFixed(2)} (Dicoret: Terendah)`;
+                            extraClass = 'line-through opacity-85';
+                        } else if (isMiddle) {
+                            variant = 'green';
+                            label = `Juri ${jNum}: ${Number(score).toFixed(2)} (Dihitung: Wasit Tengah)`;
+                        }
+
+                        return (
+                            <Badge key={index} variant={variant} className={extraClass}>
+                                {label}
+                            </Badge>
+                        );
+                    })}
                 </div>
                 {match.result.is_disqualified && (
                     <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
@@ -74,6 +104,117 @@ function ResultSummary({ match }) {
                     <div className="rounded-xl bg-rose-50 p-3"><p className="text-[10px] font-bold uppercase text-rose-600">Denda pelanggaran</p><p className="mt-1 text-lg font-black text-rose-700">-{Number(match.result.violation_penalty || 0).toFixed(2)}</p></div>
                     <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase text-emerald-700">Nilai Akhir</p><p className="mt-1 text-lg font-black text-emerald-800">{Number(match.result.final_score).toFixed(2)}</p></div>
                 </div>
+
+                {/* 5 Parameter PB PERKEMI */}
+                {match.category_type === 'embu' && (() => {
+                    const embuParams = match.result.embu_parameters || {};
+                    return (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-amber-200/60 pb-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-slate-950 font-black text-xs shadow-2xs">
+                                        <i className="fa-solid fa-scale-balanced" />
+                                    </span>
+                                    <div>
+                                        <h4 className="font-bold text-[#17120f] text-xs sm:text-sm">
+                                            5 Parameter Penilaian & Pemutus Nilai Seri (Regulasi PB PERKEMI)
+                                        </h4>
+                                        <p className="text-[11px] text-[#7a746e]">
+                                            Urutan prioritas penentuan peringkat jika terjadi kesamaan nilai antar kontingen.
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="rounded-full bg-amber-100 text-amber-900 px-3 py-1 text-xs font-bold border border-amber-300">
+                                    {embuParams.middle_judges_label ? (
+                                        <>3 Wasit Tengah: <strong>{embuParams.middle_judges_label}</strong></>
+                                    ) : (
+                                        '3 Wasit Tengah'
+                                    )}
+                                </span>
+                            </div>
+
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs">
+                                {/* Parameter 1 */}
+                                <div className="rounded-xl border border-amber-200 bg-white p-3 shadow-2xs">
+                                    <span className="rounded-md bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-black uppercase">
+                                        Parameter 1
+                                    </span>
+                                    <p className="font-bold text-[#17120f] mt-1.5 text-xs">Nilai Akhir (Trimmed)</p>
+                                    <p className="mt-1 font-mono text-xl font-black text-amber-700">
+                                        {match.result.final_score !== undefined && match.result.final_score !== null
+                                            ? Number(match.result.final_score).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e] mt-1">
+                                        Tertinggi ({embuParams.trimmed_max_judge ? `J${embuParams.trimmed_max_judge}` : '—'}) & Terendah ({embuParams.trimmed_min_judge ? `J${embuParams.trimmed_min_judge}` : '—'}) dicoret
+                                    </p>
+                                </div>
+
+                                {/* Parameter 2 */}
+                                <div className="rounded-xl border border-emerald-200 bg-white p-3 shadow-2xs">
+                                    <span className="rounded-md bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black uppercase">
+                                        Parameter 2
+                                    </span>
+                                    <p className="font-bold text-[#17120f] mt-1.5 text-xs">Teknik 3 Wasit Tengah</p>
+                                    <p className="mt-1 font-mono text-xl font-black text-emerald-600">
+                                        {embuParams.param2_technique !== undefined && embuParams.param2_technique !== null
+                                            ? Number(embuParams.param2_technique).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e] mt-1">
+                                        {embuParams.middle_judges_label ? `Fokus teknik ${embuParams.middle_judges_label}` : 'Fokus nilai teknik 3 wasit tidak dicoret'}
+                                    </p>
+                                </div>
+
+                                {/* Parameter 3 */}
+                                <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-2xs">
+                                    <span className="rounded-md bg-blue-100 text-blue-900 px-2 py-0.5 text-[10px] font-black uppercase">
+                                        Parameter 3
+                                    </span>
+                                    <p className="font-bold text-[#17120f] mt-1.5 text-xs">Total Wasit Utama (W1)</p>
+                                    <p className="mt-1 font-mono text-xl font-black text-blue-700">
+                                        {embuParams.param3_chief_total !== undefined && embuParams.param3_chief_total !== null
+                                            ? Number(embuParams.param3_chief_total).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e] mt-1">
+                                        Nilai keseluruhan W1 (meski sempat dicoret di P1)
+                                    </p>
+                                </div>
+
+                                {/* Parameter 4 */}
+                                <div className="rounded-xl border border-indigo-200 bg-white p-3 shadow-2xs">
+                                    <span className="rounded-md bg-indigo-100 text-indigo-900 px-2 py-0.5 text-[10px] font-black uppercase">
+                                        Parameter 4
+                                    </span>
+                                    <p className="font-bold text-[#17120f] mt-1.5 text-xs">Teknik Wasit Utama (W1)</p>
+                                    <p className="mt-1 font-mono text-xl font-black text-indigo-700">
+                                        {embuParams.param4_chief_technique !== undefined && embuParams.param4_chief_technique !== null
+                                            ? Number(embuParams.param4_chief_technique).toFixed(2)
+                                            : '—'}
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e] mt-1">
+                                        Khusus nilai penguasaan teknik Wasit Utama
+                                    </p>
+                                </div>
+
+                                {/* Parameter 5 */}
+                                <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50/80 to-white p-3 shadow-2xs">
+                                    <span className="rounded-md bg-amber-200 text-amber-950 px-2 py-0.5 text-[10px] font-black uppercase">
+                                        Parameter 5
+                                    </span>
+                                    <p className="font-bold text-[#17120f] mt-1.5 text-xs">Keputusan Wasit Utama</p>
+                                    <p className="mt-1 font-mono text-sm font-black text-amber-800">
+                                        Manual / Request
+                                    </p>
+                                    <p className="text-[10.5px] text-[#7a746e] mt-1">
+                                        Panitera request ke Wasit Utama jika P1–P4 seri
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
                 {match.result.penalty_summaries?.length > 0 && (
                     <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-3">
                         <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Pelanggaran dicatat oleh {match.result.penalty_recorded_by || 'Wasit Utama'}</p>
@@ -113,6 +254,39 @@ function ResultSummary({ match }) {
 }
 
 function JudgeProgressPanel({ judges = [] }) {
+    const trimming = useMemo(() => {
+        const hasBackendTrimming = judges.some((j) => j.is_trimmed_min || j.is_trimmed_max);
+        if (hasBackendTrimming) {
+            const minJ = judges.find((j) => j.is_trimmed_min);
+            const maxJ = judges.find((j) => j.is_trimmed_max);
+            const middleJs = judges.filter((j) => j.is_middle);
+            return {
+                hasTrimmed: Boolean(minJ && maxJ),
+                minJudgeNum: minJ?.judge_number,
+                maxJudgeNum: maxJ?.judge_number,
+                middleJudgeNumbers: middleJs.map((j) => j.judge_number),
+            };
+        }
+
+        const nonZero = judges.filter((j) => Number(j.total_score) > 0);
+        if (nonZero.length === 5) {
+            const sorted = [...nonZero].sort((a, b) => (Number(a.total_score) - Number(b.total_score)) || (Number(a.judge_number) - Number(b.judge_number)));
+            return {
+                hasTrimmed: true,
+                minJudgeNum: sorted[0].judge_number,
+                maxJudgeNum: sorted[4].judge_number,
+                middleJudgeNumbers: sorted.slice(1, 4).map((j) => j.judge_number),
+            };
+        }
+
+        return {
+            hasTrimmed: false,
+            minJudgeNum: null,
+            maxJudgeNum: null,
+            middleJudgeNumbers: [],
+        };
+    }, [judges]);
+
     return (
         <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5" aria-labelledby="judge-progress-title">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -120,19 +294,39 @@ function JudgeProgressPanel({ judges = [] }) {
                     <h2 id="judge-progress-title" className="font-bold text-[#17120f]">Progres Penilaian 5 Wasit</h2>
                     <p className="mt-0.5 text-xs text-[#7a746e]">Nilai berubah otomatis saat Wasit menekan pilihan 7, 8, 9, atau 10.</p>
                 </div>
-                <span className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700">
-                    <span className="relative flex h-2.5 w-2.5" aria-hidden="true"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span>
-                    Sinkronisasi live
-                </span>
+                <div className="flex items-center gap-2">
+                    {trimming.hasTrimmed && (
+                        <span className="rounded-full bg-amber-100 text-amber-900 px-2.5 py-0.5 text-[11px] font-bold border border-amber-300">
+                            Min & Max Dicoret
+                        </span>
+                    )}
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                        <span className="relative flex h-2.5 w-2.5" aria-hidden="true"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span>
+                        Sinkronisasi live
+                    </span>
+                </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {judges.map((judge) => {
                     const isSubmitted = judge.status === 'submitted';
                     const isComplete = judge.completed_items === 10;
+                    const isMinTrimmed = trimming.hasTrimmed && trimming.minJudgeNum === judge.judge_number;
+                    const isMaxTrimmed = trimming.hasTrimmed && trimming.maxJudgeNum === judge.judge_number;
+                    const isMiddle = trimming.hasTrimmed && trimming.middleJudgeNumbers.includes(judge.judge_number);
+
+                    const cardBorder = isMaxTrimmed || isMinTrimmed
+                        ? 'border-rose-300 bg-rose-50/50'
+                        : isMiddle
+                        ? 'border-emerald-300 bg-emerald-50/50 shadow-xs'
+                        : isSubmitted
+                        ? 'border-emerald-200 bg-emerald-50/60'
+                        : isComplete
+                        ? 'border-amber-200 bg-amber-50/60'
+                        : 'border-[#e8e1d8] bg-[#fbfaf8]';
 
                     return (
-                        <article key={judge.judge_number} className={`rounded-2xl border p-4 ${isSubmitted ? 'border-emerald-200 bg-emerald-50/60' : isComplete ? 'border-amber-200 bg-amber-50/60' : 'border-[#e8e1d8] bg-[#fbfaf8]'}`}>
+                        <article key={judge.judge_number} className={`rounded-2xl border p-4 ${cardBorder}`}>
                             <div className="flex items-start justify-between gap-2">
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-wider text-[#a56f1c]">Juri {judge.judge_number}</p>
@@ -152,7 +346,40 @@ function JudgeProgressPanel({ judges = [] }) {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[9px] font-bold uppercase text-[#8b8178]">Nilai mentah</p>
-                                    <p className="mt-0.5 font-mono text-xl font-black text-[#c0392b]">{Number(judge.total_score).toFixed(0)}</p>
+                                    <p className={`mt-0.5 font-mono text-xl font-black ${
+                                        isMaxTrimmed || isMinTrimmed
+                                            ? 'line-through text-rose-600 opacity-75'
+                                            : isMiddle
+                                            ? 'text-emerald-700 font-extrabold'
+                                            : 'text-[#c0392b]'
+                                    }`}>
+                                        {Number(judge.total_score).toFixed(0)}
+                                    </p>
+                                    {(isMaxTrimmed || isMinTrimmed || isMiddle) && (
+                                        <span className={`inline-block mt-0.5 text-[9px] font-black uppercase rounded px-1.5 py-0.5 ${
+                                            isMaxTrimmed
+                                                ? 'bg-rose-100 text-rose-800'
+                                                : isMinTrimmed
+                                                ? 'bg-rose-100 text-rose-800'
+                                                : 'bg-emerald-100 text-emerald-800'
+                                        }`}>
+                                            {isMaxTrimmed ? 'Dicoret (Tertinggi)' : isMinTrimmed ? 'Dicoret (Terendah)' : 'Dihitung (Tengah)'}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-1 border-t border-black/5 pt-2 text-center text-[10px]">
+                                <div>
+                                    <span className="block text-[#8b8178]">Teknik</span>
+                                    <span className="font-bold text-[#17120f]">
+                                        {judge.technique_subtotal !== undefined && judge.technique_subtotal !== null ? Number(judge.technique_subtotal).toFixed(1) : '—'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span className="block text-[#8b8178]">Ekspresi</span>
+                                    <span className="font-bold text-[#17120f]">
+                                        {judge.expression_subtotal !== undefined && judge.expression_subtotal !== null ? Number(judge.expression_subtotal).toFixed(1) : '—'}
+                                    </span>
                                 </div>
                             </div>
                             <p className="mt-2 text-[10px] font-semibold text-[#7a746e]">{isSubmitted ? 'Sudah dikirim' : isComplete ? 'Draft lengkap' : 'Sedang menilai'}{judge.updated_at ? ` · ${judge.updated_at}` : ''}</p>
@@ -302,12 +529,12 @@ function EmbuPenaltyEditor({ activeEventId, canManage, penaltyState }) {
     );
 }
 
-export default function MatchDetail({ activeEvent, events = [], match: initialMatch, judgeProgress = [], nextMatch, categorySummary = {}, canManage = false, serverNowMs, timerStateUrl }) {
+export default function MatchDetail({ activeEvent, events = [], match: initialMatch, judgeProgress = [], embuTies = [], nextMatch, categorySummary = {}, canManage = false, serverNowMs, timerStateUrl }) {
     const { flash = {}, errors = {} } = usePage().props;
     const [workflowErrors, setWorkflowErrors] = useState({});
     const refreshLiveData = useCallback(() => {
         router.reload({
-            only: ['match', 'judgeProgress', 'serverNow', 'serverNowMs'],
+            only: ['match', 'judgeProgress', 'embuTies', 'serverNow', 'serverNowMs'],
             preserveScroll: true,
             preserveState: true,
         });
@@ -1018,6 +1245,21 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                     )}
                     <div className="mt-4"><ResultSummary match={match} /></div>
                 </section>
+
+                {match.category_type === 'embu' && embuTies && embuTies.length > 0 && (
+                    <section className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <span className="relative flex h-3 w-3">
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+                                <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
+                            </span>
+                            <h3 className="text-base font-black uppercase tracking-wider text-slate-900">
+                                Penetapan Nilai Seri Kategori Ini (Parameter 5 Wasit Utama)
+                            </h3>
+                        </div>
+                        <EmbuTiebreakPanel ties={embuTies} isArbitration={false} />
+                    </section>
+                )}
 
                 {match.category_type === 'randori' && canOpenScore && (
                     <RandoriScoreForm key={`${match.id}-${match.result?.verified_at || 'baru'}`} activeEvent={activeEvent} match={match} />

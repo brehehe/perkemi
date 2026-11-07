@@ -492,15 +492,39 @@ class ArbitrationController extends Controller
             ] : null,
         ];
 
+        $targetMatch = $activeMatch ?: TournamentMatch::query()
+            ->whereBelongsTo($activeEvent)
+            ->whereBelongsTo($court, 'court')
+            ->where('is_bye', false)
+            ->orderByRaw("CASE 
+                WHEN status = 'in_progress' THEN 0 
+                WHEN status = 'ready' THEN 1 
+                WHEN status = 'completed' THEN 2 
+                ELSE 3 END")
+            ->orderByDesc('called_at')
+            ->orderByDesc('updated_at')
+            ->first();
+
         $completedCategoryScores = EmbuJudgeScore::query()
             ->whereBelongsTo($activeEvent)
             ->whereBelongsTo($referee)
             ->where('completed_items', '>', 0)
+            ->when($targetMatch?->event_match_category_id, function ($query) use ($targetMatch): void {
+                $query->whereHas('tournamentMatch', function ($q) use ($targetMatch): void {
+                    $q->where('event_match_category_id', $targetMatch->event_match_category_id);
+                    if (! empty($targetMatch->round_label)) {
+                        $q->where('round_label', $targetMatch->round_label);
+                    }
+                    if (! empty($targetMatch->pool)) {
+                        $q->where('pool', $targetMatch->pool);
+                    }
+                });
+            })
             ->with([
                 'court:id,name',
                 'tournamentMatch.matchCategory:id,name',
                 'tournamentMatch' => fn ($q) => $q->select([
-                    'id', 'event_id', 'event_match_category_id', 'event_court_id', 'round_label', 'match_sequence', 'participant_label', 'metadata', 'participant_entry_id',
+                    'id', 'event_id', 'event_match_category_id', 'event_court_id', 'round_label', 'pool', 'phase', 'match_sequence', 'participant_label', 'metadata', 'participant_entry_id',
                 ]),
             ])
             ->latest('updated_at')
@@ -518,6 +542,7 @@ class ArbitrationController extends Controller
                     'sequence' => $match?->match_sequence,
                     'category_name' => $match?->matchCategory?->name ?? '—',
                     'round_label' => $match?->round_label ?? '',
+                    'pool' => $match?->pool ?? null,
                     'court_name' => $score->court?->name ?? $match?->court?->name ?? '—',
                     'athlete_names' => $athleteNames,
                     'contingent_name' => $details['contingent_name'] ?? '—',
@@ -531,6 +556,9 @@ class ArbitrationController extends Controller
             ->all();
 
         $refereeSession['completed_category_scores'] = $completedCategoryScores;
+        $refereeSession['active_category_name'] = $targetMatch?->matchCategory?->name ?? $activeMatch?->matchCategory?->name;
+        $refereeSession['active_round_label'] = $targetMatch?->round_label ?? $activeMatch?->round_label;
+        $refereeSession['active_pool'] = $targetMatch?->pool ?? $activeMatch?->pool;
 
         $scoringPage = config('app.wasit_scoring_version') === 'new'
             ? 'Admin/Arbitration/ScoringNew'
@@ -790,9 +818,63 @@ class ArbitrationController extends Controller
         $scoreQuery = $type === 'randori'
             ? RandoriScore::query()->whereBelongsTo($event)
             : EmbuJudgeScore::query()->whereBelongsTo($event);
+
+        $requestedCourtId = $request->string('court_id')->trim()->toString();
+        $courtFilter = null;
+
+        if ($requestedCourtId !== '') {
+            $court = $event->courts()->find($requestedCourtId);
+            if ($court) {
+                $activeCourtMatch = TournamentMatch::query()
+                    ->whereBelongsTo($event)
+                    ->whereBelongsTo($court, 'court')
+                    ->where('is_bye', false)
+                    ->whereIn('status', ['ready', 'in_progress'])
+                    ->where('call_status', 'participants_called')
+                    ->with('matchCategory:id,name,type')
+                    ->first()
+                    ?: TournamentMatch::query()
+                        ->whereBelongsTo($event)
+                        ->whereBelongsTo($court, 'court')
+                        ->where('is_bye', false)
+                        ->with('matchCategory:id,name,type')
+                        ->orderByRaw("CASE 
+                            WHEN status = 'in_progress' THEN 0 
+                            WHEN status = 'ready' THEN 1 
+                            WHEN status = 'completed' THEN 2 
+                            ELSE 3 END")
+                        ->orderByDesc('called_at')
+                        ->orderByDesc('updated_at')
+                        ->first();
+
+                $courtFilter = [
+                    'id' => $court->id,
+                    'name' => $court->name,
+                    'category_id' => $activeCourtMatch?->event_match_category_id,
+                    'category_name' => $activeCourtMatch?->matchCategory?->name,
+                    'round_label' => $activeCourtMatch?->round_label,
+                    'pool' => $activeCourtMatch?->pool,
+                ];
+            }
+        }
+
         $filteredScores = (clone $scoreQuery)
             ->when($status === 'submitted', fn ($query) => $query->where('status', $type === 'randori' ? 'verified' : 'submitted'))
             ->when($status === 'draft', fn ($query) => $query->where('status', '!=', $type === 'randori' ? 'verified' : 'submitted'))
+            ->when($courtFilter !== null, function ($query) use ($requestedCourtId, $courtFilter): void {
+                $query->whereHas('tournamentMatch', function ($q) use ($requestedCourtId, $courtFilter): void {
+                    $q->where('event_court_id', $requestedCourtId);
+                    if (! empty($courtFilter['category_id'])) {
+                        $q->where('event_match_category_id', $courtFilter['category_id']);
+                        if (! empty($courtFilter['round_label'])) {
+                            $q->where('round_label', $courtFilter['round_label']);
+                        }
+                        if (! empty($courtFilter['pool'])) {
+                            $q->where('pool', $courtFilter['pool']);
+                        }
+                    }
+                });
+            })
             ->when($search, fn ($query) => $query->where(function ($query) use ($search, $likeOperator, $type): void {
                 if ($type === 'embu') {
                     $query->whereHas('referee', fn ($referees) => $referees->where('name', $likeOperator, "%{$search}%"));
@@ -844,6 +926,7 @@ class ArbitrationController extends Controller
             ],
             'scores' => $scores,
             'embuTies' => $embuTies,
+            'courtFilter' => $courtFilter,
         ]);
     }
 

@@ -10,6 +10,8 @@ use App\Models\TournamentMatch;
 use App\Services\EmbuParticipantDetails;
 use App\Services\Panitera\EmbuPenaltyCatalog;
 use App\Services\Panitera\EmbuPenaltyState;
+use App\Services\Panitera\EmbuResultService;
+use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
 use App\Services\Panitera\PaniteraTimerState;
@@ -121,6 +123,25 @@ class PaniteraMatchController extends Controller
             })
             ->values();
 
+        $embuParams = null;
+        if ($tournamentMatch->matchCategory?->type === 'embu') {
+            $finalScore = $tournamentMatch->embuScores->first()?->final_score !== null
+                ? (float) $tournamentMatch->embuScores->first()->final_score
+                : null;
+            $paramsCalc = app(EmbuScoreCalculator::class)->calculateTrimmingAndParameters($judgeProgress->toArray(), $finalScore);
+            $judgeProgress = collect($paramsCalc['judges']);
+            $embuParams = [
+                'trimmed_min_judge' => $paramsCalc['trimmed_min_judge'],
+                'trimmed_max_judge' => $paramsCalc['trimmed_max_judge'],
+                'middle_judge_numbers' => $paramsCalc['middle_judge_numbers'],
+                'middle_judges_label' => $paramsCalc['middle_judges_label'],
+                'param1_score' => $paramsCalc['param1_score'],
+                'param2_technique' => $paramsCalc['param2_technique'],
+                'param3_chief_total' => $paramsCalc['param3_chief_total'],
+                'param4_chief_technique' => $paramsCalc['param4_chief_technique'],
+            ];
+        }
+
         $nextMatch = TournamentMatch::query()
             ->whereBelongsTo($event)
             ->where('event_court_id', $tournamentMatch->event_court_id)
@@ -157,9 +178,12 @@ class PaniteraMatchController extends Controller
         return Inertia::render('Admin/Panitera/MatchDetail', [
             'activeEvent' => $event->only(['id', 'name', 'city', 'venue', 'start_date', 'end_date', 'tts_announcer_enabled']),
             'events' => $eventContext->accessibleEvents($request),
-            'match' => $this->matchData($event, $tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState, $participantDetails),
+            'match' => $this->matchData($event, $tournamentMatch, $randoriDrafts, $penaltyCatalog, $penaltyState, $participantDetails, $embuParams),
             'staff' => $staff,
             'judgeProgress' => $judgeProgress,
+            'embuTies' => $tournamentMatch->matchCategory?->type === 'embu'
+                ? app(EmbuResultService::class)->activeTies($tournamentMatch->matchCategory)->values()->all()
+                : [],
             'nextMatch' => $nextMatch ? [
                 'id' => $nextMatch->id,
                 'category_id' => $nextMatch->event_match_category_id,
@@ -194,6 +218,7 @@ class PaniteraMatchController extends Controller
         EmbuPenaltyCatalog $penaltyCatalog,
         EmbuPenaltyState $penaltyState,
         EmbuParticipantDetails $participantDetails,
+        ?array $embuParams = null,
     ): array {
         $type = $match->matchCategory?->type;
         $embuScore = $match->embuScores->first();
@@ -299,6 +324,7 @@ class PaniteraMatchController extends Controller
                     'duration_seconds' => $embuScore->duration_seconds,
                     'status' => $embuScore->status,
                     'verified_at' => $embuScore->verified_at?->translatedFormat('d M Y, H:i'),
+                    'embu_parameters' => $embuParams,
                 ] : null)
                 : ($randoriScore ? [
                     'aka_breakdown' => $randoriScore->aka_breakdown,
