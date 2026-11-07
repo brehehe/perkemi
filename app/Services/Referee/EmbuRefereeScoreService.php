@@ -6,6 +6,7 @@ use App\Enums\RefereeCourtRole;
 use App\Events\EmbuJudgeScoreUpdated;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
+use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\Referee;
 use App\Models\TournamentMatch;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Services\Panitera\EmbuPenaltyCatalog;
 use App\Services\Panitera\EmbuPenaltyState;
 use App\Services\Panitera\EmbuScoreCalculator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -176,25 +178,13 @@ class EmbuRefereeScoreService
                 return $lockedScore;
             }
 
-            $hasCompleteScores = collect(self::AspectKeys)->every(function (string $key) use ($lockedScore): bool {
-                $value = $lockedScore->aspect_scores[$key] ?? null;
-
-                return $value !== null && in_array((int) $value, [0, 7, 8, 9, 10], true);
-            });
-
-            if (! $hasCompleteScores) {
+            if (! $this->hasCompleteScores($lockedScore)) {
                 throw ValidationException::withMessages([
                     'score' => 'Lengkapi seluruh 10 aspek penilaian sebelum menyimpan sebagai Sudah Dikirim.',
                 ]);
             }
 
-            $lockedScore->forceFill([
-                'status' => 'submitted',
-                'signed_at' => filled($lockedScore->signature)
-                    ? ($lockedScore->signed_at ?? now())
-                    : null,
-                'submitted_at' => $lockedScore->submitted_at ?? now(),
-            ])->save();
+            $this->markAsSubmitted($lockedScore);
 
             $this->synchronizeAggregate($lockedMatch);
 
@@ -204,6 +194,84 @@ class EmbuRefereeScoreService
         $this->dispatchUpdate($submittedScore);
 
         return $submittedScore;
+    }
+
+    /** @return Collection<int, EmbuJudgeScore> */
+    public function submitCompleteDrafts(Event $event): Collection
+    {
+        $submittedScores = DB::transaction(function () use ($event): Collection {
+            $candidates = EmbuJudgeScore::query()
+                ->whereBelongsTo($event)
+                ->where('status', 'draft')
+                ->where('completed_items', count(self::AspectKeys))
+                ->orderBy('tournament_match_id')
+                ->orderBy('judge_number')
+                ->get(['id', 'tournament_match_id']);
+
+            if ($candidates->isEmpty()) {
+                return collect();
+            }
+
+            $lockedMatches = TournamentMatch::query()
+                ->whereBelongsTo($event)
+                ->whereKey($candidates->pluck('tournament_match_id')->unique())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            $lockedMatches->load('matchCategory:id,name,type');
+
+            $lockedScores = EmbuJudgeScore::query()
+                ->whereBelongsTo($event)
+                ->whereKey($candidates->pluck('id'))
+                ->where('status', 'draft')
+                ->where('completed_items', count(self::AspectKeys))
+                ->orderBy('tournament_match_id')
+                ->orderBy('judge_number')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (EmbuJudgeScore $score): bool => $lockedMatches->has($score->tournament_match_id)
+                    && $this->hasCompleteScores($score))
+                ->values();
+
+            $lockedScores->each(fn (EmbuJudgeScore $score) => $this->markAsSubmitted($score));
+
+            $lockedScores
+                ->pluck('tournament_match_id')
+                ->unique()
+                ->each(function (string $matchId) use ($lockedMatches): void {
+                    $match = $lockedMatches->get($matchId);
+                    if ($match instanceof TournamentMatch) {
+                        $this->synchronizeAggregate($match);
+                    }
+                });
+
+            return $lockedScores;
+        });
+
+        $submittedScores->each(fn (EmbuJudgeScore $score) => $this->dispatchUpdate($score));
+
+        return $submittedScores;
+    }
+
+    private function hasCompleteScores(EmbuJudgeScore $score): bool
+    {
+        return collect(self::AspectKeys)->every(function (string $key) use ($score): bool {
+            $value = $score->aspect_scores[$key] ?? null;
+
+            return $value !== null && in_array((int) $value, [0, 7, 8, 9, 10], true);
+        });
+    }
+
+    private function markAsSubmitted(EmbuJudgeScore $score): void
+    {
+        $score->forceFill([
+            'status' => 'submitted',
+            'signed_at' => filled($score->signature)
+                ? ($score->signed_at ?? now())
+                : null,
+            'submitted_at' => $score->submitted_at ?? now(),
+        ])->save();
     }
 
     private function dispatchUpdate(EmbuJudgeScore $score): void

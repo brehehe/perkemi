@@ -130,21 +130,35 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
     const exportUrl = `/admin/laporan/export?event_id=${encodeURIComponent(activeEvent.id)}&report=${encodeURIComponent(dataset.key)}`;
     const hasDetailPrint = dataset.rows.some((row) => Boolean(row.print_url));
     const hasRefereeScoreAction = dataset.key === 'referee-scores' && canSubmitRefereeScores;
+    const eligibleDraftCount = hasRefereeScoreAction
+        ? dataset.rows.filter((row) => row.can_submit).length
+        : 0;
 
     const submitRefereeScore = () => {
         if (!scoreToSubmit || submittingScoreId) return;
 
+        const isBulkSubmission = scoreToSubmit.submit_all === true;
+        const submissionUrl = isBulkSubmission
+            ? `/admin/laporan/events/${encodeURIComponent(activeEvent.id)}/submitted-referee-scores`
+            : `/admin/laporan/events/${encodeURIComponent(activeEvent.id)}/submitted-referee-scores/${encodeURIComponent(scoreToSubmit.score_id)}`;
+
         setSubmissionError('');
         setSubmissionFeedback('');
         router.post(
-            `/admin/laporan/events/${encodeURIComponent(activeEvent.id)}/submitted-referee-scores/${encodeURIComponent(scoreToSubmit.score_id)}`,
+            submissionUrl,
             {},
             {
                 preserveScroll: true,
-                onStart: () => setSubmittingScoreId(scoreToSubmit.score_id),
-                onSuccess: () => {
+                onStart: () => setSubmittingScoreId(isBulkSubmission ? 'all' : scoreToSubmit.score_id),
+                onSuccess: (page) => {
                     setScoreToSubmit(null);
-                    setSubmissionFeedback('Penilaian berhasil disimpan sebagai Sudah Dikirim.');
+                    setSubmissionFeedback(
+                        page.props.flash?.success
+                            || page.props.flash?.info
+                            || (isBulkSubmission
+                                ? 'Semua draft lengkap berhasil disimpan sebagai Sudah Dikirim.'
+                                : 'Penilaian berhasil disimpan sebagai Sudah Dikirim.'),
+                    );
                 },
                 onError: (errors) => setSubmissionError(Object.values(errors).flat().join(' ') || 'Penilaian belum dapat dikirim.'),
                 onFinish: () => setSubmittingScoreId(null),
@@ -223,6 +237,21 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
                                 <p className="mt-1 max-w-3xl text-sm leading-6 text-[#756e67] dark:text-slate-300">{dataset.description}</p>
                             </div>
                             <div className="report-no-print flex flex-col gap-2 sm:flex-row">
+                                {eligibleDraftCount > 0 ? (
+                                    <Button
+                                        type="button"
+                                        variant="gold"
+                                        disabled={Boolean(submittingScoreId)}
+                                        onClick={() => {
+                                            setSubmissionError('');
+                                            setScoreToSubmit({ submit_all: true });
+                                        }}
+                                        className="min-h-11 whitespace-nowrap"
+                                    >
+                                        <i className="fa-solid fa-paper-plane mr-2" aria-hidden="true" />
+                                        Kirim Semua Draft ({eligibleDraftCount})
+                                    </Button>
+                                ) : null}
                                 <a
                                     href={`/admin/laporan/berita-acara?event_id=${encodeURIComponent(activeEvent.id)}`}
                                     target="_blank"
@@ -351,9 +380,11 @@ export default function ReportIndex({ activeEvent, events = [], reportOptions = 
 
             <AlertConfirm
                 isOpen={Boolean(scoreToSubmit)}
-                title="Simpan sebagai Sudah Dikirim?"
-                message={`${scoreToSubmit?.referee || 'Penilaian Wasit'} · ${scoreToSubmit?.category || 'Nomor pertandingan'}. Status draft akan menjadi nilai resmi yang dikirim ke Panitera.`}
-                confirmText="Ya, Simpan & Kirim"
+                title={scoreToSubmit?.submit_all ? 'Kirim semua draft lengkap?' : 'Simpan sebagai Sudah Dikirim?'}
+                message={scoreToSubmit?.submit_all
+                    ? `${eligibleDraftCount} draft dengan 10 aspek lengkap akan disimpan sekaligus sebagai Sudah Dikirim. TTD tetap opsional dan draft yang belum lengkap tidak akan diubah.`
+                    : `${scoreToSubmit?.referee || 'Penilaian Wasit'} · ${scoreToSubmit?.category || 'Nomor pertandingan'}. Status draft akan menjadi nilai resmi yang dikirim ke Panitera.`}
+                confirmText={scoreToSubmit?.submit_all ? 'Ya, Kirim Semua' : 'Ya, Simpan & Kirim'}
                 variant="primary"
                 error={submissionError}
                 isLoading={Boolean(submittingScoreId)}
