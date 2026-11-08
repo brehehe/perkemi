@@ -22,6 +22,12 @@
         .bracket { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 7px 0; }
         .bracket th { padding: 5px; border-radius: 4px; background: #17120f; color: #f0c060; text-align: center; }
         .bracket td { vertical-align: middle; }
+        .round-section { margin: 0 0 10px; page-break-inside: auto; }
+        .round-heading { padding: 5px 8px; border-radius: 4px; background: #17120f; color: #f0c060; font-weight: bold; text-align: center; page-break-after: avoid; }
+        .round-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 6px 0; }
+        .round-grid thead { display: table-header-group; }
+        .round-grid tr { page-break-inside: avoid; }
+        .round-grid td { width: 33.333%; vertical-align: top; }
         .match-card { margin: 6px 0; border: 1px solid #b9aea2; border-radius: 4px; page-break-inside: avoid; }
         .match-title { padding: 3px 5px; background: #f2ede6; font-size: 8px; font-weight: bold; color: #665d55; }
         .corner { padding: 4px 5px; border-top: 1px solid #ddd5cc; font-weight: bold; }
@@ -73,38 +79,79 @@
 
                 @if($drawing['matches']->isEmpty())
                     <div class="empty">Bagan belum memiliki partai atau nomor tampil.</div>
-                @elseif($drawing['category_type'] === 'randori' && $drawing['format'] !== 'round_robin' && $drawing['matches']->count() <= 12)
-                    <table class="bracket">
-                        <thead>
-                            <tr>
-                                @foreach($drawing['rounds'] as $roundLabel => $roundMatches)
-                                    <th>{{ $roundLabel }}</th>
-                                @endforeach
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                @foreach($drawing['rounds'] as $roundMatches)
-                                    <td>
-                                        @foreach($roundMatches as $match)
-                                            <div class="match-card">
-                                                <div class="match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
-                                                <div class="corner aka">
-                                                    AKA &middot; {{ $match['red_label'] }}
-                                                    @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                @elseif($drawing['category_type'] === 'randori' && $drawing['format'] !== 'round_robin')
+                    @if($drawing['matches']->count() <= 12)
+                        <table class="bracket" data-testid="randori-bracket">
+                            <thead>
+                                <tr>
+                                    @foreach($drawing['rounds'] as $roundLabel => $roundMatches)
+                                        <th>{{ $roundLabel }}</th>
+                                    @endforeach
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    @foreach($drawing['rounds'] as $roundMatches)
+                                        <td>
+                                            @foreach($roundMatches as $match)
+                                                <div class="match-card">
+                                                    <div class="match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
+                                                    <div class="corner aka">
+                                                        AKA &middot; {{ $match['red_label'] }}
+                                                        @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                                                    </div>
+                                                    <div class="corner shiro">
+                                                        SHIRO &middot; {{ $match['blue_label'] }}
+                                                        @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
+                                                    </div>
+                                                    <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
                                                 </div>
-                                                <div class="corner shiro">
-                                                    SHIRO &middot; {{ $match['blue_label'] }}
-                                                    @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
-                                                </div>
-                                                <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
-                                            </div>
-                                        @endforeach
-                                    </td>
-                                @endforeach
-                            </tr>
-                        </tbody>
-                    </table>
+                                            @endforeach
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            </tbody>
+                        </table>
+                    @else
+                        <div data-testid="randori-bracket" class="large-bracket">
+                            @foreach($drawing['rounds'] as $roundLabel => $roundMatches)
+                                <section class="round-section">
+                                    <table class="round-grid">
+                                        <thead>
+                                            <tr>
+                                                <th colspan="3" class="round-heading">{{ $roundLabel }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($roundMatches->chunk(3) as $matchRow)
+                                                <tr>
+                                                    @foreach($matchRow as $match)
+                                                        <td>
+                                                            <div class="match-card">
+                                                                <div class="match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
+                                                                <div class="corner aka">
+                                                                    AKA &middot; {{ $match['red_label'] }}
+                                                                    @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="corner shiro">
+                                                                    SHIRO &middot; {{ $match['blue_label'] }}
+                                                                    @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
+                                                            </div>
+                                                        </td>
+                                                    @endforeach
+                                                    @for($emptyCell = $matchRow->count(); $emptyCell < 3; $emptyCell++)
+                                                        <td></td>
+                                                    @endfor
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </section>
+                            @endforeach
+                        </div>
+                    @endif
                 @else
                     <table class="data-table">
                         <thead>

@@ -456,3 +456,59 @@ test('drawing pdf export returns 403 for an inaccessible event', function () {
         ->get(route('admin.pertandingan.drawing.pdf', ['event_id' => $event->id]))
         ->assertForbidden();
 });
+
+test('large randori drawing remains a bracket in pdf preview', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Kejurda Bagan Besar',
+        'slug' => 'kejurda-bagan-besar',
+        'venue' => 'GOR Bagan Besar',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-20',
+        'end_date' => '2026-11-22',
+        'is_active' => true,
+    ]);
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra Kelas Besar',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 32,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $drawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'bracket_type' => 'single_elimination',
+        'participant_count' => 16,
+        'contingent_count' => 8,
+    ]);
+
+    foreach (range(1, 13) as $sequence) {
+        TournamentMatch::factory()->create([
+            'tournament_drawing_id' => $drawing->id,
+            'event_id' => $event->id,
+            'event_match_category_id' => $category->id,
+            'match_sequence' => $sequence,
+            'round_label' => $sequence <= 8 ? 'Babak 16 Besar' : 'Perempat Final',
+            'red_label' => "Kenshi Aka {$sequence}",
+            'blue_label' => "Kenshi Shiro {$sequence}",
+        ]);
+    }
+
+    $response = $this->actingAs($admin)->get(route('admin.pertandingan.drawing.pdf', [
+        'event_id' => $event->id,
+        'category' => $category->id,
+        'format' => 'html',
+    ]));
+
+    $response
+        ->assertViewIs('reports.tournament-drawings')
+        ->assertSee('data-testid="randori-bracket"', false)
+        ->assertSee('Babak 16 Besar')
+        ->assertSee('Kenshi Aka 13')
+        ->assertDontSee('<th>AKA</th>', false);
+});
