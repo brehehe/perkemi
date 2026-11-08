@@ -144,3 +144,52 @@ test('court var url can be updated even without explicit event_id in payload', f
     $court->refresh();
     expect($court->raw_var_url)->toBe('https://stream.example.com/court-live');
 });
+
+test('panitera can toggle is_var_enabled on and off', function () {
+    $event = Event::create([
+        'name' => 'Event VAR Toggle',
+        'slug' => 'event-var-toggle',
+        'venue' => 'GOR Kempo',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-07',
+        'end_date' => '2026-11-09',
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court 1',
+        'order' => 1,
+        'is_active' => true,
+        'is_var_enabled' => true,
+    ]);
+
+    Role::firstOrCreate(['name' => 'Panitera', 'guard_name' => 'web']);
+    $user = User::factory()->create();
+    $user->assignRole('Panitera');
+    $event->users()->attach($user, ['access_role' => Event::AccessRoleStaff]);
+
+    // Turn OFF VAR
+    $response = $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/courts/{$court->id}/var-url", [
+            'event_id' => $event->id,
+            'is_var_enabled' => false,
+        ]);
+
+    $response->assertOk();
+    expect($response->json('is_var_enabled'))->toBeFalse();
+    $court->refresh();
+    expect($court->is_var_enabled)->toBeFalse();
+
+    // Turn ON VAR again
+    $response = $this->actingAs($user)
+        ->putJson("/admin/panitera/scoring/courts/{$court->id}/var-url", [
+            'event_id' => $event->id,
+            'is_var_enabled' => true,
+        ]);
+
+    $response->assertOk();
+    expect($response->json('is_var_enabled'))->toBeTrue();
+    $court->refresh();
+    expect($court->is_var_enabled)->toBeTrue();
+});
