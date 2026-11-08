@@ -78,6 +78,15 @@ function BracketMatchCard({
     const isAkaWinner = winnerCorner === 'aka' || (match.is_bye && akaLabel && shiroLabel?.toUpperCase() === 'BYE');
     const isShiroWinner = winnerCorner === 'shiro' || (match.is_bye && shiroLabel && akaLabel?.toUpperCase() === 'BYE');
     const scheduledTime = match.scheduled_at || match.scheduled_start_formatted || null;
+    const scheduledEnd = match.scheduled_end_formatted || match.scheduled_end || null;
+    const scheduleLabel = match.is_bye
+        ? 'Tidak memerlukan jadwal (BYE)'
+        : scheduledTime
+            ? `${scheduledTime}${scheduledEnd ? `–${scheduledEnd}` : ''}`
+            : 'Belum terjadwal';
+    const courtLabel = match.is_bye
+        ? 'Tidak memerlukan court'
+        : match.court || 'Court belum ditentukan';
     const isGf2Skipped =
         match.metadata?.gf2_status === 'skipped' ||
         match.metadata?.notes?.includes('dilewati') ||
@@ -180,8 +189,8 @@ function BracketMatchCard({
                         }`}>
                             #{match.sequence}
                         </span>
-                        <span className="text-[10px] text-[#7a746e] dark:text-white/60">
-                            {match.court || 'Court —'}
+                        <span className="max-w-36 truncate text-[10px] text-[#7a746e] dark:text-white/60" title={match.session || match.round_label}>
+                            {match.session || match.round_label || 'Babak pertandingan'}
                         </span>
                         {hasHighlightedAthlete && (
                             <span className="ml-1 inline-flex items-center gap-1 rounded bg-amber-100 dark:bg-amber-950/80 px-1.5 py-0.5 text-[9px] font-black text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60">
@@ -316,17 +325,19 @@ function BracketMatchCard({
                 </div>
 
                 {/* Match Footer & Action Link */}
-                <div className="flex items-center justify-between bg-[#fbfaf8] dark:bg-white/[.04] px-3 py-1.5 border-t border-[#eee7dd] dark:border-white/10 text-[10px] text-[#7a746e] dark:text-white/60">
-                    <span className="truncate">
-                        {scheduledTime ? (
-                            <>
-                                <i className="fa-regular fa-clock mr-1" />
-                                {scheduledTime}
-                            </>
-                        ) : (
-                            'Jadwal fleksibel'
-                        )}
-                    </span>
+                <div className="flex items-end justify-between gap-2 border-t border-[#eee7dd] bg-[#fbfaf8] px-3 py-2 text-[10px] text-[#7a746e] dark:border-white/10 dark:bg-white/[.04] dark:text-white/60">
+                    <div className="min-w-0 flex-1 space-y-1">
+                        <p className="flex min-w-0 items-center gap-1" title={scheduleLabel}>
+                            <i className="fa-regular fa-clock w-3 shrink-0 text-[#9a6b20] dark:text-amber-400" aria-hidden="true" />
+                            <span className="shrink-0 font-bold text-[#4f4740] dark:text-white/80">Jadwal:</span>
+                            <span className="min-w-0 truncate">{scheduleLabel}</span>
+                        </p>
+                        <p className="flex min-w-0 items-center gap-1" title={courtLabel}>
+                            <i className="fa-solid fa-location-dot w-3 shrink-0 text-[#a93226] dark:text-rose-400" aria-hidden="true" />
+                            <span className="shrink-0 font-bold text-[#4f4740] dark:text-white/80">Court:</span>
+                            <span className="min-w-0 truncate">{courtLabel}</span>
+                        </p>
+                    </div>
                     {!isMonitor && canManage && match.is_ready && !match.is_bye && !isGf2Skipped ? (
                         <Link
                             href={`/admin/panitera/scoring/matches/${match.id}?event_id=${encodeURIComponent(activeEvent?.id || '')}`}

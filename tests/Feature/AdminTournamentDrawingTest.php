@@ -4,9 +4,11 @@ use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
 use App\Models\Event;
+use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
 use App\Models\Registration;
 use App\Models\Role;
+use App\Models\Rundown;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
@@ -244,7 +246,7 @@ test('randori category conditionally enables round robin format for 3 to 5 entri
     expect($roundLabels)->toContain('Putaran 3');
 });
 
-test('drawing matches include aka and shiro contingent names', function () {
+test('drawing matches include participant contingents schedule and court', function () {
     Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
     $admin = User::factory()->create();
     $admin->assignRole('Super Admin');
@@ -256,6 +258,21 @@ test('drawing matches include aka and shiro contingent names', function () {
         'start_date' => '2026-10-01',
         'end_date' => '2026-10-03',
         'is_active' => true,
+    ]);
+    EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Court Utama',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    Rundown::create([
+        'event_id' => $event->id,
+        'date' => '2026-10-01 08:00:00',
+        'end_time' => '2026-10-01 10:00:00',
+        'name' => 'Sesi Pagi',
+        'type' => 'Pertandingan',
+        'is_match_session' => true,
+        'order' => 1,
     ]);
 
     $category = EventMatchCategory::create([
@@ -307,7 +324,11 @@ test('drawing matches include aka and shiro contingent names', function () {
             ->has('matches', 3)
             ->where('matches.0.aka_label', fn ($val) => ! empty($val))
             ->where('matches.0.aka_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda'))
-            ->where('matches.0.shiro_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda')));
+            ->where('matches.0.shiro_contingent', fn ($val) => str_contains($val, 'Kontingen Garuda'))
+            ->where('matches.0.court', 'Court Utama')
+            ->where('matches.0.session', 'Sesi Pagi')
+            ->where('matches.0.scheduled_start_formatted', fn ($value) => filled($value))
+            ->where('matches.0.scheduled_end_formatted', fn ($value) => filled($value)));
 });
 
 test('admin can download tournament schedule and capacity report as pdf directly', function () {

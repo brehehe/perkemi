@@ -476,7 +476,7 @@ class RefereeEvaluationService
         $totalNormal = collect($evaluations)->where('status', 'normal')->count();
         $objectivityRate = count($evaluations) > 0 ? round(($totalNormal / count($evaluations)) * 100, 1) : 100.0;
 
-        $podium = collect($rankedReferees)->filter(fn ($r) => $r['rank'] !== null && $r['rank'] <= 3)->values()->all();
+        $podium = collect($rankedReferees)->filter(fn ($referee): bool => $referee['rank'] === 1)->values()->all();
         $leaderboard = collect($rankedReferees)->filter(fn ($r) => $r['rank'] !== null)->values()->all();
         $topReferee = $podium[0] ?? null;
 

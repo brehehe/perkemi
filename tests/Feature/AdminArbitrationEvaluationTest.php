@@ -308,6 +308,8 @@ test('anti-bias evaluation computes statistical metrics and detects regional con
         ->assertInertia(fn (Assert $page) => $page
             ->component('Admin/Arbitration/Evaluation')
             ->has('referees', 5)
+            ->has('ranking.podium', 1)
+            ->where('ranking.podium.0.rank', 1)
             ->where('referees', function ($refs) use ($judge1) {
                 $item = collect($refs)->firstWhere('id', $judge1->id);
                 $flagCodes = collect($item['flags'] ?? [])->pluck('code')->all();

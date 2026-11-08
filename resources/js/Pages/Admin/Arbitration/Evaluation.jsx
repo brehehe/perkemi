@@ -7,10 +7,8 @@ import { Head, Link, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import {
     RefereeRankingChart,
-    RefereeObjectivityDoughnut,
     ScoreDistributionChart,
     RefereeConsistencyChart,
-    ContingentDeltaChart,
 } from '@/Components/Charts/ArbitrationCharts';
 
 const formatNumber = (value, decimals = 2) => {
@@ -684,7 +682,6 @@ export default function Evaluation({
     referees = [],
     ranking = { podium: [], leaderboard: [] },
     scoreDistribution = [],
-    contingentAnalysis = [],
     arbitrationRecommendations = {
         final_candidates: [],
         supervision_list: [],
@@ -745,7 +742,7 @@ export default function Evaluation({
         ['heatmap', 'Heatmap Kedaerahan', 'fa-network-wired'],
     ];
 
-    const podiumByRank = new Map((ranking.podium || []).map((referee) => [referee.rank, referee]));
+    const topReferee = (ranking.podium || []).find((referee) => referee.rank === 1);
 
     return (
         <AdminLayout title="Evaluasi Perwasitan & Anti-Bias">
@@ -870,8 +867,8 @@ export default function Evaluation({
                                 <p className="text-xs font-black uppercase tracking-[.12em] text-[#9a6b20]">Peringkat Evaluasi</p>
                                 <h2 className="mt-1 text-xl font-black text-[#17120f]">Podium Wasit Terbaik</h2>
                             </div>
-                            <div className="grid gap-4 lg:grid-cols-3">
-                                {[1, 2, 3].map((place) => <PodiumCard key={place} place={place} referee={podiumByRank.get(place)} onOpenNarrative={setSelectedReferee} />)}
+                            <div className="max-w-3xl">
+                                <PodiumCard place={1} referee={topReferee} onOpenNarrative={setSelectedReferee} />
                             </div>
                         </section>
 
@@ -882,24 +879,14 @@ export default function Evaluation({
                                 <RefereeRankingChart data={ranking.leaderboard || []} />
                             </article>
                             <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
-                                <h3 className="font-black text-[#17120f]">Proporsi Objektivitas</h3>
-                                <p className="mb-4 text-xs text-[#766e66]">Komposisi status normal, perhatian, dan anomali.</p>
-                                <RefereeObjectivityDoughnut normal={summary.normal_count ?? 0} warning={summary.warning_count ?? 0} flagged={summary.flagged_count ?? 0} rate={summary.objectivity_rate ?? 100} />
-                            </article>
-                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
                                 <h3 className="font-black text-[#17120f]">Distribusi Skor Penilaian</h3>
                                 <p className="mb-4 text-xs text-[#766e66]">Frekuensi nilai yang masuk pada setiap rentang skor.</p>
                                 <ScoreDistributionChart distribution={scoreDistribution} />
                             </article>
-                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 xl:col-span-2">
                                 <h3 className="font-black text-[#17120f]">Konsistensi Wasit</h3>
                                 <p className="mb-4 text-xs text-[#766e66]">Perbandingan standar deviasi dan persentase nilai terbuang.</p>
                                 <RefereeConsistencyChart referees={ranking.leaderboard || referees} />
-                            </article>
-                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 xl:col-span-2">
-                                <h3 className="font-black text-[#17120f]">Deviasi Kedaerahan per Kontingen</h3>
-                                <p className="mb-4 text-xs text-[#766e66]">Selisih rata-rata nilai juri sedaerah dibanding juri dari daerah lain.</p>
-                                <ContingentDeltaChart contingents={contingentAnalysis} />
                             </article>
                         </section>
                     </div>

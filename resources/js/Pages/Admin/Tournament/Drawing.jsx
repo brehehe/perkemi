@@ -56,6 +56,27 @@ function WorkflowStep({ number, title, caption, active, complete }) {
     );
 }
 
+function MatchScheduleDetails({ match, schedule }) {
+    const court = match.is_bye
+        ? 'Tidak memerlukan court'
+        : match.court || 'Court belum ditentukan';
+
+    return (
+        <div className="grid gap-1 border-t border-[#eee8e0] bg-[#fcfbf9] px-3 py-2 text-xs text-[#746b63]">
+            <p className="flex min-w-0 items-center gap-1.5" title={schedule}>
+                <i className="fa-regular fa-clock w-3.5 shrink-0 text-[#9a6b20]" aria-hidden="true" />
+                <span className="shrink-0 font-bold text-[#4f4740]">Jadwal:</span>
+                <span className="min-w-0 truncate">{schedule}</span>
+            </p>
+            <p className="flex min-w-0 items-center gap-1.5" title={court}>
+                <i className="fa-solid fa-location-dot w-3.5 shrink-0 text-[#a93226]" aria-hidden="true" />
+                <span className="shrink-0 font-bold text-[#4f4740]">Court:</span>
+                <span className="min-w-0 truncate">{court}</span>
+            </p>
+        </div>
+    );
+}
+
 function MatchCard({ match }) {
     const schedule = match.is_bye
         ? 'Lolos otomatis · Tidak memerlukan jadwal'
@@ -74,7 +95,9 @@ function MatchCard({ match }) {
                     </div>
                     <i className="fa-solid fa-people-group mt-1 text-[#c0392b]" />
                 </div>
-                <p className="mt-3 border-t border-[#eee8e0] pt-2 text-xs leading-relaxed text-[#746b63]">{schedule} · {match.court || 'Lapangan belum ditentukan'}</p>
+                <div className="-mx-3 -mb-3 mt-3">
+                    <MatchScheduleDetails match={match} schedule={schedule} />
+                </div>
             </article>
         );
     }
@@ -167,10 +190,12 @@ function MatchCard({ match }) {
                     )}
                 </div>
             </div>
-            <p className="border-t border-[#eee8e0] px-3 py-2 text-xs leading-relaxed text-[#746b63]">
-                {match.is_bye ? schedule : `${schedule} · ${match.court || 'Lapangan belum ditentukan'}`}
-                {isWO && match.metadata?.result?.walkover_reason && ` · ${match.metadata.result.walkover_reason}`}
-            </p>
+            <MatchScheduleDetails match={match} schedule={schedule} />
+            {isWO && match.metadata?.result?.walkover_reason && (
+                <p className="border-t border-[#eee8e0] bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                    {match.metadata.result.walkover_reason}
+                </p>
+            )}
         </article>
     );
 }
