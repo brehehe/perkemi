@@ -258,10 +258,23 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const [snapshot, setSnapshot] = useState(monitor);
     const [varKey, setVarKey] = useState(0);
     const [varUrlInput, setVarUrlInput] = useState('');
+    const [isVarActive, setIsVarActive] = useState(() => {
+        if (monitor?.is_var_enabled !== undefined) return Boolean(monitor.is_var_enabled);
+        if (court?.is_var_enabled !== undefined) return Boolean(court.is_var_enabled);
+        return true;
+    });
     const [showVarConfig, setShowVarConfig] = useState(false);
     const [showLockedArchive, setShowLockedArchive] = useState(false);
+    const [akaImgError, setAkaImgError] = useState(false);
+    const [shiroImgError, setShiroImgError] = useState(false);
     const varIframeRef = useRef(null);
     const refreshController = useRef(null);
+
+    useEffect(() => {
+        if (snapshot?.is_var_enabled !== undefined) {
+            setIsVarActive(Boolean(snapshot.is_var_enabled));
+        }
+    }, [snapshot?.is_var_enabled]);
 
     const refreshSnapshot = useCallback(async () => {
         refreshController.current?.abort();
@@ -325,20 +338,23 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     useEffect(() => {
         let cancelled = false;
         let timeoutId;
-        const interval = 30000;
 
         const poll = async () => {
             await refreshSnapshot();
-            if (!cancelled) timeoutId = window.setTimeout(poll, interval);
+            if (!cancelled) {
+                const nextInterval = (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000;
+                timeoutId = window.setTimeout(poll, nextInterval);
+            }
         };
 
-        timeoutId = window.setTimeout(poll, interval);
+        const initialInterval = (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000;
+        timeoutId = window.setTimeout(poll, initialInterval);
 
         return () => {
             cancelled = true;
             window.clearTimeout(timeoutId);
         };
-    }, [refreshSnapshot]);
+    }, [refreshSnapshot, realtimeConnected, liveTimer.state?.timer?.status]);
 
     useEffect(() => {
         const resynchronize = () => {
@@ -360,6 +376,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         channel.listen('.var.updated', refreshSnapshot);
         channel.listen('.embu.score.updated', refreshSnapshot);
         channel.listen('.score.updated', refreshSnapshot);
+        channel.listen('.panitera.match-state.updated', refreshSnapshot);
         channel.listen('.embu.judge-score.updated', refreshSnapshot);
         channel.listen('.embu.penalties.updated', refreshSnapshot);
         channel.listen('.randori.score-state.updated', refreshSnapshot);
@@ -371,6 +388,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             matchChannel.listen('.embu.judge-score.updated', refreshSnapshot);
             matchChannel.listen('.embu.penalties.updated', refreshSnapshot);
             matchChannel.listen('.score.updated', refreshSnapshot);
+            matchChannel.listen('.panitera.match-state.updated', refreshSnapshot);
             matchChannel.listen('.var.updated', refreshSnapshot);
             matchChannel.listen('.randori.score-state.updated', refreshSnapshot);
         }
@@ -379,6 +397,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
             channel.stopListening('.var.updated');
             channel.stopListening('.embu.score.updated');
             channel.stopListening('.score.updated');
+            channel.stopListening('.panitera.match-state.updated');
             channel.stopListening('.embu.judge-score.updated');
             channel.stopListening('.embu.penalties.updated');
             channel.stopListening('.randori.score-state.updated');
@@ -386,6 +405,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                 matchChannel.stopListening('.embu.judge-score.updated');
                 matchChannel.stopListening('.embu.penalties.updated');
                 matchChannel.stopListening('.score.updated');
+                matchChannel.stopListening('.panitera.match-state.updated');
                 matchChannel.stopListening('.var.updated');
                 matchChannel.stopListening('.randori.score-state.updated');
             }
@@ -396,6 +416,30 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const activeVarUrl = varUrlInput.trim() || defaultCourtVarUrl;
     const [savingVarUrl, setSavingVarUrl] = useState(false);
     const [varSaveMessage, setVarSaveMessage] = useState('');
+
+    const toggleVarStatus = async (enabled) => {
+        const nextVal = enabled !== undefined ? enabled : !isVarActive;
+        setIsVarActive(nextVal);
+        try {
+            const eventId = court?.event_id || activeEvent?.id || '';
+            const url = `/admin/panitera/scoring/courts/${court.id}/var-url${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`;
+            await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                body: JSON.stringify({
+                    event_id: eventId,
+                    is_var_enabled: nextVal,
+                    var_url: varUrlInput.trim() || court?.var_url || null,
+                }),
+            });
+        } catch (err) {
+            // Local state updated; non-critical network failure
+        }
+    };
 
     const saveCourtVarUrlPermanently = async () => {
         const urlToSave = varUrlInput.trim();
@@ -414,6 +458,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                 body: JSON.stringify({
                     event_id: eventId,
                     var_url: urlToSave || null,
+                    is_var_enabled: isVarActive,
                 }),
             });
             const data = await response.json();
@@ -453,6 +498,17 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const displayedSeconds = displayedTimerSeconds(displayMatch?.timer, elapsedMilliseconds);
     const timerText = formatTimer(displayedSeconds);
     const isExpired = timerDirection === 'down' && elapsedSeconds >= timerDuration;
+    const akaTotal = displayMatch?.aka_total ?? displayMatch?.result?.aka_total ?? 0;
+    const shiroTotal = displayMatch?.shiro_total ?? displayMatch?.result?.shiro_total ?? 0;
+    const akaBreakdown = displayMatch?.aka_breakdown || displayMatch?.result?.aka_breakdown || {};
+    const shiroBreakdown = displayMatch?.shiro_breakdown || displayMatch?.result?.shiro_breakdown || {};
+    const winnerCorner = displayMatch?.result?.winner_corner ?? null;
+
+    useEffect(() => {
+        setAkaImgError(false);
+        setShiroImgError(false);
+    }, [displayMatch?.id, displayMatch?.aka_photo_url, displayMatch?.shiro_photo_url]);
+
     const resultMatch = activeMatch?.result ? activeMatch : snapshot.last_result;
     const monitorUrl = (targetMode) => `/admin/panitera/scoring/monitors/${court.id}?event_id=${encodeURIComponent(activeEvent.id)}&mode=${targetMode}`;
     const synchronizationLabel = realtimeConnected
@@ -465,6 +521,394 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         : httpConnected
             ? 'border-amber-400/30 bg-amber-400/10 text-amber-200'
             : 'border-rose-400/30 bg-rose-400/10 text-rose-300';
+
+    const renderMatchTimerCard = () => {
+        if (!displayMatch) return null;
+        return (
+            <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 text-center shadow-xl">
+                <div className="flex items-center justify-center gap-2">
+                    <span className="rounded-full bg-red-600 text-white font-black px-3.5 py-1 text-xs uppercase tracking-wider shadow-sm force-white">
+                        RANDORI · PARTAI #{displayMatch.sequence}
+                    </span>
+                    <span className="rounded-full bg-slate-100 dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-white/80 border border-slate-200 dark:border-transparent">
+                        {displayMatch.round_label}
+                    </span>
+                </div>
+                <h2 className="mt-3 text-2xl md:text-3xl font-black text-slate-950 dark:text-white tracking-tight">
+                    {displayMatch.category_name}
+                </h2>
+
+                {/* Big Timer Box */}
+                <div className="mt-5 rounded-2xl border-2 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 p-6 shadow-inner">
+                    <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-950 dark:text-[#f2cd73]">
+                        {timerDirection === 'down' ? 'WAKTU PERTANDINGAN' : 'HITUNG MAJU'}
+                    </p>
+                    <p className={`mt-2 font-mono text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl ${isExpired ? 'text-red-600 dark:text-red-500 animate-pulse' : 'text-slate-950 dark:text-white'}`}>
+                        {timerText}
+                    </p>
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                        <span className={`inline-block rounded-full px-4 py-1.5 text-xs uppercase font-black tracking-wider shadow-sm ${displayMatch.timer?.is_finished
+                            ? 'bg-slate-800 text-white dark:bg-slate-700 force-white'
+                            : isExpired
+                                ? 'bg-red-600 text-white animate-pulse force-white'
+                                : displayMatch.timer?.status === 'running'
+                                    ? 'bg-emerald-600 text-white animate-pulse force-white'
+                                    : displayMatch.timer?.status === 'paused'
+                                        ? 'bg-amber-500 text-slate-950 font-black'
+                                        : 'bg-slate-200 text-slate-900 border border-slate-300 dark:border-white/20 dark:bg-white/15 dark:text-white font-black'
+                            }`}>
+                            {displayMatch.timer?.is_finished ? 'Partai Selesai' : isExpired ? 'WAKTU HABIS' : displayMatch.timer?.status === 'running' ? 'WAKTU BERJALAN' : displayMatch.timer?.status === 'paused' ? 'WAKTU DIJEDA' : 'MENUNGGU WASIT'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderMatchCornersCard = () => {
+        if (!displayMatch) return null;
+        return (
+            <div className="grid gap-4 sm:grid-cols-2">
+                {/* SUDUT AKA (MERAH) */}
+                <div
+                    className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white flex flex-col justify-between ${winnerCorner === 'aka'
+                        ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
+                        : 'border-red-700 bg-red-600 dark:bg-red-700'
+                        }`}
+                    style={{ backgroundColor: '#dc2626', borderColor: winnerCorner === 'aka' ? '#fbbf24' : '#b91c1c' }}
+                >
+                    <div>
+                        <div className="flex items-center justify-between gap-2">
+                            <span
+                                className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm"
+                                style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                            >
+                                AKA · MERAH
+                            </span>
+                            {winnerCorner === 'aka' && (
+                                <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
+                                    <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-3.5 flex items-start gap-3.5">
+                            {displayMatch.aka_photo_url && !akaImgError ? (
+                                <img
+                                    src={displayMatch.aka_photo_url}
+                                    alt={displayMatch.aka_label || 'AKA'}
+                                    onError={() => setAkaImgError(true)}
+                                    className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
+                                />
+                            ) : (
+                                <div
+                                    className="corner-aka-avatar flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 shadow-md text-white"
+                                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.35)', color: '#ffffff' }}
+                                >
+                                    <i className="fa-solid fa-user-ninja text-2xl" style={{ color: '#ffffff' }} />
+                                </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <p
+                                    className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
+                                    style={{ color: '#ffffff' }}
+                                >
+                                    {displayMatch.aka_label || 'Sudut Merah'}
+                                </p>
+                                <div className="mt-2 flex items-center">
+                                    <span
+                                        className="corner-aka-badge inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs"
+                                        style={{
+                                            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                            borderColor: 'rgba(255, 255, 255, 0.3)',
+                                            borderWidth: '1px',
+                                            borderStyle: 'solid',
+                                            color: '#ffffff',
+                                        }}
+                                    >
+                                        <i className="fa-solid fa-shield-halved text-[11px]" style={{ color: '#facc15' }} aria-hidden="true" />
+                                        <span className="truncate max-w-[200px]" style={{ color: '#ffffff' }}>
+                                            {displayMatch.aka_contingent || displayMatch.red_contingent || 'Kontingen belum dicatat'}
+                                        </span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="mt-4 text-center border-t border-white/20 pt-4">
+                            <p
+                                className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-white drop-shadow-md"
+                                style={{ color: '#ffffff' }}
+                            >
+                                {akaTotal}
+                            </p>
+                            <p
+                                className="mt-1 text-xs font-black uppercase tracking-widest text-white/90"
+                                style={{ color: 'rgba(255, 255, 255, 0.95)' }}
+                            >
+                                TOTAL POIN
+                            </p>
+                        </div>
+                        {(Boolean(akaBreakdown?.waza_ari) || Boolean(akaBreakdown?.ippon) || Boolean(akaBreakdown?.yuko) || Boolean(akaBreakdown?.yusei)) && (
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
+                                {Boolean(akaBreakdown?.ippon) && (
+                                    <span
+                                        className="rounded-lg px-2.5 py-0.5 border"
+                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                    >
+                                        Ippon: {akaBreakdown.ippon}
+                                    </span>
+                                )}
+                                {Boolean(akaBreakdown?.waza_ari) && (
+                                    <span
+                                        className="rounded-lg px-2.5 py-0.5 border"
+                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                    >
+                                        Waza-ari: {akaBreakdown.waza_ari}
+                                    </span>
+                                )}
+                                {Boolean(akaBreakdown?.yuko) && (
+                                    <span
+                                        className="rounded-lg px-2.5 py-0.5 border"
+                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                    >
+                                        Yuko: {akaBreakdown.yuko}
+                                    </span>
+                                )}
+                                {Boolean(akaBreakdown?.yusei) && (
+                                    <span
+                                        className="rounded-lg px-2.5 py-0.5 border"
+                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
+                                    >
+                                        Yusei: {akaBreakdown.yusei}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* SUDUT SHIRO (PUTIH) */}
+                <div
+                    className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro flex flex-col justify-between ${winnerCorner === 'shiro'
+                        ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
+                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
+                        }`}
+                >
+                    <div>
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
+                                SHIRO · PUTIH
+                            </span>
+                            {winnerCorner === 'shiro' && (
+                                <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
+                                    <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-3.5 flex items-start gap-3.5">
+                            {displayMatch.shiro_photo_url && !shiroImgError ? (
+                                <img
+                                    src={displayMatch.shiro_photo_url}
+                                    alt={displayMatch.shiro_label || 'SHIRO'}
+                                    onError={() => setShiroImgError(true)}
+                                    className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/30 object-cover shadow-md"
+                                />
+                            ) : (
+                                <div className="flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-200 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-md">
+                                    <i className="fa-solid fa-user-ninja text-2xl" />
+                                </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
+                                    {displayMatch.shiro_label || 'Sudut Putih'}
+                                </p>
+                                <div className="mt-2 flex items-center">
+                                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
+                                        <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                                        <span className="truncate max-w-[200px]">{displayMatch.shiro_contingent || displayMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="mt-4 text-center border-t border-slate-200 dark:border-white/10 pt-4">
+                            <p className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-slate-950 dark:text-white">
+                                {shiroTotal}
+                            </p>
+                            <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                                TOTAL POIN
+                            </p>
+                        </div>
+                        {(Boolean(shiroBreakdown?.waza_ari) || Boolean(shiroBreakdown?.ippon) || Boolean(shiroBreakdown?.yuko) || Boolean(shiroBreakdown?.yusei)) && (
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-xs font-bold text-slate-800 dark:text-slate-200">
+                                {Boolean(shiroBreakdown?.ippon) && (
+                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Ippon: {shiroBreakdown.ippon}</span>
+                                )}
+                                {Boolean(shiroBreakdown?.waza_ari) && (
+                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Waza-ari: {shiroBreakdown.waza_ari}</span>
+                                )}
+                                {Boolean(shiroBreakdown?.yuko) && (
+                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yuko: {shiroBreakdown.yuko}</span>
+                                )}
+                                {Boolean(shiroBreakdown?.yusei) && (
+                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yusei: {shiroBreakdown.yusei}</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderVarStreamCard = () => (
+        <section className="flex flex-col rounded-3xl border border-white/10 bg-[#151210] p-5 shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+                <div className="flex items-center gap-3">
+                    <span className="relative flex h-3 w-3">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping" />
+                        <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+                    </span>
+                    <div>
+                        <h3 className="flex items-center gap-2 text-base font-black uppercase tracking-wider text-white">
+                            <i className="fa-solid fa-video text-rose-400" aria-hidden="true" />
+                            Video Assistant Review (VAR)
+                        </h3>
+                        <a
+                            href={activeVarUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono text-xs text-[#d4a843] hover:underline"
+                        >
+                            {activeVarUrl} <i className="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]" />
+                        </a>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => toggleVarStatus(false)}
+                        title="Tutup tayangan VAR (meringankan perangkat laptop/layar)"
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition-colors"
+                    >
+                        <i className="fa-solid fa-video-slash" aria-hidden="true" />
+                        Tutup VAR
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setVarKey((k) => k + 1)}
+                        title="Muat ulang tayangan VAR"
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
+                    >
+                        <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
+                        Reload
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleFullscreenVar}
+                        title="Tampilkan VAR Layar Penuh"
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
+                    >
+                        <i className="fa-solid fa-expand" aria-hidden="true" />
+                        Layar Penuh
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowVarConfig((prev) => !prev)}
+                        title="Ubah URL Stream VAR (Lokal / IP Camera)"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-xs text-white/70 hover:bg-white/10 transition-colors"
+                    >
+                        <i className="fa-solid fa-gear" aria-hidden="true" />
+                    </button>
+                </div>
+            </div>
+
+            {showVarConfig && (
+                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                            type="url"
+                            value={varUrlInput}
+                            onChange={(e) => setVarUrlInput(e.target.value)}
+                            placeholder={`Default: ${defaultCourtVarUrl}`}
+                            className="flex-1 rounded-lg border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-[#d4a843]"
+                        />
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setVarKey((k) => k + 1)}
+                                className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-xs font-bold text-black hover:bg-[#e0b852] transition-colors"
+                                title="Terapkan preview untuk sesi monitor ini"
+                            >
+                                Terapkan
+                            </button>
+                            <button
+                                type="button"
+                                disabled={savingVarUrl}
+                                onClick={saveCourtVarUrlPermanently}
+                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                title="Simpan permanen untuk gelanggang ini"
+                            >
+                                {savingVarUrl ? 'Menyimpan…' : 'Simpan Permanen'}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-white/50">
+                        <span>Default Stream: <code className="text-[#d4a843]">https://var.smart-perkemi.id/kempo/demo/live_stream.html</code></span>
+                        {varSaveMessage && <span className="font-bold text-emerald-400">{varSaveMessage}</span>}
+                    </div>
+                </div>
+            )}
+
+            {/* Active VAR Challenge Notification Banner */}
+            {displayMatch?.var_review?.is_under_review && (
+                <div className="my-3 overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-500/20 p-4 animate-pulse">
+                    <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg font-black text-black">
+                            <i className="fa-solid fa-video" />
+                        </span>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white">
+                                    VAR REVIEW IN PROGRESS
+                                </span>
+                                <span className="text-xs font-black uppercase text-amber-300">
+                                    Sudut {displayMatch.var_review?.corner ? displayMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
+                                </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-amber-200">
+                                Alasan: {displayMatch.var_review?.reason || 'Permintaan review video'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div
+                ref={varIframeRef}
+                className="relative mt-4 aspect-video w-full flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/80"
+            >
+                <iframe
+                    key={varKey}
+                    src={activeVarUrl}
+                    className="h-full w-full border-0"
+                    allow="autoplay; fullscreen; camera; microphone"
+                    title="VAR Video Assistant Review"
+                    loading="eager"
+                />
+            </div>
+
+            <p className="mt-3 text-center text-xs text-white/40">
+                Kamera VAR terhubung langsung ke sistem pertandingan gelanggang.
+                Jika streaming tidak memuat di dalam frame, klik <a href={activeVarUrl} target="_blank" rel="noreferrer" className="font-bold text-[#d4a843] underline">Buka Tab Penuh (var.smart-perkemi.id)</a>.
+            </p>
+        </section>
+    );
 
     return (
         <>
@@ -494,6 +938,20 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                             <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
                                 <i className="fa-solid fa-expand" aria-hidden="true" />Layar Penuh
                             </button>
+                            {mode === 'match' && (
+                                <button
+                                    type="button"
+                                    onClick={() => toggleVarStatus(!isVarActive)}
+                                    title={isVarActive ? 'Matikan streaming VAR (meringankan beban laptop)' : 'Aktifkan streaming VAR'}
+                                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10 ${isVarActive
+                                            ? 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
+                                            : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                                        }`}
+                                >
+                                    <i className={`fa-solid ${isVarActive ? 'fa-video text-rose-400' : 'fa-video-slash text-slate-400'}`} aria-hidden="true" />
+                                    <span>VAR: {isVarActive ? 'ON' : 'OFF'}</span>
+                                </button>
+                            )}
                             <ThemeToggle className="border-white/10 bg-white/5 text-white/70 shadow-none hover:bg-white/10 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10" />
                             <TimerBellControls bell={bell} />
                             <a href={backUrl || `/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
@@ -525,7 +983,7 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                             Pemeriksaan Video Assistant Review
                                         </h2>
                                         <p className="text-sm font-semibold text-amber-200">
-                                            Alasan: {activeMatch.var_review.reason || 'Tantangan Video Replay'} · Pengaju: {activeMatch.var_review.corner?.toUpperCase()}
+                                            Alasan: {activeMatch?.var_review?.reason || 'Tantangan Video Replay'} · Pengaju: {activeMatch?.var_review?.corner ? activeMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
                                         </p>
                                     </div>
                                 </div>
@@ -591,15 +1049,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     </p>
                                                 </div>
                                                 <div className="border-l-2 border-slate-200 dark:border-white/10 pl-5 text-xs font-bold space-y-1.5">
-                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${
-                                                        isResultSaved
+                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${isResultSaved
                                                             ? 'bg-emerald-600 text-white force-white'
                                                             : displayMatch.timer?.status === 'running'
                                                                 ? 'bg-emerald-600 text-white animate-pulse force-white'
                                                                 : displayMatch.timer?.status === 'paused'
                                                                     ? 'bg-amber-500 text-slate-950'
                                                                     : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
-                                                    }`}>
+                                                        }`}>
                                                         {isResultSaved
                                                             ? 'Disahkan'
                                                             : displayMatch.timer?.is_finished
@@ -630,11 +1087,10 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 </h3>
                                                 <p className="text-xs text-slate-600 dark:text-white/50">Skor penguasaan teknik (maks. 60) dan penghayatan ekspresi (maks. 40)</p>
                                             </div>
-                                            <span className={`rounded-full px-3 py-1 text-xs font-bold border ${
-                                                isResultSaved
+                                            <span className={`rounded-full px-3 py-1 text-xs font-bold border ${isResultSaved
                                                     ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
                                                     : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-                                            }`}>
+                                                }`}>
                                                 {isResultSaved ? 'Disahkan & Disimpan Panitera' : 'Menunggu Pengesahan Nilai Embu'}
                                             </span>
                                         </div>
@@ -666,15 +1122,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                     return (
                                                         <div
                                                             key={judgeNum}
-                                                            className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${
-                                                                isMaxTrimmed || isMinTrimmed
+                                                            className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${isMaxTrimmed || isMinTrimmed
                                                                     ? 'border-rose-400 bg-rose-50/70 dark:border-rose-500/40 dark:bg-rose-950/25'
                                                                     : isMiddle
-                                                                    ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-500/40 dark:bg-emerald-950/35 shadow-md ring-1 ring-emerald-400/20'
-                                                                    : isSubmitted
-                                                                    ? 'border-emerald-500/60 bg-emerald-50/40 dark:bg-emerald-950/20'
-                                                                    : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
-                                                            }`}
+                                                                        ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-500/40 dark:bg-emerald-950/35 shadow-md ring-1 ring-emerald-400/20'
+                                                                        : isSubmitted
+                                                                            ? 'border-emerald-500/60 bg-emerald-50/40 dark:bg-emerald-950/20'
+                                                                            : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
+                                                                }`}
                                                         >
                                                             <div className="flex items-center justify-between gap-1">
                                                                 <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-[#d4a843]/20 dark:text-[#f2cd73] px-2.5 py-0.5 text-[10px] font-black uppercase">
@@ -704,37 +1159,35 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                             </p>
 
                                                             <div className="mt-4 text-center">
-                                                                <p className={`text-3xl font-black sm:text-4xl ${
-                                                                    isMaxTrimmed || isMinTrimmed
+                                                                <p className={`text-3xl font-black sm:text-4xl ${isMaxTrimmed || isMinTrimmed
                                                                         ? 'text-rose-600 dark:text-rose-400 line-through opacity-75'
                                                                         : isMiddle
-                                                                        ? 'text-emerald-700 dark:text-emerald-300'
-                                                                        : isResultSaved
-                                                                        ? 'text-slate-950 dark:text-white'
-                                                                        : 'text-slate-400 dark:text-white/40'
-                                                                }`}>
+                                                                            ? 'text-emerald-700 dark:text-emerald-300'
+                                                                            : isResultSaved
+                                                                                ? 'text-slate-950 dark:text-white'
+                                                                                : 'text-slate-400 dark:text-white/40'
+                                                                    }`}>
                                                                     {totalScoreVal}
                                                                 </p>
-                                                                <p className={`mt-1 text-[10px] uppercase font-bold ${
-                                                                    isMaxTrimmed
+                                                                <p className={`mt-1 text-[10px] uppercase font-bold ${isMaxTrimmed
                                                                         ? 'text-rose-600 dark:text-rose-400'
                                                                         : isMinTrimmed
-                                                                        ? 'text-rose-600 dark:text-rose-400'
-                                                                        : isMiddle
-                                                                        ? 'text-emerald-700 dark:text-emerald-300'
-                                                                        : isResultSaved
-                                                                        ? 'text-slate-500 dark:text-white/40'
-                                                                        : 'text-amber-600 dark:text-amber-400/80'
-                                                                }`}>
+                                                                            ? 'text-rose-600 dark:text-rose-400'
+                                                                            : isMiddle
+                                                                                ? 'text-emerald-700 dark:text-emerald-300'
+                                                                                : isResultSaved
+                                                                                    ? 'text-slate-500 dark:text-white/40'
+                                                                                    : 'text-amber-600 dark:text-amber-400/80'
+                                                                    }`}>
                                                                     {isMaxTrimmed
                                                                         ? 'Dicoret · Nilai Tertinggi'
                                                                         : isMinTrimmed
-                                                                        ? 'Dicoret · Nilai Terendah'
-                                                                        : isMiddle
-                                                                        ? 'Dihitung · 3 Wasit Tengah'
-                                                                        : isResultSaved
-                                                                        ? 'Total Nilai'
-                                                                        : (isSubmitted ? 'Nilai Masuk · Menunggu Disimpan' : 'Sedang Dinilai')}
+                                                                            ? 'Dicoret · Nilai Terendah'
+                                                                            : isMiddle
+                                                                                ? 'Dihitung · 3 Wasit Tengah'
+                                                                                : isResultSaved
+                                                                                    ? 'Total Nilai'
+                                                                                    : (isSubmitted ? 'Nilai Masuk · Menunggu Disimpan' : 'Sedang Dinilai')}
                                                                 </p>
                                                             </div>
 
@@ -778,19 +1231,16 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                 </p>
                                             </div>
 
-                                            <div className={`rounded-2xl border-2 p-4 text-center shadow-xl transition-all ${
-                                                isResultSaved
+                                            <div className={`rounded-2xl border-2 p-4 text-center shadow-xl transition-all ${isResultSaved
                                                     ? 'border-emerald-500 bg-emerald-600 text-white dark:bg-gradient-to-br dark:from-emerald-600/40 dark:to-emerald-950/60 force-white'
                                                     : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[.04] dark:text-white/70'
-                                            }`}>
-                                                <p className={`text-xs font-black uppercase tracking-widest ${
-                                                    isResultSaved ? 'text-emerald-100 dark:text-emerald-300 force-white' : 'text-slate-500 dark:text-white/50'
                                                 }`}>
+                                                <p className={`text-xs font-black uppercase tracking-widest ${isResultSaved ? 'text-emerald-100 dark:text-emerald-300 force-white' : 'text-slate-500 dark:text-white/50'
+                                                    }`}>
                                                     {isResultSaved ? 'NILAI AKHIR RESMI' : 'NILAI AKHIR'}
                                                 </p>
-                                                <p className={`mt-2 font-mono text-4xl font-black ${
-                                                    isResultSaved ? 'text-white dark:text-emerald-200 force-white' : 'text-slate-400 dark:text-white/40'
-                                                }`}>
+                                                <p className={`mt-2 font-mono text-4xl font-black ${isResultSaved ? 'text-white dark:text-emerald-200 force-white' : 'text-slate-400 dark:text-white/40'
+                                                    }`}>
                                                     {isResultSaved && displayMatch.result?.final_score
                                                         ? Number(displayMatch.result.final_score).toFixed(2)
                                                         : '—'}
@@ -828,11 +1278,10 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                                                 </p>
                                                             </div>
                                                         </div>
-                                                        <span className={`rounded-full px-3 py-1 text-xs font-bold border ${
-                                                            isResultSaved && embuParams.middleJudgesLabel
+                                                        <span className={`rounded-full px-3 py-1 text-xs font-bold border ${isResultSaved && embuParams.middleJudgesLabel
                                                                 ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 border-amber-300 dark:border-transparent'
                                                                 : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/60 border-transparent'
-                                                        }`}>
+                                                            }`}>
                                                             {isResultSaved && embuParams.middleJudgesLabel ? (
                                                                 <>3 Wasit Tengah: <strong>{embuParams.middleJudgesLabel}</strong></>
                                                             ) : (
@@ -955,359 +1404,77 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                                     )}
                                 </div>
                             ) : (
-                                <div className="grid gap-6 items-start lg:grid-cols-12">
-                                    {/* SISI KIRI: VAR STREAM (var.smart-perkemi.id) */}
-                                    <section className="flex flex-col rounded-3xl border border-white/10 bg-[#151210] p-5 shadow-2xl lg:col-span-6">
-                                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-                                            <div className="flex items-center gap-3">
-                                                <span className="relative flex h-3 w-3">
-                                                    <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping" />
-                                                    <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
-                                                </span>
-                                                <div>
-                                                    <h3 className="flex items-center gap-2 text-base font-black uppercase tracking-wider text-white">
-                                                        <i className="fa-solid fa-video text-rose-400" aria-hidden="true" />
-                                                        Video Assistant Review (VAR)
-                                                    </h3>
-                                                    <a
-                                                        href={activeVarUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="font-mono text-xs text-[#d4a843] hover:underline"
-                                                    >
-                                                        {activeVarUrl} <i className="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]" />
-                                                    </a>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setVarKey((k) => k + 1)}
-                                                    title="Muat ulang tayangan VAR"
-                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
-                                                >
-                                                    <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
-                                                    Reload
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleFullscreenVar}
-                                                    title="Tampilkan VAR Layar Penuh"
-                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
-                                                >
-                                                    <i className="fa-solid fa-expand" aria-hidden="true" />
-                                                    Layar Penuh
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowVarConfig((prev) => !prev)}
-                                                    title="Ubah URL Stream VAR (Lokal / IP Camera)"
-                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-xs text-white/70 hover:bg-white/10 transition-colors"
-                                                >
-                                                    <i className="fa-solid fa-gear" aria-hidden="true" />
-                                                </button>
-                                            </div>
+                                isVarActive ? (
+                                    <div className="grid gap-6 items-start lg:grid-cols-12">
+                                        {/* SISI KIRI: VAR STREAM */}
+                                        <div className="lg:col-span-6">
+                                            {renderVarStreamCard()}
                                         </div>
 
-                                        {/* Optional VAR URL Config Input */}
-                                        {showVarConfig && (
-                                            <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-3">
-                                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                                    <input
-                                                        type="url"
-                                                        value={varUrlInput}
-                                                        onChange={(e) => setVarUrlInput(e.target.value)}
-                                                        placeholder={`Default: ${defaultCourtVarUrl}`}
-                                                        className="flex-1 rounded-lg border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-[#d4a843]"
-                                                    />
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setVarKey((k) => k + 1)}
-                                                            className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-xs font-bold text-black hover:bg-[#e0b852] transition-colors"
-                                                            title="Terapkan preview untuk sesi monitor ini"
-                                                        >
-                                                            Terapkan
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={savingVarUrl}
-                                                            onClick={saveCourtVarUrlPermanently}
-                                                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                                                            title="Simpan permanen untuk gelanggang ini"
-                                                        >
-                                                            {savingVarUrl ? 'Menyimpan…' : 'Simpan Permanen'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[11px] text-white/50">
-                                                    <span>Default Stream: <code className="text-[#d4a843]">https://var.smart-perkemi.id/kempo/demo/live_stream.html</code></span>
-                                                    {varSaveMessage && <span className="font-bold text-emerald-400">{varSaveMessage}</span>}
-                                                </div>
-                                            </div>
-                                        )}
+                                        {/* SISI KANAN: TIMER DI ATAS, YANG BERTANDING DI BAWAH */}
+                                        <div className="flex flex-col gap-5 lg:col-span-6">
+                                            {renderMatchTimerCard()}
+                                            {renderMatchCornersCard()}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-6 items-start lg:grid-cols-12">
+                                        {/* SISI KIRI: TIMER */}
+                                        <div className="flex flex-col gap-4 lg:col-span-5 xl:col-span-5">
+                                            {renderMatchTimerCard()}
 
-                                        {/* Active VAR Challenge Notification Banner */}
-                                        {activeMatch.var_review?.is_under_review && (
-                                            <div className="my-3 overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-500/20 p-4 animate-pulse">
+                                            {/* Banner Status VAR Nonaktif + Tombol Nyalakan VAR */}
+                                            {/* <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/5 p-4 text-xs shadow-xs">
                                                 <div className="flex items-center gap-3">
-                                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg font-black text-black">
-                                                        <i className="fa-solid fa-video" />
+                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-white/60 text-sm">
+                                                        <i className="fa-solid fa-video-slash" aria-hidden="true" />
                                                     </span>
                                                     <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white">
-                                                                VAR REVIEW IN PROGRESS
-                                                            </span>
-                                                            <span className="text-xs font-black uppercase text-amber-300">
-                                                                Sudut {activeMatch.var_review.corner}
-                                                            </span>
-                                                        </div>
-                                                        <p className="mt-0.5 text-xs text-amber-200">
-                                                            Alasan: {activeMatch.var_review.reason || 'Permintaan review video'}
-                                                        </p>
+                                                        <p className="font-bold text-slate-900 dark:text-white">Streaming VAR Dinonaktifkan</p>
+                                                        <p className="text-[11px] text-slate-500 dark:text-white/50">Layar lebih ringan & hemat resource laptop.</p>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleVarStatus(true)}
+                                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors"
+                                                >
+                                                    <i className="fa-solid fa-video" aria-hidden="true" />
+                                                    Nyalakan VAR
+                                                </button>
+                                            </div> */}
 
-                                        {/* Embedded Iframe Player */}
-                                        <div
-                                            ref={varIframeRef}
-                                            className="relative mt-4 aspect-video w-full flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/80"
-                                        >
-                                            <iframe
-                                                key={varKey}
-                                                src={activeVarUrl}
-                                                className="h-full w-full border-0"
-                                                allow="autoplay; fullscreen; camera; microphone"
-                                                title="VAR Video Assistant Review"
-                                                loading="eager"
-                                            />
-                                        </div>
-
-                                        <p className="mt-3 text-center text-xs text-white/40">
-                                            Kamera VAR terhubung langsung ke sistem pertandingan gelanggang.
-                                            Jika streaming tidak memuat di dalam frame, klik <a href={activeVarUrl} target="_blank" rel="noreferrer" className="font-bold text-[#d4a843] underline">Buka Tab Penuh (var.smart-perkemi.id)</a>.
-                                        </p>
-                                    </section>
-
-                                    {/* SISI KANAN: TIMER RANDORI & CORNERS SCOREBOARD */}
-                                    <section className="flex flex-col gap-5 lg:col-span-6">
-                                        {/* Match Info & Big Timer Card */}
-                                        <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 text-center shadow-xl">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <span className="rounded-full bg-red-600 text-white font-black px-3.5 py-1 text-xs uppercase tracking-wider shadow-sm force-white">
-                                                    RANDORI · PARTAI #{activeMatch.sequence}
-                                                </span>
-                                                <span className="rounded-full bg-slate-100 dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-white/80 border border-slate-200 dark:border-transparent">
-                                                    {activeMatch.round_label}
-                                                </span>
-                                            </div>
-                                            <h2 className="mt-3 text-2xl md:text-3xl font-black text-slate-950 dark:text-white tracking-tight">
-                                                {activeMatch.category_name}
-                                            </h2>
-
-                                            {/* Big Timer Box */}
-                                            <div className="mt-5 rounded-2xl border-2 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 p-6 shadow-inner">
-                                                <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-950 dark:text-[#f2cd73]">
-                                                    {timerDirection === 'down' ? 'WAKTU PERTANDINGAN' : 'HITUNG MAJU'}
-                                                </p>
-                                                <p className={`mt-2 font-mono text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl ${isExpired ? 'text-red-600 dark:text-red-500 animate-pulse' : 'text-slate-950 dark:text-white'
-                                                    }`}>
-                                                    {timerText}
-                                                </p>
-                                                <div className="mt-4 flex items-center justify-center gap-2">
-                                                    <span className={`inline-block rounded-full px-4 py-1.5 text-xs uppercase font-black tracking-wider shadow-sm ${activeMatch.timer?.is_finished
-                                                        ? 'bg-slate-800 text-white dark:bg-slate-700 force-white'
-                                                        : isExpired
-                                                            ? 'bg-red-600 text-white animate-pulse force-white'
-                                                            : activeMatch.timer?.status === 'running'
-                                                                ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                                                : activeMatch.timer?.status === 'paused'
-                                                                    ? 'bg-amber-500 text-slate-950 font-black'
-                                                                    : 'bg-slate-200 text-slate-900 border border-slate-300 dark:border-white/20 dark:bg-white/15 dark:text-white font-black'
-                                                        }`}>
-                                                        {activeMatch.timer?.is_finished ? 'Partai Selesai' : isExpired ? 'WAKTU HABIS' : activeMatch.timer?.status === 'running' ? 'WAKTU BERJALAN' : activeMatch.timer?.status === 'paused' ? 'WAKTU DIJEDA' : 'MENUNGGU WASIT'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Sudut AKA vs Sudut SHIRO */}
-                                        <div className="grid gap-4 sm:grid-cols-2">
-                                            {/* SUDUT AKA (MERAH) */}
-                                            <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white flex flex-col justify-between ${activeMatch.result?.winner_corner === 'aka'
-                                                    ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
-                                                    : 'border-red-700 bg-red-600 dark:bg-red-700'
-                                                    }`}
-                                                style={{ backgroundColor: '#dc2626', borderColor: activeMatch.result?.winner_corner === 'aka' ? '#fbbf24' : '#b91c1c' }}
-                                            >
-                                                <div>
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <span
-                                                            className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm"
-                                                            style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                        >
-                                                            AKA · MERAH
+                                            {/* Banner VAR Review jika ada tantangan VAR yang sedang aktif */}
+                                            {displayMatch?.var_review?.is_under_review && (
+                                                <div className="overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-500/20 p-4 animate-pulse">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg font-black text-black">
+                                                            <i className="fa-solid fa-video" />
                                                         </span>
-                                                        {activeMatch.result?.winner_corner === 'aka' && (
-                                                            <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                                                <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="mt-3.5 flex items-start gap-3.5">
-                                                        {activeMatch.aka_photo_url ? (
-                                                            <img
-                                                                src={activeMatch.aka_photo_url}
-                                                                alt={activeMatch.aka_label || 'AKA'}
-                                                                className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
-                                                            />
-                                                        ) : (
-                                                            <div
-                                                                className="corner-aka-avatar flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 shadow-md text-white"
-                                                                style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.35)', color: '#ffffff' }}
-                                                            >
-                                                                <i className="fa-solid fa-user-ninja text-2xl" style={{ color: '#ffffff' }} />
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white">
+                                                                    VAR REVIEW IN PROGRESS
+                                                                </span>
+                                                                <span className="text-xs font-black uppercase text-amber-300">
+                                                                    Sudut {displayMatch.var_review?.corner ? displayMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
+                                                                </span>
                                                             </div>
-                                                        )}
-                                                        <div className="min-w-0 flex-1">
-                                                            <p
-                                                                className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
-                                                                style={{ color: '#ffffff' }}
-                                                            >
-                                                                {activeMatch.aka_label || 'Sudut Merah'}
+                                                            <p className="mt-0.5 text-xs text-amber-200">
+                                                                Alasan: {displayMatch.var_review?.reason || 'Permintaan review video'}
                                                             </p>
-                                                            <div className="mt-2 flex items-center">
-                                                                <span
-                                                                    className="corner-aka-badge inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs"
-                                                                    style={{
-                                                                        backgroundColor: 'rgba(0, 0, 0, 0.55)',
-                                                                        borderColor: 'rgba(255, 255, 255, 0.3)',
-                                                                        borderWidth: '1px',
-                                                                        borderStyle: 'solid',
-                                                                        color: '#ffffff',
-                                                                    }}
-                                                                >
-                                                                    <i className="fa-solid fa-shield-halved text-[11px]" style={{ color: '#facc15' }} aria-hidden="true" />
-                                                                    <span className="truncate max-w-[200px]" style={{ color: '#ffffff' }}>
-                                                                        {activeMatch.aka_contingent || activeMatch.red_contingent || 'Kontingen belum dicatat'}
-                                                                    </span>
-                                                                </span>
-                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-
-                                                <div>
-                                                    <div className="mt-4 text-center border-t border-white/20 pt-4">
-                                                        <p
-                                                            className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-white drop-shadow-md"
-                                                            style={{ color: '#ffffff' }}
-                                                        >
-                                                            {activeMatch.result?.aka_total ?? 0}
-                                                        </p>
-                                                        <p
-                                                            className="mt-1 text-xs font-black uppercase tracking-widest text-white/90"
-                                                            style={{ color: 'rgba(255, 255, 255, 0.95)' }}
-                                                        >
-                                                            TOTAL POIN
-                                                        </p>
-                                                    </div>
-                                                    {(Boolean(activeMatch.aka_breakdown?.waza_ari) || Boolean(activeMatch.aka_breakdown?.yuko)) && (
-                                                        <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
-                                                            {Boolean(activeMatch.aka_breakdown?.waza_ari) && (
-                                                                <span
-                                                                    className="rounded-lg px-2.5 py-0.5 border"
-                                                                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                                >
-                                                                    Waza-ari: {activeMatch.aka_breakdown.waza_ari}
-                                                                </span>
-                                                            )}
-                                                            {Boolean(activeMatch.aka_breakdown?.yuko) && (
-                                                                <span
-                                                                    className="rounded-lg px-2.5 py-0.5 border"
-                                                                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                                                >
-                                                                    Yuko: {activeMatch.aka_breakdown.yuko}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* SUDUT SHIRO (PUTIH) */}
-                                            <div
-                                                className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro flex flex-col justify-between ${activeMatch.result?.winner_corner === 'shiro'
-                                                    ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
-                                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
-                                                    }`}
-                                            >
-                                                <div>
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
-                                                            SHIRO · PUTIH
-                                                        </span>
-                                                        {activeMatch.result?.winner_corner === 'shiro' && (
-                                                            <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                                                <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="mt-3.5 flex items-start gap-3.5">
-                                                        {activeMatch.shiro_photo_url ? (
-                                                            <img
-                                                                src={activeMatch.shiro_photo_url}
-                                                                alt={activeMatch.shiro_label || 'SHIRO'}
-                                                                className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/30 object-cover shadow-md"
-                                                            />
-                                                        ) : (
-                                                            <div className="flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-200 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-md">
-                                                                <i className="fa-solid fa-user-ninja text-2xl" />
-                                                            </div>
-                                                        )}
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
-                                                                {activeMatch.shiro_label || 'Sudut Putih'}
-                                                            </p>
-                                                            <div className="mt-2 flex items-center">
-                                                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
-                                                                    <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                                                                    <span className="truncate max-w-[200px]">{activeMatch.shiro_contingent || activeMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div>
-                                                    <div className="mt-4 text-center border-t border-slate-200 dark:border-white/10 pt-4">
-                                                        <p className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-slate-950 dark:text-white">
-                                                            {activeMatch.result?.shiro_total ?? 0}
-                                                        </p>
-                                                        <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                                            TOTAL POIN
-                                                        </p>
-                                                    </div>
-                                                    {(Boolean(activeMatch.shiro_breakdown?.waza_ari) || Boolean(activeMatch.shiro_breakdown?.yuko)) && (
-                                                        <div className="mt-4 flex items-center justify-center gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                            {Boolean(activeMatch.shiro_breakdown?.waza_ari) && (
-                                                                <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Waza-ari: {activeMatch.shiro_breakdown.waza_ari}</span>
-                                                            )}
-                                                            {Boolean(activeMatch.shiro_breakdown?.yuko) && (
-                                                                <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yuko: {activeMatch.shiro_breakdown.yuko}</span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
+                                            )}
                                         </div>
-                                    </section>
-                                </div>
+
+                                        {/* SISI KANAN: YANG BERTANDING (AKA & SHIRO BERDAMPINGAN) */}
+                                        <div className="lg:col-span-7 xl:col-span-7">
+                                            {renderMatchCornersCard()}
+                                        </div>
+                                    </div>
+                                )
                             )
                         ) : <EmptyCourt court={court} />
                     )}

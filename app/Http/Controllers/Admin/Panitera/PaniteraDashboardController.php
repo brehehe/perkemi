@@ -69,6 +69,7 @@ class PaniteraDashboardController extends Controller
                     'order' => (int) ($court->order ?: 1),
                     'var_url' => $court->var_url,
                     'raw_var_url' => $court->raw_var_url,
+                    'is_var_enabled' => (bool) $court->is_var_enabled,
                     'clerks' => $clerks,
                     'total_matches' => (int) $court->total_matches_count,
                     'completed_matches' => (int) $court->completed_matches_count,

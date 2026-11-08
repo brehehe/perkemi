@@ -13,6 +13,7 @@ use App\Models\TournamentMatch;
 use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\PaniteraTimerState;
+use App\Services\Panitera\RandoriScoreCalculator;
 use App\Services\Panitera\RandoriScoreDraftStore;
 use App\Services\Var\VarReviewService;
 
@@ -23,6 +24,7 @@ class CourtMonitorDataService
         private readonly PaniteraTimerState $timerState,
         private readonly EmbuScoreCalculator $calculator,
         private readonly RandoriScoreDraftStore $randoriDrafts,
+        private readonly RandoriScoreCalculator $randoriCalculator,
     ) {}
 
     /** @return array<string, mixed> */
@@ -127,6 +129,7 @@ class CourtMonitorDataService
             'server_now' => $serverNow->toIso8601String(),
             'server_now_ms' => $serverNow->getTimestampMs(),
             'court_status' => $court->is_active ? 'active' : 'inactive',
+            'is_var_enabled' => (bool) $court->is_var_enabled,
             'active_match' => $activeMatch ? $this->matchData($event, $activeMatch) : null,
             'last_result' => $lastCompletedMatch ? $this->matchData($event, $lastCompletedMatch) : null,
             'queue' => $queue,
@@ -454,16 +457,38 @@ class CourtMonitorDataService
                 ->all()
             : [];
 
-        $resultData = $type === 'embu'
-            ? ($this->embuResultData($embuScore) ?? $this->liveEmbuResultData($match))
-            : ($randoriScore ? [
-                'aka_total' => $randoriScore->aka_total,
-                'shiro_total' => $randoriScore->shiro_total,
-                'aka_breakdown' => $randoriScore->aka_breakdown ?? [],
-                'shiro_breakdown' => $randoriScore->shiro_breakdown ?? [],
-                'winner_corner' => $randoriScore->winner_corner,
-                'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
-            ] : null);
+        $resultData = null;
+        if ($type === 'embu') {
+            $resultData = $this->embuResultData($embuScore) ?? $this->liveEmbuResultData($match);
+        } elseif ($type === 'randori') {
+            if ($randoriScore) {
+                $resultData = [
+                    'aka_total' => (int) $randoriScore->aka_total,
+                    'shiro_total' => (int) $randoriScore->shiro_total,
+                    'aka_breakdown' => $randoriScore->aka_breakdown ?? [],
+                    'shiro_breakdown' => $randoriScore->shiro_breakdown ?? [],
+                    'winner_corner' => $randoriScore->winner_corner,
+                    'verified_at' => $randoriScore->verified_at?->translatedFormat('d M Y, H:i'),
+                    'status' => $randoriScore->status,
+                    'is_live' => $randoriScore->status !== 'verified',
+                ];
+            } else {
+                $draft = $this->randoriDrafts->get($match);
+                $akaTotal = $this->randoriCalculator->total($draft['aka'] ?? []);
+                $shiroTotal = $this->randoriCalculator->total($draft['shiro'] ?? []);
+
+                $resultData = [
+                    'aka_total' => $akaTotal,
+                    'shiro_total' => $shiroTotal,
+                    'aka_breakdown' => $draft['aka'] ?? [],
+                    'shiro_breakdown' => $draft['shiro'] ?? [],
+                    'winner_corner' => $draft['decision_override']['winner_corner'] ?? ($akaTotal > $shiroTotal ? 'aka' : ($shiroTotal > $akaTotal ? 'shiro' : null)),
+                    'verified_at' => null,
+                    'status' => 'draft',
+                    'is_live' => true,
+                ];
+            }
+        }
 
         $enrichedJudges = $rawJudges;
         $embuParams = null;
@@ -508,6 +533,10 @@ class CourtMonitorDataService
             'is_result_saved' => $isResultSaved,
             'timer' => $this->timerState->timer($match),
             'result' => $resultData,
+            'aka_total' => $resultData['aka_total'] ?? 0,
+            'shiro_total' => $resultData['shiro_total'] ?? 0,
+            'aka_breakdown' => $resultData['aka_breakdown'] ?? [],
+            'shiro_breakdown' => $resultData['shiro_breakdown'] ?? [],
             'embu_parameters' => $embuParams,
             'judge_scores' => $enrichedJudges,
             'var_stream_url' => data_get($match->metadata, 'var_stream_url')

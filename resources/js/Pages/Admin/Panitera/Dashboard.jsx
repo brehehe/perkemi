@@ -471,11 +471,31 @@ export default function PaniteraDashboard({
     const [generatingChampions, setGeneratingChampions] = useState(false);
     const [editingVarCourt, setEditingVarCourt] = useState(null);
     const [varUrlInput, setVarUrlInput] = useState('');
+    const [varEnabledInput, setVarEnabledInput] = useState(true);
     const [savingVarUrl, setSavingVarUrl] = useState(false);
+    const [togglingVarCourtId, setTogglingVarCourtId] = useState(null);
 
     const handleOpenVarModal = (court) => {
         setEditingVarCourt(court);
         setVarUrlInput(court.raw_var_url || court.var_url || '');
+        setVarEnabledInput(court.is_var_enabled !== false);
+    };
+
+    const handleToggleVar = (court) => {
+        const nextStatus = court.is_var_enabled === false;
+        setTogglingVarCourtId(court.id);
+        const url = `/admin/panitera/scoring/courts/${court.id}/var-url?event_id=${encodeURIComponent(activeEvent.id)}`;
+        router.put(
+            url,
+            {
+                event_id: activeEvent.id,
+                is_var_enabled: nextStatus,
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => setTogglingVarCourtId(null),
+            }
+        );
     };
 
     const handleSaveVarUrl = (e) => {
@@ -488,6 +508,7 @@ export default function PaniteraDashboard({
             {
                 event_id: activeEvent.id,
                 var_url: varUrlInput.trim() || null,
+                is_var_enabled: varEnabledInput,
             },
             {
                 preserveScroll: true,
@@ -1622,33 +1643,59 @@ export default function PaniteraDashboard({
                                         )}
                                     </div>
                                     {/* VAR Stream Link Row */}
-                                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs shadow-2xs">
+                                    <div className={`mt-3 flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs shadow-2xs transition-colors ${
+                                        court.is_var_enabled !== false
+                                            ? 'border-slate-200/90 bg-white'
+                                            : 'border-slate-200 bg-slate-100/70'
+                                    }`}>
                                         <div className="flex items-center gap-1.5 min-w-0">
-                                            <i className="fa-solid fa-video text-rose-600 text-xs shrink-0" aria-hidden="true" />
+                                            <i className={`fa-solid ${court.is_var_enabled !== false ? 'fa-video text-rose-600' : 'fa-video-slash text-slate-400'} text-xs shrink-0`} aria-hidden="true" />
                                             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 shrink-0">VAR:</span>
-                                            <a
-                                                href={court.var_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="truncate font-mono text-[11px] font-semibold text-rose-700 hover:text-rose-900 hover:underline"
-                                                title={`Buka Link VAR (${court.var_url})`}
-                                            >
-                                                {court.var_url}
-                                            </a>
+                                            {court.is_var_enabled !== false ? (
+                                                <a
+                                                    href={court.var_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="truncate font-mono text-[11px] font-semibold text-rose-700 hover:text-rose-900 hover:underline"
+                                                    title={`Buka Link VAR (${court.var_url})`}
+                                                >
+                                                    {court.var_url}
+                                                </a>
+                                            ) : (
+                                                <span className="truncate text-[11px] font-semibold text-slate-500 italic">
+                                                    Nonaktif (Hemat Beban Laptop)
+                                                </span>
+                                            )}
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleOpenVarModal(court)}
-                                            className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-                                            title="Sesuaikan Link VAR"
-                                        >
-                                            <i className="fa-solid fa-pen-to-square text-[10px]" />
-                                            <span>Ubah</span>
-                                        </button>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                                type="button"
+                                                disabled={togglingVarCourtId === court.id}
+                                                onClick={() => handleToggleVar(court)}
+                                                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition-all ${
+                                                    court.is_var_enabled !== false
+                                                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
+                                                        : 'bg-slate-200 text-slate-700 hover:bg-slate-300 border border-slate-300'
+                                                }`}
+                                                title={court.is_var_enabled !== false ? 'Klik untuk matikan VAR (hemat beban laptop/perangkat)' : 'Klik untuk aktifkan sistem VAR'}
+                                            >
+                                                <span className={`inline-block h-1.5 w-1.5 rounded-full ${court.is_var_enabled !== false ? 'bg-emerald-600' : 'bg-slate-500'}`} />
+                                                {togglingVarCourtId === court.id ? '...' : (court.is_var_enabled !== false ? 'ON' : 'OFF')}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenVarModal(court)}
+                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                                                title="Sesuaikan Pengaturan VAR"
+                                            >
+                                                <i className="fa-solid fa-pen-to-square text-[10px]" />
+                                                <span>Ubah</span>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="mt-3 border-t border-[#e7e0d7] pt-3">
-                                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} compact />
+                                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} isVarEnabled={court.is_var_enabled !== false} compact />
                                     </div>
                                 </article>
                             ))}
@@ -1682,7 +1729,40 @@ export default function PaniteraDashboard({
                         </div>
 
                         <form onSubmit={handleSaveVarUrl} className="space-y-4">
-                            <div>
+                            {/* Toggle ON / OFF VAR Switch */}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-black text-slate-900">Aktifkan Video Assistant Review (VAR)</p>
+                                        <p className="mt-0.5 text-[11px] text-slate-500">
+                                            Matikan jika perangkat/laptop di court lambat atau tidak memiliki kamera VAR, agar monitor lebih ringan dan tidak lag.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVarEnabledInput((prev) => !prev)}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            varEnabledInput ? 'bg-emerald-600' : 'bg-slate-300'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                varEnabledInput ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${
+                                        varEnabledInput ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                                    }`}>
+                                        <span className={`h-1.5 w-1.5 rounded-full ${varEnabledInput ? 'bg-emerald-600' : 'bg-slate-500'}`} />
+                                        Tampilan Layar Monitor: {varEnabledInput ? 'Aktif (Streaming Kamera Dimuat)' : 'Nonaktif (Timer Kiri, Tanding Kanan)'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className={varEnabledInput ? '' : 'opacity-60'}>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     URL Streaming VAR (Kamera Court)
                                 </label>

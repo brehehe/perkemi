@@ -35,6 +35,7 @@ class EventCourt extends Model
         'description',
         'access_code',
         'var_url',
+        'is_var_enabled',
         'order',
         'is_active',
     ];
@@ -46,6 +47,7 @@ class EventCourt extends Model
      */
     protected $appends = [
         'var_url',
+        'is_var_enabled',
     ];
 
     protected static function booted(): void
@@ -79,8 +81,17 @@ class EventCourt extends Model
         return [
             'order' => 'integer',
             'is_active' => 'boolean',
+            'is_var_enabled' => 'boolean',
             'deleted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Determine whether the VAR system is enabled on this court.
+     */
+    public function getIsVarEnabledAttribute(): bool
+    {
+        return (bool) ($this->attributes['is_var_enabled'] ?? true);
     }
 
     /**

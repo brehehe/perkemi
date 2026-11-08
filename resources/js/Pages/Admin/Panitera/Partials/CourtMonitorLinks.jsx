@@ -6,7 +6,7 @@ const monitorModes = [
     ['officials', 'Ofisial', 'fa-user-shield'],
 ];
 
-export function CourtMonitorButtons({ courtId, eventId, compact = false, varUrl = null }) {
+export function CourtMonitorButtons({ courtId, eventId, compact = false, varUrl = null, isVarEnabled = true }) {
     const resolvedVarUrl = varUrl || 'https://var.smart-perkemi.id/kempo/demo/live_stream.html';
 
     return (
@@ -27,11 +27,15 @@ export function CourtMonitorButtons({ courtId, eventId, compact = false, varUrl 
                 href={resolvedVarUrl}
                 target="_blank"
                 rel="noreferrer"
-                title={`Buka VAR Camera Stream (${resolvedVarUrl})`}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 px-3 text-xs font-bold text-rose-700 transition-colors hover:border-rose-400 hover:bg-rose-100 hover:text-rose-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 sm:min-h-10"
+                title={isVarEnabled ? `Buka VAR Camera Stream (${resolvedVarUrl})` : `Sistem VAR dinonaktifkan di court ini (${resolvedVarUrl})`}
+                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors sm:min-h-10 ${
+                    isVarEnabled
+                        ? 'border-rose-200 bg-rose-50/70 text-rose-700 hover:border-rose-400 hover:bg-rose-100 hover:text-rose-900 focus-visible:outline-rose-500'
+                        : 'border-slate-200 bg-slate-100/90 text-slate-500 hover:bg-slate-200 hover:text-slate-700 opacity-80'
+                }`}
             >
-                <i className="fa-solid fa-video text-rose-600" aria-hidden="true" />
-                VAR
+                <i className={`fa-solid ${isVarEnabled ? 'fa-video text-rose-600' : 'fa-video-slash text-slate-400'}`} aria-hidden="true" />
+                {isVarEnabled ? 'VAR' : 'VAR (Off)'}
             </a>
         </div>
     );
@@ -51,7 +55,7 @@ export default function CourtMonitorLinks({ activeEvent, courts = [] }) {
                             <h3 className="text-sm font-bold text-[#17120f]">{court.name}</h3>
                             <p className="mt-0.5 text-[11px] text-[#7a746e]">{court.location || 'Lokasi belum dicatat'}</p>
                         </div>
-                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} />
+                        <CourtMonitorButtons courtId={court.id} eventId={activeEvent.id} varUrl={court.var_url} isVarEnabled={court.is_var_enabled !== false} />
                     </article>
                 ))}
                 {courts.length === 0 && <p className="rounded-xl border border-dashed border-[#d9d3c9] p-6 text-center text-xs text-[#7a746e] lg:col-span-2 2xl:col-span-3">Belum ada court aktif pada event ini.</p>}
