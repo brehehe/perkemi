@@ -7,6 +7,8 @@ use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\Registration;
 use App\Models\Role;
+use App\Models\TournamentDrawing;
+use App\Models\TournamentMatch;
 use App\Models\User;
 use App\Services\TournamentDrawingGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -345,4 +347,112 @@ test('admin can download tournament schedule and capacity report as pdf directly
     $streamResponse->assertOk()
         ->assertHeader('content-type', 'application/pdf');
     expect($streamResponse->headers->get('content-disposition'))->toContain('inline; filename=Laporan_Jadwal_Kapasitas_');
+});
+
+test('admin can export all drawing brackets or one selected match number as pdf', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Kejurda PDF Bagan',
+        'slug' => 'kejurda-pdf-bagan',
+        'venue' => 'GOR Bagan',
+        'city' => 'Surabaya',
+        'start_date' => '2026-11-20',
+        'end_date' => '2026-11-22',
+        'is_active' => true,
+    ]);
+    $randoriCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra 60 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $embuCategory = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Embu Beregu Campuran',
+        'type' => 'embu',
+        'gender' => 'mixed',
+        'capacity' => 8,
+        'order' => 2,
+        'is_active' => true,
+    ]);
+    $randoriDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'bracket_type' => 'single_elimination',
+        'participant_count' => 4,
+        'contingent_count' => 4,
+    ]);
+    $embuDrawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'bracket_type' => 'embu_direct_final',
+        'participant_count' => 3,
+        'contingent_count' => 3,
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $randoriDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $randoriCategory->id,
+        'match_sequence' => 1,
+        'round_label' => 'Semifinal 1',
+        'red_label' => 'Kenshi Aka',
+        'blue_label' => 'Kenshi Shiro',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $embuDrawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $embuCategory->id,
+        'match_sequence' => 2,
+        'bracket_position' => 2,
+        'round_label' => 'Final',
+        'participant_label' => 'Tim Embu Garuda',
+        'red_label' => null,
+        'blue_label' => null,
+        'metadata' => ['members' => ['Atlet Satu', 'Atlet Dua']],
+    ]);
+
+    $allDrawings = $this->actingAs($admin)->get(route('admin.pertandingan.drawing.pdf', [
+        'event_id' => $event->id,
+        'format' => 'html',
+    ]));
+
+    $allDrawings
+        ->assertViewIs('reports.tournament-drawings')
+        ->assertSee('Randori Putra 60 kg')
+        ->assertSee('Embu Beregu Campuran')
+        ->assertSee('Kenshi Aka')
+        ->assertSee('Tim Embu Garuda');
+
+    $selectedDrawing = $this->actingAs($admin)->get(route('admin.pertandingan.drawing.pdf', [
+        'event_id' => $event->id,
+        'category' => $randoriCategory->id,
+    ]));
+
+    $selectedDrawing
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+    expect($selectedDrawing->headers->get('content-disposition'))
+        ->toContain('attachment; filename=Bagan_Pertandingan_kejurda_pdf_bagan_randori_putra_60_kg_');
+});
+
+test('drawing pdf export returns 403 for an inaccessible event', function () {
+    $user = User::factory()->create();
+    $event = Event::create([
+        'name' => 'Event Bagan Privat',
+        'slug' => 'event-bagan-privat',
+        'venue' => 'GOR Privat',
+        'city' => 'Bandung',
+        'start_date' => '2026-11-20',
+        'end_date' => '2026-11-22',
+        'is_active' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.pertandingan.drawing.pdf', ['event_id' => $event->id]))
+        ->assertForbidden();
 });

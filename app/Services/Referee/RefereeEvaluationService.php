@@ -25,6 +25,10 @@ class RefereeEvaluationService
      * @return array{
      *     summary: array<string, mixed>,
      *     referees: list<array<string, mixed>>,
+     *     ranking: array<string, mixed>,
+     *     score_distribution: list<array<string, mixed>>,
+     *     contingent_analysis: list<array<string, mixed>>,
+     *     arbitration_recommendations: array<string, mixed>,
      *     heatmap: array<string, mixed>,
      *     certification_options: list<string>
      * }
@@ -52,6 +56,10 @@ class RefereeEvaluationService
         return [
             'summary' => $baseData['summary'],
             'referees' => $filteredReferees,
+            'ranking' => $baseData['ranking'],
+            'score_distribution' => $baseData['score_distribution'],
+            'contingent_analysis' => $baseData['contingent_analysis'],
+            'arbitration_recommendations' => $baseData['arbitration_recommendations'],
             'heatmap' => $baseData['heatmap'],
             'certification_options' => $baseData['certification_options'],
         ];
@@ -281,9 +289,10 @@ class RefereeEvaluationService
 
             // Same origin bias calculation
             $sameOriginCount = count($sameRegionScores);
+            $hasPeerComparison = count($sameRegionPeerScores) > 0;
             $sameOriginAvg = $sameOriginCount > 0 ? round(array_sum($sameRegionScores) / $sameOriginCount, 2) : 0.0;
-            $sameOriginPeerAvg = count($sameRegionPeerScores) > 0 ? round(array_sum($sameRegionPeerScores) / count($sameRegionPeerScores), 2) : 0.0;
-            $regionalDelta = $sameOriginCount > 0 ? round($sameOriginAvg - $sameOriginPeerAvg, 2) : 0.0;
+            $sameOriginPeerAvg = $hasPeerComparison ? round(array_sum($sameRegionPeerScores) / count($sameRegionPeerScores), 2) : 0.0;
+            $regionalDelta = ($sameOriginCount > 0 && $hasPeerComparison) ? round($sameOriginAvg - $sameOriginPeerAvg, 2) : 0.0;
 
             // Anomaly warning rules
             $flags = [];
@@ -305,14 +314,14 @@ class RefereeEvaluationService
                 ];
             }
 
-            if ($sameOriginCount > 0 && $regionalDelta >= 3.0) {
+            if ($sameOriginCount > 0 && $hasPeerComparison && $regionalDelta >= 3.0) {
                 $flags[] = [
                     'code' => 'regional_bias',
                     'severity' => 'critical',
                     'label' => "Indikasi Bias Kedaerahan (+{$regionalDelta})",
                     'description' => "Wasit memberikan rata-rata +{$regionalDelta} poin lebih tinggi untuk kontingen daerah asal ({$referee->region}) dibandingkan rata-rata juri lainnya.",
                 ];
-            } elseif ($sameOriginCount > 0 && $regionalDelta >= 1.5) {
+            } elseif ($sameOriginCount > 0 && $hasPeerComparison && $regionalDelta >= 1.5) {
                 $flags[] = [
                     'code' => 'slight_regional_bias',
                     'severity' => 'warning',
@@ -325,6 +334,38 @@ class RefereeEvaluationService
             $hasWarning = collect($flags)->contains('severity', 'warning');
             $status = $hasCritical ? 'flagged' : ($hasWarning ? 'warning' : 'normal');
 
+            // Calculate Quality & Objectivity Index (0 - 100)
+            if ($count > 0) {
+                $agreementScore = max(0.0, min(100.0, 100.0 - ($trimmedRate * 1.25)));
+                $neutralityScore = ($sameOriginCount > 0 && $hasPeerComparison)
+                    ? max(0.0, min(100.0, 100.0 - (abs($regionalDelta) * 20.0)))
+                    : 100.0;
+                $consistencyScore = $count > 1
+                    ? max(0.0, min(100.0, 100.0 - ($stdDev * 10.0)))
+                    : 85.0;
+                $participationFactor = min(1.0, 0.70 + ($count * 0.06));
+                $rawIndex = (($agreementScore * 0.40) + ($neutralityScore * 0.35) + ($consistencyScore * 0.25)) * $participationFactor;
+
+                if ($hasCritical) {
+                    $rawIndex = min($rawIndex, 64.9);
+                } elseif ($hasWarning) {
+                    $rawIndex = min($rawIndex, 79.9);
+                }
+
+                $qualityIndex = round($rawIndex, 1);
+            } else {
+                $qualityIndex = 0.0;
+            }
+
+            $grade = match (true) {
+                $count === 0 => ['code' => '-', 'label' => 'Belum Bertugas', 'tone' => 'slate'],
+                $qualityIndex >= 90.0 => ['code' => 'A+', 'label' => 'Wasit Sangat Objektif & Teladan', 'tone' => 'emerald'],
+                $qualityIndex >= 80.0 => ['code' => 'A', 'label' => 'Wasit Objektif & Konsisten', 'tone' => 'blue'],
+                $qualityIndex >= 70.0 => ['code' => 'B', 'label' => 'Wasit Cukup Objektif', 'tone' => 'amber'],
+                $qualityIndex >= 60.0 => ['code' => 'C', 'label' => 'Perlu Pemantauan Arbitrase', 'tone' => 'amber'],
+                default => ['code' => 'D', 'label' => 'Anomali / Perlu Rotasi', 'tone' => 'rose'],
+            };
+
             // Generate narrative analysis
             $narrative = $this->generateNarrative(
                 referee: $referee,
@@ -336,6 +377,7 @@ class RefereeEvaluationService
                 regionalDelta: $regionalDelta,
                 flags: $flags,
                 status: $status,
+                hasPeerComparison: $hasPeerComparison,
             );
 
             $evaluations[] = [
@@ -358,6 +400,11 @@ class RefereeEvaluationService
                 'same_origin_avg' => $sameOriginAvg,
                 'same_origin_peer_avg' => $sameOriginPeerAvg,
                 'regional_delta' => $regionalDelta,
+                'has_peer_comparison' => $hasPeerComparison,
+                'quality_index' => $qualityIndex,
+                'grade' => $grade['code'],
+                'grade_label' => $grade['label'],
+                'grade_tone' => $grade['tone'],
                 'flags' => $flags,
                 'status' => $status,
                 'status_label' => match ($status) {
@@ -375,6 +422,50 @@ class RefereeEvaluationService
             ];
         }
 
+        // Rank referees by quality index descending
+        $activeJudges = collect($evaluations)
+            ->filter(fn ($r) => $r['matches_judged_count'] > 0)
+            ->sortBy([
+                ['quality_index', 'desc'],
+                ['matches_judged_count', 'desc'],
+                ['std_dev', 'asc'],
+            ])
+            ->values();
+
+        $inactiveJudges = collect($evaluations)
+            ->filter(fn ($r) => $r['matches_judged_count'] === 0)
+            ->sortBy('name')
+            ->values();
+
+        $rankedReferees = [];
+        $rankCounter = 1;
+        foreach ($activeJudges as $ref) {
+            $ref['rank'] = $rankCounter;
+            $ref['rank_badge'] = match ($rankCounter) {
+                1 => 'gold',
+                2 => 'silver',
+                3 => 'bronze',
+                default => null,
+            };
+            $ref['rank_label'] = match ($rankCounter) {
+                1 => 'Juara 1 — Wasit Terbaik',
+                2 => 'Juara 2 — Wasit Terbaik',
+                3 => 'Juara 3 — Wasit Terbaik',
+                default => "Peringkat #{$rankCounter}",
+            };
+            $rankedReferees[] = $ref;
+            $rankCounter++;
+        }
+
+        foreach ($inactiveJudges as $ref) {
+            $ref['rank'] = null;
+            $ref['rank_badge'] = null;
+            $ref['rank_label'] = 'Belum Bertugas';
+            $rankedReferees[] = $ref;
+        }
+
+        $evaluations = $rankedReferees;
+
         // Compute aggregate metrics
         $allEvaluatedReferees = collect($evaluations)->filter(fn ($r): bool => $r['matches_judged_count'] > 0);
         $totalActiveJudges = $allEvaluatedReferees->count();
@@ -384,6 +475,180 @@ class RefereeEvaluationService
         $totalWarning = collect($evaluations)->where('status', 'warning')->count();
         $totalNormal = collect($evaluations)->where('status', 'normal')->count();
         $objectivityRate = count($evaluations) > 0 ? round(($totalNormal / count($evaluations)) * 100, 1) : 100.0;
+
+        $podium = collect($rankedReferees)->filter(fn ($r) => $r['rank'] !== null && $r['rank'] <= 3)->values()->all();
+        $leaderboard = collect($rankedReferees)->filter(fn ($r) => $r['rank'] !== null)->values()->all();
+        $topReferee = $podium[0] ?? null;
+
+        // Score Distribution Analysis (Histogram)
+        $allSubmittedValues = $judgeScores->pluck('total_score')->map(fn ($v): float => (float) $v);
+        $maxRecordedScore = (float) ($allSubmittedValues->max() ?? 0.0);
+        $isHundredScale = $maxRecordedScore <= 120.0;
+
+        $scoreBuckets = $isHundredScale ? [
+            ['key' => 'tier_1', 'label' => '< 94.0', 'min' => 0.0, 'max' => 93.99, 'color' => '#64748b'],
+            ['key' => 'tier_2', 'label' => '94.0 – 95.9', 'min' => 94.0, 'max' => 95.99, 'color' => '#3b82f6'],
+            ['key' => 'tier_3', 'label' => '96.0 – 97.4', 'min' => 96.0, 'max' => 97.49, 'color' => '#06b6d4'],
+            ['key' => 'tier_4', 'label' => '97.5 – 98.9', 'min' => 97.5, 'max' => 98.99, 'color' => '#10b981'],
+            ['key' => 'tier_5', 'label' => '99.0 – 99.9', 'min' => 99.0, 'max' => 99.99, 'color' => '#f59e0b'],
+            ['key' => 'tier_6', 'label' => '100.0', 'min' => 100.0, 'max' => 999.0, 'color' => '#d4a843'],
+        ] : [
+            ['key' => 'tier_1', 'label' => '< 250', 'min' => 0.0, 'max' => 249.99, 'color' => '#64748b'],
+            ['key' => 'tier_2', 'label' => '250 – 259', 'min' => 250.0, 'max' => 259.99, 'color' => '#3b82f6'],
+            ['key' => 'tier_3', 'label' => '260 – 269', 'min' => 260.0, 'max' => 269.99, 'color' => '#06b6d4'],
+            ['key' => 'tier_4', 'label' => '270 – 279', 'min' => 270.0, 'max' => 279.99, 'color' => '#10b981'],
+            ['key' => 'tier_5', 'label' => '280 – 289', 'min' => 280.0, 'max' => 289.99, 'color' => '#f59e0b'],
+            ['key' => 'tier_6', 'label' => '≥ 290', 'min' => 290.0, 'max' => 999.0, 'color' => '#d4a843'],
+        ];
+
+        $totalSubmittedScores = $allSubmittedValues->count();
+        $scoreDistribution = [];
+        foreach ($scoreBuckets as $bucket) {
+            $matchingCount = $allSubmittedValues->filter(fn (float $v): bool => $v >= $bucket['min'] && $v <= $bucket['max'])->count();
+            $percentage = $totalSubmittedScores > 0 ? round(($matchingCount / $totalSubmittedScores) * 100, 1) : 0.0;
+            $scoreDistribution[] = [
+                'key' => $bucket['key'],
+                'label' => $bucket['label'],
+                'count' => $matchingCount,
+                'percentage' => $percentage,
+                'color' => $bucket['color'],
+            ];
+        }
+
+        // Contingent Correlation & Anomaly Analysis
+        $scoresByContingent = [];
+        foreach ($matches as $match) {
+            $mScores = $scoresByMatch->get($match->id, collect());
+            if ($mScores->isEmpty()) {
+                continue;
+            }
+
+            $stat = $matchStats[$match->id] ?? null;
+            $cName = $stat['contingent_name'] ?? 'Kontingen';
+            $cCity = $stat['contingent_city'] ?? $cName;
+            $key = $cCity ?: $cName;
+
+            if (! isset($scoresByContingent[$key])) {
+                $scoresByContingent[$key] = [
+                    'contingent_name' => $cName,
+                    'contingent_city' => $cCity,
+                    'matches_count' => 0,
+                    'scores' => [],
+                    'same_region_scores' => [],
+                    'other_region_scores' => [],
+                    'regional_referees' => [],
+                ];
+            }
+
+            $scoresByContingent[$key]['matches_count']++;
+
+            foreach ($mScores as $scoreRec) {
+                $referee = $referees->firstWhere('id', $scoreRec->referee_id);
+                $refRegion = $referee?->region;
+                $scoreVal = (float) $scoreRec->total_score;
+                $isSame = $this->isSameOrigin($refRegion, $cCity, $cName);
+
+                $scoresByContingent[$key]['scores'][] = $scoreVal;
+                if ($isSame) {
+                    $scoresByContingent[$key]['same_region_scores'][] = $scoreVal;
+                    if ($referee && ! in_array($referee->name, $scoresByContingent[$key]['regional_referees'], true)) {
+                        $scoresByContingent[$key]['regional_referees'][] = $referee->name;
+                    }
+                } else {
+                    $scoresByContingent[$key]['other_region_scores'][] = $scoreVal;
+                }
+            }
+        }
+
+        $contingentAnalysis = [];
+        foreach ($scoresByContingent as $cData) {
+            $totalCount = count($cData['scores']);
+            $avgScore = $totalCount > 0 ? round(array_sum($cData['scores']) / $totalCount, 2) : 0.0;
+            $sameCount = count($cData['same_region_scores']);
+            $otherCount = count($cData['other_region_scores']);
+
+            $sameAvg = $sameCount > 0 ? round(array_sum($cData['same_region_scores']) / $sameCount, 2) : 0.0;
+            $otherAvg = $otherCount > 0 ? round(array_sum($cData['other_region_scores']) / $otherCount, 2) : 0.0;
+            $delta = ($sameCount > 0 && $otherCount > 0) ? round($sameAvg - $otherAvg, 2) : 0.0;
+
+            $status = match (true) {
+                $sameCount > 0 && $otherCount > 0 && $delta >= 3.0 => 'anomali',
+                $sameCount > 0 && $otherCount > 0 && $delta >= 1.5 => 'warning',
+                $sameCount === 0 => 'neutral',
+                default => 'normal',
+            };
+
+            $statusLabel = match ($status) {
+                'anomali' => 'Indikasi Bias Kedaerahan (Δ ≥ +3.0)',
+                'warning' => 'Perhatian Pengawas (Δ ≥ +1.5)',
+                'neutral' => 'Bebas Konflik (Tanpa Juri Asal)',
+                default => 'Objektif & Seimbang',
+            };
+
+            $recommendation = match ($status) {
+                'anomali' => 'Disarankan rotasi juri asal daerah ini pada babak gugur dan final untuk menjamin netralitas.',
+                'warning' => 'Pantau penugasan juri pada tatami yang melibatkan kontingen ini.',
+                'neutral' => 'Penilaian sepenuhnya dinilai oleh juri independen lintas kontingen.',
+                default => 'Korelasi penilaian juri daerah dan juri luar daerah selaras dan proporsional.',
+            };
+
+            $contingentAnalysis[] = [
+                'contingent_name' => $cData['contingent_name'],
+                'contingent_city' => $cData['contingent_city'],
+                'matches_count' => $cData['matches_count'],
+                'total_scores' => $totalCount,
+                'average_score' => $avgScore,
+                'regional_referees_count' => count($cData['regional_referees']),
+                'regional_referees_names' => $cData['regional_referees'],
+                'regional_scores_count' => $sameCount,
+                'regional_avg_score' => $sameAvg,
+                'other_avg_score' => $otherAvg,
+                'regional_delta' => $delta,
+                'status' => $status,
+                'status_label' => $statusLabel,
+                'recommendation' => $recommendation,
+            ];
+        }
+
+        // Sort contingent analysis by delta descending
+        usort($contingentAnalysis, fn ($a, $b) => $b['regional_delta'] <=> $a['regional_delta'] ?: $b['matches_count'] <=> $a['matches_count']);
+
+        // Arbitration recommendations
+        $finalCandidates = collect($rankedReferees)
+            ->filter(fn ($r) => $r['rank'] !== null && $r['status'] === 'normal' && in_array($r['grade'], ['A+', 'A'], true))
+            ->take(5)
+            ->map(fn ($r) => [
+                'id' => $r['id'],
+                'name' => $r['name'],
+                'rank' => $r['rank'],
+                'grade' => $r['grade'],
+                'grade_label' => $r['grade_label'],
+                'quality_index' => $r['quality_index'],
+                'region' => $r['region'],
+                'certification_level' => $r['certification_level'],
+                'matches_judged_count' => $r['matches_judged_count'],
+            ])
+            ->values()
+            ->all();
+
+        $supervisionList = collect($rankedReferees)
+            ->filter(fn ($r) => in_array($r['status'], ['flagged', 'warning'], true))
+            ->map(fn ($r) => [
+                'id' => $r['id'],
+                'name' => $r['name'],
+                'status' => $r['status'],
+                'status_label' => $r['status_label'],
+                'flags' => $r['flags'],
+                'region' => $r['region'],
+                'action' => $r['narrative']['recommendation'] ?? 'Lakukan pengawasan ketat saat bertugas.',
+            ])
+            ->values()
+            ->all();
+
+        $contingentAlerts = collect($contingentAnalysis)
+            ->filter(fn ($c) => in_array($c['status'], ['anomali', 'warning'], true))
+            ->values()
+            ->all();
 
         // Compile Heatmap data
         $uniqueCities = $contingentCities->filter()->unique()->sort()->values()->all();
@@ -435,8 +700,31 @@ class RefereeEvaluationService
                 'needs_attention_count' => $totalWarning,
                 'normal_count' => $totalNormal,
                 'objectivity_rate' => $objectivityRate,
+                'top_referee' => $topReferee ? [
+                    'name' => $topReferee['name'],
+                    'quality_index' => $topReferee['quality_index'],
+                    'grade' => $topReferee['grade'],
+                    'grade_label' => $topReferee['grade_label'],
+                    'region' => $topReferee['region'],
+                ] : null,
             ],
             'referees' => $evaluations,
+            'ranking' => [
+                'podium' => $podium,
+                'leaderboard' => $leaderboard,
+            ],
+            'score_distribution' => $scoreDistribution,
+            'contingent_analysis' => $contingentAnalysis,
+            'arbitration_recommendations' => [
+                'final_candidates' => $finalCandidates,
+                'supervision_list' => $supervisionList,
+                'contingent_alerts' => $contingentAlerts,
+                'overall_statement' => $totalFlagged > 0
+                    ? "Terdapat {$totalFlagged} wasit dengan anomali penilaian dan {$totalWarning} wasit dalam status pantauan yang memerlukan atensi Dewan Arbitrase."
+                    : ($totalWarning > 0
+                        ? "Penilaian wasit secara umum berjalan baik dengan {$totalWarning} wasit dalam pemantauan wajar."
+                        : 'Seluruh wasit yang bertugas memiliki tingkat objektivitas dan konsistensi penilaian yang prima.'),
+            ],
             'heatmap' => [
                 'cities' => $uniqueCities,
                 'contingent_cities' => $uniqueCities,
@@ -557,6 +845,7 @@ class RefereeEvaluationService
         float $regionalDelta,
         array $flags,
         string $status,
+        bool $hasPeerComparison = true,
     ): array {
         if ($count === 0) {
             return [
@@ -589,6 +878,8 @@ class RefereeEvaluationService
         // 3. Regional Bias
         if ($sameOriginCount === 0) {
             $regionalBias = "Netral: Wasit tidak pernah bertugas menilai kontingen yang memiliki kesamaan asal kedaerahan ({$referee->region}).";
+        } elseif (! $hasPeerComparison) {
+            $regionalBias = "Menilai kontingen asal ({$referee->region}), namun belum ada pembanding nilai juri lain pada partai tersebut.";
         } elseif ($regionalDelta < 1.5) {
             $regionalBias = "Objektif: Wasit dinilai tidak memihak. Deviasi skor terhadap kontingen daerah asal ({$referee->region}) sebesar {$regionalDelta} poin berada dalam batas wajar panel.";
         } elseif ($regionalDelta < 3.0) {

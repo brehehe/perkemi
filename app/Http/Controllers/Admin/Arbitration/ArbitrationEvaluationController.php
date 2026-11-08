@@ -41,6 +41,18 @@ class ArbitrationEvaluationController extends Controller
             ],
             'summary' => $data['summary'],
             'referees' => $data['referees'],
+            'ranking' => $data['ranking'] ?? [
+                'podium' => [],
+                'leaderboard' => [],
+            ],
+            'scoreDistribution' => $data['score_distribution'] ?? [],
+            'contingentAnalysis' => $data['contingent_analysis'] ?? [],
+            'arbitrationRecommendations' => $data['arbitration_recommendations'] ?? [
+                'final_candidates' => [],
+                'supervision_list' => [],
+                'contingent_alerts' => [],
+                'overall_statement' => '',
+            ],
             'heatmap' => $data['heatmap'],
             'certificationOptions' => $data['certification_options'],
         ]);
@@ -65,6 +77,9 @@ class ArbitrationEvaluationController extends Controller
 
         $headers = [
             'No.',
+            'Peringkat Wasit',
+            'Indeks Kualitas (0-100)',
+            'Predikat Wasit',
             'Nama Wasit / Juri',
             'Tingkatan Dan',
             'Nomor Lisensi',
@@ -90,6 +105,9 @@ class ArbitrationEvaluationController extends Controller
 
             return [
                 $index + 1,
+                $ref['rank'] ? '#'.$ref['rank'].' ('.$ref['rank_label'].')' : '—',
+                $ref['quality_index'] ?? 0.0,
+                $ref['grade'] ? $ref['grade'].' ('.$ref['grade_label'].')' : '—',
                 $ref['name'],
                 $ref['dan_grade'] ?: '—',
                 $ref['license_number'] ?: '—',

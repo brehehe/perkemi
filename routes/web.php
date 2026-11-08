@@ -293,6 +293,7 @@ Route::prefix('admin/pendaftaran')->middleware(['auth', 'event.tenant'])->name('
 // Pertandingan
 Route::prefix('admin/pertandingan')->middleware(['auth', 'event.tenant'])->name('admin.pertandingan.')->group(function () {
     Route::get('drawing', [TournamentController::class, 'drawing'])->name('drawing');
+    Route::get('drawing/pdf', [TournamentController::class, 'exportDrawingPdf'])->name('drawing.pdf');
     Route::get('drawing/laporan-jadwal', [TournamentController::class, 'scheduleReport'])->name('drawing.report');
     Route::post('drawing/generate', [TournamentController::class, 'generate'])->name('drawing.generate');
     Route::post('drawing/category/{matchCategory}/generate', [TournamentController::class, 'redrawCategory'])->name('drawing.category.generate');

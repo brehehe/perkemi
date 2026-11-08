@@ -357,3 +357,44 @@ test('admin can export arbitration evaluation to excel spreadsheet', function ()
     expect($response->headers->get('content-disposition'))->toContain('attachment; filename=');
     expect($response->headers->get('content-disposition'))->toContain('.xlsx');
 });
+
+test('arbitration evaluation delivers ranking, score distribution, contingent analysis, and recommendations', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+
+    $event = Event::query()->create([
+        'name' => 'Kejuaraan Analisis Wasit Lengkap 2026',
+        'slug' => 'kejuaraan-analisis-wasit-lengkap-2026',
+        'venue' => 'GOR Wilis',
+        'city' => 'Madiun',
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-11-03',
+        'is_active' => true,
+    ]);
+
+    $refereeA = Referee::query()->create([
+        'name' => 'Sensei A',
+        'gender' => 'male',
+        'region' => 'Madiun',
+        'certification_level' => 'Nasional A',
+        'dan_grade' => 'IV Dan',
+        'is_active' => true,
+    ]);
+
+    $event->referees()->attach($refereeA, ['role' => 'judge']);
+
+    $this->actingAs($admin)
+        ->get(route('admin.arbitrase.evaluation', ['event_id' => $event->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Arbitration/Evaluation')
+            ->has('ranking')
+            ->has('ranking.podium')
+            ->has('ranking.leaderboard')
+            ->has('scoreDistribution')
+            ->has('contingentAnalysis')
+            ->has('arbitrationRecommendations')
+            ->has('arbitrationRecommendations.final_candidates')
+            ->has('arbitrationRecommendations.supervision_list')
+        );
+});

@@ -1200,6 +1200,28 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
         {
             divider: true,
         },
+        ...(drawing?.id
+            ? [
+                  {
+                      label: 'Download PDF Nomor Ini',
+                      description: `Bagan dan nomor partai ${category?.name || 'yang dipilih'}`,
+                      icon: <i className="fa-solid fa-file-pdf text-rose-600" />,
+                      href: `/admin/pertandingan/drawing/pdf${eventQuery}&category=${selectedCategory}`,
+                      download: true,
+                      tone: 'rose',
+                      badge: 'PDF',
+                  },
+              ]
+            : []),
+        {
+            label: 'Download PDF Semua Bagan',
+            description: 'Seluruh bagan dan nomor partai dalam satu dokumen',
+            icon: <i className="fa-solid fa-diagram-project text-rose-600" />,
+            href: `/admin/pertandingan/drawing/pdf${eventQuery}`,
+            download: true,
+            tone: 'rose',
+            badge: 'PDF',
+        },
         {
             label: 'Download Excel Jadwal',
             description: 'Unduh jadwal pertandingan format .xlsx',
@@ -1443,6 +1465,17 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                                     <i className="fa-solid fa-flag-checkered mr-1.5" />
                                     Selesaikan Event
                                 </Button>
+                            )}
+
+                            {drawing?.id && (
+                                <a
+                                    href={`/admin/pertandingan/drawing/pdf${eventQuery}&category=${selectedCategory}`}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 shadow-2xs transition hover:border-rose-400 hover:bg-rose-100"
+                                    title={`Download PDF bagan ${category?.name || 'nomor pertandingan yang dipilih'}`}
+                                >
+                                    <i className="fa-solid fa-file-pdf text-sm" />
+                                    PDF Bagan Ini
+                                </a>
                             )}
 
                             <a

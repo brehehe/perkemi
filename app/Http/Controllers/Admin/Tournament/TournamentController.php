@@ -13,6 +13,7 @@ use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\TournamentMatchVarReview;
 use App\Models\TournamentResult;
+use App\Services\Tournament\TournamentDrawingPdfService;
 use App\Services\Tournament\TournamentDrawingViewService;
 use App\Services\Tournament\TournamentScheduleViewService;
 use App\Services\TournamentDrawingGenerator;
@@ -46,6 +47,44 @@ class TournamentController extends Controller
             $this->accessibleEvents($request),
             $this->canManageTournament($request, $activeEvent)
         ));
+    }
+
+    /**
+     * Download the tournament brackets and match numbers as a PDF.
+     */
+    public function exportDrawingPdf(Request $request, TournamentDrawingPdfService $pdfService): HttpResponse
+    {
+        $activeEvent = $this->eventForRequest($request);
+        abort_unless($activeEvent instanceof Event && $this->canAccessTournament($request, $activeEvent), 403);
+
+        $categoryId = $request->string('category')->trim()->toString() ?: null;
+        abort_unless($categoryId === null || Str::isUuid($categoryId), 404, 'Nomor pertandingan tidak ditemukan.');
+
+        $drawings = $pdfService->build($activeEvent, $categoryId);
+        abort_if($drawings->isEmpty(), 404, 'Bagan pertandingan belum tersedia.');
+
+        $wantsHtml = $request->query('format') === 'html' || $request->boolean('preview');
+        $viewData = [
+            'event' => $activeEvent,
+            'drawings' => $drawings,
+            'isPdf' => ! $wantsHtml,
+        ];
+
+        if ($wantsHtml) {
+            return response()->view('reports.tournament-drawings', $viewData);
+        }
+
+        $pdf = Pdf::loadView('reports.tournament-drawings', $viewData)
+            ->setPaper('a4', 'landscape');
+
+        $categorySuffix = $drawings->count() === 1
+            ? '_'.Str::slug($drawings->first()['category_name'], '_')
+            : '_Semua_Nomor';
+        $filename = 'Bagan_Pertandingan_'.Str::slug($activeEvent->name ?: 'kejuaraan', '_').$categorySuffix.'_'.now()->format('Ymd_His').'.pdf';
+
+        return $request->boolean('stream')
+            ? $pdf->stream($filename)
+            : $pdf->download($filename);
     }
 
     /**

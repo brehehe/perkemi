@@ -5,6 +5,13 @@ import { Button, Input } from '@/Components/UI';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
+import {
+    RefereeRankingChart,
+    RefereeObjectivityDoughnut,
+    ScoreDistributionChart,
+    RefereeConsistencyChart,
+    ContingentDeltaChart,
+} from '@/Components/Charts/ArbitrationCharts';
 
 const formatNumber = (value, decimals = 2) => {
     const num = Number(value || 0);
@@ -65,6 +72,24 @@ function StatusBadge({ status, label }) {
     );
 }
 
+function GradeBadge({ grade, label }) {
+    const styles = {
+        'A+': 'bg-emerald-100 text-emerald-900 border-emerald-300',
+        'A': 'bg-blue-100 text-blue-900 border-blue-300',
+        'B': 'bg-cyan-100 text-cyan-900 border-cyan-300',
+        'C': 'bg-amber-100 text-amber-900 border-amber-300',
+        'D': 'bg-rose-100 text-rose-900 border-rose-300',
+        '-': 'bg-slate-100 text-slate-700 border-slate-200',
+    };
+
+    return (
+        <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-black ${styles[grade] || styles['-']}`}>
+            <span className="font-mono text-xs">{grade}</span>
+            {label && <span className="font-medium text-[10px] hidden sm:inline">· {label}</span>}
+        </span>
+    );
+}
+
 function FlagPill({ flag }) {
     const config = {
         high_std_dev: {
@@ -109,6 +134,16 @@ function RefereeCard({ referee, onOpenNarrative }) {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
+                                {referee.rank && (
+                                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                                        referee.rank === 1 ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                                        referee.rank === 2 ? 'bg-slate-200 text-slate-800 border border-slate-300' :
+                                        referee.rank === 3 ? 'bg-orange-100 text-orange-900 border border-orange-300' :
+                                        'bg-slate-100 text-slate-700'
+                                    }`}>
+                                        {referee.rank === 1 ? '🥇 Juara 1' : referee.rank === 2 ? '🥈 Juara 2' : referee.rank === 3 ? '🥉 Juara 3' : `#${referee.rank}`}
+                                    </span>
+                                )}
                                 <span className="rounded-md bg-[#17120f] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#d4a843]">
                                     {referee.certification_level}
                                 </span>
@@ -133,8 +168,10 @@ function RefereeCard({ referee, onOpenNarrative }) {
                             </p>
                         </div>
                         <div className="rounded-xl border border-[#eadfcd] bg-white px-3.5 py-2 text-right">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#9b8e81]">Total Partai</p>
-                            <p className="font-mono text-2xl font-black text-[#17120f]">{referee.matches_judged_count}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#9b8e81]">Indeks Kualitas</p>
+                            <p className="font-mono text-2xl font-black text-[#d4a843]">
+                                {referee.matches_judged_count > 0 ? Number(referee.quality_index || 0).toFixed(1) : '—'}
+                            </p>
                         </div>
                     </div>
 
@@ -151,6 +188,12 @@ function RefereeCard({ referee, onOpenNarrative }) {
                 {/* Key Metrics Grid */}
                 <div className="grid grid-cols-3 gap-2 border-b border-[#eee8e0] p-4 text-center sm:gap-3">
                     <div className="rounded-xl bg-[#f7f4ef] p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#91877e]">Partai (N)</p>
+                        <p className="mt-0.5 font-mono text-lg font-black text-[#17120f]">
+                            {referee.matches_judged_count}
+                        </p>
+                    </div>
+                    <div className="rounded-xl bg-[#f7f4ef] p-2.5">
                         <p className="text-[10px] font-bold uppercase text-[#91877e]">Rata-rata (x̄)</p>
                         <p className="mt-0.5 font-mono text-lg font-black text-[#17120f]">
                             {referee.matches_judged_count > 0 ? formatNumber(referee.average_score) : '—'}
@@ -162,16 +205,14 @@ function RefereeCard({ referee, onOpenNarrative }) {
                             {referee.matches_judged_count > 0 ? formatNumber(referee.std_dev) : '—'}
                         </p>
                     </div>
-                    <div className={`rounded-xl p-2.5 ${referee.trimmed_rate >= 40 ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-[#f7f4ef]'}`}>
-                        <p className="text-[10px] font-bold uppercase text-[#91877e]">% Terbuang</p>
-                        <p className={`mt-0.5 font-mono text-lg font-black ${referee.trimmed_rate >= 40 ? 'text-amber-700' : 'text-[#17120f]'}`}>
-                            {referee.matches_judged_count > 0 ? `${formatNumber(referee.trimmed_rate, 1)}%` : '—'}
-                        </p>
-                    </div>
                 </div>
 
                 {/* Secondary Metrics */}
                 <div className="space-y-2 p-4 text-xs text-[#625a53]">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[#877e74]">Predikat Wasit:</span>
+                        <GradeBadge grade={referee.grade} label={referee.grade_label} />
+                    </div>
                     <div className="flex items-center justify-between">
                         <span className="text-[#877e74]">Rentang Skor:</span>
                         <span className="font-mono font-bold text-[#17120f]">
@@ -179,15 +220,15 @@ function RefereeCard({ referee, onOpenNarrative }) {
                         </span>
                     </div>
                     <div className="flex items-center justify-between">
-                        <span className="text-[#877e74]">Partai Asal Daerah:</span>
-                        <span className="font-bold text-[#17120f]">
-                            {referee.same_origin_count} partai
+                        <span className="text-[#877e74]">% Nilai Terbuang:</span>
+                        <span className={`font-mono font-bold ${referee.trimmed_rate >= 40 ? 'text-amber-700' : 'text-[#17120f]'}`}>
+                            {referee.matches_judged_count > 0 ? `${formatNumber(referee.trimmed_rate, 1)}%` : '—'}
                         </span>
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-[#877e74]">Deviasi Asal vs Rekan (Δ):</span>
                         <span className={`font-mono font-black ${referee.regional_delta >= 3.0 ? 'text-rose-600' : referee.regional_delta >= 1.5 ? 'text-amber-600' : 'text-emerald-700'}`}>
-                            {referee.same_origin_count > 0
+                            {referee.same_origin_count > 0 && referee.has_peer_comparison
                                 ? (referee.regional_delta > 0 ? `+${formatNumber(referee.regional_delta)}` : formatNumber(referee.regional_delta))
                                 : '0 (Netral)'}
                         </span>
@@ -214,6 +255,116 @@ function RefereeCard({ referee, onOpenNarrative }) {
                     iconLeft={<i className="fa-solid fa-file-waveform" aria-hidden="true" />}
                 >
                     Lihat Analisis Naratif Lengkap
+                </Button>
+            </div>
+        </article>
+    );
+}
+
+function PodiumCard({ place, referee, onOpenNarrative }) {
+    if (!referee) {
+        return (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#e5ded4] bg-[#fcfbf9] p-6 text-center opacity-60">
+                <span className="text-3xl text-slate-300">
+                    <i className="fa-solid fa-medal" aria-hidden="true" />
+                </span>
+                <p className="mt-2 text-xs font-bold text-slate-400">Podium #{place}</p>
+                <p className="text-[10px] text-slate-400">Menunggu penilaian wasit berikutnya</p>
+            </div>
+        );
+    }
+
+    const configs = {
+        1: {
+            title: 'Juara 1 — Wasit Terbaik I',
+            icon: 'fa-trophy',
+            badgeBg: 'bg-gradient-to-r from-amber-500 to-yellow-400 text-white shadow-amber-200',
+            border: 'border-2 border-[#d4a843] bg-gradient-to-b from-[#fffcf2] via-white to-white shadow-lg',
+            medalColor: 'text-[#d4a843]',
+            rankText: 'Juara 1 (Emas)',
+        },
+        2: {
+            title: 'Juara 2 — Wasit Terbaik II',
+            icon: 'fa-medal',
+            badgeBg: 'bg-gradient-to-r from-slate-400 to-gray-400 text-white shadow-slate-200',
+            border: 'border border-slate-300 bg-white shadow-md',
+            medalColor: 'text-slate-500',
+            rankText: 'Juara 2 (Perak)',
+        },
+        3: {
+            title: 'Juara 3 — Wasit Terbaik III',
+            icon: 'fa-medal',
+            badgeBg: 'bg-gradient-to-r from-amber-700 to-amber-600 text-white shadow-amber-900/20',
+            border: 'border border-amber-200 bg-white shadow-md',
+            medalColor: 'text-amber-700',
+            rankText: 'Juara 3 (Perunggu)',
+        },
+    };
+
+    const cfg = configs[place] || configs[1];
+
+    return (
+        <article className={`relative flex flex-col justify-between overflow-hidden rounded-2xl p-5 sm:p-6 transition hover:shadow-xl ${cfg.border}`}>
+            <div>
+                {/* Badge Place Header */}
+                <div className="flex items-center justify-between">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider shadow ${cfg.badgeBg}`}>
+                        <i className={`fa-solid ${cfg.icon}`} aria-hidden="true" />
+                        {cfg.rankText}
+                    </span>
+                    <GradeBadge grade={referee.grade} label={referee.grade_label} />
+                </div>
+
+                {/* Score & Name */}
+                <div className="mt-4 flex items-baseline justify-between border-b border-[#eee8e0] pb-3">
+                    <div>
+                        <h3 className="text-lg font-black text-[#17120f] sm:text-xl">{referee.name}</h3>
+                        <p className="mt-0.5 text-xs text-[#756d65]">
+                            <i className="fa-solid fa-location-dot mr-1 text-[#b92f24]" aria-hidden="true" />
+                            {referee.region} · {referee.certification_level}
+                            {referee.dan_grade && <strong className="ml-1 text-[#17120f]">({referee.dan_grade})</strong>}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-[10px] font-bold uppercase text-[#9c8e80]">Indeks Wasit</span>
+                        <p className="font-mono text-3xl font-black text-[#17120f]">
+                            {Number(referee.quality_index || 0).toFixed(1)}
+                            <span className="text-xs font-semibold text-[#8a7f74]">/100</span>
+                        </p>
+                    </div>
+                </div>
+
+                {/* Metrics Breakdown */}
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="rounded-xl bg-[#f7f4ef] p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#8a7f74]">Partai</p>
+                        <p className="font-mono text-base font-black text-[#17120f]">{referee.matches_judged_count}</p>
+                    </div>
+                    <div className="rounded-xl bg-[#f7f4ef] p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#8a7f74]">Rata-rata</p>
+                        <p className="font-mono text-base font-black text-[#17120f]">{formatNumber(referee.average_score)}</p>
+                    </div>
+                    <div className="rounded-xl bg-[#f7f4ef] p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#8a7f74]">Std Dev (σ)</p>
+                        <p className="font-mono text-base font-black text-[#17120f]">{formatNumber(referee.std_dev)}</p>
+                    </div>
+                </div>
+
+                <p className="mt-3 text-xs italic text-[#6e6459] leading-relaxed">
+                    "{referee.narrative?.headline || 'Performa wasit terverifikasi konsisten dan memenuhi standar PB Perkemi.'}"
+                </p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-[#eee8e0]">
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onOpenNarrative(referee)}
+                    className="w-full justify-center text-xs font-bold"
+                    iconLeft={<i className="fa-solid fa-file-waveform" aria-hidden="true" />}
+                >
+                    Lihat Rapor Evaluasi Lengkap
                 </Button>
             </div>
         </article>
@@ -254,15 +405,29 @@ function NarrativeModal({ referee, isOpen, onClose }) {
                 <div className="rounded-2xl border border-[#e5ded4] bg-[#fbfaf8] p-4 sm:p-5">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <span className="rounded-md bg-[#17120f] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#d4a843]">
-                                {referee.certification_level}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                {referee.rank && (
+                                    <span className="rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black uppercase text-amber-900">
+                                        Peringkat #{referee.rank}
+                                    </span>
+                                )}
+                                <span className="rounded-md bg-[#17120f] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#d4a843]">
+                                    {referee.certification_level}
+                                </span>
+                                <GradeBadge grade={referee.grade} label={referee.grade_label} />
+                            </div>
                             <h3 className="mt-1.5 text-lg font-black text-[#17120f]">{referee.name}</h3>
                             <p className="text-xs text-[#756d65]">
                                 {referee.dan_grade || 'Kenshi'} · Lisensi: #{referee.license_number || '—'} · Daerah: <strong>{referee.region}</strong>
                             </p>
                         </div>
-                        <StatusBadge status={referee.status} label={referee.status_label} />
+                        <div className="text-right">
+                            <span className="text-[10px] font-bold uppercase text-[#9c8e80]">Indeks Kualitas</span>
+                            <p className="font-mono text-2xl font-black text-[#d4a843]">
+                                {Number(referee.quality_index || 0).toFixed(1)} / 100
+                            </p>
+                            <StatusBadge status={referee.status} label={referee.status_label} />
+                        </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 text-center">
@@ -318,19 +483,86 @@ function NarrativeModal({ referee, isOpen, onClose }) {
                     </p>
                     <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-[#6e6459]">
                         <span>Partai Kontingen Asal ({referee.region}): <strong>{referee.same_origin_count}</strong></span>
-                        <span>Selisih Deviasi (Δ): <strong className={referee.regional_delta >= 3.0 ? 'text-rose-700' : 'text-emerald-700'}>{referee.regional_delta > 0 ? `+${formatNumber(referee.regional_delta)}` : formatNumber(referee.regional_delta)}</strong></span>
+                        <span>Deviasi Rata-rata Terhadap Juri Lain: <strong className={referee.regional_delta >= 1.5 ? 'text-rose-600' : 'text-emerald-700'}>{referee.regional_delta > 0 ? `+${referee.regional_delta}` : referee.regional_delta}</strong></span>
                     </div>
                 </div>
 
                 {/* Section 4: Rekomendasi Dewan Wasit */}
-                <div className="rounded-2xl border border-[#d4a843]/40 bg-[#fffdf7] p-4 sm:p-5 shadow-sm">
-                    <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#8a631c]">
-                        <i className="fa-solid fa-gavel text-[#d4a843]" aria-hidden="true" />
-                        4. Rekomendasi Resmi Dewan Wasit & Arbitrase
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 sm:p-5">
+                    <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-900">
+                        <i className="fa-solid fa-gavel text-emerald-600" aria-hidden="true" />
+                        4. Rekomendasi Penugasan Dewan Arbitrase
                     </h4>
-                    <p className="mt-2 text-xs font-medium leading-relaxed text-[#2a241e] sm:text-sm">
-                        {narrative.recommendation || 'Wasit memenuhi standar operasional penugasan kejuaraan.'}
+                    <p className="mt-2 text-xs font-medium leading-relaxed text-emerald-950 sm:text-sm">
+                        {narrative.recommendation || 'Wasit dapat ditugaskan sesuai rotasi tatami biasa.'}
                     </p>
+                </div>
+
+                {/* Section 5: Riwayat Partai Lengkap */}
+                <div>
+                    <h4 className="mb-2 text-xs font-black uppercase tracking-wider text-[#756d65]">
+                        Riwayat Penilaian Partai ({referee.matches?.length || 0})
+                    </h4>
+                    {referee.matches && referee.matches.length > 0 ? (
+                        <div className="overflow-x-auto rounded-xl border border-[#eee8e0]">
+                            <table className="min-w-full divide-y divide-[#eee8e0] text-left text-xs">
+                                <thead className="bg-[#f7f4ef] text-[10px] font-black uppercase tracking-wider text-[#6b6257]">
+                                    <tr>
+                                        <th scope="col" className="px-3 py-2">Partai</th>
+                                        <th scope="col" className="px-3 py-2">Nomor & Babak</th>
+                                        <th scope="col" className="px-3 py-2">Kontingen / Peserta</th>
+                                        <th scope="col" className="px-3 py-2 text-center">Nilai Wasit</th>
+                                        <th scope="col" className="px-3 py-2 text-center">Rerata 4 Juri Lain</th>
+                                        <th scope="col" className="px-3 py-2 text-center">Deviasi (Δ)</th>
+                                        <th scope="col" className="px-3 py-2 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#eee8e0] bg-white">
+                                    {referee.matches.map((m, idx) => (
+                                        <tr key={idx} className="hover:bg-[#fcfbf9]">
+                                            <td className="px-3 py-2 font-mono font-bold text-[#8a7f74]">#{m.sequence || idx + 1}</td>
+                                            <td className="px-3 py-2">
+                                                <div className="font-bold text-[#17120f]">{m.category}</div>
+                                                <div className="text-[10px] text-[#8a7f74]">{m.round} · {m.court}</div>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <div className="font-semibold text-[#17120f]">{m.participant}</div>
+                                                {m.is_same_region && (
+                                                    <span className="inline-block mt-0.5 rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-black text-amber-800">
+                                                        Daerah Asal
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 text-center font-mono font-black text-[#17120f]">
+                                                {formatNumber(m.score)}
+                                            </td>
+                                            <td className="px-3 py-2 text-center font-mono text-[#6e6459]">
+                                                {formatNumber(m.peer_average)}
+                                            </td>
+                                            <td className={`px-3 py-2 text-center font-mono font-bold ${Math.abs(m.peer_deviation) >= 3 ? 'text-rose-600' : Math.abs(m.peer_deviation) >= 1.5 ? 'text-amber-600' : 'text-[#6e6459]'}`}>
+                                                {m.peer_deviation > 0 ? `+${formatNumber(m.peer_deviation)}` : formatNumber(m.peer_deviation)}
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                                {m.is_trimmed ? (
+                                                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">
+                                                        Trimmed Out
+                                                    </span>
+                                                ) : (
+                                                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                                                        Sah
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <p className="rounded-xl border border-dashed border-[#e5ded4] p-4 text-center text-xs text-[#8a7f74]">
+                            Belum ada riwayat partai yang dicatat untuk wasit ini.
+                        </p>
+                    )}
                 </div>
             </div>
         </Modal>
@@ -338,110 +570,100 @@ function NarrativeModal({ referee, isOpen, onClose }) {
 }
 
 function HeatmapMatrix({ heatmap }) {
-    const cities = heatmap?.contingent_cities || [];
-    const rows = heatmap?.rows || [];
+    const { cities = [], rows = [] } = heatmap;
 
     if (!cities.length || !rows.length) {
         return (
-            <div className="rounded-2xl border border-dashed border-[#d8d0c5] bg-white px-5 py-12 text-center">
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f5efe5] text-xl text-[#b8872d]">
-                    <i className="fa-solid fa-table-cells-large" aria-hidden="true" />
-                </span>
-                <p className="mt-3 font-bold text-[#17120f]">Data Matriks Heatmap Belum Cukup</p>
-                <p className="mx-auto mt-1 max-w-md text-xs text-[#766e66]">
-                    Heatmap korelasi kedaerahan akan otomatis tersusun setelah juri melakukan penilaian pada atlet dari berbagai kota/kontingen.
-                </p>
+            <div className="rounded-2xl border border-dashed border-[#d8d0c5] bg-white p-12 text-center text-[#766e66]">
+                <i className="fa-solid fa-network-wired mb-2 text-3xl text-[#d4a843]" aria-hidden="true" />
+                <h3 className="text-base font-bold text-[#17120f]">Data Heatmap Belum Terbentuk</h3>
+                <p className="mt-1 text-xs">Diperlukan minimal satu pertandingan Embu yang dinilai wasit untuk membentuk matriks korelasi kedaerahan.</p>
             </div>
         );
     }
 
+    const intensityStyles = {
+        high_positive: 'bg-rose-500 text-white font-black',
+        med_positive: 'bg-amber-400 text-[#17120f] font-bold',
+        neutral: 'bg-emerald-50 text-emerald-800 font-medium',
+        med_negative: 'bg-blue-100 text-blue-900 font-semibold',
+        high_negative: 'bg-indigo-300 text-indigo-950 font-bold',
+    };
+
     return (
-        <div className="space-y-4">
-            <div className="rounded-xl border border-[#e5ded4] bg-[#fbfaf8] p-4 text-xs text-[#625a53]">
+        <div className="overflow-hidden rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
+            <div className="border-b border-[#eee8e0] bg-[#fbfaf8] p-4 sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                        <i className="fa-solid fa-circle-info text-[#8a631c]" aria-hidden="true" />
-                        <span className="font-semibold text-[#17120f]">Petunjuk Pembacaan Matriks Heatmap:</span>
+                    <div>
+                        <h3 className="text-base font-bold text-[#17120f]">
+                            Matriks Korelasi Kedaerahan Wasit vs Kontingen
+                        </h3>
+                        <p className="text-xs text-[#766e66]">
+                            Menampilkan deviasi rata-rata skor wasit terhadap juri lain ketika menilai kontingen dari kota/kabupaten tertentu.
+                        </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-3 w-3 rounded bg-rose-100 border border-rose-300" />
-                            Δ ≥ +3.0 (Indikasi Bias Tinggi)
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-[#5c544c]">
+                        <span className="flex items-center gap-1">
+                            <span className="h-3 w-3 rounded bg-rose-500" /> Δ ≥ +3.0 (Kritikal)
                         </span>
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-3 w-3 rounded bg-amber-100 border border-amber-300" />
-                            Δ ≥ +1.5 (Perlu Diperhatikan)
+                        <span className="flex items-center gap-1">
+                            <span className="h-3 w-3 rounded bg-amber-400" /> Δ ≥ +1.5 (Perhatian)
                         </span>
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-3 w-3 rounded bg-emerald-50 border border-emerald-300" />
-                            Objektif / Selaras Rekan
+                        <span className="flex items-center gap-1">
+                            <span className="h-3 w-3 rounded bg-emerald-100 border border-emerald-300" /> Normal (±0.0)
                         </span>
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="inline-block rounded bg-[#17120f] px-1 text-[9px] font-black text-amber-300">ASAL</span>
-                            Kesamaan Daerah
+                        <span className="flex items-center gap-1">
+                            <span className="h-3 w-3 rounded border-2 border-red-600 bg-white" /> Daerah Asal
                         </span>
                     </div>
                 </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
-                <table className="min-w-full divide-y divide-[#eee8e0] text-left text-xs">
-                    <thead className="bg-[#f7f4ef] text-[11px] font-black uppercase tracking-wider text-[#6b6257]">
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-[#eee8e0] text-xs">
+                    <thead className="bg-[#f7f4ef] text-[10px] font-black uppercase tracking-wider text-[#6b6257]">
                         <tr>
-                            <th scope="col" className="sticky left-0 z-10 bg-[#f7f4ef] px-4 py-3 border-r border-[#eee8e0]">
-                                Wasit & Asal
+                            <th scope="col" className="sticky left-0 z-10 bg-[#f7f4ef] px-4 py-3 text-left">
+                                Wasit / Asal
                             </th>
                             {cities.map((city) => (
-                                <th key={city} scope="col" className="px-3 py-3 text-center whitespace-nowrap min-w-[120px]">
+                                <th key={city} scope="col" className="px-3 py-3 text-center whitespace-nowrap">
                                     {city}
                                 </th>
                             ))}
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#eee8e0] bg-white font-medium text-[#2d2722]">
-                        {rows.map((row) => (
-                            <tr key={row.referee_id} className="hover:bg-[#fcfbf9]">
-                                <th scope="row" className="sticky left-0 z-10 bg-white px-4 py-3 font-semibold border-r border-[#eee8e0] whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)]">
-                                    <div className="font-bold text-[#17120f]">{row.referee_name}</div>
-                                    <div className="text-[10px] text-[#837a70]">Asal: {row.referee_region}</div>
-                                </th>
+                    <tbody className="divide-y divide-[#eee8e0] bg-white">
+                        {rows.map((r) => (
+                            <tr key={r.referee_id} className="hover:bg-[#fcfbf9]">
+                                <td className="sticky left-0 z-10 bg-white px-4 py-3 text-left font-bold text-[#17120f] border-r border-[#eee8e0]">
+                                    <div>{r.referee_name}</div>
+                                    <div className="text-[10px] font-normal text-[#867e74]">{r.referee_region}</div>
+                                </td>
                                 {cities.map((city) => {
-                                    const cell = row.cells?.[city] || { count: 0, bias_level: 'none' };
-                                    const isSameOrigin = cell.is_same_origin;
-
-                                    let cellBg = 'bg-white';
-                                    let textColor = 'text-[#6e665d]';
-
-                                    if (cell.bias_level === 'danger') {
-                                        cellBg = 'bg-rose-100 text-rose-900 border-rose-300 font-bold';
-                                        textColor = 'text-rose-900';
-                                    } else if (cell.bias_level === 'warning') {
-                                        cellBg = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
-                                        textColor = 'text-amber-900';
-                                    } else if (cell.count > 0 && isSameOrigin) {
-                                        cellBg = 'bg-emerald-50 text-emerald-900 border-emerald-200';
-                                        textColor = 'text-emerald-900';
+                                    const cell = r.cells[city];
+                                    if (!cell) {
+                                        return (
+                                            <td key={city} className="px-3 py-3 text-center text-[#c2b9ae]">
+                                                —
+                                            </td>
+                                        );
                                     }
 
+                                    const isSame = cell.is_same_origin;
+                                    const dev = cell.deviation;
+                                    const devStr = dev > 0 ? `+${dev}` : `${dev}`;
+                                    const cls = intensityStyles[cell.intensity] || 'bg-slate-50 text-slate-800';
+
                                     return (
-                                        <td key={city} className={`px-2 py-2.5 text-center transition ${cellBg}`}>
-                                            {cell.count > 0 ? (
-                                                <div className="space-y-0.5">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <span className="font-mono text-xs font-black">{formatNumber(cell.avg_score)}</span>
-                                                        {isSameOrigin && (
-                                                            <span className="rounded bg-[#17120f] px-1 text-[8px] font-black uppercase text-amber-300" title="Wasit dan Atlet berasal dari daerah yang sama">
-                                                                ASAL
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-[10px] text-opacity-80">
-                                                        {cell.count} partai · Δ {cell.delta > 0 ? `+${formatNumber(cell.delta)}` : formatNumber(cell.delta)}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[#c7bfb5]">—</span>
-                                            )}
+                                        <td key={city} className="px-2 py-2 text-center">
+                                            <div
+                                                className={`mx-auto flex h-9 w-14 flex-col items-center justify-center rounded-lg font-mono text-[11px] transition ${cls} ${isSame ? 'ring-2 ring-red-600 ring-offset-1' : ''}`}
+                                                title={`Wasit: ${r.referee_name}\nKontingen: ${city}\nJumlah Partai: ${cell.count}\nRata-rata Skor: ${cell.avg_score}\nDeviasi vs Juri Lain: ${devStr}${isSame ? ' (Daerah Asal Wasit)' : ''}`}
+                                            >
+                                                <span>{devStr}</span>
+                                                <span className="text-[9px] opacity-75">{cell.count}x</span>
+                                            </div>
                                         </td>
                                     );
                                 })}
@@ -460,51 +682,76 @@ export default function Evaluation({
     filters = {},
     summary = {},
     referees = [],
+    ranking = { podium: [], leaderboard: [] },
+    scoreDistribution = [],
+    contingentAnalysis = [],
+    arbitrationRecommendations = {
+        final_candidates: [],
+        supervision_list: [],
+        contingent_alerts: [],
+        overall_statement: '',
+    },
     heatmap = {},
     certificationOptions = [],
 }) {
     const [search, setSearch] = useState(filters.search || '');
     const [selectedCert, setSelectedCert] = useState(filters.certification || '');
-    const [activeTab, setActiveTab] = useState('cards'); // 'cards' | 'table' | 'heatmap'
+    const [activeView, setActiveView] = useState('overview');
     const [selectedReferee, setSelectedReferee] = useState(null);
-
     const activeStatus = filters.status || 'all';
 
     const visitFilters = (next = {}) => {
-        router.get(
-            '/admin/arbitrase/evaluasi',
-            {
-                event_id: activeEvent?.id,
-                search,
-                certification: selectedCert,
-                status: activeStatus,
-                ...next,
-            },
-            { preserveScroll: true, preserveState: true, replace: true }
-        );
+        router.get('/admin/arbitrase/evaluasi', {
+            event_id: activeEvent?.id,
+            search,
+            certification: selectedCert,
+            status: activeStatus,
+            ...next,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
     };
-
-    const statusTabs = [
-        { key: 'all', label: 'Semua Wasit', count: summary.total_referees ?? 0 },
-        { key: 'flagged_only', label: 'Anomali / Perhatian', count: (summary.flagged_count ?? 0) + (summary.needs_attention_count ?? 0) },
-        { key: 'normal_only', label: 'Objektif & Normal', count: Math.max(0, (summary.total_referees ?? 0) - (summary.flagged_count ?? 0) - (summary.needs_attention_count ?? 0)) },
-    ];
 
     const exportUrl = useMemo(() => {
         const params = new URLSearchParams();
         if (activeEvent?.id) params.set('event_id', activeEvent.id);
         if (search) params.set('search', search);
         if (selectedCert) params.set('certification', selectedCert);
-        if (activeStatus && activeStatus !== 'all') params.set('status', activeStatus);
+        if (activeStatus !== 'all') params.set('status', activeStatus);
+
         return `/admin/arbitrase/evaluasi/export?${params.toString()}`;
-    }, [activeEvent?.id, search, selectedCert, activeStatus]);
+    }, [activeEvent?.id, activeStatus, search, selectedCert]);
+
+    const statusTabs = [
+        { key: 'all', label: 'Semua Wasit', count: summary.total_referees ?? 0 },
+        {
+            key: 'flagged_only',
+            label: 'Anomali / Perhatian',
+            count: (summary.flagged_count ?? 0) + (summary.needs_attention_count ?? 0),
+        },
+        {
+            key: 'normal_only',
+            label: 'Objektif & Normal',
+            count: summary.normal_count ?? 0,
+        },
+    ];
+
+    const viewOptions = [
+        ['overview', 'Ringkasan Analitik', 'fa-chart-pie'],
+        ['cards', `Kartu Wasit (${referees.length})`, 'fa-address-card'],
+        ['table', 'Tabel Komparasi', 'fa-table-list'],
+        ['heatmap', 'Heatmap Kedaerahan', 'fa-network-wired'],
+    ];
+
+    const podiumByRank = new Map((ranking.podium || []).map((referee) => [referee.rank, referee]));
 
     return (
         <AdminLayout title="Evaluasi Perwasitan & Anti-Bias">
             <Head title="Evaluasi & Analisis Perwasitan (Anti-Bias) | Smart Perkemi" />
 
             <div className="space-y-5 pb-10 sm:space-y-6">
-                {/* Header Banner */}
                 <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0f0d0b] via-[#211b16] to-[#0f0d0b] p-5 text-white shadow-xl sm:p-6 print:hidden">
                     <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#d4a843]/15 blur-3xl" />
                     <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -514,322 +761,205 @@ export default function Evaluation({
                                     <i className="fa-solid fa-scale-unbalanced" aria-hidden="true" />
                                     Arbitrase & Dewan Wasit
                                 </p>
-                                <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300 border border-emerald-400/30">
+                                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
                                     Modul Anti-Bias Aktif
                                 </span>
                             </div>
-                            <h1 className="mt-2 text-2xl font-bold md:text-3xl">
-                                Evaluasi & Analisis Perwasitan
-                            </h1>
+                            <h1 className="mt-2 text-2xl font-bold md:text-3xl">Evaluasi & Analisis Perwasitan</h1>
                             <p className="mt-2 text-sm leading-6 text-white/70">
-                                Matriks statistik performa wasit (x̄, σ, rentang skor), deteksi anomali nilai terbuang (trimmed-out),
-                                audit independensi kedaerahan kontingen, serta evaluasi naratif otomatis dewan arbitrase.
+                                Peringkat kualitas wasit, konsistensi skor, nilai terbuang, dan audit independensi kedaerahan dalam satu rapor evaluasi.
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-3 w-full xl:w-96">
+                        <div className="flex w-full flex-col gap-3 xl:w-96">
                             <Combobox
                                 label="Event Kejuaraan"
                                 labelClassName="text-white/60"
-                                containerClassName="w-full"
                                 value={activeEvent?.id || ''}
                                 onChange={(value) => router.get('/admin/arbitrase/evaluasi', { event_id: value })}
                                 clearable={false}
-                                options={events.map((ev) => ({
-                                    value: ev.id,
-                                    label: ev.name,
-                                    sublabel: [ev.status_label, ev.date_label, ev.city].filter(Boolean).join(' · '),
+                                options={events.map((event) => ({
+                                    value: event.id,
+                                    label: event.name,
+                                    sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · '),
                                 }))}
                             />
-                            <div className="flex items-center justify-end gap-2">
-                                <Link
-                                    href="/admin/arbitrase/scoring"
-                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white/90 hover:bg-white/10"
-                                >
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <Link href="/admin/arbitrase/scoring" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white/90 hover:bg-white/10">
                                     <i className="fa-solid fa-chart-column" aria-hidden="true" />
                                     Hasil Nilai
                                 </Link>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => window.print()}
-                                    className="border-white/20 bg-white/5 text-xs text-white hover:bg-white/10"
-                                    iconLeft={<i className="fa-solid fa-print" aria-hidden="true" />}
-                                >
-                                    Cetak A4
+                                <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="border-white/20 bg-white/5 text-xs text-white hover:bg-white/10" iconLeft={<i className="fa-solid fa-print" aria-hidden="true" />}>
+                                    Cetak
                                 </Button>
-                                <a
-                                    href={exportUrl}
-                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow hover:bg-emerald-700"
-                                >
+                                <a href={exportUrl} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow hover:bg-emerald-700">
                                     <i className="fa-solid fa-file-excel" aria-hidden="true" />
-                                    Excel (.xlsx)
+                                    Excel
                                 </a>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                {/* Print Header (Visible ONLY on print) */}
-                <div className="hidden print:block mb-6 border-b-2 border-black pb-4 text-center">
-                    <h1 className="text-xl font-black uppercase">Laporan Evaluasi & Analisis Perwasitan (Anti-Bias)</h1>
-                    <p className="text-xs font-bold">PENGURUS BESAR PERSAUDARAAN BELADIRI SHORINJI KEMPO INDONESIA (PB PERKEMI)</p>
-                    <p className="text-[11px] text-gray-600">
-                        Kejuaraan: {activeEvent?.name || '—'} · Lokasi: {activeEvent?.city || '—'} · Tanggal Cetak: {new Date().toLocaleDateString('id-ID')}
-                    </p>
+                <div className="hidden border-b-2 border-black pb-4 text-center print:block">
+                    <h1 className="text-xl font-black uppercase">Laporan Evaluasi & Analisis Perwasitan</h1>
+                    <p className="text-xs font-bold">PENGURUS BESAR PERSAUDARAAN BELADIRI SHORINJI KEMPO INDONESIA</p>
+                    <p className="text-[11px] text-gray-600">Kejuaraan: {activeEvent?.name || '—'} · {activeEvent?.city || '—'}</p>
                 </div>
 
-                {/* KPI Metrics Cards */}
-                <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 sm:gap-4 print:grid-cols-4">
-                    <MetricCard
-                        icon="fa-user-shield"
-                        label="Wasit Terdaftar"
-                        value={summary.total_referees ?? 0}
-                        helper={`${summary.active_judged_referees ?? 0} wasit telah menilai partai`}
-                        tone="blue"
-                    />
-                    <MetricCard
-                        icon="fa-calculator"
-                        label="Rata-rata Skor Event (x̄)"
-                        value={formatNumber(summary.average_score ?? 0)}
-                        helper={`Dari total ${summary.total_scores_recorded ?? 0} penilaian Embu`}
-                        tone="gold"
-                    />
-                    <MetricCard
-                        icon="fa-chart-pie"
-                        label="Rata-rata Std Dev (σ̄)"
-                        value={formatNumber(summary.average_std_dev ?? 0)}
-                        helper="Toleransi deviasi acuan: ≤ 6.00"
-                        tone="slate"
-                    />
-                    <MetricCard
-                        icon="fa-scale-unbalanced-flip"
-                        label="Perhatian & Anomali"
-                        value={(summary.flagged_count ?? 0) + (summary.needs_attention_count ?? 0)}
-                        helper={`${summary.flagged_count ?? 0} anomali · ${summary.needs_attention_count ?? 0} perlu perhatian`}
-                        tone={(summary.flagged_count ?? 0) > 0 ? 'rose' : (summary.needs_attention_count ?? 0) > 0 ? 'amber' : 'emerald'}
-                    />
+                <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 print:grid-cols-4">
+                    <MetricCard icon="fa-user-shield" label="Wasit Terdaftar" value={summary.total_referees ?? 0} helper={`${summary.active_judged_referees ?? 0} wasit telah menilai`} tone="blue" />
+                    <MetricCard icon="fa-ranking-star" label="Wasit Terbaik" value={summary.top_referee?.name || '—'} helper={summary.top_referee ? `Indeks ${formatNumber(summary.top_referee.quality_index, 1)} · ${summary.top_referee.grade}` : 'Belum ada peringkat'} tone="gold" />
+                    <MetricCard icon="fa-chart-line" label="Rata-rata Skor" value={formatNumber(summary.average_score ?? 0)} helper={`${summary.total_scores_recorded ?? 0} lembar nilai masuk`} tone="slate" />
+                    <MetricCard icon="fa-shield-halved" label="Objektivitas" value={`${formatNumber(summary.objectivity_rate ?? 100, 1)}%`} helper={`${summary.flagged_count ?? 0} anomali · ${summary.needs_attention_count ?? 0} perhatian`} tone={(summary.flagged_count ?? 0) > 0 ? 'rose' : 'emerald'} />
                 </section>
 
-                {/* Filter & View Control Bar */}
-                <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 print:hidden">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        {/* Tab Mode: Cards vs Table vs Heatmap */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('cards')}
-                                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${activeTab === 'cards' ? 'bg-[#17120f] text-white shadow' : 'bg-[#f7f4ef] text-[#6b6257] hover:bg-[#eee8e0]'}`}
-                            >
-                                <i className="fa-solid fa-address-card" aria-hidden="true" />
-                                Kartu Wasit ({referees.length})
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('table')}
-                                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${activeTab === 'table' ? 'bg-[#17120f] text-white shadow' : 'bg-[#f7f4ef] text-[#6b6257] hover:bg-[#eee8e0]'}`}
-                            >
-                                <i className="fa-solid fa-table-list" aria-hidden="true" />
-                                Tabel Komparasi Statistik
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('heatmap')}
-                                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${activeTab === 'heatmap' ? 'bg-[#17120f] text-white shadow' : 'bg-[#f7f4ef] text-[#6b6257] hover:bg-[#eee8e0]'}`}
-                            >
-                                <i className="fa-solid fa-network-wired" aria-hidden="true" />
-                                Heatmap Bias Kedaerahan
-                            </button>
+                {arbitrationRecommendations.overall_statement && (
+                    <section className="flex items-start gap-3 rounded-2xl border border-[#dfd4c5] bg-[#fffcf6] p-4 text-sm text-[#51483f] shadow-sm sm:p-5">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#17120f] text-[#d4a843]">
+                            <i className="fa-solid fa-gavel" aria-hidden="true" />
+                        </span>
+                        <div>
+                            <h2 className="font-black text-[#17120f]">Kesimpulan Dewan Arbitrase</h2>
+                            <p className="mt-1 leading-relaxed">{arbitrationRecommendations.overall_statement}</p>
                         </div>
+                    </section>
+                )}
 
-                        {/* Status Pills */}
-                        <Tabs
-                            tabs={statusTabs}
-                            activeTab={activeStatus}
-                            onChange={(status) => visitFilters({ status })}
-                            variant="pills"
-                        />
+                <section className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 print:hidden">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                            {viewOptions.map(([key, label, icon]) => (
+                                <button key={key} type="button" onClick={() => setActiveView(key)} className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${activeView === key ? 'bg-[#17120f] text-white shadow' : 'bg-[#f7f4ef] text-[#6b6257] hover:bg-[#eee8e0]'}`}>
+                                    <i className={`fa-solid ${icon}`} aria-hidden="true" />
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <Tabs tabs={statusTabs} activeTab={activeStatus} onChange={(status) => visitFilters({ status })} variant="pills" />
                     </div>
 
-                    {/* Search & Certification Filter Form */}
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            visitFilters({ search, certification: selectedCert });
-                        }}
-                        className="mt-4 flex flex-col gap-3 pt-4 border-t border-[#eee8e0] sm:flex-row sm:items-center sm:justify-between"
-                    >
-                        <div className="flex flex-wrap items-center gap-2 flex-1">
-                            <Input
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                placeholder="Cari nama wasit, daerah asal, lisensi..."
-                                iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
-                                size="sm"
-                                clearable
-                                onClear={() => {
-                                    setSearch('');
-                                    visitFilters({ search: '', certification: selectedCert });
-                                }}
-                                containerClassName="w-full sm:w-72"
-                            />
-
-                            <div className="w-full sm:w-48">
-                                <select
-                                    value={selectedCert}
-                                    onChange={(e) => {
-                                        setSelectedCert(e.target.value);
-                                        visitFilters({ search, certification: e.target.value });
-                                    }}
-                                    className="w-full rounded-xl border border-[#d8cfc4] bg-[#fbfaf8] py-2 pl-3 pr-8 text-xs font-semibold text-[#2d2722] focus:border-[#d4a843] focus:outline-none focus:ring-1 focus:ring-[#d4a843]"
-                                >
-                                    <option value="">Semua Sertifikasi</option>
-                                    {certificationOptions.map((opt) => (
-                                        <option key={opt} value={opt}>
-                                            Sertifikasi: {opt}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <Button type="submit" variant="dark" size="sm">
-                                Filter
-                            </Button>
-
-                            {(search || selectedCert || activeStatus !== 'all') && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSearch('');
-                                        setSelectedCert('');
-                                        visitFilters({ search: '', certification: '', status: 'all' });
-                                    }}
-                                    className="text-xs font-bold text-[#b92f24] hover:underline"
-                                >
-                                    Reset Filter
-                                </button>
-                            )}
-                        </div>
-
-                        <p className="text-[11px] text-[#867e75]">
-                            Menampilkan <strong>{referees.length}</strong> wasit terdaftar
-                        </p>
+                    <form onSubmit={(event) => { event.preventDefault(); visitFilters({ search, certification: selectedCert }); }} className="mt-4 flex flex-col gap-3 border-t border-[#eee8e0] pt-4 sm:flex-row sm:items-center">
+                        <Input
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            placeholder="Cari nama, daerah, atau lisensi..."
+                            iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
+                            size="sm"
+                            clearable
+                            onClear={() => { setSearch(''); visitFilters({ search: '' }); }}
+                            containerClassName="w-full sm:w-80"
+                        />
+                        <select value={selectedCert} onChange={(event) => { setSelectedCert(event.target.value); visitFilters({ certification: event.target.value }); }} className="min-h-9 rounded-xl border border-[#d8cfc4] bg-[#fbfaf8] px-3 text-xs font-semibold text-[#2d2722] focus:border-[#d4a843] focus:outline-none sm:w-52">
+                            <option value="">Semua Sertifikasi</option>
+                            {certificationOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                        <Button type="submit" variant="dark" size="sm">Terapkan Filter</Button>
+                        {(search || selectedCert || activeStatus !== 'all') && (
+                            <button type="button" onClick={() => { setSearch(''); setSelectedCert(''); visitFilters({ search: '', certification: '', status: 'all' }); }} className="text-xs font-bold text-[#b92f24] hover:underline">
+                                Reset
+                            </button>
+                        )}
                     </form>
                 </section>
 
-                {/* Main Content Area */}
-                {activeTab === 'heatmap' ? (
-                    <section className="space-y-4">
-                        <HeatmapMatrix heatmap={heatmap} />
-                    </section>
-                ) : referees.length === 0 ? (
-                    <section className="rounded-2xl border border-dashed border-[#d8d0c5] bg-white px-5 py-16 text-center shadow-sm">
-                        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f5efe5] text-2xl text-[#b8872d]">
-                            <i className="fa-solid fa-user-xmark" aria-hidden="true" />
-                        </span>
-                        <h2 className="mt-4 text-lg font-bold text-[#17120f]">Data Wasit Tidak Ditemukan</h2>
-                        <p className="mx-auto mt-1 max-w-md text-xs text-[#766e66]">
-                            Tidak ada data wasit yang cocok dengan kriteria filter saat ini. Coba sesuaikan kata kunci pencarian atau sertifikasi.
-                        </p>
-                    </section>
-                ) : activeTab === 'table' ? (
-                    /* Table View */
+                {activeView === 'overview' && (
+                    <div className="space-y-5">
+                        <section>
+                            <div className="mb-3">
+                                <p className="text-xs font-black uppercase tracking-[.12em] text-[#9a6b20]">Peringkat Evaluasi</p>
+                                <h2 className="mt-1 text-xl font-black text-[#17120f]">Podium Wasit Terbaik</h2>
+                            </div>
+                            <div className="grid gap-4 lg:grid-cols-3">
+                                {[1, 2, 3].map((place) => <PodiumCard key={place} place={place} referee={podiumByRank.get(place)} onOpenNarrative={setSelectedReferee} />)}
+                            </div>
+                        </section>
+
+                        <section className="grid gap-4 xl:grid-cols-2">
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
+                                <h3 className="font-black text-[#17120f]">Peringkat Indeks Kualitas</h3>
+                                <p className="mb-4 text-xs text-[#766e66]">Sepuluh wasit dengan indeks kualitas dan objektivitas tertinggi.</p>
+                                <RefereeRankingChart data={ranking.leaderboard || []} />
+                            </article>
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
+                                <h3 className="font-black text-[#17120f]">Proporsi Objektivitas</h3>
+                                <p className="mb-4 text-xs text-[#766e66]">Komposisi status normal, perhatian, dan anomali.</p>
+                                <RefereeObjectivityDoughnut normal={summary.normal_count ?? 0} warning={summary.warning_count ?? 0} flagged={summary.flagged_count ?? 0} rate={summary.objectivity_rate ?? 100} />
+                            </article>
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
+                                <h3 className="font-black text-[#17120f]">Distribusi Skor Penilaian</h3>
+                                <p className="mb-4 text-xs text-[#766e66]">Frekuensi nilai yang masuk pada setiap rentang skor.</p>
+                                <ScoreDistributionChart distribution={scoreDistribution} />
+                            </article>
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5">
+                                <h3 className="font-black text-[#17120f]">Konsistensi Wasit</h3>
+                                <p className="mb-4 text-xs text-[#766e66]">Perbandingan standar deviasi dan persentase nilai terbuang.</p>
+                                <RefereeConsistencyChart referees={ranking.leaderboard || referees} />
+                            </article>
+                            <article className="rounded-2xl border border-[#e5ded4] bg-white p-4 shadow-sm sm:p-5 xl:col-span-2">
+                                <h3 className="font-black text-[#17120f]">Deviasi Kedaerahan per Kontingen</h3>
+                                <p className="mb-4 text-xs text-[#766e66]">Selisih rata-rata nilai juri sedaerah dibanding juri dari daerah lain.</p>
+                                <ContingentDeltaChart contingents={contingentAnalysis} />
+                            </article>
+                        </section>
+                    </div>
+                )}
+
+                {activeView === 'heatmap' && <HeatmapMatrix heatmap={heatmap} />}
+
+                {activeView === 'cards' && (
+                    referees.length > 0 ? (
+                        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                            {referees.map((referee) => <RefereeCard key={referee.id} referee={referee} onOpenNarrative={setSelectedReferee} />)}
+                        </section>
+                    ) : (
+                        <section className="rounded-2xl border border-dashed border-[#d8d0c5] bg-white px-5 py-16 text-center shadow-sm">
+                            <i className="fa-solid fa-user-xmark text-3xl text-[#b8872d]" aria-hidden="true" />
+                            <h2 className="mt-3 text-lg font-bold text-[#17120f]">Data Wasit Tidak Ditemukan</h2>
+                            <p className="mt-1 text-xs text-[#766e66]">Sesuaikan kata kunci, sertifikasi, atau status objektivitas.</p>
+                        </section>
+                    )
+                )}
+
+                {activeView === 'table' && (
                     <section className="overflow-x-auto rounded-2xl border border-[#e5ded4] bg-white shadow-sm">
-                        <table className="min-w-full divide-y divide-[#eee8e0] text-left text-xs">
-                            <thead className="bg-[#f7f4ef] text-[11px] font-black uppercase tracking-wider text-[#6b6257]">
+                        <table className="min-w-[1100px] w-full divide-y divide-[#eee8e0] text-left text-xs">
+                            <thead className="bg-[#f7f4ef] text-[10px] font-black uppercase tracking-wider text-[#6b6257]">
                                 <tr>
-                                    <th scope="col" className="px-4 py-3">No.</th>
-                                    <th scope="col" className="px-4 py-3">Nama Wasit / Asal</th>
-                                    <th scope="col" className="px-3 py-3">Sertifikasi & Dan</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Partai (N)</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Rata-rata (x̄)</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Std Dev (σ)</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Rentang (Min–Max)</th>
-                                    <th scope="col" className="px-3 py-3 text-center">% Terbuang</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Deviasi Asal (Δ)</th>
-                                    <th scope="col" className="px-3 py-3 text-center">Status</th>
-                                    <th scope="col" className="px-4 py-3 text-right print:hidden">Aksi</th>
+                                    <th className="px-4 py-3">Peringkat</th>
+                                    <th className="px-4 py-3">Wasit / Asal</th>
+                                    <th className="px-3 py-3 text-center">Indeks</th>
+                                    <th className="px-3 py-3 text-center">Partai</th>
+                                    <th className="px-3 py-3 text-center">Rata-rata</th>
+                                    <th className="px-3 py-3 text-center">Std Dev</th>
+                                    <th className="px-3 py-3 text-center">Terbuang</th>
+                                    <th className="px-3 py-3 text-center">Deviasi Asal</th>
+                                    <th className="px-3 py-3 text-center">Status</th>
+                                    <th className="px-4 py-3 text-right">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[#eee8e0] bg-white font-medium text-[#2d2722]">
-                                {referees.map((ref, idx) => (
-                                    <tr key={ref.id} className="hover:bg-[#fcfbf9]">
-                                        <td className="px-4 py-3 text-[#877e74]">{idx + 1}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="font-bold text-[#17120f]">{ref.name}</div>
-                                            <div className="text-[10px] text-[#837a70]">
-                                                {ref.region} {ref.license_number ? `· #${ref.license_number}` : ''}
-                                            </div>
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="inline-block rounded bg-[#17120f] px-2 py-0.5 text-[9px] font-black uppercase text-[#d4a843]">
-                                                {ref.certification_level}
-                                            </div>
-                                            <div className="text-[10px] text-[#8a7f74]">{ref.dan_grade || '—'}</div>
-                                        </td>
-                                        <td className="px-3 py-3 text-center font-mono font-bold">{ref.matches_judged_count}</td>
-                                        <td className="px-3 py-3 text-center font-mono font-bold text-[#17120f]">
-                                            {ref.matches_judged_count > 0 ? formatNumber(ref.average_score) : '—'}
-                                        </td>
-                                        <td className={`px-3 py-3 text-center font-mono font-bold ${ref.std_dev > 6 ? 'text-rose-600' : 'text-[#17120f]'}`}>
-                                            {ref.matches_judged_count > 0 ? formatNumber(ref.std_dev) : '—'}
-                                        </td>
-                                        <td className="px-3 py-3 text-center font-mono text-[11px]">
-                                            {ref.matches_judged_count > 0 ? `${formatNumber(ref.min_score)} – ${formatNumber(ref.max_score)}` : '—'}
-                                        </td>
-                                        <td className={`px-3 py-3 text-center font-mono font-bold ${ref.trimmed_rate >= 40 ? 'text-amber-600' : 'text-[#17120f]'}`}>
-                                            {ref.matches_judged_count > 0 ? `${formatNumber(ref.trimmed_rate, 1)}%` : '—'}
-                                        </td>
-                                        <td className="px-3 py-3 text-center font-mono font-black">
-                                            {ref.same_origin_count > 0 ? (
-                                                <span className={ref.regional_delta >= 3.0 ? 'text-rose-700' : ref.regional_delta >= 1.5 ? 'text-amber-700' : 'text-emerald-700'}>
-                                                    {ref.regional_delta > 0 ? `+${formatNumber(ref.regional_delta)}` : formatNumber(ref.regional_delta)}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[#a8a096]">0</span>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3 text-center">
-                                            <StatusBadge status={ref.status} label={ref.status_label} />
-                                        </td>
-                                        <td className="px-4 py-3 text-right print:hidden">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => setSelectedReferee(ref)}
-                                                className="text-xs"
-                                                iconLeft={<i className="fa-solid fa-file-waveform" aria-hidden="true" />}
-                                            >
-                                                Rapor
-                                            </Button>
-                                        </td>
+                            <tbody className="divide-y divide-[#eee8e0]">
+                                {referees.map((referee) => (
+                                    <tr key={referee.id} className="hover:bg-[#fcfbf9]">
+                                        <td className="px-4 py-3"><GradeBadge grade={referee.grade} label={referee.rank ? `#${referee.rank}` : null} /></td>
+                                        <td className="px-4 py-3"><strong className="text-[#17120f]">{referee.name}</strong><div className="text-[10px] text-[#837a70]">{referee.region} · {referee.certification_level}</div></td>
+                                        <td className="px-3 py-3 text-center font-mono font-black">{formatNumber(referee.quality_index, 1)}</td>
+                                        <td className="px-3 py-3 text-center font-mono">{referee.matches_judged_count}</td>
+                                        <td className="px-3 py-3 text-center font-mono">{formatNumber(referee.average_score)}</td>
+                                        <td className="px-3 py-3 text-center font-mono">{formatNumber(referee.std_dev)}</td>
+                                        <td className="px-3 py-3 text-center font-mono">{formatNumber(referee.trimmed_rate, 1)}%</td>
+                                        <td className="px-3 py-3 text-center font-mono">{referee.regional_delta > 0 ? '+' : ''}{formatNumber(referee.regional_delta)}</td>
+                                        <td className="px-3 py-3 text-center"><StatusBadge status={referee.status} label={referee.status_label} /></td>
+                                        <td className="px-4 py-3 text-right"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedReferee(referee)}>Rapor</Button></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </section>
-                ) : (
-                    /* Cards Grid View */
-                    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {referees.map((referee) => (
-                            <RefereeCard
-                                key={referee.id}
-                                referee={referee}
-                                onOpenNarrative={setSelectedReferee}
-                            />
-                        ))}
-                    </section>
                 )}
             </div>
 
-            {/* Modal Detail & Analisis Naratif */}
-            <NarrativeModal
-                referee={selectedReferee}
-                isOpen={Boolean(selectedReferee)}
-                onClose={() => setSelectedReferee(null)}
-            />
+            <NarrativeModal referee={selectedReferee} isOpen={Boolean(selectedReferee)} onClose={() => setSelectedReferee(null)} />
         </AdminLayout>
     );
 }
