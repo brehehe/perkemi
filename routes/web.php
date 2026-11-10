@@ -177,6 +177,14 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::delete('event/{event}/field-coordinator/{fieldCoordinator}', [EventDetailController::class, 'destroyEventFieldCoordinator'])->name('event.field-coordinator.destroy');
     Route::post('event/{event}/field-coordinator/{fieldCoordinator}/transfer-to-referee', [EventDetailController::class, 'transferCoordinatorToReferee'])->name('event.field-coordinator.transfer-to-referee');
 
+    // Event Arbitrators
+    Route::post('event/{event}/arbitrator', [EventDetailController::class, 'storeEventArbitrator'])->name('event.arbitrator.store');
+    Route::put('event/{event}/arbitrator/{arbitrator}', [EventDetailController::class, 'updateEventArbitrator'])->name('event.arbitrator.update');
+    Route::delete('event/{event}/arbitrator/{arbitrator}', [EventDetailController::class, 'destroyEventArbitrator'])->name('event.arbitrator.destroy');
+
+    // Universal Transfer Official (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan)
+    Route::post('event/{event}/transfer-official', [EventDetailController::class, 'transferOfficial'])->name('event.official.transfer');
+
     // Event Rundowns (Sesi Acara & Rundown)
     Route::post('event/{event}/rundown', [EventDetailController::class, 'storeRundown'])->name('event.rundown.store');
     Route::put('event/{event}/rundown/{rundown}', [EventDetailController::class, 'updateRundown'])->name('event.rundown.update');

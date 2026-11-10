@@ -1,83 +1,48 @@
 import React, { useState, useMemo } from 'react';
+import { Button, Input, Combobox } from '@/Components/UI';
 
 export default function ArbitrationTab({
     event,
+    arbitrators = [],
+    eventArbitrators = [],
+    arbitratorOptions = [],
+    arbitratorRoleOptions = [],
+    arbitratorAssignmentForm,
+    submitArbitratorAssignment,
+    openCreateArbitratorModal,
+    openEditArbitratorModal,
+    removeEventArbitrator,
+    openTransferModal,
+    arbitratorSearch = '',
+    setArbitratorSearch = () => {},
     arbitrationSummary = {},
     arbitrationPersonnel = [],
     arbitrationRoleUsers = [],
     eventReferees = [],
 }) {
-    const exportUrl = `/admin/master/event/${event.id}/arbitration/export`;
-
+    const [showAllPersonnel, setShowAllPersonnel] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('all'); // 'all' | 'arbitrase_role' | 'dewan' | 'wasit' | 'panitera'
-    const [presenceFilter, setPresenceFilter] = useState('all'); // 'all' | 'present' | 'absent'
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [presenceFilter, setPresenceFilter] = useState('all');
 
-    // Compute counts
-    const countTotal = arbitrationPersonnel.length;
-    const countArbitraseRole = useMemo(
-        () => arbitrationPersonnel.filter((p) => p.category === 'arbitrase_role' || p.is_role_arbitrase).length,
-        [arbitrationPersonnel]
-    );
-    const countDewan = useMemo(
-        () => arbitrationPersonnel.filter((p) => p.category === 'dewan').length,
-        [arbitrationPersonnel]
-    );
-    const countWasit = useMemo(
-        () => arbitrationPersonnel.filter((p) => p.category === 'wasit').length,
-        [arbitrationPersonnel]
-    );
-    const countPanitera = useMemo(
-        () => arbitrationPersonnel.filter((p) => p.category === 'panitera').length,
-        [arbitrationPersonnel]
-    );
-    const countPresent = useMemo(
-        () => arbitrationPersonnel.filter((p) => p.is_present).length,
-        [arbitrationPersonnel]
-    );
-    const countAbsent = countTotal - countPresent;
-
-    // Filtered personnel list
-    const filteredPersonnel = useMemo(() => {
-        return arbitrationPersonnel.filter((person) => {
-            // Category filter
-            if (selectedCategory !== 'all') {
-                if (selectedCategory === 'arbitrase_role') {
-                    if (person.category !== 'arbitrase_role' && !person.is_role_arbitrase) {
-                        return false;
-                    }
-                } else if (person.category !== selectedCategory) {
-                    return false;
-                }
-            }
-
-            // Presence filter
-            if (presenceFilter === 'present' && !person.is_present) {
-                return false;
-            }
-            if (presenceFilter === 'absent' && person.is_present) {
-                return false;
-            }
-
-            // Search query filter
-            if (searchQuery.trim() !== '') {
-                const q = searchQuery.toLowerCase();
-                const matchName = person.name?.toLowerCase().includes(q);
-                const matchRole = person.role_title?.toLowerCase().includes(q);
-                const matchRegion = person.region?.toLowerCase().includes(q);
-                const matchDan = person.dan_grade?.toLowerCase().includes(q);
-                const matchLicense = person.license_number?.toLowerCase().includes(q);
-                const matchCert = person.certification_level?.toLowerCase().includes(q);
-                const matchEmail = person.email?.toLowerCase().includes(q);
-
-                if (!matchName && !matchRole && !matchRegion && !matchDan && !matchLicense && !matchCert && !matchEmail) {
-                    return false;
-                }
-            }
-
-            return true;
+    // Filtered event arbitrators for this specific event
+    const filteredEventArbitrators = useMemo(() => {
+        if (!arbitratorSearch) return eventArbitrators;
+        const q = arbitratorSearch.toLowerCase();
+        return eventArbitrators.filter((arbitrator) => {
+            return (
+                arbitrator.name?.toLowerCase().includes(q) ||
+                arbitrator.dan_grade?.toLowerCase().includes(q) ||
+                arbitrator.certification_level?.toLowerCase().includes(q) ||
+                arbitrator.region?.toLowerCase().includes(q) ||
+                arbitrator.license_number?.toLowerCase().includes(q) ||
+                arbitrator.email?.toLowerCase().includes(q) ||
+                arbitrator.phone?.toLowerCase().includes(q) ||
+                arbitrator.notes?.toLowerCase().includes(q) ||
+                arbitrator.role?.toLowerCase().includes(q)
+            );
         });
-    }, [arbitrationPersonnel, selectedCategory, presenceFilter, searchQuery]);
+    }, [eventArbitrators, arbitratorSearch]);
 
     // Quick links to arbitration workflow modules
     const quickLinks = [
@@ -89,7 +54,7 @@ export default function ArbitrationTab({
             color: 'from-amber-500/20 to-orange-500/20 text-amber-500',
         },
         {
-            title: 'Evaluasi Wasit Anti-Bias',
+            title: 'Evaluasi Wasit Anti-Bias & Peringkat',
             desc: 'Analisis deviasi skor, indeks bias kontingen asal wasit, dan standar deviasi penilaian juri.',
             href: `/admin/arbitrase/evaluasi?event_id=${event.id}`,
             icon: 'fa-chart-line',
@@ -111,372 +76,265 @@ export default function ArbitrationTab({
         },
     ];
 
-    // Official Arbitrase Role Users
-    const roleUsers = arbitrationRoleUsers.length > 0
-        ? arbitrationRoleUsers
-        : arbitrationPersonnel.filter((p) => p.category === 'arbitrase_role' || p.is_role_arbitrase);
+    // Compute counts for the full roster view
+    const countTotal = arbitrationPersonnel.length;
+    const countPresent = useMemo(
+        () => arbitrationPersonnel.filter((p) => p.is_present).length,
+        [arbitrationPersonnel]
+    );
+    const countAbsent = countTotal - countPresent;
+
+    // Filtered personnel list for diagnostic/roster view
+    const filteredPersonnel = useMemo(() => {
+        return arbitrationPersonnel.filter((person) => {
+            if (selectedCategory !== 'all') {
+                if (selectedCategory === 'arbitrase_role') {
+                    if (person.category !== 'arbitrase_role' && !person.is_role_arbitrase) return false;
+                } else if (person.category !== selectedCategory) {
+                    return false;
+                }
+            }
+
+            if (presenceFilter === 'present' && !person.is_present) return false;
+            if (presenceFilter === 'absent' && person.is_present) return false;
+
+            if (searchQuery.trim() !== '') {
+                const q = searchQuery.toLowerCase();
+                const matchName = person.name?.toLowerCase().includes(q);
+                const matchRole = person.role_title?.toLowerCase().includes(q);
+                const matchRegion = person.region?.toLowerCase().includes(q);
+                const matchDan = person.dan_grade?.toLowerCase().includes(q);
+                const matchLicense = person.license_number?.toLowerCase().includes(q);
+                const matchCert = person.certification_level?.toLowerCase().includes(q);
+                const matchEmail = person.email?.toLowerCase().includes(q);
+
+                if (!matchName && !matchRole && !matchRegion && !matchDan && !matchLicense && !matchCert && !matchEmail) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [arbitrationPersonnel, selectedCategory, presenceFilter, searchQuery]);
 
     return (
         <div className="space-y-6">
-            {/* ════ STATS SUMMARY CARDS ════ */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Total Korps Arbitrase</p>
-                    <p className="mt-1 text-2xl font-black text-zinc-900 dark:text-white">
-                        {countTotal} <span className="text-xs font-normal text-zinc-500">Petugas</span>
-                    </p>
-                </div>
-                <div className="rounded-xl border border-amber-300/80 bg-gradient-to-br from-amber-50 to-amber-100/40 p-4 shadow-sm dark:border-amber-600/40 dark:from-amber-950/40 dark:to-zinc-900">
-                    <p className="text-[11px] font-bold text-amber-800 dark:text-amber-400">
-                        <i className="fa-solid fa-gavel mr-1" /> Role Arbitrase
-                    </p>
-                    <p className="mt-1 text-2xl font-black text-amber-900 dark:text-amber-200">
-                        {countArbitraseRole} <span className="text-xs font-normal text-amber-700 dark:text-amber-300">User</span>
-                    </p>
-                </div>
-                <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Dewan Hakim & Korlap</p>
-                    <p className="mt-1 text-2xl font-black text-indigo-600 dark:text-indigo-400">
-                        {countDewan} <span className="text-xs font-normal text-zinc-500">Personil</span>
-                    </p>
-                </div>
-                <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Wasit & Juri</p>
-                    <p className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-400">
-                        {countWasit} <span className="text-xs font-normal text-zinc-500">Wasit</span>
-                    </p>
-                </div>
-                <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Panitera Meja</p>
-                    <p className="mt-1 text-2xl font-black text-cyan-600 dark:text-cyan-400">
-                        {countPanitera} <span className="text-xs font-normal text-zinc-500">Petugas</span>
-                    </p>
-                </div>
-                <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Status Kehadiran</p>
-                    <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                        {countPresent} <span className="text-xs font-normal text-zinc-500">Hadir Presensi</span>
-                    </p>
-                </div>
-            </div>
-
-            {/* ════ SECTION: DEWAN ARBITRASE EVENT (ROLE ARBITRASE RESMI) ════ */}
-            <div className="rounded-2xl border-2 border-amber-400/80 bg-gradient-to-r from-amber-500/10 via-amber-400/5 to-transparent p-5 shadow-sm dark:border-amber-500/40 dark:from-amber-950/40">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            {/* ══════════════════════════════════════════════════════════════════
+                UTAMA: PENUGASAN ARBITRASE EVENT (FORMAT IDENTIK KOORDINATOR & WASIT)
+            ══════════════════════════════════════════════════════════════════ */}
+            <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                {/* Header Card */}
+                <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800">
                     <div>
-                        <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-0.5 text-xs font-extrabold text-amber-800 dark:text-amber-300 border border-amber-400/40">
-                            <i className="fa-solid fa-scale-balanced" /> Petugas dengan Role Arbitrase Resmi Event Ini
+                        <div className="flex items-center gap-2">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400">
+                                <i className="fa-solid fa-gavel text-sm" />
+                            </span>
+                            <h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Arbitrase</h3>
                         </div>
-                        <h3 className="mt-1.5 text-lg font-black text-zinc-900 dark:text-white">
-                            Dewan Arbitrase yang Dipilih untuk Event Ini ({roleUsers.length} Petugas)
-                        </h3>
-                        <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                            Daftar user/petugas yang memiliki Role <strong>Arbitrase</strong> di sistem dan telah ditugaskan secara resmi untuk mengawal kepatuhan regulasi, menangani protes, dan memimpin sidang arbitrase kejuaraan ini.
+                        <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">
+                            Pilih personil arbitrase dari master data untuk event ini atau edit langsung data arbitrase. Dapat dialihkan ke Wasit & Juri maupun Koordinator Lapangan.
                         </p>
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button
+                        <Button
                             type="button"
-                            onClick={() => setSelectedCategory('arbitrase_role')}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-3.5 py-2 text-xs transition shadow-sm cursor-pointer"
+                            onClick={openCreateArbitratorModal}
+                            className="bg-[#141210] text-amber-400 hover:bg-black"
                         >
-                            <i className="fa-solid fa-filter" />
-                            <span>Lihat di Tabel ({roleUsers.length})</span>
-                        </button>
+                            <i className="fa-solid fa-user-plus mr-2" />
+                            Tambah Arbitrase Baru
+                        </Button>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {roleUsers.map((user, idx) => (
-                        <div
-                            key={user.id || idx}
-                            className="relative overflow-hidden rounded-xl border border-amber-300/80 bg-white/90 p-4 shadow-sm backdrop-blur transition hover:border-amber-400 hover:shadow-md dark:border-amber-600/40 dark:bg-zinc-900/80"
-                        >
-                            <div className="flex items-start gap-3">
-                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-base font-black text-slate-950 shadow-sm ring-2 ring-amber-400/40">
-                                    {user.avatar_letter || (user.name ? user.name.slice(0, 1).toUpperCase() : 'A')}
-                                </span>
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-black uppercase text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
-                                            Role Arbitrase
-                                        </span>
-                                    </div>
-                                    <h4 className="mt-1 text-sm font-extrabold text-zinc-900 dark:text-white truncate" title={user.name}>
-                                        {user.name}
-                                    </h4>
-                                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate font-mono mt-0.5" title={user.email}>
-                                        <i className="fa-regular fa-envelope mr-1 text-[10px]" />
-                                        {user.email}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="mt-3 pt-2.5 border-t border-amber-200/60 dark:border-amber-900/40 flex items-center justify-between text-[11px]">
-                                <span className="text-zinc-500 dark:text-zinc-400">Hak Akses Event:</span>
-                                <span className="font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider text-[10px] bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200/50">
-                                    {user.access_role || 'Dewan Arbitrase'}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* ════ ROSTER ARBITRASE PERTANDINGAN INI ════ */}
-            <div className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 overflow-hidden">
-                {/* Filter and Search header */}
-                <div className="p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800 space-y-4">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div>
-                            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                                Daftar Personil Arbitrase Pertandingan Ini ({filteredPersonnel.length})
-                            </h3>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                                Personil yang memiliki surat penugasan resmi untuk memimpin, mengawasi, dan menilai jalannya pertandingan.
-                            </p>
-                        </div>
-
-                        {/* Search Input */}
-                        <div className="relative w-full md:w-80">
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-400">
-                                <i className="fa-solid fa-magnifying-glass text-xs" />
-                            </span>
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Cari nama, daerah, Dan, lisensi, email..."
-                                className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-zinc-300 bg-zinc-50/50 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-100"
+                {/* Form Penugasan dari Master */}
+                {arbitratorAssignmentForm && (
+                    <div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40">
+                        <form onSubmit={submitArbitratorAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_260px_auto] md:items-end">
+                            <Combobox
+                                label="Pilih dari Master Data Arbitrase"
+                                value={arbitratorAssignmentForm.data.arbitrator_id}
+                                onChange={(value) => arbitratorAssignmentForm.setData('arbitrator_id', value)}
+                                options={arbitratorOptions}
+                                placeholder="Cari nama arbitrase..."
+                                searchPlaceholder="Cari arbitrase..."
+                                error={arbitratorAssignmentForm.errors?.arbitrator_id}
                             />
-                            {searchQuery && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                                >
-                                    <i className="fa-solid fa-xmark text-xs" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Filter Pills */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs font-semibold text-zinc-500 mr-1">Kategori:</span>
-                            {[
-                                { id: 'all', label: 'Semua Arbitrase', count: countTotal },
-                                { id: 'arbitrase_role', label: 'Dewan Arbitrase (Role Arbitrase)', count: countArbitraseRole, isGold: true },
-                                { id: 'dewan', label: 'Dewan Hakim & Korlap', count: countDewan },
-                                { id: 'wasit', label: 'Wasit & Juri', count: countWasit },
-                                { id: 'panitera', label: 'Panitera Meja', count: countPanitera },
-                            ].map((btn) => (
-                                <button
-                                    key={btn.id}
-                                    type="button"
-                                    onClick={() => setSelectedCategory(btn.id)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${selectedCategory === btn.id
-                                        ? btn.isGold
-                                            ? 'bg-amber-500 text-slate-950 font-black shadow-sm ring-2 ring-amber-400/50'
-                                            : 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                                        }`}
-                                >
-                                    {btn.label} ({btn.count})
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-zinc-500 mr-1">Kehadiran:</span>
-                            {[
-                                { id: 'all', label: 'Semua' },
-                                { id: 'present', label: `Hadir (${countPresent})` },
-                                { id: 'absent', label: `Belum Presensi (${countAbsent})` },
-                            ].map((btn) => (
-                                <button
-                                    key={btn.id}
-                                    type="button"
-                                    onClick={() => setPresenceFilter(btn.id)}
-                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${presenceFilter === btn.id
-                                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
-                                        }`}
-                                >
-                                    {btn.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Table of Personnel */}
-                {filteredPersonnel.length === 0 ? (
-                    <div className="py-16 text-center text-xs text-zinc-500 dark:text-zinc-400">
-                        <i className="fa-solid fa-user-slash text-3xl text-zinc-300 dark:text-zinc-700 mb-2" />
-                        <p className="font-semibold">Tidak ditemukan petugas arbitrase dengan kriteria pencarian ini.</p>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSelectedCategory('all');
-                                setPresenceFilter('all');
-                                setSearchQuery('');
-                            }}
-                            className="mt-2 text-amber-600 hover:underline font-bold"
-                        >
-                            Reset Seluruh Filter
-                        </button>
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                                <tr className="border-b border-zinc-200 bg-zinc-50 text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
-                                    <th className="py-3 px-4 w-12 text-center">No</th>
-                                    <th className="py-3 px-4">Nama Petugas</th>
-                                    <th className="py-3 px-4">Kategori Arbitrase</th>
-                                    <th className="py-3 px-4">Posisi / Jabatan</th>
-                                    <th className="py-3 px-4 text-center">Tingkatan Dan</th>
-                                    <th className="py-3 px-4">Sertifikasi</th>
-                                    <th className="py-3 px-4">No. Lisensi / ID</th>
-                                    <th className="py-3 px-4">Asal Pengprov / Daerah</th>
-                                    <th className="py-3 px-4 text-center">Status Kehadiran</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
-                                {filteredPersonnel.map((person, index) => {
-                                    const isRoleArbitrase = person.category === 'arbitrase_role' || person.is_role_arbitrase;
-                                    return (
-                                        <tr
-                                            key={person.id || index}
-                                            className={`transition-colors ${
-                                                isRoleArbitrase
-                                                    ? 'bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-950/30'
-                                                    : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40'
-                                            }`}
-                                        >
-                                            {/* No */}
-                                            <td className="py-3 px-4 text-center font-mono font-medium text-zinc-400">
-                                                {index + 1}
-                                            </td>
-
-                                            {/* Nama Petugas */}
-                                            <td className="py-3 px-4">
-                                                <div className="flex items-center gap-3">
-                                                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-black shadow-2xs ${
-                                                        isRoleArbitrase
-                                                            ? 'bg-amber-400 text-slate-950 ring-1 ring-amber-500/50'
-                                                            : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                                                    }`}>
-                                                        {person.avatar_letter || person.name.slice(0, 1).toUpperCase()}
-                                                    </span>
-                                                    <div>
-                                                        <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                                                            <span>{person.name}</span>
-                                                            {isRoleArbitrase && (
-                                                                <span className="rounded bg-amber-200 px-1.5 py-0.2 text-[9px] font-black text-amber-900 dark:bg-amber-900 dark:text-amber-200" title="User dengan Role Arbitrase Resmi">
-                                                                    Role Arbitrase
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center gap-2 mt-0.5">
-                                                            {person.phone && person.phone !== '-' && (
-                                                                <span><i className="fa-solid fa-phone text-[9px] mr-1 text-zinc-400" />{person.phone}</span>
-                                                            )}
-                                                            {person.email && person.email !== '-' && (
-                                                                <span className="font-mono text-[10px]"><i className="fa-regular fa-envelope text-[9px] mr-1 text-zinc-400" />{person.email}</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-
-                                            {/* Kategori Arbitrase */}
-                                            <td className="py-3 px-4">
-                                                <span
-                                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                                        isRoleArbitrase
-                                                            ? 'bg-amber-100 text-amber-900 border border-amber-300/80 dark:bg-amber-950/80 dark:text-amber-200'
-                                                            : person.category === 'dewan'
-                                                            ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
-                                                            : person.category === 'wasit'
-                                                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                                            : 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300'
-                                                    }`}
-                                                >
-                                                    <i
-                                                        className={`fa-solid ${
-                                                            isRoleArbitrase
-                                                                ? 'fa-scale-balanced text-amber-600'
-                                                                : person.category === 'dewan'
-                                                                ? 'fa-shield-halved'
-                                                                : person.category === 'wasit'
-                                                                ? 'fa-scale-balanced'
-                                                                : 'fa-clipboard-list'
-                                                        } text-[10px]`}
-                                                    />
-                                                    {person.category_label || person.category}
-                                                </span>
-                                            </td>
-
-                                            {/* Posisi / Jabatan */}
-                                            <td className="py-3 px-4 font-semibold text-zinc-800 dark:text-zinc-200">
-                                                {person.role_title}
-                                            </td>
-
-                                            {/* Tingkatan Dan */}
-                                            <td className="py-3 px-4 text-center">
-                                                {person.dan_grade && person.dan_grade !== '-' ? (
-                                                    <span className="inline-block rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 font-bold text-zinc-800 dark:text-zinc-200 text-[11px]">
-                                                        {person.dan_grade}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-zinc-400">—</span>
-                                                )}
-                                            </td>
-
-                                            {/* Tingkat Sertifikasi */}
-                                            <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400">
-                                                {person.certification_level}
-                                            </td>
-
-                                            {/* No. Lisensi */}
-                                            <td className="py-3 px-4 font-mono text-[11px] text-zinc-500">
-                                                {person.license_number}
-                                            </td>
-
-                                            {/* Pengprov / Asal Daerah */}
-                                            <td className="py-3 px-4 font-medium text-zinc-800 dark:text-zinc-200">
-                                                <span className="inline-flex items-center gap-1">
-                                                    <i className="fa-solid fa-location-dot text-zinc-400 text-[10px]" />
-                                                    {person.region}
-                                                </span>
-                                            </td>
-
-                                            {/* Status Kehadiran */}
-                                            <td className="py-3 px-4 text-center">
-                                                <span
-                                                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                                        person.is_present
-                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                                    }`}
-                                                >
-                                                    <i className={`fa-solid ${person.is_present ? 'fa-circle-check' : 'fa-clock'}`} />
-                                                    {person.attendance_status}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                            <Combobox
+                                label="Peran di Event"
+                                value={arbitratorAssignmentForm.data.role}
+                                onChange={(value) => arbitratorAssignmentForm.setData('role', value)}
+                                options={arbitratorRoleOptions}
+                                clearable={false}
+                                error={arbitratorAssignmentForm.errors?.role}
+                            />
+                            <Button
+                                type="submit"
+                                loading={arbitratorAssignmentForm.processing}
+                                disabled={!arbitratorAssignmentForm.data.arbitrator_id}
+                            >
+                                <i className="fa-solid fa-plus mr-2" />
+                                Tugaskan
+                            </Button>
+                        </form>
                     </div>
                 )}
+
+                {/* Counter & Search Bar */}
+                {eventArbitrators.length > 0 && (
+                    <div className="flex items-center justify-between border-b border-[#ede9e1] bg-[#fbfaf8] px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+                        <p className="text-xs font-semibold text-[#706860] dark:text-slate-400">
+                            Total Ditugaskan:{' '}
+                            <span className="font-bold text-[#0f0d0b] dark:text-white">
+                                {eventArbitrators.length} Personil Arbitrase
+                            </span>
+                        </p>
+                        <div className="w-full max-w-xs">
+                            <Input
+                                placeholder="Cari arbitrase event..."
+                                value={arbitratorSearch}
+                                onChange={(e) => setArbitratorSearch(e.target.value)}
+                                iconLeft={<i className="fa-solid fa-magnifying-glass text-[#a89f91]" />}
+                                containerClassName="text-xs"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* List Personil Arbitrase */}
+                {(() => {
+                    if (!eventArbitrators.length) {
+                        return (
+                            <div className="p-8 text-center">
+                                <i className="fa-solid fa-gavel text-3xl text-[#d8d0c7]" />
+                                <p className="mt-3 font-semibold text-[#141210] dark:text-white">
+                                    Belum ada personil arbitrase yang ditugaskan
+                                </p>
+                                <p className="mt-1 text-sm text-[#706860] dark:text-slate-400">
+                                    Pilih dari master data arbitrase di atas atau klik "Tambah Arbitrase Baru".
+                                </p>
+                            </div>
+                        );
+                    }
+
+                    if (!filteredEventArbitrators.length) {
+                        return (
+                            <div className="p-8 text-center">
+                                <i className="fa-solid fa-magnifying-glass text-2xl text-[#d8d0c7]" />
+                                <p className="mt-2 text-sm font-semibold text-[#141210] dark:text-white">
+                                    Tidak ada arbitrase yang cocok dengan pencarian "{arbitratorSearch}"
+                                </p>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">
+                            {filteredEventArbitrators.map((arbitrator) => (
+                                <div
+                                    key={arbitrator.id}
+                                    className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between transition-colors hover:bg-zinc-50/50 dark:hover:bg-slate-800/40"
+                                >
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 ring-1 ring-amber-400/30">
+                                            <i className="fa-solid fa-gavel text-sm" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <p className="truncate font-semibold text-[#141210] dark:text-white">
+                                                    {arbitrator.name}
+                                                </p>
+                                                {arbitrator.gender && (
+                                                    <span
+                                                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                                            arbitrator.gender === 'female'
+                                                                ? 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'
+                                                                : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                                        }`}
+                                                    >
+                                                        {arbitrator.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
+                                                    </span>
+                                                )}
+                                                {arbitrator.dan_grade && (
+                                                    <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
+                                                        {arbitrator.dan_grade}
+                                                    </span>
+                                                )}
+                                                {arbitrator.license_number && (
+                                                    <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
+                                                        Lisensi: {arbitrator.license_number}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
+                                                {[arbitrator.certification_level, arbitrator.region, arbitrator.phone]
+                                                    .filter(Boolean)
+                                                    .join(' · ') || 'Profil arbitrase'}
+                                            </p>
+                                            {(arbitrator.email || arbitrator.notes) && (
+                                                <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
+                                                    {[
+                                                        arbitrator.email ? `Email: ${arbitrator.email}` : null,
+                                                        arbitrator.notes ? `Catatan: ${arbitrator.notes}` : null,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(' · ')}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Action buttons */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-300/60 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-700/40">
+                                            {arbitratorRoleOptions.find((option) => option.value === arbitrator.role)?.label || arbitrator.role}
+                                        </span>
+                                        <Button
+                                            variant="unstyled"
+                                            size="none"
+                                            type="button"
+                                            onClick={() => openTransferModal('arbitrator', arbitrator)}
+                                            className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                                            aria-label={`Alihkan penugasan ${arbitrator.name}`}
+                                            title="Alihkan Penugasan (Wasit & Juri / Koordinator Lapangan)"
+                                        >
+                                            <i className="fa-solid fa-right-left" />
+                                        </Button>
+                                        <Button
+                                            variant="unstyled"
+                                            size="none"
+                                            type="button"
+                                            onClick={() => openEditArbitratorModal(arbitrator)}
+                                            className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                            aria-label={`Edit ${arbitrator.name}`}
+                                            title="Edit data arbitrase langsung"
+                                        >
+                                            <i className="fa-solid fa-pen-to-square" />
+                                        </Button>
+                                        <Button
+                                            variant="unstyled"
+                                            size="none"
+                                            type="button"
+                                            onClick={() => removeEventArbitrator(arbitrator)}
+                                            className="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                            aria-label={`Hapus ${arbitrator.name} dari event`}
+                                            title="Hapus arbitrase dari event"
+                                        >
+                                            <i className="fa-solid fa-trash" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })()}
             </div>
 
-            {/* ════ QUICK NAVIGATION FOOTER ════ */}
+            {/* ══════════════════════════════════════════════════════════════════
+                MODUL PELAKSANAAN ARBITRASE (QUICK ACTION CARDS)
+            ══════════════════════════════════════════════════════════════════ */}
             <div>
                 <div className="mb-3">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -517,6 +375,121 @@ export default function ArbitrationTab({
                         </a>
                     ))}
                 </div>
+            </div>
+
+            {/* ══════════════════════════════════════════════════════════════════
+                ROSTER KORPS LENGKAP & STATUS PRESENSI (DIAGNOSTIK / COLLAPSIBLE)
+            ══════════════════════════════════════════════════════════════════ */}
+            <div className="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setShowAllPersonnel(!showAllPersonnel)}
+                    className="w-full flex items-center justify-between p-5 text-left transition hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40"
+                >
+                    <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                            <i className="fa-solid fa-users-gear text-sm" />
+                        </span>
+                        <div>
+                            <h4 className="text-sm font-bold text-zinc-900 dark:text-white">
+                                Rekapitulasi Roster Gabungan & Presensi Petugas ({countTotal} Personil)
+                            </h4>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                Tinjau presensi dan status hadir dewan arbitrase, wasit, dan panitera untuk event ini.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            <i className="fa-solid fa-circle-check" /> {countPresent} Hadir
+                        </span>
+                        <i className={`fa-solid fa-chevron-down text-xs text-zinc-400 transition-transform duration-200 ${showAllPersonnel ? 'rotate-180' : ''}`} />
+                    </div>
+                </button>
+
+                {showAllPersonnel && (
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+                        {/* Search and filters for roster */}
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                {[
+                                    { id: 'all', label: 'Semua', count: countTotal },
+                                    { id: 'arbitrase_role', label: 'Dewan Arbitrase', count: arbitrationRoleUsers.length || eventArbitrators.length },
+                                    { id: 'wasit', label: 'Wasit & Juri', count: eventReferees.length },
+                                ].map((btn) => (
+                                    <button
+                                        key={btn.id}
+                                        type="button"
+                                        onClick={() => setSelectedCategory(btn.id)}
+                                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                                            selectedCategory === btn.id
+                                                ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300'
+                                        }`}
+                                    >
+                                        {btn.label} ({btn.count})
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="relative w-full md:w-72">
+                                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-400">
+                                    <i className="fa-solid fa-magnifying-glass text-xs" />
+                                </span>
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Cari di roster..."
+                                    className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-zinc-300 bg-zinc-50/50 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-100"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Roster table */}
+                        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="border-b border-zinc-200 bg-zinc-50 text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
+                                        <th className="py-2.5 px-4 w-12 text-center">No</th>
+                                        <th className="py-2.5 px-4">Nama Petugas</th>
+                                        <th className="py-2.5 px-4">Peran / Jabatan</th>
+                                        <th className="py-2.5 px-4 text-center">Dan</th>
+                                        <th className="py-2.5 px-4">Daerah</th>
+                                        <th className="py-2.5 px-4 text-center">Status Presensi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
+                                    {filteredPersonnel.map((person, idx) => (
+                                        <tr key={person.id || idx} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
+                                            <td className="py-2.5 px-4 text-center font-mono text-zinc-400">{idx + 1}</td>
+                                            <td className="py-2.5 px-4 font-bold text-zinc-900 dark:text-zinc-100">
+                                                {person.name}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-zinc-600 dark:text-zinc-400">{person.role_title}</td>
+                                            <td className="py-2.5 px-4 text-center font-semibold text-zinc-800 dark:text-zinc-200">
+                                                {person.dan_grade || '—'}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-zinc-600 dark:text-zinc-400">{person.region || '—'}</td>
+                                            <td className="py-2.5 px-4 text-center">
+                                                <span
+                                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                        person.is_present
+                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                    }`}
+                                                >
+                                                    <i className={`fa-solid ${person.is_present ? 'fa-circle-check' : 'fa-clock'}`} />
+                                                    {person.attendance_status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

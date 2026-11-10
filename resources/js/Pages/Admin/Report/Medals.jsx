@@ -160,7 +160,7 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                             <tbody className="divide-y divide-[#ede9e1] text-xs text-[#0f0d0b] dark:divide-slate-700 dark:text-slate-200">
                                 {standings && standings.length > 0 ? (
                                     standings.map((con, index) => {
-                                        const rank = index + 1;
+                                        const rank = con.rank ?? (index + 1);
                                         const isTop3 = rank <= 3;
                                         const totalMedals = con.gold_count + con.silver_count + con.bronze_count;
                                         const points = con.total_points ?? ((con.gold_count * goldWeight) + (con.silver_count * silverWeight) + (con.bronze_count * bronzeWeight));

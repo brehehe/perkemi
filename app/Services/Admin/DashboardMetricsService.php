@@ -368,14 +368,31 @@ class DashboardMetricsService
             $silverData = $contingents->pluck('silver_count')->map(fn ($v) => (int) $v)->toArray();
             $bronzeData = $contingents->pluck('bronze_count')->map(fn ($v) => (int) $v)->toArray();
 
-            $contingentsList = $contingents->map(function ($con) use ($goldMultiplier, $silverMultiplier, $bronzeMultiplier) {
+            $currentRank = 1;
+            $previousCon = null;
+            $contingentsList = [];
+
+            foreach ($contingents as $index => $con) {
                 $gold = (int) $con->gold_count;
                 $silver = (int) $con->silver_count;
                 $bronze = (int) $con->bronze_count;
                 $totalPoints = ($gold * $goldMultiplier) + ($silver * $silverMultiplier) + ($bronze * $bronzeMultiplier);
 
-                return [
+                if ($previousCon !== null) {
+                    $isEqual = $isPointsSystem
+                        ? ($totalPoints === $previousCon['total_points'] && $gold === $previousCon['gold_count'] && $silver === $previousCon['silver_count'] && $bronze === $previousCon['bronze_count'])
+                        : ($gold === $previousCon['gold_count'] && $silver === $previousCon['silver_count'] && $bronze === $previousCon['bronze_count'] && $totalPoints === $previousCon['total_points']);
+
+                    if (! $isEqual) {
+                        $currentRank = $index + 1;
+                    }
+                } else {
+                    $currentRank = 1;
+                }
+
+                $conData = [
                     'id' => $con->id,
+                    'rank' => $currentRank,
                     'name' => $con->name,
                     'gold_count' => $gold,
                     'silver_count' => $silver,
@@ -383,7 +400,10 @@ class DashboardMetricsService
                     'total_score' => $gold + $silver + $bronze,
                     'total_points' => $totalPoints,
                 ];
-            })->toArray();
+
+                $previousCon = $conData;
+                $contingentsList[] = $conData;
+            }
 
             return [
                 'labels' => $labels,

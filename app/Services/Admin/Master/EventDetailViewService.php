@@ -3,6 +3,7 @@
 namespace App\Services\Admin\Master;
 
 use App\Enums\EventStatus;
+use App\Models\Arbitrator;
 use App\Models\Clerk;
 use App\Models\EmbuJudgeScore;
 use App\Models\Event;
@@ -73,6 +74,7 @@ class EventDetailViewService
             'referees',
             'clerks',
             'fieldCoordinators',
+            'arbitrators',
             'users:id,name,email',
         ]);
 
@@ -165,17 +167,42 @@ class EventDetailViewService
                 ->where('is_active', true)
                 ->orWhereIn('id', $selectedCoordinatorIds))
             ->orderBy('name')
-            ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email', 'is_active']);
+            ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email', 'is_active', 'gender', 'dan_grade', 'certification_level']);
 
         $eventFieldCoordinators = $event->fieldCoordinators->map(fn (FieldCoordinator $coordinator) => [
             'id' => $coordinator->id,
             'name' => $coordinator->name,
+            'gender' => $coordinator->gender ?? 'male',
+            'dan_grade' => $coordinator->dan_grade,
+            'certification_level' => $coordinator->certification_level,
             'coordinator_number' => $coordinator->coordinator_number,
             'region' => $coordinator->region,
             'phone' => $coordinator->phone,
             'email' => $coordinator->email,
             'notes' => $coordinator->notes,
             'assignment_area' => $coordinator->pivot->assignment_area,
+        ]);
+
+        $selectedArbitratorIds = $event->arbitrators->modelKeys();
+        $arbitrators = Arbitrator::query()
+            ->where(fn ($query) => $query
+                ->where('is_active', true)
+                ->orWhereIn('id', $selectedArbitratorIds))
+            ->orderBy('name')
+            ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active']);
+
+        $eventArbitrators = $event->arbitrators->map(fn (Arbitrator $arbitrator) => [
+            'id' => $arbitrator->id,
+            'name' => $arbitrator->name,
+            'gender' => $arbitrator->gender ?? 'male',
+            'dan_grade' => $arbitrator->dan_grade,
+            'license_number' => $arbitrator->license_number,
+            'certification_level' => $arbitrator->certification_level,
+            'region' => $arbitrator->region,
+            'phone' => $arbitrator->phone,
+            'email' => $arbitrator->email,
+            'notes' => $arbitrator->notes,
+            'role' => $arbitrator->pivot->role,
         ]);
 
         $users = User::query()->with('roles:id,name')->orderBy('name')->get(['id', 'name', 'email']);
@@ -318,6 +345,8 @@ class EventDetailViewService
             'eventClerks' => $eventClerks,
             'fieldCoordinators' => $fieldCoordinators,
             'eventFieldCoordinators' => $eventFieldCoordinators,
+            'arbitrators' => $arbitrators,
+            'eventArbitrators' => $eventArbitrators,
             'users' => $users->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'roles' => $user->roles->pluck('name')->values()]),
             'eventUsers' => $eventUsers,
             'tenantBaseDomain' => config('app.tenant_base_domain'),
@@ -413,7 +442,8 @@ class EventDetailViewService
                 'referees' => $eventReferees->count(),
                 'clerks' => $eventClerks->count(),
                 'field_coordinators' => $eventFieldCoordinators->count(),
-                'arbitration' => $eventReferees->count(),
+                'arbitrators' => $eventArbitrators->count(),
+                'arbitration' => $eventArbitrators->count(),
                 'techniques' => DB::table('embu_team_techniques')->where('event_id', $event->id)->distinct('technique_id')->count('technique_id'),
                 'referee_check_in_codes' => DB::table('referee_check_in_codes')->where('event_id', $event->id)->count(),
                 'users' => $event->users()->count(),
@@ -448,7 +478,7 @@ class EventDetailViewService
      */
     public function buildArbitrationPersonnel(Event $event): array
     {
-        $event->loadMissing(['referees', 'clerks', 'fieldCoordinators']);
+        $event->loadMissing(['referees', 'clerks', 'fieldCoordinators', 'arbitrators']);
 
         $presentRefereeIds = RefereeAttendance::whereBelongsTo($event)
             ->where('is_present', true)
@@ -457,26 +487,57 @@ class EventDetailViewService
             ->flip();
 
         $personnel = [];
+        $addedUserEmails = [];
 
-        // 1. Petugas yang memiliki ROLE ARBITRASE yang dipilih untuk event ini
+        // 1. Personil Dewan Arbitrase Terdaftar Event Ini
+        foreach ($event->arbitrators as $arb) {
+            if ($arb->email) {
+                $addedUserEmails[strtolower($arb->email)] = true;
+            }
+            $personnel[] = [
+                'id' => 'arb-'.$arb->id,
+                'user_id' => $arb->user_id,
+                'name' => $arb->name,
+                'gender' => $arb->gender ?? 'male',
+                'category' => 'arbitrase_role',
+                'category_label' => 'Dewan Arbitrase Resmi',
+                'role_title' => $arb->pivot->role ?: 'Arbitrase Pertandingan',
+                'dan_grade' => $arb->dan_grade ?: '-',
+                'certification_level' => $arb->certification_level ?: 'Dewan Arbitrase Resmi',
+                'license_number' => $arb->license_number ?: '-',
+                'region' => $arb->region ?: '-',
+                'phone' => $arb->phone ?: '-',
+                'email' => $arb->email ?: '-',
+                'is_present' => true,
+                'attendance_status' => 'Bertugas',
+                'avatar_letter' => strtoupper(substr($arb->name, 0, 1)),
+                'is_role_arbitrase' => true,
+            ];
+        }
+
+        // Petugas yang memiliki ROLE ARBITRASE di event_user (jika belum tercatat di arbitrators)
         $arbitrationUsers = $event->users()
             ->whereHas('roles', fn ($q) => $q->where('name', 'Arbitrase'))
             ->with('roles:id,name')
             ->get();
 
         foreach ($arbitrationUsers as $user) {
+            if (isset($addedUserEmails[strtolower($user->email)])) {
+                continue;
+            }
             $personnel[] = [
                 'id' => 'arb-user-'.$user->id,
                 'user_id' => $user->id,
                 'name' => $user->name,
+                'gender' => 'male',
                 'category' => 'arbitrase_role',
                 'category_label' => 'Dewan Arbitrase (Role Arbitrase)',
                 'role_title' => 'Dewan Arbitrase Event',
                 'dan_grade' => '-',
                 'certification_level' => 'Dewan Arbitrase Resmi',
-                'license_number' => 'ARB-'.substr($user->id, 0, 8),
+                'license_number' => $user->nik_perkemi ?: ('ARB-'.substr($user->id, 0, 8)),
                 'region' => 'Pengurus Arbitrase Event',
-                'phone' => '-',
+                'phone' => $user->phone ?: '-',
                 'email' => $user->email,
                 'is_present' => true,
                 'attendance_status' => 'Ditugaskan (Role Arbitrase)',

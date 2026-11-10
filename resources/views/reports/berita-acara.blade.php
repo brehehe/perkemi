@@ -157,12 +157,24 @@
                 <div class="champions-callout">
                     <h4>PENETAPAN PERAIH JUARA UMUM:</h4>
                     <ol>
-                        <li><strong>JUARA UMUM I (Piala Bergilir): {{ $standings[0]['contingent'] }}</strong> — {{ $standings[0]['gold'] }} Emas, {{ $standings[0]['silver'] }} Perak, {{ $standings[0]['bronze'] }} Perunggu (Total Poin: {{ $standings[0]['total_points'] }})</li>
-                        @if(isset($standings[1]))
-                            <li><strong>JUARA UMUM II: {{ $standings[1]['contingent'] }}</strong> — {{ $standings[1]['gold'] }} Emas, {{ $standings[1]['silver'] }} Perak, {{ $standings[1]['bronze'] }} Perunggu (Total Poin: {{ $standings[1]['total_points'] }})</li>
+                        @php
+                            $standingsCol = collect($standings);
+                            $rank1 = $standingsCol->where('rank', 1);
+                            $rank2 = $standingsCol->where('rank', 2);
+                            $rank3 = $standingsCol->where('rank', 3);
+                        @endphp
+                        @if($rank1->count() > 1)
+                            <li><strong>JUARA UMUM I (Juara Bersama): {{ $rank1->pluck('contingent')->implode(' & ') }}</strong> — {{ $rank1->first()['gold'] }} Emas, {{ $rank1->first()['silver'] }} Perak, {{ $rank1->first()['bronze'] }} Perunggu (Total Poin: {{ $rank1->first()['total_points'] }})</li>
+                        @elseif($rank1->isNotEmpty())
+                            <li><strong>JUARA UMUM I (Piala Bergilir): {{ $rank1->first()['contingent'] }}</strong> — {{ $rank1->first()['gold'] }} Emas, {{ $rank1->first()['silver'] }} Perak, {{ $rank1->first()['bronze'] }} Perunggu (Total Poin: {{ $rank1->first()['total_points'] }})</li>
                         @endif
-                        @if(isset($standings[2]))
-                            <li><strong>JUARA UMUM III: {{ $standings[2]['contingent'] }}</strong> — {{ $standings[2]['gold'] }} Emas, {{ $standings[2]['silver'] }} Perak, {{ $standings[2]['bronze'] }} Perunggu (Total Poin: {{ $standings[2]['total_points'] }})</li>
+
+                        @if($rank2->isNotEmpty())
+                            <li><strong>JUARA UMUM II: {{ $rank2->pluck('contingent')->implode(' & ') }}</strong> — {{ $rank2->first()['gold'] }} Emas, {{ $rank2->first()['silver'] }} Perak, {{ $rank2->first()['bronze'] }} Perunggu (Total Poin: {{ $rank2->first()['total_points'] }})</li>
+                        @endif
+
+                        @if($rank3->isNotEmpty())
+                            <li><strong>JUARA UMUM III: {{ $rank3->pluck('contingent')->implode(' & ') }}</strong> — {{ $rank3->first()['gold'] }} Emas, {{ $rank3->first()['silver'] }} Perak, {{ $rank3->first()['bronze'] }} Perunggu (Total Poin: {{ $rank3->first()['total_points'] }})</li>
                         @endif
                     </ol>
                 </div>

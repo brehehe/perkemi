@@ -35,6 +35,8 @@ export default function EventDetail({
     eventClerks = [],
     fieldCoordinators = [],
     eventFieldCoordinators = [],
+    arbitrators = [],
+    eventArbitrators = [],
     users = [],
     eventUsers = [],
     tournamentSummary = {
@@ -206,6 +208,9 @@ export default function EventDetail({
     const [isFieldCoordinatorModalOpen, setIsFieldCoordinatorModalOpen] = useState(false);
     const [editingFieldCoordinator, setEditingFieldCoordinator] = useState(null);
     const [fieldCoordinatorSearch, setFieldCoordinatorSearch] = useState('');
+    const [isArbitratorModalOpen, setIsArbitratorModalOpen] = useState(false);
+    const [editingArbitrator, setEditingArbitrator] = useState(null);
+    const [arbitratorSearch, setArbitratorSearch] = useState('');
 
     // Transfer Modal (Wasit <-> Koordinator Lapangan)
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -377,20 +382,40 @@ export default function EventDetail({
     });
     const clerkAssignmentForm = useForm({ clerk_id: '', role: 'operator' });
     const newClerkForm = useForm({ create_new: true, name: '', employee_number: '', certification: '', region: '', phone: '', email: '', password: '', password_confirmation: '', role: 'operator' });
-    const fieldCoordinatorAssignmentForm = useForm({ field_coordinator_id: '', assignment_area: 'court' });
+    const fieldCoordinatorAssignmentForm = useForm({ field_coordinator_id: '', assignment_area: 'koordinator_pertandingan' });
     const fieldCoordinatorForm = useForm({
         name: '',
+        gender: 'male',
+        dan_grade: '',
+        certification_level: '',
         coordinator_number: '',
         region: '',
         phone: '',
         email: '',
         password: '',
         password_confirmation: '',
-        assignment_area: 'court',
+        assignment_area: 'koordinator_pertandingan',
+    });
+    const arbitratorAssignmentForm = useForm({ arbitrator_id: '', role: 'Arbitrase Pertandingan' });
+    const arbitratorForm = useForm({
+        name: '',
+        gender: 'male',
+        dan_grade: '',
+        certification_level: '',
+        license_number: '',
+        region: '',
+        phone: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        role: 'Arbitrase Pertandingan',
     });
     const transferForm = useForm({
-        role: 'referee',
-        assignment_area: 'court',
+        source_category: 'referee',
+        source_id: '',
+        target_category: 'arbitrator',
+        target_role: 'Arbitrase Pertandingan',
+        gender: 'male',
         dan_grade: '',
         certification_level: '',
         license_number: '',
@@ -574,13 +599,16 @@ export default function EventDetail({
         fieldCoordinatorForm.clearErrors();
         fieldCoordinatorForm.setData({
             name: '',
+            gender: 'male',
+            dan_grade: '',
+            certification_level: '',
             coordinator_number: '',
             region: '',
             phone: '',
             email: '',
             password: '',
             password_confirmation: '',
-            assignment_area: 'court',
+            assignment_area: 'koordinator_pertandingan',
         });
         setIsFieldCoordinatorModalOpen(true);
     };
@@ -590,13 +618,16 @@ export default function EventDetail({
         fieldCoordinatorForm.clearErrors();
         fieldCoordinatorForm.setData({
             name: coordinator.name || '',
+            gender: coordinator.gender || 'male',
+            dan_grade: coordinator.dan_grade || '',
+            certification_level: coordinator.certification_level || '',
             coordinator_number: coordinator.coordinator_number || '',
             region: coordinator.region || '',
             phone: coordinator.phone || '',
             email: coordinator.email || '',
             password: '',
             password_confirmation: '',
-            assignment_area: coordinator.assignment_area || 'court',
+            assignment_area: coordinator.assignment_area || 'koordinator_pertandingan',
         });
         setIsFieldCoordinatorModalOpen(true);
     };
@@ -628,30 +659,108 @@ export default function EventDetail({
         router.delete(`/admin/master/event/${event.id}/field-coordinator/${coordinator.id}`, { preserveScroll: true });
     };
 
-    // Transfer Handlers (Wasit <-> Koordinator Lapangan)
-    const openTransferToCoordinatorModal = (referee) => {
-        setTransferTarget({ type: 'to_coordinator', source: referee });
-        transferForm.clearErrors();
-        transferForm.setData({
-            role: 'referee',
-            assignment_area: 'court',
+    // Arbitrator Handlers
+    const submitArbitratorAssignment = (e) => {
+        e.preventDefault();
+        arbitratorAssignmentForm.post(`/admin/master/event/${event.id}/arbitrator`, {
+            preserveScroll: true,
+            onSuccess: () => arbitratorAssignmentForm.setData({ arbitrator_id: '', role: 'Arbitrase Pertandingan' }),
+        });
+    };
+
+    const openCreateArbitratorModal = () => {
+        setEditingArbitrator(null);
+        arbitratorForm.reset();
+        arbitratorForm.clearErrors();
+        arbitratorForm.setData({
+            name: '',
+            gender: 'male',
             dan_grade: '',
             certification_level: '',
             license_number: '',
-            detach_source: true,
+            region: '',
+            phone: '',
+            email: '',
+            password: '',
+            password_confirmation: '',
+            role: 'Arbitrase Pertandingan',
         });
-        setIsTransferModalOpen(true);
+        setIsArbitratorModalOpen(true);
     };
 
-    const openTransferToRefereeModal = (coordinator) => {
-        setTransferTarget({ type: 'to_referee', source: coordinator });
+    const openEditArbitratorModal = (arbitrator) => {
+        setEditingArbitrator(arbitrator);
+        arbitratorForm.clearErrors();
+        arbitratorForm.setData({
+            name: arbitrator.name || '',
+            gender: arbitrator.gender || 'male',
+            dan_grade: arbitrator.dan_grade || '',
+            certification_level: arbitrator.certification_level || '',
+            license_number: arbitrator.license_number || '',
+            region: arbitrator.region || '',
+            phone: arbitrator.phone || '',
+            email: arbitrator.email || '',
+            password: '',
+            password_confirmation: '',
+            role: arbitrator.role || 'Arbitrase Pertandingan',
+        });
+        setIsArbitratorModalOpen(true);
+    };
+
+    const submitArbitrator = (e) => {
+        e.preventDefault();
+        if (editingArbitrator) {
+            arbitratorForm.put(`/admin/master/event/${event.id}/arbitrator/${editingArbitrator.id}`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsArbitratorModalOpen(false);
+                    setEditingArbitrator(null);
+                    arbitratorForm.reset();
+                },
+            });
+        } else {
+            arbitratorForm.transform((data) => ({ ...data, create_new: true }));
+            arbitratorForm.post(`/admin/master/event/${event.id}/arbitrator`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setIsArbitratorModalOpen(false);
+                    arbitratorForm.reset();
+                },
+            });
+        }
+    };
+
+    const removeEventArbitrator = (arbitrator) => {
+        router.delete(`/admin/master/event/${event.id}/arbitrator/${arbitrator.id}`, { preserveScroll: true });
+    };
+
+    // Universal Transfer Modal (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan)
+    const openTransferModal = (sourceCategory, sourcePerson) => {
+        let defaultTargetCat = 'arbitrator';
+        let defaultTargetRole = 'Arbitrase Pertandingan';
+
+        if (sourceCategory === 'arbitrator') {
+            defaultTargetCat = 'referee';
+            defaultTargetRole = 'wasit_utama';
+        } else if (sourceCategory === 'referee') {
+            defaultTargetCat = 'arbitrator';
+            defaultTargetRole = 'Arbitrase Pertandingan';
+        } else if (sourceCategory === 'coordinator') {
+            defaultTargetCat = 'arbitrator';
+            defaultTargetRole = 'Arbitrase Pertandingan';
+        }
+
+        setTransferTarget({ sourceCategory, source: sourcePerson });
         transferForm.clearErrors();
         transferForm.setData({
-            role: 'referee',
-            assignment_area: 'court',
-            dan_grade: '',
-            certification_level: '',
-            license_number: coordinator.coordinator_number || '',
+            source_category: sourceCategory,
+            source_id: sourcePerson.id,
+            target_category: defaultTargetCat,
+            target_role: defaultTargetRole,
+            gender: sourcePerson.gender || 'male',
+            dan_grade: sourcePerson.dan_grade || '',
+            certification_level: sourcePerson.certification_level || '',
+            license_number: sourcePerson.license_number || sourcePerson.coordinator_number || '',
             detach_source: true,
         });
         setIsTransferModalOpen(true);
@@ -661,25 +770,14 @@ export default function EventDetail({
         e.preventDefault();
         if (!transferTarget) return;
 
-        if (transferTarget.type === 'to_coordinator') {
-            transferForm.post(`/admin/master/event/${event.id}/referee/${transferTarget.source.id}/transfer-to-coordinator`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsTransferModalOpen(false);
-                    setTransferTarget(null);
-                    transferForm.reset();
-                },
-            });
-        } else {
-            transferForm.post(`/admin/master/event/${event.id}/field-coordinator/${transferTarget.source.id}/transfer-to-referee`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsTransferModalOpen(false);
-                    setTransferTarget(null);
-                    transferForm.reset();
-                },
-            });
-        }
+        transferForm.post(`/admin/master/event/${event.id}/transfer-official`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setIsTransferModalOpen(false);
+                setTransferTarget(null);
+                transferForm.reset();
+            },
+        });
     };
 
     // Age Category Handlers
@@ -1071,11 +1169,26 @@ export default function EventDetail({
         sublabel: [referee.dan_grade, referee.certification_level, referee.region].filter(Boolean).join(' · '),
     }));
 
+    const arbitratorOptions = arbitrators.map((arb) => ({
+        value: arb.id,
+        label: arb.name,
+        sublabel: [arb.gender === 'female' ? 'Perempuan' : 'Laki-laki', arb.dan_grade, arb.certification_level, arb.region].filter(Boolean).join(' · '),
+    }));
+
+    const arbitratorRoleOptions = [
+        { value: 'Arbitrase Pertandingan', label: 'Arbitrase Pertandingan' },
+        { value: 'Ketua Dewan Arbitrase', label: 'Ketua Dewan Arbitrase' },
+        { value: 'Anggota Arbitrase', label: 'Anggota Arbitrase' },
+        { value: 'Dewan Hakim Arbitrase', label: 'Dewan Hakim Arbitrase' },
+    ];
+
     const refereeRoleOptions = [
+        { value: 'wasit_utama', label: 'Wasit Utama' },
+        { value: 'wasit', label: 'Wasit' },
         { value: 'chief', label: 'Ketua / Wasit Utama' },
-        { value: 'referee', label: 'Wasit' },
-        { value: 'judge', label: 'Juri' },
-        { value: 'reserve', label: 'Cadangan' },
+        { value: 'referee', label: 'Wasit Juri' },
+        { value: 'judge', label: 'Juri Nilai' },
+        { value: 'reserve', label: 'Wasit Cadangan' },
     ];
 
     const clerkOptions = clerks.map((clerk) => ({ value: clerk.id, label: clerk.name, sublabel: [clerk.certification, clerk.region].filter(Boolean).join(' · ') }));
@@ -1086,8 +1199,21 @@ export default function EventDetail({
         { value: 'announcer', label: 'Pengumum' },
         { value: 'operator', label: 'Operator' },
     ];
-    const fieldCoordinatorOptions = fieldCoordinators.map((coordinator) => ({ value: coordinator.id, label: coordinator.name, sublabel: [coordinator.coordinator_number, coordinator.region].filter(Boolean).join(' · ') }));
-    const fieldCoordinatorAreaOptions = [{ value: 'chief', label: 'Koordinator Utama' }, { value: 'court', label: 'Koordinator Lapangan / Court' }, { value: 'logistics', label: 'Koordinator Logistik' }, { value: 'liaison', label: 'Liaison / Penghubung' }];
+    const fieldCoordinatorOptions = fieldCoordinators.map((coordinator) => ({
+        value: coordinator.id,
+        label: coordinator.name,
+        sublabel: [coordinator.gender === 'female' ? 'Perempuan' : 'Laki-laki', coordinator.dan_grade, coordinator.coordinator_number, coordinator.region].filter(Boolean).join(' · '),
+    }));
+    const fieldCoordinatorAreaOptions = [
+        { value: 'koordinator_pertandingan', label: 'Koordinator Pertandingan' },
+        { value: 'wakil_koordinator_pertandingan', label: 'Wakil Koordinator Pertandingan' },
+        { value: 'koordinator_court', label: 'Koordinator Court' },
+        { value: 'court', label: 'Koordinator Lapangan / Court' },
+        { value: 'chief', label: 'Koordinator Utama' },
+        { value: 'logistics', label: 'Koordinator Logistik' },
+        { value: 'liaison', label: 'Liaison / Penghubung' },
+        { value: 'general', label: 'Koordinator Umum' },
+    ];
     const userOptions = users.map((user) => ({ value: user.id, label: user.name, sublabel: `${user.email}${user.roles?.length ? ` · ${user.roles.join(', ')}` : ''}` }));
     const eventAccessRoleOptions = [
         { value: 'responsible', label: 'Penanggung Jawab Event' },
@@ -1336,7 +1462,7 @@ export default function EventDetail({
                                 id: 'arbitration',
                                 label: 'Arbitrase',
                                 icon: 'fa-gavel',
-                                count: arbitrationSummary.attendance_count ?? counts.referees,
+                                count: eventArbitrators.length || counts.arbitrators || counts.arbitration || 0,
                                 badgeColor: 'bg-amber-100 text-amber-800',
                             },
                             {
@@ -2967,6 +3093,20 @@ export default function EventDetail({
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-2">
                                                         <p className="truncate font-semibold text-[#141210] dark:text-white">{coordinator.name}</p>
+                                                        {coordinator.gender && (
+                                                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                                                coordinator.gender === 'female'
+                                                                    ? 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'
+                                                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                                            }`}>
+                                                                {coordinator.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
+                                                            </span>
+                                                        )}
+                                                        {coordinator.dan_grade && (
+                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
+                                                                {coordinator.dan_grade}
+                                                            </span>
+                                                        )}
                                                         {coordinator.coordinator_number && (
                                                             <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
                                                                 ID: {coordinator.coordinator_number}
@@ -2974,7 +3114,7 @@ export default function EventDetail({
                                                         )}
                                                     </div>
                                                     <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
-                                                        {[coordinator.region, coordinator.phone].filter(Boolean).join(' · ') || 'Profil koordinator'}
+                                                        {[coordinator.certification_level, coordinator.region, coordinator.phone].filter(Boolean).join(' · ') || 'Profil koordinator'}
                                                     </p>
                                                     {(coordinator.email || coordinator.notes) && (
                                                         <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
@@ -2994,10 +3134,10 @@ export default function EventDetail({
                                                     variant="unstyled"
                                                     size="none"
                                                     type="button"
-                                                    onClick={() => openTransferToRefereeModal(coordinator)}
+                                                    onClick={() => openTransferModal('coordinator', coordinator)}
                                                     className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                                    aria-label={`Alihkan ${coordinator.name} ke Wasit & Juri`}
-                                                    title="Alihkan / Pindahkan ke Wasit & Juri"
+                                                    aria-label={`Alihkan penugasan ${coordinator.name}`}
+                                                    title="Alihkan Penugasan (Arbitrase / Wasit & Juri)"
                                                 >
                                                     <i className="fa-solid fa-right-left" />
                                                 </Button>
@@ -3125,6 +3265,15 @@ export default function EventDetail({
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-2">
                                                         <p className="truncate font-semibold text-[#141210] dark:text-white">{referee.name}</p>
+                                                        {referee.gender && (
+                                                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                                                referee.gender === 'female'
+                                                                    ? 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'
+                                                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                                            }`}>
+                                                                {referee.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
+                                                            </span>
+                                                        )}
                                                         {referee.dan_grade && (
                                                             <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
                                                                 {referee.dan_grade}
@@ -3152,10 +3301,10 @@ export default function EventDetail({
                                                     variant="unstyled"
                                                     size="none"
                                                     type="button"
-                                                    onClick={() => openTransferToCoordinatorModal(referee)}
+                                                    onClick={() => openTransferModal('referee', referee)}
                                                     className="rounded-lg p-2 text-lime-600 hover:bg-lime-50 dark:hover:bg-lime-950/30"
-                                                    aria-label={`Alihkan ${referee.name} ke Koordinator Lapangan`}
-                                                    title="Alihkan / Pindahkan ke Koordinator Lapangan"
+                                                    aria-label={`Alihkan penugasan ${referee.name}`}
+                                                    title="Alihkan Penugasan (Arbitrase / Koordinator Lapangan)"
                                                 >
                                                     <i className="fa-solid fa-right-left" />
                                                 </Button>
@@ -3309,10 +3458,22 @@ export default function EventDetail({
                     </div>
                 )}
 
-                {/* ════ TAB: ARBITRASE & REKAPITULASI WASIT ════ */}
+                {/* ════ TAB: ARBITRASE ════ */}
                 {activeTab === 'arbitration' && (
                     <ArbitrationTab
                         event={event}
+                        arbitrators={arbitrators}
+                        eventArbitrators={eventArbitrators}
+                        arbitratorOptions={arbitratorOptions}
+                        arbitratorRoleOptions={arbitratorRoleOptions}
+                        arbitratorAssignmentForm={arbitratorAssignmentForm}
+                        submitArbitratorAssignment={submitArbitratorAssignment}
+                        openCreateArbitratorModal={openCreateArbitratorModal}
+                        openEditArbitratorModal={openEditArbitratorModal}
+                        removeEventArbitrator={removeEventArbitrator}
+                        openTransferModal={openTransferModal}
+                        arbitratorSearch={arbitratorSearch}
+                        setArbitratorSearch={setArbitratorSearch}
                         arbitrationSummary={arbitrationSummary}
                         arbitrationPersonnel={arbitrationPersonnel}
                         arbitrationRoleUsers={arbitrationRoleUsers}
@@ -4244,12 +4405,16 @@ export default function EventDetail({
                     />
 
                     <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label="ID / Lisensi Koordinator"
-                            value={fieldCoordinatorForm.data.coordinator_number}
-                            onChange={(e) => fieldCoordinatorForm.setData('coordinator_number', e.target.value)}
-                            error={fieldCoordinatorForm.errors.coordinator_number}
-                            placeholder="Contoh: KORD-001"
+                        <Combobox
+                            label="Jenis Kelamin"
+                            value={fieldCoordinatorForm.data.gender}
+                            onChange={(val) => fieldCoordinatorForm.setData('gender', val)}
+                            options={[
+                                { value: 'male', label: 'Laki-laki' },
+                                { value: 'female', label: 'Perempuan' },
+                            ]}
+                            clearable={false}
+                            error={fieldCoordinatorForm.errors.gender}
                         />
                         <Combobox
                             label="Area Penugasan di Event"
@@ -4263,20 +4428,45 @@ export default function EventDetail({
 
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Input
+                            label="Tingkatan Dan"
+                            value={fieldCoordinatorForm.data.dan_grade}
+                            onChange={(e) => fieldCoordinatorForm.setData('dan_grade', e.target.value)}
+                            error={fieldCoordinatorForm.errors.dan_grade}
+                            placeholder="Contoh: V DAN"
+                        />
+                        <Input
+                            label="Tingkat Sertifikasi"
+                            value={fieldCoordinatorForm.data.certification_level}
+                            onChange={(e) => fieldCoordinatorForm.setData('certification_level', e.target.value)}
+                            error={fieldCoordinatorForm.errors.certification_level}
+                            placeholder="Contoh: Wasit Nasional / Pengawas"
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="ID / Lisensi Koordinator"
+                            value={fieldCoordinatorForm.data.coordinator_number}
+                            onChange={(e) => fieldCoordinatorForm.setData('coordinator_number', e.target.value)}
+                            error={fieldCoordinatorForm.errors.coordinator_number}
+                            placeholder="Contoh: KORD-001"
+                        />
+                        <Input
                             label="Wilayah / Pengda"
                             value={fieldCoordinatorForm.data.region}
                             onChange={(e) => fieldCoordinatorForm.setData('region', e.target.value)}
                             error={fieldCoordinatorForm.errors.region}
                             placeholder="Contoh: Jawa Timur"
                         />
-                        <Input
-                            label="Nomor Telepon"
-                            value={fieldCoordinatorForm.data.phone}
-                            onChange={(e) => fieldCoordinatorForm.setData('phone', e.target.value)}
-                            error={fieldCoordinatorForm.errors.phone}
-                            placeholder="08xxxxxxxxxx"
-                        />
                     </div>
+
+                    <Input
+                        label="Nomor Telepon"
+                        value={fieldCoordinatorForm.data.phone}
+                        onChange={(e) => fieldCoordinatorForm.setData('phone', e.target.value)}
+                        error={fieldCoordinatorForm.errors.phone}
+                        placeholder="08xxxxxxxxxx"
+                    />
 
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
                         <strong>Akun login {editingFieldCoordinator ? '(Opsional)' : 'opsional'}.</strong>{' '}
@@ -4315,18 +4505,150 @@ export default function EventDetail({
                 </form>
             </Modal>
 
-            {/* Modal Transfer Penugasan (Wasit <-> Koordinator Lapangan) */}
+            {/* Modal Tambah / Edit Arbitrase */}
+            <Modal
+                isOpen={isArbitratorModalOpen}
+                onClose={() => {
+                    setIsArbitratorModalOpen(false);
+                    setEditingArbitrator(null);
+                }}
+                title={editingArbitrator ? 'Edit Data Arbitrase & Penugasan' : 'Tambah Personil Arbitrase Baru ke Event'}
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setIsArbitratorModalOpen(false);
+                                setEditingArbitrator(null);
+                            }}
+                        >
+                            Batal
+                        </Button>
+                        <Button onClick={submitArbitrator} loading={arbitratorForm.processing}>
+                            {editingArbitrator ? 'Simpan Perubahan' : 'Simpan & Tugaskan'}
+                        </Button>
+                    </>
+                }
+            >
+                <form onSubmit={submitArbitrator} className="space-y-4">
+                    <Input
+                        label="Nama Personil Arbitrase"
+                        required
+                        value={arbitratorForm.data.name}
+                        onChange={(e) => arbitratorForm.setData('name', e.target.value)}
+                        error={arbitratorForm.errors.name}
+                        placeholder="Contoh: Sensei M. Djamhuri Djauhari"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Combobox
+                            label="Jenis Kelamin"
+                            value={arbitratorForm.data.gender}
+                            onChange={(val) => arbitratorForm.setData('gender', val)}
+                            options={[
+                                { value: 'male', label: 'Laki-laki' },
+                                { value: 'female', label: 'Perempuan' },
+                            ]}
+                            clearable={false}
+                            error={arbitratorForm.errors.gender}
+                        />
+                        <Combobox
+                            label="Peran / Jabatan di Event"
+                            value={arbitratorForm.data.role}
+                            onChange={(value) => arbitratorForm.setData('role', value)}
+                            options={arbitratorRoleOptions}
+                            clearable={false}
+                            error={arbitratorForm.errors.role}
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Tingkatan Dan"
+                            value={arbitratorForm.data.dan_grade}
+                            onChange={(e) => arbitratorForm.setData('dan_grade', e.target.value)}
+                            error={arbitratorForm.errors.dan_grade}
+                            placeholder="Contoh: V DAN"
+                        />
+                        <Input
+                            label="Tingkat Sertifikasi"
+                            value={arbitratorForm.data.certification_level}
+                            onChange={(e) => arbitratorForm.setData('certification_level', e.target.value)}
+                            error={arbitratorForm.errors.certification_level}
+                            placeholder="Contoh: Wasit Nasional / Dewan Arbitrase"
+                        />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label="Nomor Lisensi / NIK PERKEMI"
+                            value={arbitratorForm.data.license_number}
+                            onChange={(e) => arbitratorForm.setData('license_number', e.target.value)}
+                            error={arbitratorForm.errors.license_number}
+                            placeholder="Contoh: 69.1.13.03.99.001"
+                        />
+                        <Input
+                            label="Wilayah / Pengda / Kota"
+                            value={arbitratorForm.data.region}
+                            onChange={(e) => arbitratorForm.setData('region', e.target.value)}
+                            error={arbitratorForm.errors.region}
+                            placeholder="Contoh: Kabupaten Malang"
+                        />
+                    </div>
+
+                    <Input
+                        label="Nomor Telepon"
+                        value={arbitratorForm.data.phone}
+                        onChange={(e) => arbitratorForm.setData('phone', e.target.value)}
+                        error={arbitratorForm.errors.phone}
+                        placeholder="08xxxxxxxxxx"
+                    />
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                        <strong>Akun login {editingArbitrator ? '(Opsional)' : 'opsional'}.</strong>{' '}
+                        {editingArbitrator
+                            ? 'Isi email untuk sinkronisasi akun login. Kosongkan kolom password jika tidak ingin mengubah password saat ini.'
+                            : 'Isi email dan password agar Personil Arbitrase dapat login ke event ini.'}
+                    </div>
+
+                    <Input
+                        label="Email Login"
+                        type="email"
+                        value={arbitratorForm.data.email}
+                        onChange={(e) => arbitratorForm.setData('email', e.target.value)}
+                        error={arbitratorForm.errors.email}
+                        autoComplete="username"
+                        placeholder="arbitrase@perkemi.id"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Input
+                            label={editingArbitrator ? 'Password Baru (Kosongkan jika tetap)' : 'Password'}
+                            type="password"
+                            value={arbitratorForm.data.password}
+                            onChange={(e) => arbitratorForm.setData('password', e.target.value)}
+                            error={arbitratorForm.errors.password}
+                            autoComplete="new-password"
+                        />
+                        <Input
+                            label="Konfirmasi Password"
+                            type="password"
+                            value={arbitratorForm.data.password_confirmation}
+                            onChange={(e) => arbitratorForm.setData('password_confirmation', e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal Transfer Penugasan Universal (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan) */}
             <Modal
                 isOpen={isTransferModalOpen}
                 onClose={() => {
                     setIsTransferModalOpen(false);
                     setTransferTarget(null);
                 }}
-                title={
-                    transferTarget?.type === 'to_coordinator'
-                        ? 'Alihkan Penugasan: Wasit ke Koordinator Lapangan'
-                        : 'Alihkan Penugasan: Koordinator Lapangan ke Wasit & Juri'
-                }
+                title="Alihkan Penugasan Personil Event"
                 footer={
                     <>
                         <Button
@@ -4352,68 +4674,144 @@ export default function EventDetail({
                                 <i className="fa-solid fa-circle-info text-blue-600 dark:text-blue-400" />
                                 <span>Personil yang dialihkan:</span>
                             </div>
-                            <p className="mt-1 font-bold text-sm text-[#0f0d0b] dark:text-white">
-                                {transferTarget.source.name}
-                            </p>
+                            <div className="mt-1 flex items-center gap-2">
+                                <p className="font-bold text-sm text-[#0f0d0b] dark:text-white">
+                                    {transferTarget.source.name}
+                                </p>
+                                {transferTarget.source.gender && (
+                                    <span className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
+                                        transferTarget.source.gender === 'female'
+                                            ? 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200'
+                                            : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                    }`}>
+                                        {transferTarget.source.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
+                                    </span>
+                                )}
+                            </div>
                             <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
-                                {transferTarget.type === 'to_coordinator'
-                                    ? `Saat ini bertugas sebagai: Wasit (${refereeRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role})`
-                                    : `Saat ini bertugas sebagai: Koordinator Lapangan (${fieldCoordinatorAreaOptions.find(o => o.value === transferTarget.source.assignment_area)?.label || transferTarget.source.assignment_area})`}
+                                Saat ini bertugas di:{' '}
+                                <strong className="text-zinc-800 dark:text-zinc-200">
+                                    {transferTarget.sourceCategory === 'arbitrator'
+                                        ? `Arbitrase (${arbitratorRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role || 'Arbitrase'})`
+                                        : transferTarget.sourceCategory === 'referee'
+                                        ? `Wasit & Juri (${refereeRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role || 'Wasit'})`
+                                        : `Koordinator Lapangan (${fieldCoordinatorAreaOptions.find(o => o.value === transferTarget.source.assignment_area)?.label || transferTarget.source.assignment_area || 'Koordinator'})`}
+                                </strong>
                             </p>
                         </div>
 
-                        {transferTarget.type === 'to_coordinator' ? (
-                            <div>
-                                <Combobox
-                                    label="Target Area Penugasan Koordinator"
-                                    value={transferForm.data.assignment_area}
-                                    onChange={(value) => transferForm.setData('assignment_area', value)}
-                                    options={fieldCoordinatorAreaOptions}
-                                    clearable={false}
-                                    error={transferForm.errors.assignment_area}
-                                />
-                                <p className="mt-1.5 text-xs text-[#706860] dark:text-slate-400">
-                                    Pilih fungsi dan tanggung jawab koordinator di event ini. Role akun login juga akan disesuaikan otomatis menjadi Koordinator Lapangan.
-                                </p>
+                        <div>
+                            <label className="mb-1.5 block text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                Pilih Kategori Penugasan Baru:
+                            </label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { id: 'arbitrator', label: 'Arbitrase', icon: 'fa-gavel' },
+                                    { id: 'referee', label: 'Wasit & Juri', icon: 'fa-scale-balanced' },
+                                    { id: 'coordinator', label: 'Koordinator', icon: 'fa-people-group' },
+                                ].map((cat) => {
+                                    const isCurrent = transferTarget.sourceCategory === cat.id;
+                                    const isSelected = transferForm.data.target_category === cat.id;
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            disabled={isCurrent}
+                                            onClick={() => {
+                                                let newRole = 'wasit_utama';
+                                                if (cat.id === 'arbitrator') newRole = 'Arbitrase Pertandingan';
+                                                else if (cat.id === 'coordinator') newRole = 'koordinator_pertandingan';
+                                                transferForm.setData({
+                                                    ...transferForm.data,
+                                                    target_category: cat.id,
+                                                    target_role: newRole,
+                                                });
+                                            }}
+                                            className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                                isCurrent
+                                                    ? 'opacity-40 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700'
+                                                    : isSelected
+                                                    ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-sm ring-2 ring-amber-400/40 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-200'
+                                                    : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'
+                                            }`}
+                                        >
+                                            <i className={`fa-solid ${cat.icon} text-lg mb-1`} />
+                                            <span>{cat.label}</span>
+                                            {isCurrent && <span className="text-[9px] font-normal mt-0.5">(Saat ini)</span>}
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <Combobox
-                                    label="Target Peran Wasit / Juri"
-                                    value={transferForm.data.role}
-                                    onChange={(value) => transferForm.setData('role', value)}
-                                    options={refereeRoleOptions}
-                                    clearable={false}
-                                    error={transferForm.errors.role}
-                                />
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <Input
-                                        label="Tingkatan Dan (Opsional)"
-                                        value={transferForm.data.dan_grade}
-                                        onChange={(e) => transferForm.setData('dan_grade', e.target.value)}
-                                        error={transferForm.errors.dan_grade}
-                                        placeholder="Contoh: III DAN"
-                                    />
-                                    <Input
-                                        label="Tingkat Sertifikasi (Opsional)"
-                                        value={transferForm.data.certification_level}
-                                        onChange={(e) => transferForm.setData('certification_level', e.target.value)}
-                                        error={transferForm.errors.certification_level}
-                                        placeholder="Contoh: Wasit Nasional"
-                                    />
-                                </div>
-                                <Input
-                                    label="Nomor Lisensi (Opsional)"
-                                    value={transferForm.data.license_number}
-                                    onChange={(e) => transferForm.setData('license_number', e.target.value)}
-                                    error={transferForm.errors.license_number}
-                                    placeholder="Contoh: 69.1.13.03.99.001"
-                                />
-                                <p className="text-xs text-[#706860] dark:text-slate-400">
-                                    Role akun login personil akan disesuaikan otomatis menjadi Wasit dengan hak akses penjurian.
-                                </p>
-                            </div>
+                        </div>
+
+                        {transferForm.data.target_category === 'arbitrator' && (
+                            <Combobox
+                                label="Peran / Jabatan di Arbitrase"
+                                value={transferForm.data.target_role}
+                                onChange={(val) => transferForm.setData('target_role', val)}
+                                options={arbitratorRoleOptions}
+                                clearable={false}
+                                error={transferForm.errors.target_role}
+                            />
                         )}
+                        {transferForm.data.target_category === 'referee' && (
+                            <Combobox
+                                label="Peran / Jabatan di Wasit & Juri"
+                                value={transferForm.data.target_role}
+                                onChange={(val) => transferForm.setData('target_role', val)}
+                                options={refereeRoleOptions}
+                                clearable={false}
+                                error={transferForm.errors.target_role}
+                            />
+                        )}
+                        {transferForm.data.target_category === 'coordinator' && (
+                            <Combobox
+                                label="Area Penugasan Koordinator"
+                                value={transferForm.data.target_role}
+                                onChange={(val) => transferForm.setData('target_role', val)}
+                                options={fieldCoordinatorAreaOptions}
+                                clearable={false}
+                                error={transferForm.errors.target_role}
+                            />
+                        )}
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <Combobox
+                                label="Jenis Kelamin"
+                                value={transferForm.data.gender}
+                                onChange={(val) => transferForm.setData('gender', val)}
+                                options={[
+                                    { value: 'male', label: 'Laki-laki' },
+                                    { value: 'female', label: 'Perempuan' },
+                                ]}
+                                clearable={false}
+                                error={transferForm.errors.gender}
+                            />
+                            <Input
+                                label="Tingkatan Dan"
+                                value={transferForm.data.dan_grade}
+                                onChange={(e) => transferForm.setData('dan_grade', e.target.value)}
+                                error={transferForm.errors.dan_grade}
+                                placeholder="Contoh: V DAN"
+                            />
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <Input
+                                label="Tingkat Sertifikasi"
+                                value={transferForm.data.certification_level}
+                                onChange={(e) => transferForm.setData('certification_level', e.target.value)}
+                                error={transferForm.errors.certification_level}
+                                placeholder="Contoh: Wasit Nasional"
+                            />
+                            <Input
+                                label="Nomor Lisensi / ID / NIK"
+                                value={transferForm.data.license_number}
+                                onChange={(e) => transferForm.setData('license_number', e.target.value)}
+                                error={transferForm.errors.license_number}
+                                placeholder="Contoh: 69.1.13.03.99.001"
+                            />
+                        </div>
 
                         <div className="rounded-xl border border-[#ede9e1] bg-[#fbfaf8] p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
                             <label className="flex items-start gap-3 cursor-pointer">
@@ -4428,7 +4826,7 @@ export default function EventDetail({
                                         Lepaskan dari penugasan sebelumnya di event ini
                                     </span>
                                     <p className="mt-0.5 text-[#706860] dark:text-slate-400">
-                                        Jika dicentang, personil akan dipindahkan secara penuh (dihapus dari daftar {transferTarget.type === 'to_coordinator' ? 'wasit' : 'koordinator'} dan penugasan court sebelumnya akan dibersihkan). Jika tidak dicentang, personil dapat bertugas ganda.
+                                        Jika dicentang, personil akan dipindahkan secara penuh (dihapus dari penugasan sebelumnya dan penugasan court sebelumnya akan dibersihkan). Role akun login juga otomatis disesuaikan.
                                     </p>
                                 </div>
                             </label>

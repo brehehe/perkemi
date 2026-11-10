@@ -106,22 +106,60 @@ class EventDataSyncService
 
         // Pivot tables & referenced staff records
         $eventRefereePivots = DB::table('event_referee')->where('event_id', $eventId)->get();
-        $refereeIds = $eventRefereePivots->pluck('referee_id')->all();
+        $courtRefereeIds = $courtAssignments->where('staff_type', 'referee')->pluck('staff_id')->all();
+
+        $refereeIds = array_values(array_filter(array_unique(array_merge(
+            $eventRefereePivots->pluck('referee_id')->all(),
+            $refereeAttendances->pluck('referee_id')->filter()->all(),
+            $refereeCourtAttendances->pluck('referee_id')->filter()->all(),
+            $assignmentHistories->pluck('referee_id')->filter()->all(),
+            $embuJudgeScores->pluck('referee_id')->filter()->all(),
+            $courtRefereeIds
+        ))));
+
         $referees = empty($refereeIds)
             ? collect()
             : DB::table('referees')->whereIn('id', $refereeIds)->get();
 
+        // If any referee is in histories/attendances but deleted from referees table, synthesize placeholder
+        $foundRefIds = $referees->pluck('id')->all();
+        $missingRefIds = array_diff($refereeIds, $foundRefIds);
+        foreach ($missingRefIds as $missingRefId) {
+            $referees->push((object) [
+                'id' => $missingRefId,
+                'name' => 'Wasit/Juri #'.substr($missingRefId, 0, 8),
+                'gender' => 'male',
+                'is_active' => true,
+                'created_at' => now()->toDateTimeString(),
+                'updated_at' => now()->toDateTimeString(),
+            ]);
+        }
+
         $clerkPivots = DB::table('clerk_event')->where('event_id', $eventId)->get();
-        $clerkIds = $clerkPivots->pluck('clerk_id')->all();
+        $courtClerkIds = $courtAssignments->where('staff_type', 'clerk')->pluck('staff_id')->all();
+        $clerkIds = array_values(array_filter(array_unique(array_merge(
+            $clerkPivots->pluck('clerk_id')->all(),
+            $courtClerkIds
+        ))));
         $clerks = empty($clerkIds)
             ? collect()
             : DB::table('clerks')->whereIn('id', $clerkIds)->get();
 
         $coordPivots = DB::table('event_field_coordinator')->where('event_id', $eventId)->get();
-        $coordIds = $coordPivots->pluck('field_coordinator_id')->all();
+        $courtCoordIds = $courtAssignments->where('staff_type', 'field_coordinator')->pluck('staff_id')->all();
+        $coordIds = array_values(array_filter(array_unique(array_merge(
+            $coordPivots->pluck('field_coordinator_id')->all(),
+            $courtCoordIds
+        ))));
         $coordinators = empty($coordIds)
             ? collect()
             : DB::table('field_coordinators')->whereIn('id', $coordIds)->get();
+
+        $arbitratorPivots = DB::table('event_arbitrator')->where('event_id', $eventId)->get();
+        $arbitratorIds = $arbitratorPivots->pluck('arbitrator_id')->all();
+        $arbitrators = empty($arbitratorIds)
+            ? collect()
+            : DB::table('arbitrators')->whereIn('id', $arbitratorIds)->get();
 
         $paymentPivots = DB::table('event_payment_method')->where('event_id', $eventId)->get();
         $paymentMethodIds = array_values(array_unique(array_filter(array_merge(
@@ -208,6 +246,8 @@ class EventDataSyncService
             'clerk_event' => $clerkPivots->map(fn ($r) => (array) $r)->all(),
             'field_coordinators' => $coordinators->map(fn ($r) => (array) $r)->all(),
             'event_field_coordinator' => $coordPivots->map(fn ($r) => (array) $r)->all(),
+            'arbitrators' => $arbitrators->map(fn ($r) => (array) $r)->all(),
+            'event_arbitrator' => $arbitratorPivots->map(fn ($r) => (array) $r)->all(),
             'payment_methods' => $paymentMethods->map(fn ($r) => (array) $r)->all(),
             'event_payment_method' => $paymentPivots->map(fn ($r) => (array) $r)->all(),
             'users' => $exportedUsers,
@@ -445,6 +485,115 @@ class EventDataSyncService
                 }
             }
 
+            // Ensure every referee ID referenced across child tables exists in destination referees table
+            $referencedRefereeIds = collect([
+                collect($data['event_referee'] ?? [])->pluck('referee_id'),
+                collect($data['referee_attendances'] ?? [])->pluck('referee_id'),
+                collect($data['referee_court_attendances'] ?? [])->pluck('referee_id'),
+                collect($data['referee_court_assignment_histories'] ?? [])->pluck('referee_id'),
+                collect($data['embu_judge_scores'] ?? [])->pluck('referee_id'),
+                collect($data['event_court_assignments'] ?? [])->where('staff_type', 'referee')->pluck('staff_id'),
+            ])->flatten()->filter()->unique()->all();
+
+            foreach ($referencedRefereeIds as $rId) {
+                $targetRefereeId = $refereeIdMap[$rId] ?? $rId;
+                if (! DB::table('referees')->where('id', $targetRefereeId)->exists()) {
+                    DB::table('referees')->insert([
+                        'id' => $targetRefereeId,
+                        'name' => 'Wasit/Juri #'.substr($targetRefereeId, 0, 8),
+                        'gender' => 'male',
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $refereeIdMap[$rId] = $targetRefereeId;
+                }
+            }
+
+            // Ensure every clerk ID referenced across child tables exists
+            $referencedClerkIds = collect([
+                collect($data['clerk_event'] ?? [])->pluck('clerk_id'),
+                collect($data['event_court_assignments'] ?? [])->where('staff_type', 'clerk')->pluck('staff_id'),
+            ])->flatten()->filter()->unique()->all();
+
+            foreach ($referencedClerkIds as $cId) {
+                $targetClerkId = $clerkIdMap[$cId] ?? $cId;
+                if (! DB::table('clerks')->where('id', $targetClerkId)->exists()) {
+                    DB::table('clerks')->insert([
+                        'id' => $targetClerkId,
+                        'name' => 'Panitera #'.substr($targetClerkId, 0, 8),
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $clerkIdMap[$cId] = $targetClerkId;
+                }
+            }
+
+            // Ensure every field coordinator ID referenced across child tables exists
+            $referencedCoordIds = collect([
+                collect($data['event_field_coordinator'] ?? [])->pluck('field_coordinator_id'),
+                collect($data['event_court_assignments'] ?? [])->where('staff_type', 'field_coordinator')->pluck('staff_id'),
+            ])->flatten()->filter()->unique()->all();
+
+            foreach ($referencedCoordIds as $coordId) {
+                $targetCoordId = $coordIdMap[$coordId] ?? $coordId;
+                if (! DB::table('field_coordinators')->where('id', $targetCoordId)->exists()) {
+                    DB::table('field_coordinators')->insert([
+                        'id' => $targetCoordId,
+                        'name' => 'Koordinator #'.substr($targetCoordId, 0, 8),
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $coordIdMap[$coordId] = $targetCoordId;
+                }
+            }
+
+            // Sync arbitrators
+            $arbitratorIdMap = [];
+            if (! empty($data['arbitrators'])) {
+                $arbColumns = Schema::getColumnListing('arbitrators');
+                foreach ($data['arbitrators'] as $arb) {
+                    $arbData = collect($arb)->only($arbColumns)->all();
+                    $existing = null;
+                    if (! empty($arb['license_number'])) {
+                        $existing = DB::table('arbitrators')->where('license_number', $arb['license_number'])->first();
+                    }
+                    if (! $existing && ! empty($arb['email'])) {
+                        $existing = DB::table('arbitrators')->whereRaw('LOWER(email) = ?', [mb_strtolower($arb['email'])])->first();
+                    }
+                    if (! $existing) {
+                        $existing = DB::table('arbitrators')->where('id', $arb['id'])->first();
+                    }
+
+                    if ($existing) {
+                        DB::table('arbitrators')->where('id', $existing->id)->update(collect($arbData)->except(['id'])->all());
+                        $arbitratorIdMap[$arb['id']] = $existing->id;
+                    } else {
+                        DB::table('arbitrators')->insert($arbData);
+                        $arbitratorIdMap[$arb['id']] = $arb['id'];
+                    }
+                }
+            }
+
+            // Ensure referenced arbitrators exist
+            $referencedArbitratorIds = collect($data['event_arbitrator'] ?? [])->pluck('arbitrator_id')->filter()->unique()->all();
+            foreach ($referencedArbitratorIds as $arbId) {
+                $targetArbId = $arbitratorIdMap[$arbId] ?? $arbId;
+                if (! DB::table('arbitrators')->where('id', $targetArbId)->exists()) {
+                    DB::table('arbitrators')->insert([
+                        'id' => $targetArbId,
+                        'name' => 'Arbitrase #'.substr($targetArbId, 0, 8),
+                        'gender' => 'male',
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $arbitratorIdMap[$arbId] = $targetArbId;
+                }
+            }
+
             // Sync payment methods
             if (! empty($data['payment_methods'])) {
                 $pmColumns = Schema::getColumnListing('payment_methods');
@@ -555,6 +704,7 @@ class EventDataSyncService
             DB::table('event_referee')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('clerk_event')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('event_field_coordinator')->whereIn('event_id', $cleanupEventIds)->delete();
+            DB::table('event_arbitrator')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('event_payment_method')->whereIn('event_id', $cleanupEventIds)->delete();
 
             // 4. Upsert Event Core
@@ -704,7 +854,9 @@ class EventDataSyncService
                 $row['user_id'] = $remapUserId($row['user_id'] ?? null);
 
                 return $row;
-            })->all();
+            })
+                ->filter(fn ($row) => ! empty($row['referee_id']) && DB::table('referees')->where('id', $row['referee_id'])->exists())
+                ->all();
             $this->bulkInsert('embu_judge_scores', $embuJudgeScores);
 
             // Randori scores: sanitize users
@@ -732,7 +884,9 @@ class EventDataSyncService
                 }
 
                 return $row;
-            })->unique(fn ($r) => ($r['event_court_id'] ?? '').'-'.($r['staff_type'] ?? '').'-'.$r['staff_id'])->values()->all();
+            })
+                ->filter(fn ($r) => ! empty($r['event_court_id']) && DB::table('event_courts')->where('id', $r['event_court_id'])->exists())
+                ->unique(fn ($r) => ($r['event_court_id'] ?? '').'-'.($r['staff_type'] ?? '').'-'.$r['staff_id'])->values()->all();
             $this->bulkInsert('event_court_assignments', $courtAssignments);
 
             // Referee attendances: remap referee_id and sanitize checked_in_by_user_id
@@ -741,16 +895,20 @@ class EventDataSyncService
                 $row['checked_in_by_user_id'] = $remapUserId($row['checked_in_by_user_id'] ?? null);
 
                 return $row;
-            })->unique(fn ($r) => $r['event_id'].'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
+            })
+                ->filter(fn ($row) => ! empty($row['referee_id']) && DB::table('referees')->where('id', $row['referee_id'])->exists())
+                ->unique(fn ($r) => $r['event_id'].'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
             $this->bulkInsert('referee_attendances', $refereeAttendances);
 
             // Referee court attendances
-            $refereeCourtAttendances = collect($data['referee_court_attendances'] ?? [])->map(function ($row) use ($refereeIdMap, $remapUserId) {
+            $refereeCourtAttendances = collect($fixEventId($data['referee_court_attendances'] ?? []))->map(function ($row) use ($refereeIdMap, $remapUserId) {
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
                 $row['checked_in_by_user_id'] = $remapUserId($row['checked_in_by_user_id'] ?? null);
 
                 return $row;
-            })->unique(fn ($r) => ($r['event_court_id'] ?? '').'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
+            })
+                ->filter(fn ($row) => ! empty($row['referee_id']) && DB::table('referees')->where('id', $row['referee_id'])->exists() && (empty($row['event_court_id']) || DB::table('event_courts')->where('id', $row['event_court_id'])->exists()))
+                ->unique(fn ($r) => ($r['event_court_id'] ?? '').'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
             $this->bulkInsert('referee_court_attendances', $refereeCourtAttendances);
 
             // Referee assignment histories
@@ -759,7 +917,9 @@ class EventDataSyncService
                 $row['changed_by_user_id'] = $remapUserId($row['changed_by_user_id'] ?? null);
 
                 return $row;
-            })->all();
+            })
+                ->filter(fn ($row) => ! empty($row['referee_id']) && DB::table('referees')->where('id', $row['referee_id'])->exists() && (empty($row['event_court_id']) || DB::table('event_courts')->where('id', $row['event_court_id'])->exists()))
+                ->all();
             $this->bulkInsert('referee_court_assignment_histories', $assignmentHistories);
 
             // Referee check-in codes
@@ -770,7 +930,9 @@ class EventDataSyncService
                     }
 
                     return $code;
-                })->all();
+                })
+                    ->filter(fn ($c) => empty($c['event_court_id']) || DB::table('event_courts')->where('id', $c['event_court_id'])->exists())
+                    ->all();
                 $this->bulkInsert('referee_check_in_codes', $checkInCodes);
             }
 
@@ -779,7 +941,9 @@ class EventDataSyncService
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
 
                 return $row;
-            })->unique(fn ($r) => $r['event_id'].'-'.$r['referee_id'])->values()->all();
+            })
+                ->filter(fn ($row) => ! empty($row['referee_id']) && DB::table('referees')->where('id', $row['referee_id'])->exists())
+                ->unique(fn ($r) => $r['event_id'].'-'.$r['referee_id'])->values()->all();
             $this->bulkInsert('event_referee', $eventReferees);
 
             // Clerk events
@@ -797,6 +961,16 @@ class EventDataSyncService
                 return $row;
             })->unique(fn ($r) => $r['event_id'].'-'.$r['field_coordinator_id'])->values()->all();
             $this->bulkInsert('event_field_coordinator', $eventCoords);
+
+            // Event arbitrators
+            $eventArbitrators = collect($fixEventId($data['event_arbitrator'] ?? []))->map(function ($row) use ($arbitratorIdMap) {
+                $row['arbitrator_id'] = $arbitratorIdMap[$row['arbitrator_id']] ?? $row['arbitrator_id'];
+
+                return $row;
+            })
+                ->filter(fn ($row) => ! empty($row['arbitrator_id']) && DB::table('arbitrators')->where('id', $row['arbitrator_id'])->exists())
+                ->unique(fn ($r) => $r['event_id'].'-'.$r['arbitrator_id'])->values()->all();
+            $this->bulkInsert('event_arbitrator', $eventArbitrators);
 
             $this->bulkInsert('event_payment_method', $fixEventId($data['event_payment_method'] ?? []));
 

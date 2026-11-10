@@ -274,6 +274,11 @@ class Event extends Model
         return $this->belongsToMany(FieldCoordinator::class)->withPivot('assignment_area')->withTimestamps()->orderBy('name');
     }
 
+    public function arbitrators(): BelongsToMany
+    {
+        return $this->belongsToMany(Arbitrator::class, 'event_arbitrator')->withPivot('role')->withTimestamps()->orderBy('name');
+    }
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)->withPivot('access_role')->withTimestamps()->orderBy('name');

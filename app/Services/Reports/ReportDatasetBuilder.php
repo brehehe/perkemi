@@ -478,9 +478,13 @@ class ReportDatasetBuilder
             }
         }
 
+        $goldMultiplier = max(1, (int) ($event->champion_gold_points ?? 5));
+        $silverMultiplier = max(1, (int) ($event->champion_silver_points ?? 3));
+        $bronzeMultiplier = max(1, (int) ($event->champion_bronze_points ?? 1));
+
         foreach ($contingentStats as &$item) {
             $item['total_medals'] = $item['gold'] + $item['silver'] + $item['bronze'];
-            $item['total_points'] = ($item['gold'] * 5) + ($item['silver'] * 3) + ($item['bronze'] * 1);
+            $item['total_points'] = ($item['gold'] * $goldMultiplier) + ($item['silver'] * $silverMultiplier) + ($item['bronze'] * $bronzeMultiplier);
         }
         unset($item);
 
@@ -497,8 +501,11 @@ class ReportDatasetBuilder
                 if ($a['silver'] !== $b['silver']) {
                     return $b['silver'] <=> $a['silver'];
                 }
+                if ($a['bronze'] !== $b['bronze']) {
+                    return $b['bronze'] <=> $a['bronze'];
+                }
 
-                return $b['bronze'] <=> $a['bronze'];
+                return strnatcasecmp($a['contingent'], $b['contingent']);
             })->values();
         } else {
             $sorted = $collection->sort(function ($a, $b) {
@@ -511,22 +518,48 @@ class ReportDatasetBuilder
                 if ($a['bronze'] !== $b['bronze']) {
                     return $b['bronze'] <=> $a['bronze'];
                 }
+                if ($a['total_points'] !== $b['total_points']) {
+                    return $b['total_points'] <=> $a['total_points'];
+                }
 
-                return $b['total_points'] <=> $a['total_points'];
+                return strnatcasecmp($a['contingent'], $b['contingent']);
             })->values();
         }
 
-        $rows = $sorted->map(function (array $item, int $index): array {
-            $rank = $index + 1;
-            $status = match ($rank) {
+        $rows = collect();
+        $currentRank = 1;
+        $previousItem = null;
+
+        foreach ($sorted as $index => $item) {
+            if ($previousItem !== null) {
+                $isEqual = $rankingMethod === 'points'
+                    ? ($item['total_points'] === $previousItem['total_points']
+                        && $item['gold'] === $previousItem['gold']
+                        && $item['silver'] === $previousItem['silver']
+                        && $item['bronze'] === $previousItem['bronze'])
+                    : ($item['gold'] === $previousItem['gold']
+                        && $item['silver'] === $previousItem['silver']
+                        && $item['bronze'] === $previousItem['bronze']
+                        && $item['total_points'] === $previousItem['total_points']);
+
+                if (! $isEqual) {
+                    $currentRank = $index + 1;
+                }
+            } else {
+                $currentRank = 1;
+            }
+
+            $previousItem = $item;
+
+            $status = match ($currentRank) {
                 1 => 'Juara Umum I (Piala Bergilir)',
                 2 => 'Juara Umum II',
                 3 => 'Juara Umum III',
                 default => '-',
             };
 
-            return [
-                'rank' => $rank,
+            $rows->push([
+                'rank' => $currentRank,
                 'contingent' => $item['contingent'],
                 'gold' => $item['gold'],
                 'silver' => $item['silver'],
@@ -534,12 +567,19 @@ class ReportDatasetBuilder
                 'total_medals' => $item['total_medals'],
                 'total_points' => $item['total_points'],
                 'status' => $status,
-            ];
-        });
+            ]);
+        }
 
         $methodLabel = $rankingMethod === 'points'
-            ? 'Metode Pembobotan Poin (Emas=5, Perak=3, Perunggu=1)'
+            ? "Metode Pembobotan Poin (Emas={$goldMultiplier}, Perak={$silverMultiplier}, Perunggu={$bronzeMultiplier})"
             : 'Standar PB Perkemi (Prioritas Emas > Perak > Perunggu)';
+
+        $topChampions = $rows->where('rank', 1)->pluck('contingent')->all();
+        $championLabel = match (count($topChampions)) {
+            0 => 'Belum ada',
+            1 => $topChampions[0],
+            default => implode(' & ', $topChampions).' (Juara Bersama)',
+        };
 
         return $this->dataset($report, [
             ['key' => 'rank', 'label' => 'Peringkat'],
@@ -549,11 +589,11 @@ class ReportDatasetBuilder
             ['key' => 'bronze', 'label' => 'Perunggu (3)'],
             ['key' => 'total_medals', 'label' => 'Total Medali'],
             ['key' => 'total_points', 'label' => 'Total Poin'],
-            ['key' => 'status', 'label' => 'Status Juara Umum'],
+            // ['key' => 'status', 'label' => 'Status Juara Umum'],
         ], $rows, [
             ['label' => 'Metode Peringkat', 'value' => $methodLabel],
             ['label' => 'Total Kontingen Berperingkat', 'value' => $rows->count()],
-            ['label' => 'Juara Umum Terpilih', 'value' => $rows->first()['contingent'] ?? 'Belum ada'],
+            ['label' => 'Juara Umum Terpilih', 'value' => $championLabel],
         ]);
     }
 

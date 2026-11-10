@@ -498,3 +498,131 @@ test('event import successfully restores check-in codes, creates missing users w
         'next_match_id' => $remoteMatch2Id,
     ]);
 });
+
+test('import safely auto-creates missing referee records referenced by attendances without foreign key violation', function () {
+    $remoteEventId = (string) Str::uuid();
+    $unregisteredRefereeId = (string) Str::uuid();
+
+    $package = [
+        'format' => EventDataSyncService::ExportFormat,
+        'version' => EventDataSyncService::Version,
+        'data' => [
+            'event' => [
+                'id' => $remoteEventId,
+                'name' => 'Event Missing Referee Test',
+                'slug' => 'event-missing-referee-test',
+                'city' => 'Surabaya',
+                'venue' => 'GOR Kertajaya',
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addDays(2)->toDateString(),
+                'is_active' => true,
+            ],
+            // Note: referees array does NOT contain $unregisteredRefereeId!
+            'referees' => [],
+            'referee_attendances' => [
+                [
+                    'id' => (string) Str::uuid(),
+                    'event_id' => $remoteEventId,
+                    'referee_id' => $unregisteredRefereeId,
+                    'attendance_date' => '2026-10-22',
+                    'checked_in_at' => now()->toDateTimeString(),
+                    'method' => 'manual',
+                    'is_present' => true,
+                ],
+            ],
+        ],
+    ];
+
+    $syncService = app(EventDataSyncService::class);
+    $result = $syncService->importEvent($package);
+
+    expect($result['event_id'])->toBe($remoteEventId);
+
+    // Verify referee was auto-created to satisfy foreign key
+    $this->assertDatabaseHas('referees', [
+        'id' => $unregisteredRefereeId,
+    ]);
+
+    // Verify attendance was successfully imported
+    $this->assertDatabaseHas('referee_attendances', [
+        'event_id' => $remoteEventId,
+        'referee_id' => $unregisteredRefereeId,
+    ]);
+});
+
+test('import safely remaps event_id on referee_court_attendances when matching existing event by slug with different ID', function () {
+    // 1. Create existing local event
+    $existingEvent = Event::query()->create([
+        'slug' => 'slug-mismatch-event',
+        'name' => 'Existing Local Event',
+        'city' => 'Surabaya',
+        'venue' => 'GOR Kertajaya',
+        'start_date' => now()->toDateString(),
+        'end_date' => now()->addDays(2)->toDateString(),
+        'is_active' => true,
+    ]);
+    $localEventId = $existingEvent->id;
+
+    $remoteExportedEventId = (string) Str::uuid();
+    $remoteCourtId = (string) Str::uuid();
+    $refereeId = (string) Str::uuid();
+    $attendanceId = (string) Str::uuid();
+
+    $package = [
+        'format' => EventDataSyncService::ExportFormat,
+        'version' => EventDataSyncService::Version,
+        'data' => [
+            'event' => [
+                'id' => $remoteExportedEventId, // Different ID than local event!
+                'name' => 'Existing Local Event',
+                'slug' => 'slug-mismatch-event',
+                'city' => 'Surabaya',
+                'venue' => 'GOR Kertajaya',
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addDays(2)->toDateString(),
+                'is_active' => true,
+            ],
+            'event_courts' => [
+                [
+                    'id' => $remoteCourtId,
+                    'event_id' => $remoteExportedEventId,
+                    'name' => 'Court A',
+                    'order' => 1,
+                    'is_active' => true,
+                ],
+            ],
+            'referees' => [
+                [
+                    'id' => $refereeId,
+                    'name' => 'Sensei Budi',
+                    'gender' => 'male',
+                    'is_active' => true,
+                ],
+            ],
+            'referee_court_attendances' => [
+                [
+                    'id' => $attendanceId,
+                    'event_id' => $remoteExportedEventId, // Old remote ID
+                    'event_court_id' => $remoteCourtId,
+                    'referee_id' => $refereeId,
+                    'attendance_date' => '2026-11-07',
+                    'checked_in_at' => now()->toDateTimeString(),
+                    'method' => 'qr',
+                ],
+            ],
+        ],
+    ];
+
+    $syncService = app(EventDataSyncService::class);
+    $result = $syncService->importEvent($package);
+
+    expect($result['event_id'])->toBe($localEventId);
+
+    // Verify referee_court_attendances was imported and remapped to $localEventId
+    $this->assertDatabaseHas('referee_court_attendances', [
+        'id' => $attendanceId,
+        'event_id' => $localEventId,
+        'event_court_id' => $remoteCourtId,
+        'referee_id' => $refereeId,
+    ]);
+});

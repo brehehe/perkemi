@@ -518,3 +518,91 @@ test('the champions report is structured per match category with Juara 1, 2, and
     $exportResponse->assertOk()
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });
+
+test('medal standings assigns equal rank for contingents with identical medals and points and skips next rank', function (): void {
+    $user = User::factory()->create();
+    $event = reportEvent('medal-standings-tie');
+
+    $contingentA = Contingent::create([
+        'user_id' => User::factory()->create()->id,
+        'event_id' => $event->id,
+        'name' => 'Surabaya',
+        'city' => 'Surabaya',
+        'manager_name' => 'Manager Surabaya',
+        'phone' => '081234567890',
+    ]);
+    $contingentB = Contingent::create([
+        'user_id' => User::factory()->create()->id,
+        'event_id' => $event->id,
+        'name' => 'Kota Malang',
+        'city' => 'Malang',
+        'manager_name' => 'Manager Malang',
+        'phone' => '081234567891',
+    ]);
+    $contingentC = Contingent::create([
+        'user_id' => User::factory()->create()->id,
+        'event_id' => $event->id,
+        'name' => 'Kabupaten Jombang',
+        'city' => 'Jombang',
+        'manager_name' => 'Manager Jombang',
+        'phone' => '081234567892',
+    ]);
+
+    // Contingent A: 1 Gold, 1 Silver
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingentA->id,
+        'contingent_name' => $contingentA->name,
+        'rank' => TournamentRank::Gold,
+        'match_category' => 'Category 1',
+        'is_exhibition' => false,
+    ]);
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingentA->id,
+        'contingent_name' => $contingentA->name,
+        'rank' => TournamentRank::Silver,
+        'match_category' => 'Category 2',
+        'is_exhibition' => false,
+    ]);
+
+    // Contingent B: 1 Gold, 1 Silver (Tied with A!)
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingentB->id,
+        'contingent_name' => $contingentB->name,
+        'rank' => TournamentRank::Gold,
+        'match_category' => 'Category 3',
+        'is_exhibition' => false,
+    ]);
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingentB->id,
+        'contingent_name' => $contingentB->name,
+        'rank' => TournamentRank::Silver,
+        'match_category' => 'Category 4',
+        'is_exhibition' => false,
+    ]);
+
+    // Contingent C: 0 Gold, 1 Silver
+    TournamentResult::query()->create([
+        'event_id' => $event->id,
+        'contingent_id' => $contingentC->id,
+        'contingent_name' => $contingentC->name,
+        'rank' => TournamentRank::Silver,
+        'match_category' => 'Category 5',
+        'is_exhibition' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('admin.laporan.index', ['event_id' => $event->id, 'report' => 'medal-standings']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Index')
+            ->where('dataset.key', 'medal-standings')
+            ->has('dataset.rows', 3)
+            ->where('dataset.rows.0.rank', 1)
+            ->where('dataset.rows.1.rank', 1)
+            ->where('dataset.rows.2.rank', 3)
+        );
+});

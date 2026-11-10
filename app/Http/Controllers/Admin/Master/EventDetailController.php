@@ -17,6 +17,7 @@ use App\Http\Requests\Admin\Event\UpdateEventGeneralRequest;
 use App\Http\Requests\Admin\Event\UpdateEventUsersRequest;
 use App\Http\Requests\Admin\Event\UpdateParticipantRulesRequest;
 use App\Http\Requests\Admin\Master\UpdateEventTournamentSettingsRequest;
+use App\Models\Arbitrator;
 use App\Models\Clerk;
 use App\Models\Event;
 use App\Models\EventAgeCategory;
@@ -369,7 +370,7 @@ class EventDetailController extends Controller
 
     public function storeEventReferee(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
     {
-        $roleRules = ['required', 'in:chief,referee,judge,reserve'];
+        $roleRules = ['required', 'string', 'max:50'];
 
         if ($request->boolean('create_new')) {
             $validated = $request->validate([
@@ -435,7 +436,7 @@ class EventDetailController extends Controller
         Referee $referee,
         SyncLoginAccountAction $syncLoginAccount,
     ): RedirectResponse {
-        $roleRules = ['required', 'in:chief,referee,judge,reserve'];
+        $roleRules = ['required', 'string', 'max:50'];
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
@@ -665,11 +666,14 @@ class EventDetailController extends Controller
 
     public function storeEventFieldCoordinator(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
     {
-        $areaRules = ['required', 'in:chief,court,logistics,liaison'];
+        $areaRules = ['required', 'string', 'max:100'];
         if ($request->boolean('create_new')) {
             $validated = $request->validate([
                 'create_new' => ['boolean'],
                 'name' => ['required', 'string', 'max:150'],
+                'gender' => ['nullable', 'in:male,female'],
+                'dan_grade' => ['nullable', 'string', 'max:50'],
+                'certification_level' => ['nullable', 'string', 'max:100'],
                 'coordinator_number' => ['nullable', 'string', 'max:100', 'unique:field_coordinators,coordinator_number'],
                 'region' => ['nullable', 'string', 'max:100'],
                 'phone' => ['nullable', 'string', 'max:50'],
@@ -679,19 +683,25 @@ class EventDetailController extends Controller
             ]);
             $fieldCoordinator = FieldCoordinator::create([
                 'name' => $validated['name'],
+                'gender' => $validated['gender'] ?? 'male',
+                'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
                 'coordinator_number' => $validated['coordinator_number'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'phone' => $validated['phone'] ?? null,
                 'email' => $validated['email'] ?? null,
                 'is_active' => true,
             ]);
-            $syncLoginAccount->execute(
+            $user = $syncLoginAccount->execute(
                 $fieldCoordinator->name,
                 $fieldCoordinator->email,
                 $validated['password'] ?? null,
                 'Koordinator Lapangan',
                 phone: $fieldCoordinator->phone,
             );
+            if ($user) {
+                $fieldCoordinator->update(['user_id' => $user->id]);
+            }
         } else {
             $validated = $request->validate(['field_coordinator_id' => ['required', 'uuid', 'exists:field_coordinators,id'], 'assignment_area' => $areaRules]);
             $fieldCoordinator = FieldCoordinator::findOrFail($validated['field_coordinator_id']);
@@ -699,9 +709,9 @@ class EventDetailController extends Controller
 
         $event->fieldCoordinators()->syncWithoutDetaching([$fieldCoordinator->id => ['assignment_area' => $validated['assignment_area']]]);
 
-        $coordinatorUser = $fieldCoordinator->email
+        $coordinatorUser = $fieldCoordinator->user ?: ($fieldCoordinator->email
             ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])->first()
-            : null;
+            : null);
 
         if ($coordinatorUser) {
             $event->users()->syncWithoutDetaching([
@@ -718,9 +728,12 @@ class EventDetailController extends Controller
         FieldCoordinator $fieldCoordinator,
         SyncLoginAccountAction $syncLoginAccount,
     ): RedirectResponse {
-        $areaRules = ['required', 'in:chief,court,logistics,liaison'];
+        $areaRules = ['required', 'string', 'max:100'];
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
+            'gender' => ['nullable', 'in:male,female'],
+            'dan_grade' => ['nullable', 'string', 'max:50'],
+            'certification_level' => ['nullable', 'string', 'max:100'],
             'coordinator_number' => [
                 'nullable',
                 'string',
@@ -739,15 +752,18 @@ class EventDetailController extends Controller
         DB::transaction(function () use ($event, $fieldCoordinator, $validated, $password, $syncLoginAccount): void {
             $fieldCoordinator->update([
                 'name' => $validated['name'],
+                'gender' => $validated['gender'] ?? $fieldCoordinator->gender ?? 'male',
+                'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
                 'coordinator_number' => $validated['coordinator_number'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'phone' => $validated['phone'] ?? null,
                 'email' => $validated['email'] ?? null,
             ]);
 
-            $existingUser = $fieldCoordinator->email
+            $existingUser = $fieldCoordinator->user ?: ($fieldCoordinator->email
                 ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($fieldCoordinator->email)])->first()
-                : null;
+                : null);
 
             $user = $syncLoginAccount->execute(
                 $fieldCoordinator->name,
@@ -757,6 +773,10 @@ class EventDetailController extends Controller
                 $existingUser,
                 phone: $fieldCoordinator->phone,
             );
+
+            if ($user && $fieldCoordinator->user_id !== $user->id) {
+                $fieldCoordinator->update(['user_id' => $user->id]);
+            }
 
             $event->fieldCoordinators()->updateExistingPivot($fieldCoordinator->id, [
                 'assignment_area' => $validated['assignment_area'],
@@ -884,6 +904,371 @@ class EventDetailController extends Controller
         $roleLabel = $roleLabels[$role] ?? $role;
 
         return back()->with('success', "Koordinator '{$fieldCoordinator->name}' berhasil {$actionText} Wasit ({$roleLabel}).");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ARBITRASE EVENT
+    // ─────────────────────────────────────────────────────────────
+
+    public function storeEventArbitrator(Request $request, Event $event, SyncLoginAccountAction $syncLoginAccount): RedirectResponse
+    {
+        $roleRules = ['required', 'string', 'max:100'];
+
+        if ($request->boolean('create_new')) {
+            $validated = $request->validate([
+                'create_new' => ['boolean'],
+                'name' => ['required', 'string', 'max:150'],
+                'gender' => ['nullable', 'in:male,female'],
+                'dan_grade' => ['nullable', 'string', 'max:50'],
+                'certification_level' => ['nullable', 'string', 'max:100'],
+                'license_number' => ['nullable', 'string', 'max:100', Rule::unique('arbitrators', 'license_number')->withoutTrashed()],
+                'region' => ['nullable', 'string', 'max:100'],
+                'phone' => ['nullable', 'string', 'max:50'],
+                'email' => ['nullable', 'required_with:password', 'email', 'max:150'],
+                'password' => ['nullable', 'confirmed', Password::defaults()],
+                'role' => $roleRules,
+            ]);
+
+            $arbitrator = Arbitrator::create([
+                'name' => $validated['name'],
+                'gender' => $validated['gender'] ?? 'male',
+                'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
+                'license_number' => $validated['license_number'] ?? null,
+                'region' => $validated['region'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+                'is_active' => true,
+            ]);
+
+            $user = $syncLoginAccount->execute(
+                $arbitrator->name,
+                $arbitrator->email,
+                $validated['password'] ?? null,
+                'Arbitrase',
+                phone: $arbitrator->phone,
+            );
+
+            if ($user) {
+                $arbitrator->update(['user_id' => $user->id]);
+            }
+        } else {
+            $validated = $request->validate([
+                'arbitrator_id' => ['required', 'uuid', 'exists:arbitrators,id'],
+                'role' => $roleRules,
+            ]);
+
+            $arbitrator = Arbitrator::findOrFail($validated['arbitrator_id']);
+        }
+
+        $event->arbitrators()->syncWithoutDetaching([$arbitrator->id => ['role' => $validated['role']]]);
+
+        if ($arbitrator->user) {
+            $event->users()->syncWithoutDetaching([
+                $arbitrator->user->id => ['access_role' => Event::AccessRoleStaff],
+            ]);
+        }
+
+        return back()->with('success', "Personil arbitrase '{$arbitrator->name}' berhasil ditugaskan ke event.");
+    }
+
+    public function updateEventArbitrator(
+        Request $request,
+        Event $event,
+        Arbitrator $arbitrator,
+        SyncLoginAccountAction $syncLoginAccount,
+    ): RedirectResponse {
+        $roleRules = ['required', 'string', 'max:100'];
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'gender' => ['nullable', 'in:male,female'],
+            'dan_grade' => ['nullable', 'string', 'max:50'],
+            'certification_level' => ['nullable', 'string', 'max:100'],
+            'license_number' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('arbitrators', 'license_number')->ignore($arbitrator->id)->withoutTrashed(),
+            ],
+            'region' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:150'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
+            'role' => $roleRules,
+        ]);
+
+        $password = filled($validated['password'] ?? null) ? (string) $validated['password'] : null;
+
+        DB::transaction(function () use ($event, $arbitrator, $validated, $password, $syncLoginAccount): void {
+            $arbitrator->update([
+                'name' => $validated['name'],
+                'gender' => $validated['gender'] ?? $arbitrator->gender ?? 'male',
+                'dan_grade' => $validated['dan_grade'] ?? null,
+                'certification_level' => $validated['certification_level'] ?? null,
+                'license_number' => $validated['license_number'] ?? null,
+                'region' => $validated['region'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+            ]);
+
+            $existingUser = $arbitrator->user ?: ($arbitrator->email
+                ? User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower($arbitrator->email)])->first()
+                : null);
+
+            $user = $syncLoginAccount->execute(
+                $arbitrator->name,
+                $arbitrator->email,
+                $password,
+                'Arbitrase',
+                $existingUser,
+                phone: $arbitrator->phone,
+            );
+
+            if ($user && $arbitrator->user_id !== $user->id) {
+                $arbitrator->update(['user_id' => $user->id]);
+            }
+
+            $event->arbitrators()->updateExistingPivot($arbitrator->id, [
+                'role' => $validated['role'],
+            ]);
+
+            if ($user) {
+                $event->users()->syncWithoutDetaching([
+                    $user->id => ['access_role' => Event::AccessRoleStaff],
+                ]);
+            }
+        });
+
+        return back()->with('success', "Data arbitrase '{$arbitrator->name}' berhasil diperbarui.");
+    }
+
+    public function destroyEventArbitrator(Event $event, Arbitrator $arbitrator): RedirectResponse
+    {
+        $event->arbitrators()->detach($arbitrator->id);
+
+        return back()->with('success', "Personil arbitrase '{$arbitrator->name}' telah dihapus dari event.");
+    }
+
+    /**
+     * Alihkan penugasan personil secara universal (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan).
+     */
+    public function transferOfficial(Request $request, Event $event): RedirectResponse
+    {
+        $validated = $request->validate([
+            'source_category' => ['required', 'in:arbitrator,referee,coordinator'],
+            'source_id' => ['required', 'uuid'],
+            'target_category' => ['required', 'in:arbitrator,referee,coordinator', 'different:source_category'],
+            'target_role' => ['required', 'string', 'max:100'],
+            'detach_source' => ['nullable', 'boolean'],
+            'gender' => ['nullable', 'in:male,female'],
+            'dan_grade' => ['nullable', 'string', 'max:50'],
+            'certification_level' => ['nullable', 'string', 'max:100'],
+            'license_number' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $detachSource = $request->boolean('detach_source', true);
+        $sourceCat = $validated['source_category'];
+        $targetCat = $validated['target_category'];
+        $targetRole = $validated['target_role'];
+
+        $sourcePerson = match ($sourceCat) {
+            'arbitrator' => Arbitrator::findOrFail($validated['source_id']),
+            'referee' => Referee::findOrFail($validated['source_id']),
+            'coordinator' => FieldCoordinator::findOrFail($validated['source_id']),
+        };
+
+        $name = $sourcePerson->name;
+        $gender = $validated['gender'] ?? $sourcePerson->gender ?? 'male';
+        $danGrade = $validated['dan_grade'] ?? $sourcePerson->dan_grade ?? null;
+        $cert = $validated['certification_level'] ?? $sourcePerson->certification_level ?? null;
+        $lic = $validated['license_number'] ?? $sourcePerson->license_number ?? ($sourcePerson->coordinator_number ?? null);
+        $region = $sourcePerson->region ?? null;
+        $phone = $sourcePerson->phone ?? null;
+        $email = $sourcePerson->email ?? null;
+
+        DB::transaction(function () use (
+            $event,
+            $sourcePerson,
+            $sourceCat,
+            $targetCat,
+            $targetRole,
+            $detachSource,
+            $name,
+            $gender,
+            $danGrade,
+            $cert,
+            $lic,
+            $region,
+            $phone,
+            $email
+        ): void {
+            if ($targetCat === 'arbitrator') {
+                $arbitrator = null;
+                if (filled($lic)) {
+                    $arbitrator = Arbitrator::where('license_number', $lic)->first();
+                }
+                if (! $arbitrator && filled($email)) {
+                    $arbitrator = Arbitrator::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first();
+                }
+                if (! $arbitrator) {
+                    $arbitrator = Arbitrator::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+                }
+
+                if (! $arbitrator) {
+                    $arbitrator = Arbitrator::create([
+                        'name' => $name,
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade,
+                        'certification_level' => $cert,
+                        'license_number' => $lic,
+                        'region' => $region,
+                        'phone' => $phone,
+                        'email' => $email,
+                        'is_active' => true,
+                    ]);
+                } else {
+                    $arbitrator->update(array_filter([
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade ?: $arbitrator->dan_grade,
+                        'certification_level' => $cert ?: $arbitrator->certification_level,
+                        'license_number' => $lic ?: $arbitrator->license_number,
+                        'region' => $region ?: $arbitrator->region,
+                        'phone' => $phone ?: $arbitrator->phone,
+                        'email' => $email ?: $arbitrator->email,
+                    ]));
+                }
+
+                $event->arbitrators()->syncWithoutDetaching([$arbitrator->id => ['role' => $targetRole]]);
+                $user = $arbitrator->user ?: ($email ? User::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first() : null);
+                if ($user) {
+                    $user->assignRole(Role::findOrCreate('Arbitrase', 'web'));
+                    $event->users()->syncWithoutDetaching([$user->id => ['access_role' => Event::AccessRoleStaff]]);
+                    if (! $arbitrator->user_id) {
+                        $arbitrator->update(['user_id' => $user->id]);
+                    }
+                }
+            } elseif ($targetCat === 'referee') {
+                $referee = null;
+                if (filled($lic)) {
+                    $referee = Referee::where('license_number', $lic)->first();
+                }
+                if (! $referee && filled($email)) {
+                    $referee = Referee::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first();
+                }
+                if (! $referee) {
+                    $referee = Referee::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+                }
+
+                if (! $referee) {
+                    $referee = Referee::create([
+                        'name' => $name,
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade,
+                        'certification_level' => $cert,
+                        'license_number' => $lic,
+                        'region' => $region,
+                        'phone' => $phone,
+                        'email' => $email,
+                        'is_active' => true,
+                    ]);
+                } else {
+                    $referee->update(array_filter([
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade ?: $referee->dan_grade,
+                        'certification_level' => $cert ?: $referee->certification_level,
+                        'license_number' => $lic ?: $referee->license_number,
+                        'region' => $region ?: $referee->region,
+                        'phone' => $phone ?: $referee->phone,
+                        'email' => $email ?: $referee->email,
+                    ]));
+                }
+
+                $event->referees()->syncWithoutDetaching([$referee->id => ['role' => $targetRole]]);
+                $user = $referee->user ?: ($email ? User::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first() : null);
+                if ($user) {
+                    $user->assignRole(Role::findOrCreate('Wasit', 'web'));
+                    $event->users()->syncWithoutDetaching([$user->id => ['access_role' => Event::AccessRoleStaff]]);
+                    if (! $referee->user_id) {
+                        $referee->update(['user_id' => $user->id]);
+                    }
+                }
+            } elseif ($targetCat === 'coordinator') {
+                $coord = null;
+                if (filled($lic)) {
+                    $coord = FieldCoordinator::where('coordinator_number', $lic)->first();
+                }
+                if (! $coord && filled($email)) {
+                    $coord = FieldCoordinator::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first();
+                }
+                if (! $coord) {
+                    $coord = FieldCoordinator::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+                }
+
+                if (! $coord) {
+                    $coord = FieldCoordinator::create([
+                        'name' => $name,
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade,
+                        'certification_level' => $cert,
+                        'coordinator_number' => $lic,
+                        'region' => $region,
+                        'phone' => $phone,
+                        'email' => $email,
+                        'is_active' => true,
+                    ]);
+                } else {
+                    $coord->update(array_filter([
+                        'gender' => $gender,
+                        'dan_grade' => $danGrade ?: $coord->dan_grade,
+                        'certification_level' => $cert ?: $coord->certification_level,
+                        'coordinator_number' => $lic ?: $coord->coordinator_number,
+                        'region' => $region ?: $coord->region,
+                        'phone' => $phone ?: $coord->phone,
+                        'email' => $email ?: $coord->email,
+                    ]));
+                }
+
+                $event->fieldCoordinators()->syncWithoutDetaching([$coord->id => ['assignment_area' => $targetRole]]);
+                $user = $coord->user ?: ($email ? User::whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->first() : null);
+                if ($user) {
+                    $user->assignRole(Role::findOrCreate('Koordinator Lapangan', 'web'));
+                    $event->users()->syncWithoutDetaching([$user->id => ['access_role' => Event::AccessRoleStaff]]);
+                    if (! $coord->user_id) {
+                        $coord->update(['user_id' => $user->id]);
+                    }
+                }
+            }
+
+            if ($detachSource) {
+                if ($sourceCat === 'arbitrator') {
+                    $event->arbitrators()->detach($sourcePerson->id);
+                } elseif ($sourceCat === 'referee') {
+                    $event->referees()->detach($sourcePerson->id);
+                    EventCourtAssignment::query()
+                        ->whereIn('event_court_id', $event->courts()->select('id'))
+                        ->where('staff_type', 'referee')
+                        ->where('staff_id', $sourcePerson->id)
+                        ->delete();
+                } elseif ($sourceCat === 'coordinator') {
+                    $event->fieldCoordinators()->detach($sourcePerson->id);
+                    EventCourtAssignment::query()
+                        ->whereIn('event_court_id', $event->courts()->select('id'))
+                        ->where('staff_type', 'field_coordinator')
+                        ->where('staff_id', $sourcePerson->id)
+                        ->delete();
+                }
+            }
+        });
+
+        $catLabels = [
+            'arbitrator' => 'Arbitrase',
+            'referee' => 'Wasit & Juri',
+            'coordinator' => 'Koordinator Lapangan',
+        ];
+        $actionText = $detachSource ? 'dialihkan menjadi' : 'ditugaskan juga sebagai';
+
+        return back()->with('success', "Personil '{$name}' berhasil {$actionText} {$catLabels[$targetCat]} ({$targetRole}).");
     }
 
     // ─────────────────────────────────────────────────────────────
