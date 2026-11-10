@@ -54,16 +54,31 @@ class TournamentDrawingPdfService
                     ->map(fn (TournamentMatch $match): array => $this->serializeMatch($match))
                     ->values();
 
+                $isDoubleElim = $drawing->bracket_type === 'double_elimination' ||
+                    $matches->contains(fn ($m) => str_contains(strtolower($m['round_label'] ?? ''), 'upper') || str_contains(strtolower($m['round_label'] ?? ''), 'lower'));
+
+                $upperMatches = $matches->filter(fn ($m) => str_contains(strtolower($m['round_label'] ?? ''), 'upper'));
+                $lowerMatches = $matches->filter(fn ($m) => str_contains(strtolower($m['round_label'] ?? ''), 'lower'));
+                $finalMatches = $matches->filter(fn ($m) => ! str_contains(strtolower($m['round_label'] ?? ''), 'upper') && ! str_contains(strtolower($m['round_label'] ?? ''), 'lower'));
+
+                $upperRounds = $upperMatches->groupBy('round_label')->sortBy(fn ($g) => $g->min('sequence'));
+                $lowerRounds = $lowerMatches->groupBy('round_label')->sortBy(fn ($g) => $g->min('sequence'));
+                $finalRounds = $finalMatches->groupBy('round_label')->sortBy(fn ($g) => $g->min('sequence'));
+
                 return [
                     'category_id' => $drawing->event_match_category_id,
                     'category_name' => $drawing->matchCategory?->name ?? 'Nomor Pertandingan',
                     'category_type' => $drawing->matchCategory?->type ?? 'randori',
                     'format' => $drawing->bracket_type,
                     'format_label' => $this->formatLabel($drawing->bracket_type),
+                    'is_double_elimination' => $isDoubleElim,
                     'status' => $drawing->status,
                     'participant_count' => (int) $drawing->participant_count,
                     'contingent_count' => (int) $drawing->contingent_count,
                     'rounds' => $matches->groupBy(fn (array $match): string => $match['round_label']),
+                    'upper_rounds' => $upperRounds,
+                    'lower_rounds' => $lowerRounds,
+                    'final_rounds' => $finalRounds,
                     'matches' => $matches,
                 ];
             })

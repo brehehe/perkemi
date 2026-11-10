@@ -1,10 +1,12 @@
 <?php
 
+use App\Models\Contingent;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
 use App\Models\Referee;
 use App\Models\Role;
+use App\Models\Technique;
 use App\Models\TournamentDrawing;
 use App\Models\TournamentMatch;
 use App\Models\User;
@@ -243,5 +245,256 @@ test('import handles existing staff with different uuid and maps relationships s
     $this->assertDatabaseHas('event_referee', [
         'event_id' => $existingEvent->id,
         'referee_id' => $existingReferee->id,
+    ]);
+});
+
+test('event export captures techniques, check-in codes, payment methods, and associated users', function () {
+    $role = Role::findOrCreate('Wasit', 'web');
+    $staffUser = User::factory()->create([
+        'name' => 'Sensei Wasit Ekspor',
+        'email' => 'wasit.ekspor@example.com',
+    ]);
+    $staffUser->assignRole($role);
+
+    $event = Event::query()->create([
+        'name' => 'Event Export Full Features',
+        'slug' => 'event-export-full-features',
+        'city' => 'Batu',
+        'venue' => 'GOR Gajah Mada',
+        'start_date' => now(),
+        'end_date' => now()->addDays(2),
+        'is_active' => true,
+    ]);
+
+    $court = EventCourt::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Court Batu 1',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    $referee = Referee::query()->create([
+        'name' => 'Sensei Wasit Ekspor',
+        'gender' => 'male',
+        'user_id' => $staffUser->id,
+        'is_active' => true,
+    ]);
+    $event->referees()->attach($referee, ['role' => 'judge']);
+
+    $contingent = Contingent::query()->create([
+        'event_id' => $event->id,
+        'user_id' => $staffUser->id,
+        'name' => 'Kontingen Test Batu',
+        'city' => 'Kota Batu',
+        'manager_name' => 'Manager Test',
+        'phone' => '08123456789',
+        'address' => 'Jl. Test No. 1',
+        'status' => 'verified',
+    ]);
+
+    $category = EventMatchCategory::query()->create([
+        'event_id' => $event->id,
+        'name' => 'Embu Berpasangan',
+        'type' => 'embu',
+    ]);
+
+    $technique = Technique::query()->create([
+        'id' => (string) Str::uuid(),
+        'name' => 'Kote Geri Test',
+        'category' => 'Embu',
+        'order' => 1,
+        'is_active' => true,
+    ]);
+
+    DB::table('embu_team_techniques')->insert([
+        'id' => (string) Str::uuid(),
+        'event_id' => $event->id,
+        'contingent_id' => $contingent->id,
+        'event_match_category_id' => $category->id,
+        'team_number' => 1,
+        'technique_id' => $technique->id,
+        'order' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('referee_check_in_codes')->insert([
+        'id' => (string) Str::uuid(),
+        'code' => '998877',
+        'type' => 'court',
+        'event_id' => $event->id,
+        'event_court_id' => $court->id,
+        'role' => 'chief',
+        'target_url' => "http://localhost:8000/wasit/check-in/event/{$event->id}/court/{$court->id}",
+        'expires_at' => now()->addDays(2),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $syncService = app(EventDataSyncService::class);
+    $package = $syncService->exportEvent($event);
+
+    expect($package['counts']['techniques'])->toBeGreaterThanOrEqual(1)
+        ->and($package['counts']['referee_check_in_codes'])->toBe(1)
+        ->and($package['counts']['users'])->toBeGreaterThanOrEqual(1)
+        ->and($package['data']['techniques'])->not->toBeEmpty()
+        ->and($package['data']['referee_check_in_codes'])->toHaveCount(1)
+        ->and(collect($package['data']['users'])->pluck('email'))->toContain('wasit.ekspor@example.com');
+});
+
+test('event import successfully restores check-in codes, creates missing users with roles, and handles self-referencing matches', function () {
+    $remoteEventId = (string) Str::uuid();
+    $remoteCourtId = (string) Str::uuid();
+    $remoteCatAId = (string) Str::uuid();
+    $remoteCatBId = (string) Str::uuid();
+    $remoteDrawingId = (string) Str::uuid();
+    $remoteMatch1Id = (string) Str::uuid();
+    $remoteMatch2Id = (string) Str::uuid();
+    $remoteUserId = (string) Str::uuid();
+
+    $package = [
+        'format' => EventDataSyncService::ExportFormat,
+        'version' => EventDataSyncService::Version,
+        'data' => [
+            'event' => [
+                'id' => $remoteEventId,
+                'name' => 'Event Import Full Self Ref',
+                'slug' => 'event-import-full-self-ref',
+                'city' => 'Malang',
+                'venue' => 'GOR Ken Arok',
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addDays(2)->toDateString(),
+                'is_active' => true,
+            ],
+            'users' => [
+                [
+                    'id' => $remoteUserId,
+                    'name' => 'Petugas Scoring Baru',
+                    'email' => 'scoring.baru@smart-perkemi.id',
+                    'phone' => '081234567890',
+                    'password' => bcrypt('secret123'),
+                    'roles' => ['Panitera'],
+                ],
+            ],
+            'event_courts' => [
+                [
+                    'id' => $remoteCourtId,
+                    'event_id' => $remoteEventId,
+                    'name' => 'Tatami 1 Ken Arok',
+                    'order' => 1,
+                    'is_active' => true,
+                ],
+            ],
+            'event_match_categories' => [
+                // Category A merged into Category B (forward reference in array)
+                [
+                    'id' => $remoteCatAId,
+                    'event_id' => $remoteEventId,
+                    'name' => 'Randori Remaja 50kg (Merged)',
+                    'type' => 'randori',
+                    'gender' => 'male',
+                    'merged_into_id' => $remoteCatBId,
+                    'scoring_locked_by' => $remoteUserId,
+                ],
+                [
+                    'id' => $remoteCatBId,
+                    'event_id' => $remoteEventId,
+                    'name' => 'Randori Remaja 55kg (Master)',
+                    'type' => 'randori',
+                    'gender' => 'male',
+                    'merged_into_id' => null,
+                ],
+            ],
+            'tournament_drawings' => [
+                [
+                    'id' => $remoteDrawingId,
+                    'event_id' => $remoteEventId,
+                    'event_match_category_id' => $remoteCatBId,
+                    'status' => 'published',
+                ],
+            ],
+            'tournament_matches' => [
+                // Match 1 references Match 2 via next_match_id (forward reference)
+                [
+                    'id' => $remoteMatch1Id,
+                    'event_id' => $remoteEventId,
+                    'tournament_drawing_id' => $remoteDrawingId,
+                    'event_match_category_id' => $remoteCatBId,
+                    'event_court_id' => $remoteCourtId,
+                    'next_match_id' => $remoteMatch2Id,
+                    'match_sequence' => 1,
+                    'phase' => 'preliminary',
+                    'round_label' => 'Babak 1',
+                    'status' => 'completed',
+                    'metadata' => ['var_review' => false, 'court_number' => 1],
+                ],
+                [
+                    'id' => $remoteMatch2Id,
+                    'event_id' => $remoteEventId,
+                    'tournament_drawing_id' => $remoteDrawingId,
+                    'event_match_category_id' => $remoteCatBId,
+                    'event_court_id' => $remoteCourtId,
+                    'next_match_id' => null,
+                    'match_sequence' => 2,
+                    'phase' => 'final',
+                    'round_label' => 'Babak Final',
+                    'status' => 'ready',
+                    'metadata' => ['var_review' => false],
+                ],
+            ],
+            'referee_check_in_codes' => [
+                [
+                    'id' => (string) Str::uuid(),
+                    'code' => '445566',
+                    'type' => 'court',
+                    'event_id' => $remoteEventId,
+                    'event_court_id' => $remoteCourtId,
+                    'role' => 'judge',
+                    'target_url' => "http://localhost:8000/wasit/check-in/event/{$remoteEventId}/court/{$remoteCourtId}",
+                    'expires_at' => now()->addDays(2)->toDateTimeString(),
+                ],
+            ],
+            'event_user' => [
+                [
+                    'event_id' => $remoteEventId,
+                    'user_id' => $remoteUserId,
+                    'access_role' => 'Panitera',
+                ],
+            ],
+        ],
+    ];
+
+    $syncService = app(EventDataSyncService::class);
+    $result = $syncService->importEvent($package);
+
+    expect($result['event_id'])->toBe($remoteEventId);
+
+    // Verify user was created with role
+    $createdUser = User::query()->where('email', 'scoring.baru@smart-perkemi.id')->first();
+    expect($createdUser)->not->toBeNull()
+        ->and($createdUser->hasRole('Panitera'))->toBeTrue();
+
+    // Verify event_user pivot created
+    $this->assertDatabaseHas('event_user', [
+        'event_id' => $remoteEventId,
+        'user_id' => $createdUser->id,
+    ]);
+
+    // Verify check-in code imported
+    $this->assertDatabaseHas('referee_check_in_codes', [
+        'event_id' => $remoteEventId,
+        'code' => '445566',
+    ]);
+
+    // Verify self-referencing foreign keys resolved
+    $this->assertDatabaseHas('event_match_categories', [
+        'id' => $remoteCatAId,
+        'merged_into_id' => $remoteCatBId,
+        'scoring_locked_by' => $createdUser->id,
+    ]);
+
+    $this->assertDatabaseHas('tournament_matches', [
+        'id' => $remoteMatch1Id,
+        'next_match_id' => $remoteMatch2Id,
     ]);
 });

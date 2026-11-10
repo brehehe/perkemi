@@ -405,8 +405,13 @@ class ChampionResultService
             if ($requiredChampionCount >= 3 && $lowerFinalOutcome) {
                 $ranked->push($this->rankedParticipant(3, $lowerFinalOutcome['loser'], 'Gugur di Final Lower Bracket'));
             }
-            if ($requiredChampionCount >= 4 && $lowerRoundOutcome) {
-                $ranked->push($this->rankedParticipant(4, $lowerRoundOutcome['loser'], 'Gugur di Lower Bracket'));
+            if ($requiredChampionCount >= 4) {
+                $lowerRound2 = $matches->firstWhere('round_label', 'Lower Bracket · Babak 2');
+                $rank4Match = $lowerRound2 ?? $matches->firstWhere('round_label', 'Lower Bracket · Babak 1');
+                $rank4Outcome = $rank4Match ? $this->randoriOutcome($rank4Match) : null;
+                if ($rank4Outcome) {
+                    $ranked->push($this->rankedParticipant(4, $rank4Outcome['loser'], 'Gugur di Lower Bracket'));
+                }
             }
         } else {
             /** @var TournamentMatch|null $final */

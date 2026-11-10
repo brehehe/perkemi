@@ -258,6 +258,93 @@ class RandoriResultService
             return;
         }
 
+        $winnerTargetId = $match->metadata['winner_target_match_id'] ?? null;
+        $winnerCorner = $match->metadata['winner_target_corner'] ?? null;
+        $loserTargetId = $match->metadata['loser_target_match_id'] ?? null;
+        $loserCorner = $match->metadata['loser_target_corner'] ?? null;
+
+        if ($winnerTargetId && $winnerCorner) {
+            $targetMatch = TournamentMatch::find($winnerTargetId);
+            $this->placeParticipant($targetMatch, $winnerCorner, $winner);
+        }
+
+        if ($loserTargetId && $loserCorner) {
+            $targetMatch = TournamentMatch::find($loserTargetId);
+            $this->placeParticipant($targetMatch, $loserCorner, $loser);
+
+            if ($targetMatch && $targetMatch->is_bye && $loser) {
+                $targetMeta = $targetMatch->fresh()->metadata ?? [];
+                $targetMeta['placeholder'] = false;
+                $targetMatch->update([
+                    'status' => 'completed',
+                    'call_status' => 'completed',
+                    'is_bye' => true,
+                    'metadata' => $targetMeta,
+                ]);
+
+                if ($targetMatch->nextMatch) {
+                    $this->placeParticipant($targetMatch->nextMatch, 'red', $loser);
+                }
+            }
+        }
+
+        $isGrandFinal = str_contains($match->round_label ?? '', 'Grand Final')
+            && ! str_contains($match->round_label ?? '', 'Ulang')
+            && ! str_contains($match->round_label ?? '', 'GF2');
+
+        if ($isGrandFinal) {
+            $gf2 = TournamentMatch::query()
+                ->where('event_match_category_id', $match->event_match_category_id)
+                ->where(fn ($q) => $q->where('round_label', 'like', '%GF2%')->orWhere('round_label', 'like', '%Ulang%'))
+                ->first() ?? $match->nextMatch;
+
+            if ($gf2) {
+                // Red corner is the Upper Bracket finalist (WB)
+                // Blue corner is the Lower Bracket finalist (LB)
+                $winnerCorner = ($match->red_entry_id && $winner['entry_id'] === $match->red_entry_id) ? 'red' : 'blue';
+                $gf2Metadata = $gf2->metadata ?? [];
+
+                if ($winnerCorner === 'red') {
+                    // Pemenang berasal dari Upper Bracket (WB). Slot GF2 dilewati otomatis ketika tidak diperlukan!
+                    $gf2Metadata['notes'] = 'Slot GF2 dilewati otomatis karena pemenang Grand Final berasal dari Upper Bracket (WB).';
+                    $gf2Metadata['gf2_status'] = 'skipped';
+                    $gf2->update([
+                        'status' => 'completed',
+                        'is_bye' => true,
+                        'winner_corner' => null,
+                        'scheduled_start_at' => null,
+                        'scheduled_end_at' => null,
+                        'event_court_id' => null,
+                        'rundown_id' => null,
+                        'metadata' => $gf2Metadata,
+                    ]);
+                } else {
+                    // Pemenang berasal dari Lower Bracket (LB). GF2 berjalan dan diaktifkan sesuai aturan resmi!
+                    $redParticipant = $match->metadata['red'] ?? null;
+                    $blueParticipant = $match->metadata['blue'] ?? null;
+                    $this->placeParticipant($gf2, 'red', $redParticipant);
+                    $this->placeParticipant($gf2, 'blue', $blueParticipant);
+                    $gf2Metadata = $gf2->fresh()->metadata ?? [];
+                    $gf2Metadata['notes'] = 'GF2 diaktifkan karena pemenang Grand Final berasal dari jalur Lower Bracket (LB).';
+                    $gf2Metadata['gf2_status'] = 'active';
+                    $gf2->update([
+                        'status' => 'pending',
+                        'is_bye' => false,
+                        'metadata' => $gf2Metadata,
+                    ]);
+                }
+            }
+        }
+
+        // Fallback for legacy drawings that don't have metadata target IDs
+        if (! $winnerTargetId && ! $loserTargetId && ! $isGrandFinal) {
+            $this->routeLegacyDoubleElimination($match, $winner, $loser);
+        }
+    }
+
+    /** @param array<string, mixed>|null $winner @param array<string, mixed>|null $loser */
+    private function routeLegacyDoubleElimination(TournamentMatch $match, ?array $winner, ?array $loser): void
+    {
         $matches = TournamentMatch::query()
             ->where('event_match_category_id', $match->event_match_category_id)
             ->get()
@@ -308,49 +395,6 @@ class RandoriResultService
 
         if ($match->round_label === 'Final Lower Bracket') {
             $this->placeParticipant($matches->get('Grand Final'), 'blue', $winner);
-
-            return;
-        }
-
-        if ($match->round_label === 'Grand Final') {
-            /** @var TournamentMatch|null $gf2 */
-            $gf2 = $matches->get('Grand Final Ulang (GF2)');
-            if ($gf2) {
-                // Red corner is the Upper Bracket finalist (WB)
-                // Blue corner is the Lower Bracket finalist (LB)
-                $winnerCorner = ($match->red_entry_id && $winner['entry_id'] === $match->red_entry_id) ? 'red' : 'blue';
-                $gf2Metadata = $gf2->metadata ?? [];
-
-                if ($winnerCorner === 'red') {
-                    // Pemenang berasal dari Upper Bracket (WB). Slot GF2 dilewati otomatis ketika tidak diperlukan!
-                    $gf2Metadata['notes'] = 'Slot GF2 dilewati otomatis karena pemenang Grand Final berasal dari Upper Bracket (WB).';
-                    $gf2Metadata['gf2_status'] = 'skipped';
-                    $gf2->update([
-                        'status' => 'completed',
-                        'is_bye' => true,
-                        'winner_corner' => null,
-                        'scheduled_start_at' => null,
-                        'scheduled_end_at' => null,
-                        'event_court_id' => null,
-                        'rundown_id' => null,
-                        'metadata' => $gf2Metadata,
-                    ]);
-                } else {
-                    // Pemenang berasal dari Lower Bracket (LB). GF2 berjalan dan diaktifkan sesuai aturan resmi!
-                    $redParticipant = $match->metadata['red'] ?? null;
-                    $blueParticipant = $match->metadata['blue'] ?? null;
-                    $this->placeParticipant($gf2, 'red', $redParticipant);
-                    $this->placeParticipant($gf2, 'blue', $blueParticipant);
-                    $gf2Metadata = $gf2->fresh()->metadata ?? [];
-                    $gf2Metadata['notes'] = 'GF2 diaktifkan karena pemenang Grand Final berasal dari jalur Lower Bracket (LB).';
-                    $gf2Metadata['gf2_status'] = 'active';
-                    $gf2->update([
-                        'status' => 'pending',
-                        'is_bye' => false,
-                        'metadata' => $gf2Metadata,
-                    ]);
-                }
-            }
         }
     }
 

@@ -533,3 +533,79 @@ test('large randori drawing remains a bracket in pdf preview', function () {
         ->assertSee('Kenshi Aka 13')
         ->assertDontSee('<th>AKA</th>', false);
 });
+
+test('double elimination drawing renders stacked upper and lower brackets with grand final in pdf preview', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+    $event = Event::create([
+        'name' => 'Kejurda Bagan Double Elim',
+        'slug' => 'kejurda-bagan-double-elim',
+        'venue' => 'GOR Wilis',
+        'city' => 'Madiun',
+        'start_date' => '2026-11-20',
+        'end_date' => '2026-11-22',
+        'is_active' => true,
+    ]);
+    $category = EventMatchCategory::create([
+        'event_id' => $event->id,
+        'name' => 'Randori Putra Kelas 55 kg',
+        'type' => 'randori',
+        'gender' => 'male',
+        'capacity' => 8,
+        'order' => 1,
+        'is_active' => true,
+    ]);
+    $drawing = TournamentDrawing::factory()->create([
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'bracket_type' => 'double_elimination',
+        'participant_count' => 5,
+        'contingent_count' => 5,
+    ]);
+
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'match_sequence' => 1,
+        'round_label' => 'Upper Bracket · Babak 1',
+        'red_label' => 'Kenshi Upper 1',
+        'blue_label' => 'Kenshi Upper 2',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'match_sequence' => 4,
+        'round_label' => 'Lower Bracket · Babak 1',
+        'red_label' => 'Kenshi Lower 1',
+        'blue_label' => 'Kenshi Lower 2',
+    ]);
+    TournamentMatch::factory()->create([
+        'tournament_drawing_id' => $drawing->id,
+        'event_id' => $event->id,
+        'event_match_category_id' => $category->id,
+        'match_sequence' => 8,
+        'round_label' => 'Grand Final',
+        'red_label' => 'Finalis Upper',
+        'blue_label' => 'Finalis Lower',
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('admin.pertandingan.drawing.pdf', [
+        'event_id' => $event->id,
+        'category' => $category->id,
+        'format' => 'html',
+    ]));
+
+    $response
+        ->assertOk()
+        ->assertViewIs('reports.tournament-drawings')
+        ->assertSee('data-testid="randori-double-elimination"', false)
+        ->assertSee('BAGAN PEMENANG (UPPER BRACKET)')
+        ->assertSee('BAGAN HARAPAN (LOWER BRACKET)')
+        ->assertSee('BABAK PUNCAK &middot; GRAND FINAL', false)
+        ->assertSee('Upper Bracket · Babak 1')
+        ->assertSee('Lower Bracket · Babak 1')
+        ->assertSee('Grand Final');
+});

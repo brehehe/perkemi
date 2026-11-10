@@ -123,12 +123,20 @@ export default function EventDataSyncForm({ event, counts = {}, tournamentSummar
                                     <span className="font-bold text-slate-900 dark:text-white">{counts.referees ?? 0}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-slate-200/50 pb-1.5 dark:border-slate-800">
-                                    <span className="text-slate-600 dark:text-slate-400">Panitera:</span>
-                                    <span className="font-bold text-slate-900 dark:text-white">{counts.clerks ?? 0}</span>
+                                    <span className="text-slate-600 dark:text-slate-400">Koordinator & Panitera:</span>
+                                    <span className="font-bold text-slate-900 dark:text-white">{(counts.field_coordinators ?? 0) + (counts.clerks ?? 0)}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-slate-200/50 pb-1.5 dark:border-slate-800">
-                                    <span className="text-slate-600 dark:text-slate-400">Koordinator:</span>
-                                    <span className="font-bold text-slate-900 dark:text-white">{counts.field_coordinators ?? 0}</span>
+                                    <span className="text-slate-600 dark:text-slate-400">Akun Pengguna/Petugas:</span>
+                                    <span className="font-bold text-slate-900 dark:text-white">{counts.users ?? 0}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-200/50 pb-1.5 dark:border-slate-800">
+                                    <span className="text-slate-600 dark:text-slate-400">Kode Check-in Wasit:</span>
+                                    <span className="font-bold text-slate-900 dark:text-white">{counts.referee_check_in_codes ?? 0}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-200/50 pb-1.5 dark:border-slate-800">
+                                    <span className="text-slate-600 dark:text-slate-400">Teknik Embu Terkait:</span>
+                                    <span className="font-bold text-slate-900 dark:text-white">{counts.techniques ?? 0}</span>
                                 </div>
                             </div>
                         </div>

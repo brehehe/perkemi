@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { useMemo, useRef, useState } from 'react';
+import React, { Fragment, useMemo, useRef, useState } from 'react';
 
 // Status badge helper for bracket match cards
 function getStatusBadge(match, isMonitor = false) {
@@ -541,24 +541,50 @@ export default function RandoriBracketTree({
         }, {});
     }, [matches]);
 
-    // Double Elimination specific sub-groups
-    const upperRound1 = useMemo(
-        () => matches.filter((m) => m.round_label === 'Upper Bracket' || (m.round_label?.toLowerCase().includes('upper') && !m.round_label?.toLowerCase().includes('final'))),
-        [matches]
-    );
-    const upperFinalMatches = useMemo(
-        () => matches.filter((m) => m.round_label?.toLowerCase().includes('upper') && m.round_label?.toLowerCase().includes('final')),
-        [matches]
-    );
+    // Double Elimination specific dynamic rounds grouping
+    const upperRounds = useMemo(() => {
+        const upperMatches = matches.filter(
+            (m) => m.round_label?.toLowerCase().includes('upper')
+        );
+        if (upperMatches.length === 0) return [];
 
-    const lowerRound1 = useMemo(
-        () => matches.filter((m) => m.round_label?.toLowerCase().includes('lower') && !m.round_label?.toLowerCase().includes('final')),
-        [matches]
-    );
-    const lowerFinalMatches = useMemo(
-        () => matches.filter((m) => m.round_label?.toLowerCase().includes('lower') && m.round_label?.toLowerCase().includes('final')),
-        [matches]
-    );
+        const grouped = {};
+        upperMatches.forEach((m) => {
+            const key = m.round_label || 'Upper Bracket';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(m);
+        });
+
+        return Object.entries(grouped)
+            .map(([roundName, roundMatches]) => ({
+                roundName,
+                matches: roundMatches.sort((a, b) => (a.match_sequence || 0) - (b.match_sequence || 0)),
+                minSeq: Math.min(...roundMatches.map((m) => m.match_sequence || 0)),
+            }))
+            .sort((a, b) => a.minSeq - b.minSeq);
+    }, [matches]);
+
+    const lowerRounds = useMemo(() => {
+        const lowerMatches = matches.filter(
+            (m) => m.round_label?.toLowerCase().includes('lower')
+        );
+        if (lowerMatches.length === 0) return [];
+
+        const grouped = {};
+        lowerMatches.forEach((m) => {
+            const key = m.round_label || 'Lower Bracket';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(m);
+        });
+
+        return Object.entries(grouped)
+            .map(([roundName, roundMatches]) => ({
+                roundName,
+                matches: roundMatches.sort((a, b) => (a.match_sequence || 0) - (b.match_sequence || 0)),
+                minSeq: Math.min(...roundMatches.map((m) => m.match_sequence || 0)),
+            }))
+            .sort((a, b) => a.minSeq - b.minSeq);
+    }, [matches]);
 
     const grandFinalMatches = useMemo(
         () => matches.filter((m) => m.round_label?.toLowerCase().includes('grand final') || m.phase === 'final'),
@@ -832,38 +858,30 @@ export default function RandoriBracketTree({
                                     </div>
 
                                     <div className="flex items-stretch gap-6">
-                                        <BracketRoundColumn
-                                            roundName="Upper Bracket · Babak 1"
-                                            matches={upperRound1}
-                                            activeEvent={activeEvent}
-                                            canManage={canManage}
-                                            isMonitor={isMonitor}
-                                            activeMatchId={activeMatchId}
-                                            isFirstRound={true}
-                                            highlightContingentId={highlightContingentId}
-                                            highlightContingentName={highlightContingentName}
-                                            highlightEntryIds={highlightEntryIds}
-                                            highlightAthleteNames={highlightAthleteNames}
-                                        />
-
-                                        <div className="flex flex-col items-center justify-center text-blue-300 dark:text-blue-700">
-                                            <i className="fa-solid fa-arrow-right text-lg" />
-                                            <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-blue-500">Lolos</span>
-                                        </div>
-
-                                        <BracketRoundColumn
-                                            roundName="Final Upper Bracket"
-                                            matches={upperFinalMatches}
-                                            activeEvent={activeEvent}
-                                            canManage={canManage}
-                                            isMonitor={isMonitor}
-                                            activeMatchId={activeMatchId}
-                                            isLastRound={true}
-                                            highlightContingentId={highlightContingentId}
-                                            highlightContingentName={highlightContingentName}
-                                            highlightEntryIds={highlightEntryIds}
-                                            highlightAthleteNames={highlightAthleteNames}
-                                        />
+                                        {upperRounds.map((round, idx) => (
+                                            <Fragment key={round.roundName}>
+                                                {idx > 0 && (
+                                                    <div className="flex flex-col items-center justify-center text-blue-300 dark:text-blue-700">
+                                                        <i className="fa-solid fa-arrow-right text-lg" />
+                                                        <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-blue-500">Lolos</span>
+                                                    </div>
+                                                )}
+                                                <BracketRoundColumn
+                                                    roundName={round.roundName}
+                                                    matches={round.matches}
+                                                    activeEvent={activeEvent}
+                                                    canManage={canManage}
+                                                    isMonitor={isMonitor}
+                                                    activeMatchId={activeMatchId}
+                                                    isFirstRound={idx === 0}
+                                                    isLastRound={idx === upperRounds.length - 1}
+                                                    highlightContingentId={highlightContingentId}
+                                                    highlightContingentName={highlightContingentName}
+                                                    highlightEntryIds={highlightEntryIds}
+                                                    highlightAthleteNames={highlightAthleteNames}
+                                                />
+                                            </Fragment>
+                                        ))}
                                     </div>
                                 </div>
 
@@ -889,38 +907,30 @@ export default function RandoriBracketTree({
                                     </div>
 
                                     <div className="flex items-stretch gap-6">
-                                        <BracketRoundColumn
-                                            roundName="Lower Bracket · Babak 1"
-                                            matches={lowerRound1}
-                                            activeEvent={activeEvent}
-                                            canManage={canManage}
-                                            isMonitor={isMonitor}
-                                            activeMatchId={activeMatchId}
-                                            isFirstRound={true}
-                                            highlightContingentId={highlightContingentId}
-                                            highlightContingentName={highlightContingentName}
-                                            highlightEntryIds={highlightEntryIds}
-                                            highlightAthleteNames={highlightAthleteNames}
-                                        />
-
-                                        <div className="flex flex-col items-center justify-center text-amber-300 dark:text-amber-700">
-                                            <i className="fa-solid fa-arrow-right text-lg" />
-                                            <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-amber-600">Lolos</span>
-                                        </div>
-
-                                        <BracketRoundColumn
-                                            roundName="Final Lower Bracket"
-                                            matches={lowerFinalMatches}
-                                            activeEvent={activeEvent}
-                                            canManage={canManage}
-                                            isMonitor={isMonitor}
-                                            activeMatchId={activeMatchId}
-                                            isLastRound={true}
-                                            highlightContingentId={highlightContingentId}
-                                            highlightContingentName={highlightContingentName}
-                                            highlightEntryIds={highlightEntryIds}
-                                            highlightAthleteNames={highlightAthleteNames}
-                                        />
+                                        {lowerRounds.map((round, idx) => (
+                                            <Fragment key={round.roundName}>
+                                                {idx > 0 && (
+                                                    <div className="flex flex-col items-center justify-center text-amber-300 dark:text-amber-700">
+                                                        <i className="fa-solid fa-arrow-right text-lg" />
+                                                        <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-amber-600">Lolos</span>
+                                                    </div>
+                                                )}
+                                                <BracketRoundColumn
+                                                    roundName={round.roundName}
+                                                    matches={round.matches}
+                                                    activeEvent={activeEvent}
+                                                    canManage={canManage}
+                                                    isMonitor={isMonitor}
+                                                    activeMatchId={activeMatchId}
+                                                    isFirstRound={idx === 0}
+                                                    isLastRound={idx === lowerRounds.length - 1}
+                                                    highlightContingentId={highlightContingentId}
+                                                    highlightContingentName={highlightContingentName}
+                                                    highlightEntryIds={highlightEntryIds}
+                                                    highlightAthleteNames={highlightAthleteNames}
+                                                />
+                                            </Fragment>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -980,31 +990,34 @@ export default function RandoriBracketTree({
                         </div>
                     ) : isDoubleElim && doubleElimTab === 'upper' ? (
                         <div className="flex items-stretch gap-8 min-w-max pb-4">
-                            <BracketRoundColumn
-                                roundName="Upper Bracket · Babak 1"
-                                matches={upperRound1}
-                                activeEvent={activeEvent}
-                                canManage={canManage}
-                                isMonitor={isMonitor}
-                                activeMatchId={activeMatchId}
-                                isFirstRound={true}
-                                highlightContingentId={highlightContingentId}
-                                highlightContingentName={highlightContingentName}
-                                highlightEntryIds={highlightEntryIds}
-                                highlightAthleteNames={highlightAthleteNames}
-                            />
-                            <BracketRoundColumn
-                                roundName="Final Upper Bracket"
-                                matches={upperFinalMatches}
-                                activeEvent={activeEvent}
-                                canManage={canManage}
-                                isMonitor={isMonitor}
-                                activeMatchId={activeMatchId}
-                                highlightContingentId={highlightContingentId}
-                                highlightContingentName={highlightContingentName}
-                                highlightEntryIds={highlightEntryIds}
-                                highlightAthleteNames={highlightAthleteNames}
-                            />
+                            {upperRounds.map((round, idx) => (
+                                <Fragment key={round.roundName}>
+                                    {idx > 0 && (
+                                        <div className="flex flex-col items-center justify-center text-blue-300 dark:text-blue-700 self-center">
+                                            <i className="fa-solid fa-arrow-right text-lg" />
+                                            <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-blue-500">Lolos</span>
+                                        </div>
+                                    )}
+                                    <BracketRoundColumn
+                                        roundName={round.roundName}
+                                        matches={round.matches}
+                                        activeEvent={activeEvent}
+                                        canManage={canManage}
+                                        isMonitor={isMonitor}
+                                        activeMatchId={activeMatchId}
+                                        isFirstRound={idx === 0}
+                                        isLastRound={idx === upperRounds.length - 1}
+                                        highlightContingentId={highlightContingentId}
+                                        highlightContingentName={highlightContingentName}
+                                        highlightEntryIds={highlightEntryIds}
+                                        highlightAthleteNames={highlightAthleteNames}
+                                    />
+                                </Fragment>
+                            ))}
+                            <div className="flex flex-col items-center justify-center text-stone-300 dark:text-white/20 self-center">
+                                <i className="fa-solid fa-angles-right text-2xl text-amber-500 animate-pulse" />
+                                <span className="text-[9px] font-black uppercase tracking-wider mt-1 text-stone-500 dark:text-white/50">Finalis</span>
+                            </div>
                             <BracketRoundColumn
                                 roundName="Grand Final"
                                 matches={grandFinalMatches}
@@ -1029,31 +1042,34 @@ export default function RandoriBracketTree({
                         </div>
                     ) : isDoubleElim && doubleElimTab === 'lower' ? (
                         <div className="flex items-stretch gap-8 min-w-max pb-4">
-                            <BracketRoundColumn
-                                roundName="Lower Bracket · Babak 1"
-                                matches={lowerRound1}
-                                activeEvent={activeEvent}
-                                canManage={canManage}
-                                isMonitor={isMonitor}
-                                activeMatchId={activeMatchId}
-                                isFirstRound={true}
-                                highlightContingentId={highlightContingentId}
-                                highlightContingentName={highlightContingentName}
-                                highlightEntryIds={highlightEntryIds}
-                                highlightAthleteNames={highlightAthleteNames}
-                            />
-                            <BracketRoundColumn
-                                roundName="Final Lower Bracket"
-                                matches={lowerFinalMatches}
-                                activeEvent={activeEvent}
-                                canManage={canManage}
-                                isMonitor={isMonitor}
-                                activeMatchId={activeMatchId}
-                                highlightContingentId={highlightContingentId}
-                                highlightContingentName={highlightContingentName}
-                                highlightEntryIds={highlightEntryIds}
-                                highlightAthleteNames={highlightAthleteNames}
-                            />
+                            {lowerRounds.map((round, idx) => (
+                                <Fragment key={round.roundName}>
+                                    {idx > 0 && (
+                                        <div className="flex flex-col items-center justify-center text-amber-300 dark:text-amber-700 self-center">
+                                            <i className="fa-solid fa-arrow-right text-lg" />
+                                            <span className="text-[9px] font-bold mt-1 uppercase tracking-wider text-amber-600">Lolos</span>
+                                        </div>
+                                    )}
+                                    <BracketRoundColumn
+                                        roundName={round.roundName}
+                                        matches={round.matches}
+                                        activeEvent={activeEvent}
+                                        canManage={canManage}
+                                        isMonitor={isMonitor}
+                                        activeMatchId={activeMatchId}
+                                        isFirstRound={idx === 0}
+                                        isLastRound={idx === lowerRounds.length - 1}
+                                        highlightContingentId={highlightContingentId}
+                                        highlightContingentName={highlightContingentName}
+                                        highlightEntryIds={highlightEntryIds}
+                                        highlightAthleteNames={highlightAthleteNames}
+                                    />
+                                </Fragment>
+                            ))}
+                            <div className="flex flex-col items-center justify-center text-stone-300 dark:text-white/20 self-center">
+                                <i className="fa-solid fa-angles-right text-2xl text-amber-500 animate-pulse" />
+                                <span className="text-[9px] font-black uppercase tracking-wider mt-1 text-stone-500 dark:text-white/50">Finalis</span>
+                            </div>
                             <BracketRoundColumn
                                 roundName="Grand Final"
                                 matches={grandFinalMatches}

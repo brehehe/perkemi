@@ -495,6 +495,236 @@ class TournamentDrawingGenerator
     /** @param Collection<int, array<string, mixed>> $participants */
     private function createDoubleEliminationNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
     {
+        if ($participants->count() === 5) {
+            $this->create5ParticipantDoubleEliminationNodes($event, $category, $drawing, $participants);
+
+            return;
+        }
+
+        $this->create4ParticipantDoubleEliminationNodes($event, $category, $drawing, $participants);
+    }
+
+    /** @param Collection<int, array<string, mixed>> $participants */
+    private function create5ParticipantDoubleEliminationNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
+    {
+        $athleteIds = $participants
+            ->flatMap(fn (array $participant) => $participant['athlete_ids'] ?? [])
+            ->unique()
+            ->values()
+            ->all();
+
+        $p = $participants->values();
+        $p0 = $p->get(0);
+        $p1 = $p->get(1);
+        $p2 = $p->get(2);
+        $p3 = $p->get(3);
+        $p4 = $p->get(4);
+
+        // 1. Upper Bracket · Babak 1 (Seed 4 vs Seed 5)
+        $m1 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Upper Bracket · Babak 1',
+            'match_sequence' => 1,
+            'bracket_position' => 1,
+            'red_entry_id' => $p3['entry_id'] ?? null,
+            'blue_entry_id' => $p4['entry_id'] ?? null,
+            'red_label' => $p3['label'] ?? 'Peserta',
+            'blue_label' => $p4['label'] ?? 'Peserta',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => array_merge($this->pairMetadata($p3, $p4), [
+                'winner_target_match_sequence' => 3,
+                'winner_target_corner' => 'blue',
+                'loser_target_match_sequence' => 4,
+                'loser_target_corner' => 'red',
+            ]),
+        ]);
+
+        // 2. Upper Bracket · Semifinal 1 (Seed 2 vs Seed 3)
+        $m2 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Upper Bracket · Semifinal',
+            'match_sequence' => 2,
+            'bracket_position' => 1,
+            'red_entry_id' => $p1['entry_id'] ?? null,
+            'blue_entry_id' => $p2['entry_id'] ?? null,
+            'red_label' => $p1['label'] ?? 'Peserta',
+            'blue_label' => $p2['label'] ?? 'Peserta',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => array_merge($this->pairMetadata($p1, $p2), [
+                'winner_target_match_sequence' => 5,
+                'winner_target_corner' => 'red',
+                'loser_target_match_sequence' => 4,
+                'loser_target_corner' => 'blue',
+            ]),
+        ]);
+
+        // 3. Upper Bracket · Semifinal 2 (Seed 1 vs Pemenang Partai #1)
+        $m3 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Upper Bracket · Semifinal',
+            'match_sequence' => 3,
+            'bracket_position' => 2,
+            'red_entry_id' => $p0['entry_id'] ?? null,
+            'blue_entry_id' => null,
+            'red_label' => $p0['label'] ?? 'Peserta',
+            'blue_label' => 'Pemenang Partai #1',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'red' => $p0,
+                'blue' => null,
+                'athlete_ids' => $athleteIds,
+                'winner_target_match_sequence' => 5,
+                'winner_target_corner' => 'blue',
+                'loser_target_match_sequence' => 6,
+                'loser_target_corner' => 'blue',
+            ],
+        ]);
+
+        // 4. Lower Bracket · Babak 1 (Kalah Partai #1 vs Kalah Partai #2)
+        $m4 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Lower Bracket · Babak 1',
+            'match_sequence' => 4,
+            'bracket_position' => 1,
+            'red_label' => 'Kalah Partai #1',
+            'blue_label' => 'Kalah Partai #2',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'athlete_ids' => $athleteIds,
+                'winner_target_match_sequence' => 6,
+                'winner_target_corner' => 'red',
+            ],
+        ]);
+
+        // 5. Final Upper Bracket (Pemenang Partai #2 vs Pemenang Partai #3)
+        $m5 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Final Upper Bracket',
+            'match_sequence' => 5,
+            'bracket_position' => 1,
+            'red_label' => 'Pemenang Partai #2',
+            'blue_label' => 'Pemenang Partai #3',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'athlete_ids' => $athleteIds,
+                'winner_target_match_sequence' => 8,
+                'winner_target_corner' => 'red',
+                'loser_target_match_sequence' => 7,
+                'loser_target_corner' => 'blue',
+            ],
+        ]);
+
+        // 6. Lower Bracket · Babak 2 (Pemenang Partai #4 vs Kalah Partai #3)
+        $m6 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Lower Bracket · Babak 2',
+            'match_sequence' => 6,
+            'bracket_position' => 1,
+            'red_label' => 'Pemenang Partai #4',
+            'blue_label' => 'Kalah Partai #3',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'athlete_ids' => $athleteIds,
+                'winner_target_match_sequence' => 7,
+                'winner_target_corner' => 'red',
+            ],
+        ]);
+
+        // 7. Final Lower Bracket (Pemenang Partai #6 vs Kalah Partai #5)
+        $m7 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'preliminary',
+            'round_label' => 'Final Lower Bracket',
+            'match_sequence' => 7,
+            'bracket_position' => 1,
+            'red_label' => 'Pemenang Partai #6',
+            'blue_label' => 'Kalah Partai #5',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'athlete_ids' => $athleteIds,
+                'winner_target_match_sequence' => 8,
+                'winner_target_corner' => 'blue',
+            ],
+        ]);
+
+        // 8. Grand Final (Pemenang Partai #5 vs Pemenang Partai #7)
+        $m8 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'final',
+            'round_label' => 'Grand Final',
+            'match_sequence' => 8,
+            'bracket_position' => 1,
+            'red_label' => 'Pemenang Partai #5',
+            'blue_label' => 'Pemenang Partai #7',
+            'is_bye' => false,
+            'status' => 'pending',
+            'call_status' => 'waiting',
+            'metadata' => [
+                'placeholder' => true,
+                'athlete_ids' => $athleteIds,
+            ],
+        ]);
+
+        // 9. Grand Final Ulang (GF2) - Bila Perlu
+        $m9 = $this->createNode($event, $category, $drawing, [
+            'phase' => 'final',
+            'round_label' => 'Grand Final Ulang (GF2)',
+            'match_sequence' => 9,
+            'bracket_position' => 2,
+            'red_label' => 'Pemenang Upper Bracket (Bila Perlu)',
+            'blue_label' => 'Pemenang Lower Bracket (Bila Perlu)',
+            'is_bye' => false,
+            'status' => 'pending',
+            'metadata' => [
+                'placeholder' => true,
+                'is_gf2' => true,
+                'athlete_ids' => $athleteIds,
+            ],
+        ]);
+
+        // Wire target IDs and next_match_id
+        $matchMap = collect([$m1, $m2, $m3, $m4, $m5, $m6, $m7, $m8, $m9])->keyBy('match_sequence');
+        foreach ($matchMap as $match) {
+            $meta = $match->metadata ?? [];
+            $winSeq = $meta['winner_target_match_sequence'] ?? null;
+            $loseSeq = $meta['loser_target_match_sequence'] ?? null;
+            $updates = [];
+
+            if ($winSeq && $matchMap->has($winSeq)) {
+                $meta['winner_target_match_id'] = $matchMap->get($winSeq)->id;
+                $updates['next_match_id'] = $matchMap->get($winSeq)->id;
+            }
+            if ($loseSeq && $matchMap->has($loseSeq)) {
+                $meta['loser_target_match_id'] = $matchMap->get($loseSeq)->id;
+            }
+            if ($match->match_sequence === 8) {
+                $updates['next_match_id'] = $m9->id;
+            }
+            $updates['metadata'] = $meta;
+            $match->update($updates);
+        }
+    }
+
+    /** @param Collection<int, array<string, mixed>> $participants */
+    private function create4ParticipantDoubleEliminationNodes(Event $event, EventMatchCategory $category, TournamentDrawing $drawing, Collection $participants): void
+    {
         $seeded = $participants->values()->pad(4, null);
         $athleteIds = $participants
             ->flatMap(fn (array $participant) => $participant['athlete_ids'] ?? [])
@@ -611,6 +841,38 @@ class TournamentDrawingGenerator
             ],
         ]);
         $grandFinal->update(['next_match_id' => $grandFinal2->id]);
+
+        // Enrich 4-participant nodes with explicit targets in metadata
+        $u1Meta = $upper1->metadata ?? [];
+        $u1Meta['winner_target_match_id'] = $upperFinal->id;
+        $u1Meta['winner_target_corner'] = 'red';
+        $u1Meta['loser_target_match_id'] = $lowerRound->id;
+        $u1Meta['loser_target_corner'] = 'red';
+        $upper1->update(['metadata' => $u1Meta]);
+
+        $u2Meta = $upper2->metadata ?? [];
+        $u2Meta['winner_target_match_id'] = $upperFinal->id;
+        $u2Meta['winner_target_corner'] = 'blue';
+        $u2Meta['loser_target_match_id'] = $lowerRound->id;
+        $u2Meta['loser_target_corner'] = 'blue';
+        $upper2->update(['metadata' => $u2Meta]);
+
+        $lrMeta = $lowerRound->metadata ?? [];
+        $lrMeta['winner_target_match_id'] = $lowerFinal->id;
+        $lrMeta['winner_target_corner'] = 'red';
+        $lowerRound->update(['metadata' => $lrMeta]);
+
+        $ufMeta = $upperFinal->metadata ?? [];
+        $ufMeta['winner_target_match_id'] = $grandFinal->id;
+        $ufMeta['winner_target_corner'] = 'red';
+        $ufMeta['loser_target_match_id'] = $lowerFinal->id;
+        $ufMeta['loser_target_corner'] = 'blue';
+        $upperFinal->update(['metadata' => $ufMeta]);
+
+        $lfMeta = $lowerFinal->metadata ?? [];
+        $lfMeta['winner_target_match_id'] = $grandFinal->id;
+        $lfMeta['winner_target_corner'] = 'blue';
+        $lowerFinal->update(['metadata' => $lfMeta]);
     }
 
     /** @param Collection<int, array<string, mixed>> $participants */

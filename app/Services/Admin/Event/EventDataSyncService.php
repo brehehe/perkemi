@@ -3,6 +3,8 @@
 namespace App\Services\Admin\Event;
 
 use App\Models\Event;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -40,6 +42,11 @@ class EventDataSyncService
         $athletes = empty($contingentIds)
             ? collect()
             : DB::table('athletes')->whereIn('contingent_id', $contingentIds)->get();
+        $athleteIds = $athletes->pluck('id')->all();
+
+        $rankHistories = empty($athleteIds)
+            ? collect()
+            : DB::table('athlete_rank_histories')->whereIn('athlete_id', $athleteIds)->get();
 
         // 3. Registrations & Entries
         $registrations = DB::table('registrations')->where('event_id', $eventId)->get();
@@ -49,6 +56,12 @@ class EventDataSyncService
         $techniques = empty($embuTechIds)
             ? collect()
             : DB::table('techniques')->whereIn('id', $embuTechIds)->get();
+
+        $weightClassIds = $matchCategories->pluck('weight_class_id')->filter()->unique()->all();
+        $weightClasses = empty($weightClassIds)
+            ? collect()
+            : DB::table('weight_classes')->whereIn('id', $weightClassIds)->get();
+
         $drawings = DB::table('tournament_drawings')->where('event_id', $eventId)->get();
 
         // 4. Matches, Scores, and Results
@@ -56,20 +69,23 @@ class EventDataSyncService
         $matchIds = $matches->pluck('id')->all();
 
         $embuScores = empty($matchIds)
-            ? collect()
-            : DB::table('embu_scores')->whereIn('tournament_match_id', $matchIds)->get();
+            ? DB::table('embu_scores')->where('event_id', $eventId)->get()
+            : DB::table('embu_scores')
+                ->where('event_id', $eventId)
+                ->orWhereIn('tournament_match_id', $matchIds)
+                ->get();
 
         $embuJudgeScores = DB::table('embu_judge_scores')->where('event_id', $eventId)->get();
 
         $randoriScores = empty($matchIds)
-            ? collect()
+            ? DB::table('randori_scores')->where('event_id', $eventId)->get()
             : DB::table('randori_scores')
                 ->where('event_id', $eventId)
                 ->orWhereIn('tournament_match_id', $matchIds)
                 ->get();
 
         $varReviews = empty($matchIds)
-            ? collect()
+            ? DB::table('tournament_match_var_reviews')->where('event_id', $eventId)->get()
             : DB::table('tournament_match_var_reviews')
                 ->where('event_id', $eventId)
                 ->orWhereIn('tournament_match_id', $matchIds)
@@ -77,7 +93,7 @@ class EventDataSyncService
 
         $tournamentResults = DB::table('tournament_results')->where('event_id', $eventId)->get();
 
-        // 5. Staff, Assignments, Attendances
+        // 5. Staff, Assignments, Attendances & Check-In Codes
         $courtIds = $courts->pluck('id')->all();
         $courtAssignments = empty($courtIds)
             ? collect()
@@ -86,6 +102,7 @@ class EventDataSyncService
         $refereeAttendances = DB::table('referee_attendances')->where('event_id', $eventId)->get();
         $refereeCourtAttendances = DB::table('referee_court_attendances')->where('event_id', $eventId)->get();
         $assignmentHistories = DB::table('referee_court_assignment_histories')->where('event_id', $eventId)->get();
+        $refereeCheckInCodes = DB::table('referee_check_in_codes')->where('event_id', $eventId)->get();
 
         // Pivot tables & referenced staff records
         $eventRefereePivots = DB::table('event_referee')->where('event_id', $eventId)->get();
@@ -107,7 +124,56 @@ class EventDataSyncService
             : DB::table('field_coordinators')->whereIn('id', $coordIds)->get();
 
         $paymentPivots = DB::table('event_payment_method')->where('event_id', $eventId)->get();
+        $paymentMethodIds = array_values(array_unique(array_filter(array_merge(
+            $paymentPivots->pluck('payment_method_id')->all(),
+            $registrations->pluck('payment_method_id')->filter()->all()
+        ))));
+        $paymentMethods = empty($paymentMethodIds)
+            ? collect()
+            : DB::table('payment_methods')->whereIn('id', $paymentMethodIds)->get();
+
         $eventUsers = DB::table('event_user')->where('event_id', $eventId)->get();
+
+        // 6. Gather all associated users (Staff, Referees, Contingents, Scoring signers)
+        $eventUserIds = $eventUsers->pluck('user_id')->all();
+        $contingentUserIds = $contingents->pluck('user_id')->filter()->all();
+        $refereeUserIds = $referees->pluck('user_id')->filter()->all();
+
+        $allUserIds = array_values(array_filter(array_unique(array_merge(
+            $eventUserIds,
+            $contingentUserIds,
+            $refereeUserIds,
+            $matchCategories->pluck('scoring_locked_by')->filter()->all(),
+            $matchCategories->pluck('weigh_in_locked_by')->filter()->all(),
+            $categoryEntries->pluck('weigh_in_by')->filter()->all(),
+            $categoryEntries->pluck('weigh_in_locked_by')->filter()->all(),
+            $embuScores->pluck('submitted_by')->filter()->all(),
+            $embuScores->pluck('verified_by')->filter()->all(),
+            $embuJudgeScores->pluck('user_id')->filter()->all(),
+            $randoriScores->pluck('submitted_by')->filter()->all(),
+            $randoriScores->pluck('verified_by')->filter()->all(),
+            $randoriScores->pluck('locked_by')->filter()->all(),
+            $refereeAttendances->pluck('checked_in_by_user_id')->filter()->all(),
+            $refereeCourtAttendances->pluck('checked_in_by_user_id')->filter()->all(),
+            $assignmentHistories->pluck('changed_by_user_id')->filter()->all(),
+            $registrations->pluck('payment_verified_by')->filter()->all(),
+            $athletes->pluck('school_verified_by')->filter()->all(),
+            $rankHistories->pluck('changed_by')->filter()->all(),
+        ))));
+
+        $users = empty($allUserIds)
+            ? collect()
+            : User::query()->whereIn('id', $allUserIds)->with('roles')->get();
+
+        $exportedUsers = $users->map(fn (User $u) => [
+            'id' => $u->id,
+            'name' => $u->name,
+            'email' => $u->email,
+            'phone' => $u->phone,
+            'nik_perkemi' => $u->nik_perkemi,
+            'password' => $u->password,
+            'roles' => $u->roles->pluck('name')->all(),
+        ])->all();
 
         $exportData = [
             'event' => $eventData ? (array) $eventData : [],
@@ -118,9 +184,12 @@ class EventDataSyncService
             'contingents' => $contingents->map(fn ($r) => (array) $r)->all(),
             'officials' => $officials->map(fn ($r) => (array) $r)->all(),
             'athletes' => $athletes->map(fn ($r) => (array) $r)->all(),
+            'athlete_rank_histories' => $rankHistories->map(fn ($r) => (array) $r)->all(),
             'registrations' => $registrations->map(fn ($r) => (array) $r)->all(),
             'athlete_match_category_entries' => $categoryEntries->map(fn ($r) => (array) $r)->all(),
             'embu_team_techniques' => $embuTechniques->map(fn ($r) => (array) $r)->all(),
+            'techniques' => $techniques->map(fn ($r) => (array) $r)->all(),
+            'weight_classes' => $weightClasses->map(fn ($r) => (array) $r)->all(),
             'tournament_drawings' => $drawings->map(fn ($r) => (array) $r)->all(),
             'tournament_matches' => $matches->map(fn ($r) => (array) $r)->all(),
             'embu_scores' => $embuScores->map(fn ($r) => (array) $r)->all(),
@@ -132,13 +201,16 @@ class EventDataSyncService
             'referee_attendances' => $refereeAttendances->map(fn ($r) => (array) $r)->all(),
             'referee_court_attendances' => $refereeCourtAttendances->map(fn ($r) => (array) $r)->all(),
             'referee_court_assignment_histories' => $assignmentHistories->map(fn ($r) => (array) $r)->all(),
+            'referee_check_in_codes' => $refereeCheckInCodes->map(fn ($r) => (array) $r)->all(),
             'referees' => $referees->map(fn ($r) => (array) $r)->all(),
             'event_referee' => $eventRefereePivots->map(fn ($r) => (array) $r)->all(),
             'clerks' => $clerks->map(fn ($r) => (array) $r)->all(),
             'clerk_event' => $clerkPivots->map(fn ($r) => (array) $r)->all(),
             'field_coordinators' => $coordinators->map(fn ($r) => (array) $r)->all(),
             'event_field_coordinator' => $coordPivots->map(fn ($r) => (array) $r)->all(),
+            'payment_methods' => $paymentMethods->map(fn ($r) => (array) $r)->all(),
             'event_payment_method' => $paymentPivots->map(fn ($r) => (array) $r)->all(),
+            'users' => $exportedUsers,
             'event_user' => $eventUsers->map(fn ($r) => (array) $r)->all(),
         ];
 
@@ -147,14 +219,24 @@ class EventDataSyncService
             'match_categories' => count($exportData['event_match_categories']),
             'age_categories' => count($exportData['event_age_categories']),
             'contingents' => count($exportData['contingents']),
+            'officials' => count($exportData['officials']),
             'athletes' => count($exportData['athletes']),
+            'rank_histories' => count($exportData['athlete_rank_histories']),
             'registrations' => count($exportData['registrations']),
+            'category_entries' => count($exportData['athlete_match_category_entries']),
+            'techniques' => count($exportData['techniques']),
             'matches' => count($exportData['tournament_matches']),
             'embu_scores' => count($exportData['embu_scores']),
             'embu_judge_scores' => count($exportData['embu_judge_scores']),
             'randori_scores' => count($exportData['randori_scores']),
+            'var_reviews' => count($exportData['tournament_match_var_reviews']),
             'tournament_results' => count($exportData['tournament_results']),
             'referees' => count($exportData['referees']),
+            'clerks' => count($exportData['clerks']),
+            'field_coordinators' => count($exportData['field_coordinators']),
+            'referee_check_in_codes' => count($exportData['referee_check_in_codes']),
+            'payment_methods' => count($exportData['payment_methods']),
+            'users' => count($exportData['users']),
         ];
 
         $payloadJson = json_encode($exportData, JSON_UNESCAPED_UNICODE);
@@ -207,7 +289,69 @@ class EventDataSyncService
                 return $userCache[$uid];
             };
 
-            // 0. Resolve target event in destination database (by ID or unique slug)
+            // 0. Upsert Associated Users and Build ID Map
+            $userIdMap = [];
+            if (! empty($data['users'])) {
+                $userColumns = Schema::getColumnListing('users');
+                foreach ($data['users'] as $u) {
+                    $exportedId = $u['id'];
+                    $email = ! empty($u['email']) ? strtolower(trim((string) $u['email'])) : null;
+
+                    $existing = DB::table('users')
+                        ->where('id', $exportedId)
+                        ->when($email, fn ($q) => $q->orWhereRaw('LOWER(email) = ?', [$email]))
+                        ->first();
+
+                    if ($existing) {
+                        $userIdMap[$exportedId] = $existing->id;
+                        $userCache[$existing->id] = true;
+                        $userCache[$exportedId] = true;
+
+                        $updates = collect($u)
+                            ->only(['phone', 'nik_perkemi'])
+                            ->filter()
+                            ->reject(fn ($val, $key) => ! empty($existing->{$key}))
+                            ->all();
+
+                        if (! empty($updates)) {
+                            DB::table('users')->where('id', $existing->id)->update($updates);
+                        }
+                    } else {
+                        $userData = collect($u)
+                            ->only($userColumns)
+                            ->put('id', $exportedId)
+                            ->put('email', $email)
+                            ->put('created_at', now())
+                            ->put('updated_at', now())
+                            ->all();
+
+                        DB::table('users')->insert($userData);
+                        $userIdMap[$exportedId] = $exportedId;
+                        $userCache[$exportedId] = true;
+
+                        if (! empty($u['roles'])) {
+                            $userModel = User::query()->find($exportedId);
+                            if ($userModel) {
+                                foreach ($u['roles'] as $roleName) {
+                                    $role = Role::findOrCreate($roleName, 'web');
+                                    $userModel->assignRole($role);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            $remapUserId = function (?string $uid) use ($userIdMap, $isUserValid): ?string {
+                if (empty($uid)) {
+                    return null;
+                }
+                $targetUid = $userIdMap[$uid] ?? $uid;
+
+                return $isUserValid($targetUid) ? $targetUid : null;
+            };
+
+            // 1. Resolve target event in destination database (by ID or unique slug)
             $existingEvent = DB::table('events')
                 ->where('id', $exportedEventId)
                 ->when(! empty($eventRow['slug']), fn ($q) => $q->orWhere('slug', $eventRow['slug']))
@@ -215,7 +359,7 @@ class EventDataSyncService
 
             $targetEventId = $existingEvent ? $existingEvent->id : $exportedEventId;
 
-            // 1. Upsert Referenced Master Staff with smart matching and ID mapping
+            // 2. Upsert Referenced Master Staff & Resources with smart matching and ID mapping
             $refereeIdMap = [];
             if (! empty($data['referees'])) {
                 $refereeColumns = Schema::getColumnListing('referees');
@@ -228,11 +372,9 @@ class EventDataSyncService
                         ->first();
 
                     $targetRefereeId = $existing ? $existing->id : $exportedId;
-                    $validUserId = null;
-                    if ($isUserValid($referee['user_id'] ?? null)) {
-                        $validUserId = $referee['user_id'];
-                    } elseif ($existing && $isUserValid($existing->user_id)) {
-                        $validUserId = $existing->user_id;
+                    $validUserId = $remapUserId($referee['user_id'] ?? null);
+                    if (! $validUserId && $existing) {
+                        $validUserId = $remapUserId($existing->user_id);
                     }
 
                     // user_id must be unique across referees
@@ -303,6 +445,34 @@ class EventDataSyncService
                 }
             }
 
+            // Sync payment methods
+            if (! empty($data['payment_methods'])) {
+                $pmColumns = Schema::getColumnListing('payment_methods');
+                foreach ($data['payment_methods'] as $pm) {
+                    $pmData = collect($pm)->only($pmColumns)->all();
+                    $existing = DB::table('payment_methods')->where('id', $pm['id'])->first();
+                    if ($existing) {
+                        DB::table('payment_methods')->where('id', $existing->id)->update(collect($pmData)->except(['id'])->all());
+                    } else {
+                        DB::table('payment_methods')->insert($pmData);
+                    }
+                }
+            }
+
+            // Sync weight classes
+            if (! empty($data['weight_classes'])) {
+                $wcColumns = Schema::getColumnListing('weight_classes');
+                foreach ($data['weight_classes'] as $wc) {
+                    $wcData = collect($wc)->only($wcColumns)->all();
+                    $existing = DB::table('weight_classes')->where('id', $wc['id'])->first();
+                    if ($existing) {
+                        DB::table('weight_classes')->where('id', $existing->id)->update(collect($wcData)->except(['id'])->all());
+                    } else {
+                        DB::table('weight_classes')->insert($wcData);
+                    }
+                }
+            }
+
             // Sync or stub referenced techniques
             if (! empty($data['techniques'])) {
                 $techColumns = Schema::getColumnListing('techniques');
@@ -328,8 +498,8 @@ class EventDataSyncService
                 }
             }
 
-            // 2. Clean old child data for both target and exported event IDs
-            $cleanupEventIds = array_unique([$targetEventId, $exportedEventId]);
+            // 3. Clean old child data for both target and exported event IDs
+            $cleanupEventIds = array_values(array_unique([$targetEventId, $exportedEventId]));
             $oldMatches = DB::table('tournament_matches')->whereIn('event_id', $cleanupEventIds)->pluck('id')->all();
             $oldCourts = DB::table('event_courts')->whereIn('event_id', $cleanupEventIds)->pluck('id')->all();
             $oldContingents = DB::table('contingents')->whereIn('event_id', $cleanupEventIds)->pluck('id')->all();
@@ -341,7 +511,10 @@ class EventDataSyncService
                     ->whereIn('event_id', $cleanupEventIds)
                     ->orWhereIn('tournament_match_id', $oldMatches)
                     ->delete();
-                DB::table('embu_scores')->whereIn('tournament_match_id', $oldMatches)->delete();
+                DB::table('embu_scores')
+                    ->whereIn('event_id', $cleanupEventIds)
+                    ->orWhereIn('tournament_match_id', $oldMatches)
+                    ->delete();
                 DB::table('randori_scores')
                     ->whereIn('event_id', $cleanupEventIds)
                     ->orWhereIn('tournament_match_id', $oldMatches)
@@ -355,6 +528,7 @@ class EventDataSyncService
             DB::table('athlete_match_category_entries')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('registrations')->whereIn('event_id', $cleanupEventIds)->delete();
 
+            DB::table('referee_check_in_codes')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('referee_court_assignment_histories')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('referee_court_attendances')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('referee_attendances')->whereIn('event_id', $cleanupEventIds)->delete();
@@ -364,6 +538,10 @@ class EventDataSyncService
             }
 
             if (! empty($oldContingents)) {
+                $oldAthletes = DB::table('athletes')->whereIn('contingent_id', $oldContingents)->pluck('id')->all();
+                if (! empty($oldAthletes)) {
+                    DB::table('athlete_rank_histories')->whereIn('athlete_id', $oldAthletes)->delete();
+                }
                 DB::table('officials')->whereIn('contingent_id', $oldContingents)->delete();
                 DB::table('athletes')->whereIn('contingent_id', $oldContingents)->delete();
             }
@@ -379,7 +557,7 @@ class EventDataSyncService
             DB::table('event_field_coordinator')->whereIn('event_id', $cleanupEventIds)->delete();
             DB::table('event_payment_method')->whereIn('event_id', $cleanupEventIds)->delete();
 
-            // 3. Upsert Event Core
+            // 4. Upsert Event Core
             $eventColumns = Schema::getColumnListing('events');
             $eventSaveData = collect($eventRow)->put('id', $targetEventId)->only($eventColumns);
             if ($existingEvent) {
@@ -399,69 +577,91 @@ class EventDataSyncService
                 }, $rows);
             };
 
-            // 4. Insert Child Tables in Dependency Order
+            // 5. Insert Child Tables in Dependency Order
             $this->bulkInsert('event_age_categories', $fixEventId($data['event_age_categories'] ?? []));
             $this->bulkInsert('event_courts', $fixEventId($data['event_courts'] ?? []));
 
-            $matchCategories = collect($fixEventId($data['event_match_categories'] ?? []))->map(function ($mc) use ($isUserValid) {
-                if (! $isUserValid($mc['scoring_locked_by'] ?? null)) {
-                    $mc['scoring_locked_by'] = null;
+            // Categories: sanitize lock users and handle self-referencing merged_into_id in two passes
+            $categoriesWithMerged = [];
+            $matchCategories = collect($fixEventId($data['event_match_categories'] ?? []))->map(function ($mc) use ($remapUserId, &$categoriesWithMerged) {
+                $mc['scoring_locked_by'] = $remapUserId($mc['scoring_locked_by'] ?? null);
+                $mc['weigh_in_locked_by'] = $remapUserId($mc['weigh_in_locked_by'] ?? null);
+
+                if (! empty($mc['merged_into_id'])) {
+                    $categoriesWithMerged[$mc['id']] = $mc['merged_into_id'];
+                    $mc['merged_into_id'] = null; // insert null first
                 }
 
                 return $mc;
             })->all();
             $this->bulkInsert('event_match_categories', $matchCategories);
 
+            // Second pass for merged_into_id
+            foreach ($categoriesWithMerged as $catId => $mergedIntoId) {
+                if (DB::table('event_match_categories')->where('id', $mergedIntoId)->exists()) {
+                    DB::table('event_match_categories')->where('id', $catId)->update(['merged_into_id' => $mergedIntoId]);
+                }
+            }
+
             $this->bulkInsert('rundowns', $fixEventId($data['rundowns'] ?? []));
 
-            // Contingents: ensure valid user_id and source_contingent_id
+            // Contingents: ensure valid user_id and handle self-referencing source_contingent_id
             $fallbackUserId = auth()->id() ?? DB::table('users')->value('id');
-            $contingents = collect($fixEventId($data['contingents'] ?? []))->map(function ($c) use ($fallbackUserId, $isUserValid) {
-                if (! $isUserValid($c['user_id'] ?? null)) {
-                    $matched = ! empty($c['email']) ? DB::table('users')->where('email', $c['email'])->value('id') : null;
-                    $c['user_id'] = $matched ?? $fallbackUserId;
-                }
-                if (! empty($c['source_contingent_id']) && ! DB::table('contingents')->where('id', $c['source_contingent_id'])->exists()) {
-                    $c['source_contingent_id'] = null;
+            $contingentsWithSource = [];
+            $contingents = collect($fixEventId($data['contingents'] ?? []))->map(function ($c) use ($fallbackUserId, $remapUserId, &$contingentsWithSource) {
+                $c['user_id'] = $remapUserId($c['user_id'] ?? null) ?? $fallbackUserId;
+
+                if (! empty($c['source_contingent_id'])) {
+                    $contingentsWithSource[$c['id']] = $c['source_contingent_id'];
+                    $c['source_contingent_id'] = null; // insert null first
                 }
 
                 return $c;
             })->all();
             $this->bulkInsert('contingents', $contingents);
 
+            // Second pass for source_contingent_id
+            foreach ($contingentsWithSource as $contingentId => $sourceId) {
+                if (DB::table('contingents')->where('id', $sourceId)->exists()) {
+                    DB::table('contingents')->where('id', $contingentId)->update(['source_contingent_id' => $sourceId]);
+                }
+            }
+
             $this->bulkInsert('officials', $data['officials'] ?? []);
 
             // Athletes: sanitize school_verified_by
-            $athletes = collect($data['athletes'] ?? [])->map(function ($a) use ($isUserValid) {
-                if (! $isUserValid($a['school_verified_by'] ?? null)) {
-                    $a['school_verified_by'] = null;
-                }
+            $athletes = collect($data['athletes'] ?? [])->map(function ($a) use ($remapUserId) {
+                $a['school_verified_by'] = $remapUserId($a['school_verified_by'] ?? null);
 
                 return $a;
             })->all();
             $this->bulkInsert('athletes', $athletes);
 
-            // Registrations: sanitize payment foreign keys
-            $registrations = collect($fixEventId($data['registrations'] ?? []))->map(function ($r) use ($isUserValid) {
+            // Athlete rank histories: sanitize changed_by
+            if (! empty($data['athlete_rank_histories'])) {
+                $rankHistories = collect($data['athlete_rank_histories'])->map(function ($rh) use ($remapUserId) {
+                    $rh['changed_by'] = $remapUserId($rh['changed_by'] ?? null);
+
+                    return $rh;
+                })->all();
+                $this->bulkInsert('athlete_rank_histories', $rankHistories);
+            }
+
+            // Registrations: sanitize payment foreign keys and verification user
+            $registrations = collect($fixEventId($data['registrations'] ?? []))->map(function ($r) use ($remapUserId) {
                 if (! empty($r['payment_method_id']) && ! DB::table('payment_methods')->where('id', $r['payment_method_id'])->exists()) {
                     $r['payment_method_id'] = null;
                 }
-                if (! $isUserValid($r['payment_verified_by'] ?? null)) {
-                    $r['payment_verified_by'] = null;
-                }
+                $r['payment_verified_by'] = $remapUserId($r['payment_verified_by'] ?? null);
 
                 return $r;
             })->all();
             $this->bulkInsert('registrations', $registrations);
 
             // Category entries: sanitize weigh_in users
-            $categoryEntries = collect($fixEventId($data['athlete_match_category_entries'] ?? []))->map(function ($ce) use ($isUserValid) {
-                if (! $isUserValid($ce['weigh_in_by'] ?? null)) {
-                    $ce['weigh_in_by'] = null;
-                }
-                if (! $isUserValid($ce['weigh_in_locked_by'] ?? null)) {
-                    $ce['weigh_in_locked_by'] = null;
-                }
+            $categoryEntries = collect($fixEventId($data['athlete_match_category_entries'] ?? []))->map(function ($ce) use ($remapUserId) {
+                $ce['weigh_in_by'] = $remapUserId($ce['weigh_in_by'] ?? null);
+                $ce['weigh_in_locked_by'] = $remapUserId($ce['weigh_in_locked_by'] ?? null);
 
                 return $ce;
             })->all();
@@ -469,43 +669,49 @@ class EventDataSyncService
 
             $this->bulkInsert('embu_team_techniques', $fixEventId($data['embu_team_techniques'] ?? []));
             $this->bulkInsert('tournament_drawings', $fixEventId($data['tournament_drawings'] ?? []));
-            $this->bulkInsert('tournament_matches', $fixEventId($data['tournament_matches'] ?? []));
 
-            // Embu scores: sanitize submitted_by / verified_by
-            $embuScores = collect($data['embu_scores'] ?? [])->map(function ($es) use ($isUserValid) {
-                if (! $isUserValid($es['submitted_by'] ?? null)) {
-                    $es['submitted_by'] = null;
+            // Tournament matches: two-pass for self-referencing next_match_id
+            $matchesWithNext = [];
+            $matches = collect($fixEventId($data['tournament_matches'] ?? []))->map(function ($m) use (&$matchesWithNext) {
+                if (! empty($m['next_match_id'])) {
+                    $matchesWithNext[$m['id']] = $m['next_match_id'];
+                    $m['next_match_id'] = null; // insert null first
                 }
-                if (! $isUserValid($es['verified_by'] ?? null)) {
-                    $es['verified_by'] = null;
+
+                return $m;
+            })->all();
+            $this->bulkInsert('tournament_matches', $matches);
+
+            // Second pass for next_match_id
+            foreach ($matchesWithNext as $matchId => $nextMatchId) {
+                if (DB::table('tournament_matches')->where('id', $nextMatchId)->exists()) {
+                    DB::table('tournament_matches')->where('id', $matchId)->update(['next_match_id' => $nextMatchId]);
                 }
+            }
+
+            // Embu scores: sanitize submitted_by / verified_by and ensure correct event_id
+            $embuScores = collect($fixEventId($data['embu_scores'] ?? []))->map(function ($es) use ($remapUserId) {
+                $es['submitted_by'] = $remapUserId($es['submitted_by'] ?? null);
+                $es['verified_by'] = $remapUserId($es['verified_by'] ?? null);
 
                 return $es;
             })->all();
             $this->bulkInsert('embu_scores', $embuScores);
 
             // Embu judge scores: remap referee_id and sanitize user_id
-            $embuJudgeScores = collect($fixEventId($data['embu_judge_scores'] ?? []))->map(function ($row) use ($refereeIdMap, $isUserValid) {
+            $embuJudgeScores = collect($fixEventId($data['embu_judge_scores'] ?? []))->map(function ($row) use ($refereeIdMap, $remapUserId) {
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
-                if (! $isUserValid($row['user_id'] ?? null)) {
-                    $row['user_id'] = null;
-                }
+                $row['user_id'] = $remapUserId($row['user_id'] ?? null);
 
                 return $row;
             })->all();
             $this->bulkInsert('embu_judge_scores', $embuJudgeScores);
 
             // Randori scores: sanitize users
-            $randoriScores = collect($fixEventId($data['randori_scores'] ?? []))->map(function ($rs) use ($isUserValid) {
-                if (! $isUserValid($rs['submitted_by'] ?? null)) {
-                    $rs['submitted_by'] = null;
-                }
-                if (! $isUserValid($rs['verified_by'] ?? null)) {
-                    $rs['verified_by'] = null;
-                }
-                if (! $isUserValid($rs['locked_by'] ?? null)) {
-                    $rs['locked_by'] = null;
-                }
+            $randoriScores = collect($fixEventId($data['randori_scores'] ?? []))->map(function ($rs) use ($remapUserId) {
+                $rs['submitted_by'] = $remapUserId($rs['submitted_by'] ?? null);
+                $rs['verified_by'] = $remapUserId($rs['verified_by'] ?? null);
+                $rs['locked_by'] = $remapUserId($rs['locked_by'] ?? null);
 
                 return $rs;
             })->all();
@@ -530,37 +736,43 @@ class EventDataSyncService
             $this->bulkInsert('event_court_assignments', $courtAssignments);
 
             // Referee attendances: remap referee_id and sanitize checked_in_by_user_id
-            $refereeAttendances = collect($fixEventId($data['referee_attendances'] ?? []))->map(function ($row) use ($refereeIdMap, $isUserValid) {
+            $refereeAttendances = collect($fixEventId($data['referee_attendances'] ?? []))->map(function ($row) use ($refereeIdMap, $remapUserId) {
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
-                if (! $isUserValid($row['checked_in_by_user_id'] ?? null)) {
-                    $row['checked_in_by_user_id'] = null;
-                }
+                $row['checked_in_by_user_id'] = $remapUserId($row['checked_in_by_user_id'] ?? null);
 
                 return $row;
             })->unique(fn ($r) => $r['event_id'].'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
             $this->bulkInsert('referee_attendances', $refereeAttendances);
 
             // Referee court attendances
-            $refereeCourtAttendances = collect($data['referee_court_attendances'] ?? [])->map(function ($row) use ($refereeIdMap, $isUserValid) {
+            $refereeCourtAttendances = collect($data['referee_court_attendances'] ?? [])->map(function ($row) use ($refereeIdMap, $remapUserId) {
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
-                if (! $isUserValid($row['checked_in_by_user_id'] ?? null)) {
-                    $row['checked_in_by_user_id'] = null;
-                }
+                $row['checked_in_by_user_id'] = $remapUserId($row['checked_in_by_user_id'] ?? null);
 
                 return $row;
             })->unique(fn ($r) => ($r['event_court_id'] ?? '').'-'.$r['referee_id'].'-'.($r['attendance_date'] ?? ''))->values()->all();
             $this->bulkInsert('referee_court_attendances', $refereeCourtAttendances);
 
             // Referee assignment histories
-            $assignmentHistories = collect($fixEventId($data['referee_court_assignment_histories'] ?? []))->map(function ($row) use ($refereeIdMap, $isUserValid) {
+            $assignmentHistories = collect($fixEventId($data['referee_court_assignment_histories'] ?? []))->map(function ($row) use ($refereeIdMap, $remapUserId) {
                 $row['referee_id'] = $refereeIdMap[$row['referee_id']] ?? $row['referee_id'];
-                if (! $isUserValid($row['changed_by_user_id'] ?? null)) {
-                    $row['changed_by_user_id'] = null;
-                }
+                $row['changed_by_user_id'] = $remapUserId($row['changed_by_user_id'] ?? null);
 
                 return $row;
             })->all();
             $this->bulkInsert('referee_court_assignment_histories', $assignmentHistories);
+
+            // Referee check-in codes
+            if (! empty($data['referee_check_in_codes'])) {
+                $checkInCodes = collect($fixEventId($data['referee_check_in_codes']))->map(function ($code) use ($targetEventId, $exportedEventId) {
+                    if ($targetEventId !== $exportedEventId && ! empty($code['target_url'])) {
+                        $code['target_url'] = str_replace($exportedEventId, $targetEventId, (string) $code['target_url']);
+                    }
+
+                    return $code;
+                })->all();
+                $this->bulkInsert('referee_check_in_codes', $checkInCodes);
+            }
 
             // Event referees
             $eventReferees = collect($fixEventId($data['event_referee'] ?? []))->map(function ($row) use ($refereeIdMap) {
@@ -589,11 +801,19 @@ class EventDataSyncService
             $this->bulkInsert('event_payment_method', $fixEventId($data['event_payment_method'] ?? []));
 
             if (! empty($data['event_user'])) {
+                $euCols = Schema::getColumnListing('event_user');
                 foreach ($data['event_user'] as $eu) {
-                    if ($isUserValid($eu['user_id'])) {
+                    $targetUid = $remapUserId($eu['user_id'] ?? null);
+                    if ($targetUid) {
+                        $euRow = collect($eu)
+                            ->only($euCols)
+                            ->put('event_id', $targetEventId)
+                            ->put('user_id', $targetUid)
+                            ->all();
+
                         DB::table('event_user')->updateOrInsert(
-                            ['event_id' => $targetEventId, 'user_id' => $eu['user_id']],
-                            array_merge($eu, ['event_id' => $targetEventId])
+                            ['event_id' => $targetEventId, 'user_id' => $targetUid],
+                            $euRow
                         );
                     }
                 }
@@ -612,13 +832,15 @@ class EventDataSyncService
                     'embu_judge_scores' => count($data['embu_judge_scores'] ?? []),
                     'randori_scores' => count($data['randori_scores'] ?? []),
                     'tournament_results' => count($data['tournament_results'] ?? []),
+                    'users' => count($data['users'] ?? []),
+                    'referee_check_in_codes' => count($data['referee_check_in_codes'] ?? []),
                 ],
             ];
         });
     }
 
     /**
-     * Safely bulk insert rows into a table, automatically filtering only existing columns.
+     * Safely bulk insert rows into a table, automatically filtering only existing columns and encoding arrays as JSON.
      *
      * @param  list<array<string, mixed>>  $rows
      */
@@ -629,7 +851,16 @@ class EventDataSyncService
         }
 
         $columns = Schema::getColumnListing($table);
-        $filtered = array_map(fn ($r) => collect($r)->only($columns)->all(), $rows);
+        $filtered = array_map(function ($r) use ($columns) {
+            $row = collect($r)->only($columns)->all();
+            foreach ($row as $col => $val) {
+                if (is_array($val)) {
+                    $row[$col] = json_encode($val, JSON_UNESCAPED_UNICODE);
+                }
+            }
+
+            return $row;
+        }, $rows);
 
         foreach (array_chunk($filtered, 100) as $chunk) {
             DB::table($table)->insert($chunk);

@@ -35,6 +35,20 @@
         .aka { border-left: 3px solid #b3261e; }
         .shiro { border-left: 3px solid #a7a7a7; }
         .schedule { padding: 3px 5px; border-top: 1px solid #ddd5cc; color: #746b63; font-size: 8px; }
+        /* Double Elimination Layout */
+        .de-layout { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 8px 0; margin-top: 2px; }
+        .de-bracket-panel { margin-bottom: 7px; border: 1px solid #bfdbfe; border-radius: 4px; background: #f8fafc; padding: 4px 6px; }
+        .de-lower-panel { border-color: #fde68a; background: #fffdf5; }
+        .de-panel-header { padding: 3px 6px; border-radius: 3px; font-size: 8.5px; font-weight: bold; margin-bottom: 4px; }
+        .de-upper-header { background: #1e3a8a; color: #ffffff; }
+        .de-lower-header { background: #78350f; color: #ffffff; }
+        .de-panel-badge { float: right; padding: 1px 5px; border-radius: 2px; font-size: 7px; font-weight: bold; text-transform: uppercase; }
+        .badge-upper { background: #3b82f6; color: #fff; }
+        .badge-lower { background: #d97706; color: #fff; }
+        .de-final-box { border: 2px solid #ca8a04; border-radius: 4px; background: #fefce8; padding: 5px 6px; }
+        .de-final-header { background: #17120f; color: #facc15; text-align: center; font-size: 8.5px; font-weight: bold; padding: 4px; border-radius: 3px; margin-bottom: 4px; }
+        .final-match-card { margin: 5px 0; border: 1px solid #ca8a04; border-radius: 4px; background: #ffffff; page-break-inside: avoid; }
+        .final-match-title { padding: 3px 5px; background: #fef08a; font-size: 8px; font-weight: bold; color: #713f12; }
         .data-table { width: 100%; border-collapse: collapse; }
         .data-table th, .data-table td { padding: 5px 6px; border: 1px solid #777; vertical-align: top; }
         .data-table th { background: #eee7de; text-align: center; }
@@ -79,6 +93,125 @@
 
                 @if($drawing['matches']->isEmpty())
                     <div class="empty">Bagan belum memiliki partai atau nomor tampil.</div>
+                @elseif($drawing['category_type'] === 'randori' && ($drawing['is_double_elimination'] ?? false))
+                    <table class="de-layout" data-testid="randori-double-elimination">
+                        <tr>
+                            <!-- KOLOM KIRI: BAGAN PEMENANG (ATAS) & BAGAN HARAPAN (BAWAH) -->
+                            <td style="width: 76%; vertical-align: top; padding: 0;">
+                                <!-- 1. BAGAN PEMENANG (UPPER BRACKET) - DI ATAS -->
+                                <div class="de-bracket-panel">
+                                    <div class="de-panel-header de-upper-header">
+                                        <span class="de-panel-badge badge-upper">Jalur Utama</span>
+                                        BAGAN PEMENANG (UPPER BRACKET)
+                                    </div>
+                                    <table class="bracket">
+                                        <thead>
+                                            <tr>
+                                                @foreach($drawing['upper_rounds'] as $roundLabel => $roundMatches)
+                                                    <th style="background: #1e40af; color: #e0e7ff; font-size: 8px;">{{ $roundLabel }}</th>
+                                                @endforeach
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                @foreach($drawing['upper_rounds'] as $roundMatches)
+                                                    <td style="vertical-align: top;">
+                                                        @foreach($roundMatches as $match)
+                                                            <div class="match-card">
+                                                                <div class="match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
+                                                                <div class="corner aka">
+                                                                    AKA &middot; {{ $match['red_label'] }}
+                                                                    @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="corner shiro">
+                                                                    SHIRO &middot; {{ $match['blue_label'] }}
+                                                                    @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
+                                                            </div>
+                                                        @endforeach
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- 2. BAGAN HARAPAN (LOWER BRACKET) - DI BAWAH -->
+                                <div class="de-bracket-panel de-lower-panel">
+                                    <div class="de-panel-header de-lower-header">
+                                        <span class="de-panel-badge badge-lower">Jalur Harapan</span>
+                                        BAGAN HARAPAN (LOWER BRACKET)
+                                    </div>
+                                    <table class="bracket">
+                                        <thead>
+                                            <tr>
+                                                @foreach($drawing['lower_rounds'] as $roundLabel => $roundMatches)
+                                                    <th style="background: #92400e; color: #fef3c7; font-size: 8px;">{{ $roundLabel }}</th>
+                                                @endforeach
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                @foreach($drawing['lower_rounds'] as $roundMatches)
+                                                    <td style="vertical-align: top;">
+                                                        @foreach($roundMatches as $match)
+                                                            <div class="match-card">
+                                                                <div class="match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
+                                                                <div class="corner aka">
+                                                                    AKA &middot; {{ $match['red_label'] }}
+                                                                    @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="corner shiro">
+                                                                    SHIRO &middot; {{ $match['blue_label'] }}
+                                                                    @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
+                                                                </div>
+                                                                <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
+                                                            </div>
+                                                        @endforeach
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </td>
+
+                            <!-- KOLOM KANAN: BABAK PUNCAK &middot; GRAND FINAL -->
+                            <td style="width: 24%; vertical-align: top; padding: 0;">
+                                <div class="de-final-box">
+                                    <div class="de-final-header">
+                                        BABAK PUNCAK &middot; GRAND FINAL
+                                    </div>
+                                    @if(!empty($drawing['final_rounds']) && $drawing['final_rounds']->isNotEmpty())
+                                        @foreach($drawing['final_rounds'] as $roundLabel => $roundMatches)
+                                            <div style="font-size: 8px; font-weight: bold; color: #854d0e; text-align: center; margin: 4px 0 2px;">
+                                                {{ $roundLabel }}
+                                            </div>
+                                            @foreach($roundMatches as $match)
+                                                <div class="final-match-card">
+                                                    <div class="final-match-title">Partai #{{ $match['sequence'] }}{{ $match['is_bye'] ? ' · BYE' : '' }}</div>
+                                                    <div class="corner aka">
+                                                        AKA &middot; {{ $match['red_label'] }}
+                                                        @if($match['red_contingent'])<small>{{ $match['red_contingent'] }}</small>@endif
+                                                    </div>
+                                                    <div class="corner shiro">
+                                                        SHIRO &middot; {{ $match['blue_label'] }}
+                                                        @if($match['blue_contingent'])<small>{{ $match['blue_contingent'] }}</small>@endif
+                                                    </div>
+                                                    <div class="schedule">{{ $match['scheduled_at'] ?: 'Belum dijadwalkan' }}{{ $match['court'] ? ' · '.$match['court'] : '' }}</div>
+                                                </div>
+                                            @endforeach
+                                        @endforeach
+                                    @else
+                                        <div style="padding: 24px 6px; text-align: center; font-size: 8.5px; color: #854d0e;">
+                                            Menunggu hasil finalis Upper & Lower Bracket
+                                        </div>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                 @elseif($drawing['category_type'] === 'randori' && $drawing['format'] !== 'round_robin')
                     @if($drawing['matches']->count() <= 12)
                         <table class="bracket" data-testid="randori-bracket">

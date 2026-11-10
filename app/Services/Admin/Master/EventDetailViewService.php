@@ -20,6 +20,7 @@ use App\Models\TournamentResult;
 use App\Models\User;
 use App\Models\WeightClass;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class EventDetailViewService
@@ -413,6 +414,9 @@ class EventDetailViewService
                 'clerks' => $eventClerks->count(),
                 'field_coordinators' => $eventFieldCoordinators->count(),
                 'arbitration' => $eventReferees->count(),
+                'techniques' => DB::table('embu_team_techniques')->where('event_id', $event->id)->distinct('technique_id')->count('technique_id'),
+                'referee_check_in_codes' => DB::table('referee_check_in_codes')->where('event_id', $event->id)->count(),
+                'users' => $event->users()->count(),
             ],
             'auth' => [
                 'user' => $request->user() ? [
