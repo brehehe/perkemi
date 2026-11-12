@@ -282,7 +282,7 @@
     .athlete-search button { grid-column: 1 / -1; width: 100%; }
     .athlete-ranking-row { grid-template-columns: 22px 64px minmax(0,1fr); gap: 11px; padding-inline: 13px; }
     .athlete-ranking-row img, .athlete-ranking-row > span:nth-child(2) { width: 64px; height: 64px; }
-    .athlete-card-grid, .athlete-performance-grid { grid-template-columns: 1fr; }
+    .athlete-card-grid, .athlete-performance-grid { grid-template-columns: minmax(0, 1fr); }
     .athlete-card { min-height: 220px; }
     .athlete-pagination { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-inline: contain; padding-bottom: 8px; scroll-padding-inline: 4px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
     .athlete-pagination a { flex: 0 0 42px; padding-inline: 0; scroll-snap-align: center; }

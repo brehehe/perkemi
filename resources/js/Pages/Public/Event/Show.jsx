@@ -1,9 +1,21 @@
 import Button from '@/Components/UI/Elements/Button';
 import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
-import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
-import Select from '@/Components/UI/Forms/Select';
 import { Head, Link, router } from '@inertiajs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    CategoriesTab,
+    ChampionsTab,
+    ContingentsTab,
+    CourtsTab,
+    PaymentTab,
+    RefereesTab,
+    ScheduleTab,
+} from './Partials/PublicEventGeneralTabs';
+import {
+    EmbuScoresTab,
+    RandoriBracketTab,
+} from './Partials/PublicEventPerformanceTabs';
 
 const eventStatuses = {
     open_registration: { label: 'Pendaftaran dibuka', tone: 'open' },
@@ -11,564 +23,89 @@ const eventStatuses = {
     completed: { label: 'Kejuaraan selesai', tone: 'closed' },
 };
 
+const HASH_TO_TAB = {
+    '#categories': 'categories',
+    '#courts': 'courts',
+    '#schedule': 'schedule',
+    '#champions': 'champions',
+    '#embu-scores': 'embu',
+    '#embu': 'embu',
+    '#randori-bracket': 'randori',
+    '#randori': 'randori',
+    '#contingents': 'contingents',
+    '#referees': 'referees',
+    '#payment': 'payment',
+    '#contact': 'payment',
+};
+
+const VALID_TAB_IDS = new Set([
+    'categories',
+    'courts',
+    'schedule',
+    'champions',
+    'embu',
+    'randori',
+    'contingents',
+    'referees',
+    'payment',
+]);
+
+const TAB_SLIDE_VARIANTS = {
+    enter: (direction) => ({
+        opacity: 0,
+        x: direction > 0 ? 28 : -28,
+    }),
+    center: {
+        opacity: 1,
+        x: 0,
+    },
+    exit: (direction) => ({
+        opacity: 0,
+        x: direction > 0 ? -24 : 24,
+    }),
+};
+
 function Icon({ name, className = '' }) {
     return <i className={`fa-solid ${name} ${className}`} aria-hidden="true" />;
 }
 
-function SectionHeading({ title, description, children }) {
-    return (
-        <div className="event-section-heading flex flex-wrap items-end justify-between gap-5">
-            <div>
-                <h2>{title}</h2>
-                <p>{description}</p>
-            </div>
-            {children}
-        </div>
-    );
-}
-
-function RefereeCard({ referee }) {
-    const initials = referee.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
-
-    return (
-        <article className="event-referee-card">
-            {referee.photo_url
-                ? <img src={referee.photo_url} alt={`Foto ${referee.name}`} loading="lazy" className="event-referee-photo" />
-                : <span className="event-referee-photo event-referee-initials" aria-hidden="true">{initials}</span>}
-            <div className="min-w-0">
-                <h3>{referee.name}</h3>
-                <p className="event-accent mt-1 text-sm font-semibold">{referee.role}</p>
-                <p className="event-muted mt-2 text-xs leading-5">{[referee.certification, referee.dan_grade, referee.region].filter(Boolean).join(' · ') || 'Profil perwasitan event'}</p>
-            </div>
-        </article>
-    );
-}
-
-function ChampionGroup({ group }) {
-    const medal = { 1: '🥇', 2: '🥈', 3: '🥉', 4: '🥉' };
-
-    return (
-        <article className="event-champion-group">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><p className="event-accent text-xs font-bold uppercase tracking-[.12em]">{group.type === 'randori' ? 'Randori' : 'Embu'}</p><h3 className="mt-1">{group.category}</h3></div>
-                <span className={`event-classification ${group.is_exhibition ? 'event-classification-exhibition' : ''}`}>{group.is_exhibition ? 'Ekshibisi' : 'Non-ekshibisi'}</span>
-            </div>
-            <ol className="mt-5 grid gap-2">
-                {group.champions.map((champion) => <li key={champion.id} className="event-champion-row"><span className="text-xl" aria-hidden="true">{medal[champion.rank] || '🏅'}</span><span className="min-w-0 flex-1"><strong>{champion.rank_label}</strong><span>{champion.participant}</span></span><small>{champion.contingent}</small></li>)}
-            </ol>
-        </article>
-    );
-}
-
-function EmbuScoreCard({ score }) {
-    return (
-        <article className="event-score-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><p className="event-accent text-xs font-bold">Partai #{score.sequence} · {score.round}{score.pool ? ` · Pool ${score.pool}` : ''}</p><h3 className="mt-1">{score.category}</h3><p className="event-muted mt-1 text-sm">{score.participant}</p></div>
-                <div className="event-final-score"><span>Nilai akhir</span><strong>{Number(score.final_score).toFixed(2)}</strong></div>
-            </div>
-            <div className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-5">{score.judge_scores.map((judgeScore, index) => <div key={`${score.id}-${index}`} className="event-judge-score"><span>J{index + 1}</span><strong>{Number(judgeScore).toFixed(2)}</strong></div>)}</div>
-            <div className="event-score-meta mt-4 flex flex-wrap gap-x-5 gap-y-2"><span>Skor tengah <strong>{Number(score.middle_score).toFixed(2)}</strong></span><span>Denda <strong>-{Number(score.penalty).toFixed(2)}</strong></span><span>{score.court || 'Court belum dicatat'}</span></div>
-        </article>
-    );
-}
-
-function PublicMatchCard({ match, className = '' }) {
-    const akaAdvancesByBye = match.is_bye && match.aka?.toUpperCase() !== 'BYE';
-    const shiroAdvancesByBye = match.is_bye && match.shiro?.toUpperCase() !== 'BYE';
-    const isAkaWinner = match.winner === 'aka' || akaAdvancesByBye;
-    const isShiroWinner = match.winner === 'shiro' || shiroAdvancesByBye;
-    const isGf2Skipped =
-        match.metadata?.gf2_status === 'skipped' ||
-        match.metadata?.notes?.includes('dilewati') ||
-        (match.is_bye && (match.round_label?.includes('GF2') || match.round_label?.includes('Grand Final Ulang')));
-
-    const isPlaceholderAka = !match.aka || match.aka.toLowerCase().startsWith('pemenang') || match.aka.toLowerCase().startsWith('kalah') || match.aka.toLowerCase().includes('menunggu') || match.aka.trim().toUpperCase() === 'BYE';
-    const isPlaceholderShiro = !match.shiro || match.shiro.toLowerCase().startsWith('pemenang') || match.shiro.toLowerCase().startsWith('kalah') || match.shiro.toLowerCase().includes('menunggu') || match.shiro.trim().toUpperCase() === 'BYE';
-
-    const resolveContingent = (contingentDirect, metaCorner) => {
-        if (contingentDirect && typeof contingentDirect === 'string') return contingentDirect;
-        if (contingentDirect?.name) return contingentDirect.name;
-        if (metaCorner?.contingent_name) return metaCorner.contingent_name;
-        if (metaCorner?.city) return metaCorner.city;
-        if (metaCorner?.contingent && typeof metaCorner.contingent === 'string') return metaCorner.contingent;
-        if (metaCorner?.contingent?.name) return metaCorner.contingent.name;
-        return '';
-    };
-
-    const akaContingent = resolveContingent(match.aka_contingent, match.metadata?.red);
-    const shiroContingent = resolveContingent(match.shiro_contingent, match.metadata?.blue);
-
-    return (
-        <div
-            className={`event-bracket-match ${
-                match.is_bye ? 'event-bracket-bye' : ''
-            } !bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100 ${className || 'w-72'} shrink-0 rounded-xl border border-stone-200 dark:border-stone-700/80 shadow-md overflow-hidden transition-all`}
-        >
-            {/* Header: Partai & Court */}
-            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700/80 !bg-stone-100 dark:!bg-stone-800/90 px-3 py-1.5 text-[10px] font-bold !text-stone-800 dark:!text-stone-200">
-                <span className="flex items-center gap-1.5">
-                    <span className="rounded bg-stone-800 dark:bg-white text-white dark:text-stone-900 px-1 py-0.2 text-[9px] font-mono font-black">
-                        #{match.sequence}
-                    </span>
-                    <span>Partai #{match.sequence}</span>
-                </span>
-                <span className="!text-stone-600 dark:!text-stone-400 font-medium">
-                    {match.court || 'Court —'}
-                </span>
-            </div>
-
-            {/* AKA Competitor */}
-            <div
-                className={`flex items-center justify-between border-b border-stone-100 dark:border-stone-800/80 px-3 py-2 text-xs transition-colors ${
-                    isAkaWinner
-                        ? '!bg-emerald-50 dark:!bg-emerald-950/60 !text-emerald-950 dark:!text-emerald-200 font-bold'
-                        : match.is_bye && match.aka?.toUpperCase() === 'BYE'
-                        ? '!bg-stone-50/60 dark:!bg-stone-900/40 !text-stone-400 italic'
-                        : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
-                }`}
-            >
-                <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2">
-                    <span className="shrink-0 self-start mt-0.5 rounded bg-rose-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
-                        AKA
-                    </span>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                            <span
-                                className={`truncate text-xs ${
-                                    isAkaWinner
-                                        ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
-                                        : isPlaceholderAka
-                                        ? 'font-medium !text-stone-600 dark:!text-stone-300'
-                                        : 'font-semibold !text-stone-900 dark:!text-stone-100'
-                                }`}
-                                title={match.aka}
-                            >
-                                {match.aka || 'Menunggu peserta'}
-                            </span>
-                            {isAkaWinner && (
-                                <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
-                            )}
-                        </div>
-                        {akaContingent && !isPlaceholderAka && (
-                            <p className="truncate text-[10.5px] font-normal !text-stone-500 dark:!text-stone-400 leading-tight mt-0.5" title={akaContingent}>
-                                {akaContingent}
-                            </p>
-                        )}
-                    </div>
-                </div>
-                <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
-                    {akaAdvancesByBye ? (
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Lolos</span>
-                    ) : (
-                        match.aka_score ?? '—'
-                    )}
-                </strong>
-            </div>
-
-            {/* SHIRO Competitor */}
-            <div
-                className={`flex items-center justify-between border-b border-stone-100 dark:border-stone-800/80 px-3 py-2 text-xs transition-colors ${
-                    isShiroWinner
-                        ? '!bg-emerald-50 dark:!bg-emerald-950/60 !text-emerald-950 dark:!text-emerald-200 font-bold'
-                        : match.is_bye && match.shiro?.toUpperCase() === 'BYE'
-                        ? '!bg-stone-50/60 dark:!bg-stone-900/40 !text-stone-400 italic'
-                        : '!bg-white dark:!bg-[#1c1917] !text-stone-900 dark:!text-stone-100'
-                }`}
-            >
-                <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2">
-                    <span className="shrink-0 self-start mt-0.5 rounded bg-slate-700 dark:bg-slate-600 px-1.5 py-0.5 text-[8.5px] font-black text-white shadow-2xs">
-                        SHIRO
-                    </span>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                            <span
-                                className={`truncate text-xs ${
-                                    isShiroWinner
-                                        ? 'font-bold !text-emerald-950 dark:!text-emerald-200'
-                                        : isPlaceholderShiro
-                                        ? 'font-medium !text-stone-600 dark:!text-stone-300'
-                                        : 'font-semibold !text-stone-900 dark:!text-stone-100'
-                                }`}
-                                title={match.shiro}
-                            >
-                                {match.shiro || 'Menunggu peserta'}
-                            </span>
-                            {isShiroWinner && (
-                                <i className="fa-solid fa-crown text-amber-500 text-[10px] shrink-0" title="Pemenang" />
-                            )}
-                        </div>
-                        {shiroContingent && !isPlaceholderShiro && (
-                            <p className="truncate text-[10.5px] font-normal !text-stone-500 dark:!text-stone-400 leading-tight mt-0.5" title={shiroContingent}>
-                                {shiroContingent}
-                            </p>
-                        )}
-                    </div>
-                </div>
-                <strong className="shrink-0 font-mono font-bold text-xs !text-stone-900 dark:text-white">
-                    {shiroAdvancesByBye ? (
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Lolos</span>
-                    ) : (
-                        match.shiro_score ?? '—'
-                    )}
-                </strong>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between !bg-stone-50 dark:!bg-stone-800/60 px-3 py-1.5 text-[10px] !text-stone-600 dark:!text-stone-400 border-t border-stone-100 dark:border-stone-800">
-                <span className="truncate">
-                    {match.scheduled_at ? (
-                        <>
-                            <i className="fa-regular fa-clock mr-1 text-[9px]" />
-                            {match.scheduled_at}
-                        </>
-                    ) : (
-                        'Jadwal fleksibel'
-                    )}
-                </span>
-                {isGf2Skipped ? (
-                    <span className="inline-flex items-center rounded bg-stone-200 dark:bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-stone-700 dark:text-stone-300" title="Tidak diperlukan karena Juara Upper Bracket memenangkan Grand Final">
-                        DILEWATI
-                    </span>
-                ) : match.is_bye ? (
-                    <strong className="event-bye-badge">BYE</strong>
-                ) : match.status === 'completed' || match.winner ? (
-                    <span className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-400">
-                        <i className="fa-solid fa-check text-[9px]" /> Selesai
-                    </span>
-                ) : (
-                    <span className="!text-stone-600 dark:!text-stone-300 font-medium">Menunggu</span>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function RandoriBracket({ bracket }) {
-    if (bracket.format === 'double_elimination') {
-        const upperRounds = bracket.rounds.filter((r) => r.name?.toLowerCase().includes('upper'));
-        const lowerRounds = bracket.rounds.filter((r) => r.name?.toLowerCase().includes('lower'));
-        const grandFinalRounds = bracket.rounds.filter(
-            (r) => r.name?.toLowerCase().includes('grand final') || (!r.name?.toLowerCase().includes('upper') && !r.name?.toLowerCase().includes('lower'))
-        );
-
-        // Find champion if grand final is finished
-        const gf = grandFinalRounds[grandFinalRounds.length - 1]?.matches?.[0];
-        const champion = gf?.winner === 'aka' ? gf.aka : gf?.winner === 'shiro' ? gf.shiro : null;
-        const runnerUp = gf?.winner === 'aka' ? gf.shiro : gf?.winner === 'shiro' ? gf.aka : null;
-
-        return (
-            <article className="event-bracket">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <p className="event-accent text-xs font-bold uppercase tracking-[.12em]">
-                            Bagan Sistem Gugur Ganda (Double Elimination)
-                        </p>
-                        <h3 className="mt-1">{bracket.category}</h3>
-                    </div>
-                    <span className="event-match-type">{bracket.status}</span>
-                </div>
-
-                <div className="event-bracket-scroll mt-6" tabIndex="0" aria-label={`Bagan Randori ${bracket.category}`}>
-                    <div className="flex items-start gap-8 min-w-max pb-4">
-                        {/* Left Column: Upper Bracket on top, Lower Bracket directly below */}
-                        <div className="flex flex-col gap-6">
-                            {/* UPPER BRACKET (BAGAN PEMENANG) */}
-                            <div className="rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 p-4">
-                                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-200 dark:border-blue-900/50">
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold">
-                                        <i className="fa-solid fa-sitemap" />
-                                    </span>
-                                    <div>
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-blue-950 dark:text-blue-300">
-                                            Bagan Pemenang (Upper Bracket)
-                                        </h4>
-                                        <p className="text-[10px] text-blue-700/80 dark:text-blue-400/80">
-                                            Pemenang melaju ke Final Upper; yang kalah turun ke Lower Bracket
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-6">
-                                    {upperRounds.map((round) => (
-                                        <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
-                                            <p className="text-[11px] font-bold uppercase text-blue-900 dark:text-blue-200">{round.name}</p>
-                                            <div className="space-y-3">
-                                                {round.matches.map((match) => (
-                                                    <PublicMatchCard key={match.id} match={match} />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* LOWER BRACKET (BAGAN HARAPAN) */}
-                            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 p-4">
-                                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-200 dark:border-amber-900/50">
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-600 text-white text-xs font-bold">
-                                        <i className="fa-solid fa-arrow-rotate-left" />
-                                    </span>
-                                    <div>
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-950 dark:text-amber-300">
-                                            Bagan Harapan (Lower Bracket)
-                                        </h4>
-                                        <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80">
-                                            Kesempatan kedua bagi atlet yang kalah dari Upper Bracket
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-6">
-                                    {lowerRounds.map((round) => (
-                                        <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
-                                            <p className="text-[11px] font-bold uppercase text-amber-900 dark:text-amber-200">{round.name}</p>
-                                            <div className="space-y-3">
-                                                {round.matches.map((match) => (
-                                                    <PublicMatchCard key={match.id} match={match} />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Grand Final on Right */}
-                        <div className="rounded-2xl border border-stone-800 bg-gradient-to-b from-stone-900 to-black text-white p-4 sm:p-5 shrink-0 self-center shadow-xl w-[340px] max-w-full overflow-hidden">
-                            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/10">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400 text-stone-900 text-xs font-black">
-                                    <i className="fa-solid fa-crown" />
-                                </span>
-                                <div>
-                                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">
-                                        Grand Final Penentuan
-                                    </h4>
-                                    <p className="text-[10px] text-stone-400">
-                                        Juara Upper vs Juara Lower
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="space-y-4 w-full">
-                                {grandFinalRounds.flatMap((r) => r.matches).map((match) => (
-                                    <PublicMatchCard key={match.id} match={match} className="w-full" />
-                                ))}
-                            </div>
-                            {champion && (
-                                <div className="mt-4 pt-3 border-t border-amber-400/30 text-center">
-                                    <i className="fa-solid fa-trophy text-amber-400 text-xl mb-1" />
-                                    <p className="text-[9px] uppercase tracking-widest text-amber-300 font-black">Juara 1 · Medali Emas</p>
-                                    <p className="text-sm font-bold text-white mt-0.5">{champion}</p>
-                                    {runnerUp && (
-                                        <p className="text-xs text-stone-400 mt-1">Juara 2: {runnerUp}</p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </article>
-        );
-    }
-
-    if (bracket.format === 'round_robin') {
-        const allMatches = bracket.rounds.flatMap((r) => r.matches);
-        const standingsMap = {};
-        allMatches.forEach((m) => {
-            if (m.aka && m.aka !== 'Menunggu peserta') {
-                if (!standingsMap[m.aka]) standingsMap[m.aka] = { name: m.aka, played: 0, won: 0, lost: 0, points: 0 };
-            }
-            if (m.shiro && m.shiro !== 'Menunggu peserta') {
-                if (!standingsMap[m.shiro]) standingsMap[m.shiro] = { name: m.shiro, played: 0, won: 0, lost: 0, points: 0 };
-            }
-            if (m.winner) {
-                if (m.aka && standingsMap[m.aka]) {
-                    standingsMap[m.aka].played += 1;
-                    if (m.winner === 'aka') standingsMap[m.aka].won += 1;
-                    else if (m.winner === 'shiro') standingsMap[m.aka].lost += 1;
-                    standingsMap[m.aka].points += (Number(m.aka_score) || 0);
-                }
-                if (m.shiro && standingsMap[m.shiro]) {
-                    standingsMap[m.shiro].played += 1;
-                    if (m.winner === 'shiro') standingsMap[m.shiro].won += 1;
-                    else if (m.winner === 'aka') standingsMap[m.shiro].lost += 1;
-                    standingsMap[m.shiro].points += (Number(m.shiro_score) || 0);
-                }
-            }
-        });
-        const standings = Object.values(standingsMap).sort((a, b) => b.won - a.won || b.points - a.points);
-
-        return (
-            <article className="event-bracket">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <p className="event-accent text-xs font-bold uppercase tracking-[.12em]">
-                            Setengah Kompetisi (Round Robin)
-                        </p>
-                        <h3 className="mt-1">{bracket.category}</h3>
-                    </div>
-                    <span className="event-match-type">{bracket.status}</span>
-                </div>
-
-                {standings.length > 0 && (
-                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-300 mb-2">
-                            Klasemen Sementara
-                        </h4>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs text-left">
-                                <thead>
-                                    <tr className="border-b border-amber-200 text-[10px] text-amber-800 uppercase">
-                                        <th className="py-1.5 px-2">Peringkat</th>
-                                        <th className="py-1.5 px-2">Nama Kenshi</th>
-                                        <th className="py-1.5 px-2 text-center">Main</th>
-                                        <th className="py-1.5 px-2 text-center">Menang</th>
-                                        <th className="py-1.5 px-2 text-center">Kalah</th>
-                                        <th className="py-1.5 px-2 text-right">Poin</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-amber-100">
-                                    {standings.map((s, idx) => (
-                                        <tr key={s.name}>
-                                            <td className="py-1.5 px-2 font-bold">{idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}</td>
-                                            <td className="py-1.5 px-2 font-semibold">{s.name}</td>
-                                            <td className="py-1.5 px-2 text-center">{s.played}</td>
-                                            <td className="py-1.5 px-2 text-center font-bold text-emerald-600">{s.won}</td>
-                                            <td className="py-1.5 px-2 text-center text-stone-500">{s.lost}</td>
-                                            <td className="py-1.5 px-2 text-right font-mono font-bold">{s.points}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                <div className="event-bracket-scroll mt-6" tabIndex="0" aria-label={`Jadwal Putaran ${bracket.category}`}>
-                    <div className="flex items-start gap-6 min-w-max pb-4">
-                        {bracket.rounds.map((round) => (
-                            <div key={round.name} className="flex flex-col gap-3 min-w-[260px]">
-                                <h4 className="text-xs font-bold uppercase text-stone-600">{round.name}</h4>
-                                <div className="space-y-3">
-                                    {round.matches.map((match) => (
-                                        <PublicMatchCard key={match.id} match={match} />
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </article>
-        );
-    }
-
-    const maxMatchesInRound = Math.max(...bracket.rounds.map((round) => round.matches.length), 1);
-    const bracketHeight = Math.max(maxMatchesInRound * 148, 296);
-
-    return (
-        <article className="event-bracket">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="event-accent text-xs font-bold uppercase tracking-[.12em]">Bagan {bracket.format?.replaceAll('_', ' ') || 'pertandingan'}</p><h3 className="mt-1">{bracket.category}</h3></div><span className="event-match-type">{bracket.status}</span></div>
-            <div className="event-bracket-scroll mt-6" tabIndex="0" aria-label={`Bagan Randori ${bracket.category}, geser horizontal untuk melihat setiap babak`}>
-                <div className="event-bracket-rounds" style={{ '--event-bracket-height': `${bracketHeight}px` }}>
-                    {bracket.rounds.map((round, roundIndex) => {
-                        const isFirstRound = roundIndex === 0;
-                        const isLastRound = roundIndex === bracket.rounds.length - 1;
-                        const connectorSpan = bracketHeight / Math.max(round.matches.length, 1);
-
-                        return (
-                            <section
-                                key={round.name}
-                                className={`event-bracket-round ${isFirstRound ? 'event-bracket-first' : ''} ${isLastRound ? 'event-bracket-last' : ''}`}
-                                style={{ '--event-connector-span': `${connectorSpan}px` }}
-                            >
-                                <h4>{round.name}</h4>
-                                <div className="event-bracket-matches">
-                                    {round.matches.map((match, matchIndex) => {
-                                        const startsPair = !isLastRound && matchIndex % 2 === 0 && matchIndex + 1 < round.matches.length;
-
-                                        return (
-                                            <div key={match.id} className={`event-bracket-match-slot ${match.is_bye ? 'event-bracket-bye' : ''}`}>
-                                                {startsPair && <span className="event-bracket-pair-line" aria-hidden="true" />}
-                                                <PublicMatchCard match={match} />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-                        );
-                    })}
-                </div>
-            </div>
-        </article>
-    );
-}
-
-function formatScheduleDate(date) {
-    if (!date) {
-        return 'Tanggal menyusul';
-    }
-
-    return new Intl.DateTimeFormat('id-ID', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    }).format(new Date(`${date}T00:00:00`));
-}
-
-function formatScheduleTabDate(date) {
-    if (!date) {
-        return 'Menyusul';
-    }
-
-    return new Intl.DateTimeFormat('id-ID', {
-        day: 'numeric', month: 'short', year: 'numeric',
-    }).format(new Date(`${date}T00:00:00`));
-}
-
-function initialPublicFilter(key, fallback = 'all') {
+function resolveTabFromLocation(availableTabIds) {
     if (typeof window === 'undefined') {
-        return fallback;
+        return { tabId: 'categories', targetElementId: null, shouldScroll: false };
     }
 
-    return new URLSearchParams(window.location.search).get(key) || fallback;
-}
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    const hash = window.location.hash || '';
 
-function updatePublicFilter(key, value, fallback = 'all') {
-    if (typeof window === 'undefined') {
-        return;
+    if (hash.startsWith('#court-') && availableTabIds.has('courts')) {
+        return {
+            tabId: 'courts',
+            targetElementId: hash.slice(1),
+            shouldScroll: true,
+        };
     }
 
-    const url = new URL(window.location.href);
-
-    if (!value || value === fallback) {
-        url.searchParams.delete(key);
-    } else {
-        url.searchParams.set(key, value);
+    if (hash && HASH_TO_TAB[hash]) {
+        const mapped = HASH_TO_TAB[hash];
+        if (availableTabIds.has(mapped)) {
+            return {
+                tabId: mapped,
+                targetElementId: hash === '#contact' ? 'contact' : 'event-tab-stage',
+                shouldScroll: true,
+            };
+        }
     }
 
-    window.history.replaceState(window.history.state, '', url);
-}
-
-function handleDateTabKeyDown(event) {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-        return;
+    if (tabParam && VALID_TAB_IDS.has(tabParam) && availableTabIds.has(tabParam)) {
+        return {
+            tabId: tabParam,
+            targetElementId: 'event-tab-stage',
+            shouldScroll: false,
+        };
     }
 
-    const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll('[role="tab"]') || []);
-    const currentIndex = tabs.indexOf(event.currentTarget);
-
-    if (currentIndex < 0 || tabs.length === 0) {
-        return;
-    }
-
-    event.preventDefault();
-
-    const nextIndex = event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-            ? tabs.length - 1
-            : event.key === 'ArrowRight'
-                ? (currentIndex + 1) % tabs.length
-                : (currentIndex - 1 + tabs.length) % tabs.length;
-
-    tabs[nextIndex].click();
-    tabs[nextIndex].focus();
+    return { tabId: 'categories', targetElementId: null, shouldScroll: false };
 }
 
 export default function EventShow({
@@ -588,224 +125,829 @@ export default function EventShow({
     canAccessDashboard = false,
     isHomepage = false,
 }) {
-    const [matchFilter, setMatchFilter] = useState('all');
-    const [championFilter, setChampionFilter] = useState('all');
-    const [activeScheduleDate, setActiveScheduleDate] = useState(() => initialPublicFilter('schedule_date', ''));
-    const [embuScoreFilter, setEmbuScoreFilter] = useState(() => initialPublicFilter('embu_category'));
-    const [randoriBracketFilter, setRandoriBracketFilter] = useState(() => initialPublicFilter('randori_bracket'));
-    const [copiedAccount, setCopiedAccount] = useState(null);
-    const [copyMessage, setCopyMessage] = useState('');
+    const [copiedId, setCopiedId] = useState(null);
     const [selectedQrCourt, setSelectedQrCourt] = useState(null);
-    const [copiedCourtUrl, setCopiedCourtUrl] = useState(null);
-    const copyTimer = useRef(null);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [tabDirection, setTabDirection] = useState(1);
+    const [overscrollProgress, setOverscrollProgress] = useState(0);
 
-    const handleCopyCourtUrl = async (url, courtId) => {
-        try {
-            await navigator.clipboard.writeText(url);
-            setCopiedCourtUrl(courtId);
-            setTimeout(() => setCopiedCourtUrl(null), 2500);
-        } catch {
-            // fallback
-        }
+    const tabButtonRefs = useRef({});
+    const copyTimerRef = useRef(null);
+    const overscrollAccumRef = useRef(0);
+    const overscrollResetTimerRef = useRef(null);
+    const overscrollProgressRef = useRef(0);
+    const autoSwitchCooldownRef = useRef(0);
+    const touchGestureRef = useRef({
+        startX: 0,
+        startY: 0,
+        startedAtBottom: false,
+        skipHorizontal: false,
+        eligibleVertical: true,
+    });
+
+    const status = eventStatuses[event?.status] || {
+        label: 'Dalam persiapan',
+        tone: 'preparation',
     };
+    const isAuthenticated = Boolean(auth?.user);
+    const hasDashboard = canAccessDashboard;
+    const dashboardHref = canAccessDashboard
+        ? `/event/${event.slug}/admin`
+        : auth?.user?.dashboard_url || '/admin/dashboard';
+    const registrationHref = `/event/${event.slug}/register`;
+    const actionHref = hasDashboard ? dashboardHref : registrationHref;
+
+    const tabs = useMemo(() => {
+        const items = [
+            { id: 'categories', label: 'Kategori & Nomor', count: matchCategories.length },
+        ];
+
+        if (contingents.length > 0) {
+            items.push({ id: 'contingents', label: 'Kontingen', count: contingents.length });
+        }
+
+        if (courts.length > 0) {
+            items.push({
+                id: 'courts',
+                label: 'LIVE Gelanggang',
+                count: courts.length,
+                isLive: courts.some((c) => c.active_match?.status === 'in_progress'),
+            });
+        }
+
+        items.push(
+            { id: 'referees', label: 'Wasit', count: referees.length },
+            { id: 'schedule', label: 'Jadwal', count: matchSchedule.length },
+            { id: 'champions', label: 'Hasil Juara', count: championGroups.length },
+            { id: 'embu', label: 'Skor Embu', count: embuScores.length },
+            { id: 'randori', label: 'Randori', count: randoriBrackets.length },
+            { id: 'payment', label: 'Biaya & kontak', count: null },
+        );
+
+        return items;
+    }, [
+        matchCategories.length,
+        contingents.length,
+        courts,
+        referees.length,
+        matchSchedule.length,
+        championGroups.length,
+        embuScores.length,
+        randoriBrackets.length,
+    ]);
+
+    const availableTabIds = useMemo(() => new Set(tabs.map((t) => t.id)), [tabs]);
+
+    const [activeTab, setActiveTab] = useState(
+        () => resolveTabFromLocation(availableTabIds).tabId,
+    );
+
+    const activeTabIndex = useMemo(() => {
+        const idx = tabs.findIndex((t) => t.id === activeTab);
+        return idx >= 0 ? idx : 0;
+    }, [tabs, activeTab]);
+
+    const prevTab = useMemo(
+        () => tabs[(activeTabIndex - 1 + tabs.length) % tabs.length],
+        [tabs, activeTabIndex],
+    );
+    const nextTab = useMemo(
+        () => tabs[(activeTabIndex + 1) % tabs.length],
+        [tabs, activeTabIndex],
+    );
+
+    const scrollToElement = useCallback((elementId) => {
+        if (typeof window === 'undefined' || !elementId) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            window.setTimeout(() => {
+                const target = document.getElementById(elementId);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 60);
+        });
+    }, []);
+
+    const activateTab = useCallback(
+        (tabId, options = {}) => {
+            const {
+                scrollTargetId = 'event-tab-stage',
+                shouldScroll = true,
+                syncUrl = true,
+                direction = null,
+            } = options;
+            const resolvedTab = availableTabIds.has(tabId) ? tabId : 'categories';
+
+            if (direction !== null) {
+                setTabDirection(direction);
+            } else {
+                const currentIdx = tabs.findIndex((t) => t.id === activeTab);
+                const nextIdx = tabs.findIndex((t) => t.id === resolvedTab);
+                if (currentIdx >= 0 && nextIdx >= 0 && nextIdx !== currentIdx) {
+                    setTabDirection(nextIdx > currentIdx ? 1 : -1);
+                }
+            }
+
+            setActiveTab(resolvedTab);
+            setMobileMenuOpen(false);
+
+            if (syncUrl && typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', resolvedTab);
+                if (scrollTargetId && scrollTargetId !== 'event-tab-stage') {
+                    url.hash = `#${scrollTargetId}`;
+                } else {
+                    url.hash = '';
+                }
+                window.history.replaceState({}, '', url.toString());
+            }
+
+            if (shouldScroll) {
+                scrollToElement(scrollTargetId);
+            }
+        },
+        [availableTabIds, scrollToElement, tabs, activeTab],
+    );
+
+    const goToAdjacentTab = useCallback(
+        (step) => {
+            if (tabs.length <= 1) {
+                return;
+            }
+            const nextIdx = (activeTabIndex + step + tabs.length) % tabs.length;
+            autoSwitchCooldownRef.current = Date.now() + 850;
+            overscrollAccumRef.current = 0;
+            overscrollProgressRef.current = 0;
+            setOverscrollProgress(0);
+            activateTab(tabs[nextIdx].id, {
+                scrollTargetId: 'event-tab-stage',
+                shouldScroll: true,
+                direction: step >= 0 ? 1 : -1,
+            });
+        },
+        [tabs, activeTabIndex, activateTab],
+    );
+
+    // Auto-center active tab button inside sticky horizontal nav on desktop & mobile
+    useEffect(() => {
+        const activeButton = tabButtonRefs.current[activeTab];
+        if (activeButton && typeof activeButton.scrollIntoView === 'function') {
+            activeButton.scrollIntoView({
+                behavior: 'smooth',
+                inline: 'center',
+                block: 'nearest',
+            });
+        }
+    }, [activeTab]);
+
+    // Auto-shift to next tab when hitting bottom ("mentok") on desktop wheel/keys & mobile touch,
+    // plus horizontal swipe left/right between tabs on mobile/touchscreens.
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+
+        const isNearBottom = () => {
+            const doc = document.documentElement;
+            const scrollTop = window.scrollY || doc.scrollTop || 0;
+            return scrollTop + window.innerHeight >= doc.scrollHeight - 28;
+        };
+
+        const isInsideInteractiveScroll = (target, axis = 'y') => {
+            if (!(target instanceof Element)) {
+                return false;
+            }
+            if (target.closest('[role="listbox"]')) {
+                return true;
+            }
+            if (axis === 'x') {
+                if (target.closest('input, select, textarea, .event-section-nav-scroll')) {
+                    return true;
+                }
+                let node = target;
+                while (node && node !== document.body) {
+                    const style = window.getComputedStyle(node);
+                    const canScrollX =
+                        (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
+                        node.scrollWidth > node.clientWidth + 4;
+                    if (canScrollX) {
+                        return true;
+                    }
+                    node = node.parentElement;
+                }
+            }
+            return false;
+        };
+
+        const scheduleOverscrollReset = () => {
+            if (overscrollResetTimerRef.current) {
+                window.clearTimeout(overscrollResetTimerRef.current);
+            }
+            overscrollResetTimerRef.current = window.setTimeout(() => {
+                overscrollAccumRef.current = 0;
+                overscrollProgressRef.current = 0;
+                setOverscrollProgress(0);
+            }, 520);
+        };
+
+        const handleWheel = (e) => {
+            if (selectedQrCourt || Date.now() < autoSwitchCooldownRef.current) {
+                return;
+            }
+            if (isInsideInteractiveScroll(e.target, 'y')) {
+                return;
+            }
+            if (e.deltaY > 6 && isNearBottom()) {
+                overscrollAccumRef.current = Math.min(
+                    115,
+                    overscrollAccumRef.current + Math.min(44, e.deltaY),
+                );
+                const progress = Math.min(1, overscrollAccumRef.current / 105);
+                overscrollProgressRef.current = progress;
+                setOverscrollProgress(progress);
+                scheduleOverscrollReset();
+
+                if (overscrollAccumRef.current >= 105) {
+                    goToAdjacentTab(1);
+                }
+            } else if (e.deltaY < -6 && overscrollAccumRef.current > 0) {
+                overscrollAccumRef.current = 0;
+                overscrollProgressRef.current = 0;
+                setOverscrollProgress(0);
+            }
+        };
+
+        const handleKeyDown = (e) => {
+            if (selectedQrCourt || Date.now() < autoSwitchCooldownRef.current) {
+                return;
+            }
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                return;
+            }
+            if ((e.key === 'PageDown' || e.key === 'ArrowDown') && isNearBottom()) {
+                overscrollAccumRef.current = Math.min(115, overscrollAccumRef.current + 58);
+                const progress = Math.min(1, overscrollAccumRef.current / 105);
+                overscrollProgressRef.current = progress;
+                setOverscrollProgress(progress);
+                scheduleOverscrollReset();
+
+                if (overscrollAccumRef.current >= 105) {
+                    e.preventDefault();
+                    goToAdjacentTab(1);
+                }
+            }
+        };
+
+        const handleTouchStart = (e) => {
+            if (selectedQrCourt || e.touches.length !== 1) {
+                return;
+            }
+            const touch = e.touches[0];
+            touchGestureRef.current = {
+                startX: touch.clientX,
+                startY: touch.clientY,
+                startedAtBottom: isNearBottom(),
+                skipHorizontal: isInsideInteractiveScroll(e.target, 'x'),
+                eligibleVertical: !isInsideInteractiveScroll(e.target, 'y'),
+            };
+        };
+
+        const handleTouchMove = (e) => {
+            if (
+                selectedQrCourt ||
+                Date.now() < autoSwitchCooldownRef.current ||
+                e.touches.length !== 1
+            ) {
+                return;
+            }
+            if (!touchGestureRef.current.eligibleVertical) {
+                return;
+            }
+            const touch = e.touches[0];
+            const pullUpDy = touchGestureRef.current.startY - touch.clientY;
+            const swipeDx = Math.abs(touch.clientX - touchGestureRef.current.startX);
+
+            if (pullUpDy > 8 && pullUpDy > swipeDx && isNearBottom()) {
+                const progress = Math.min(1, pullUpDy / 64);
+                overscrollProgressRef.current = progress;
+                setOverscrollProgress(progress);
+
+                if (
+                    (touchGestureRef.current.startedAtBottom && pullUpDy >= 68) ||
+                    pullUpDy >= 92
+                ) {
+                    goToAdjacentTab(1);
+                }
+            } else if (overscrollProgressRef.current > 0 && pullUpDy <= 0) {
+                overscrollProgressRef.current = 0;
+                setOverscrollProgress(0);
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (selectedQrCourt || Date.now() < autoSwitchCooldownRef.current) {
+                overscrollProgressRef.current = 0;
+                setOverscrollProgress(0);
+                return;
+            }
+
+            if (overscrollProgressRef.current >= 0.65 && isNearBottom()) {
+                goToAdjacentTab(1);
+                return;
+            }
+
+            overscrollProgressRef.current = 0;
+            setOverscrollProgress(0);
+
+            if (touchGestureRef.current.skipHorizontal || e.changedTouches.length !== 1) {
+                return;
+            }
+
+            const touch = e.changedTouches[0];
+            const dx = touch.clientX - touchGestureRef.current.startX;
+            const dy = touch.clientY - touchGestureRef.current.startY;
+
+            if (Math.abs(dx) >= 64 && Math.abs(dx) > Math.abs(dy) * 1.65) {
+                goToAdjacentTab(dx < 0 ? 1 : -1);
+            }
+        };
+
+        window.addEventListener('wheel', handleWheel, { passive: true });
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('touchstart', handleTouchStart, { passive: true });
+        window.addEventListener('touchmove', handleTouchMove, { passive: true });
+        window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+        return () => {
+            window.removeEventListener('wheel', handleWheel);
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
+            if (overscrollResetTimerRef.current) {
+                window.clearTimeout(overscrollResetTimerRef.current);
+            }
+        };
+    }, [selectedQrCourt, goToAdjacentTab]);
+
+    // Auto-open & scroll when landing directly via #hash or navigating browser history
+    useEffect(() => {
+        const initial = resolveTabFromLocation(availableTabIds);
+        if (initial.tabId !== activeTab) {
+            setActiveTab(initial.tabId);
+        }
+        if (initial.shouldScroll && initial.targetElementId) {
+            scrollToElement(initial.targetElementId);
+        }
+
+        const handleLocationChange = () => {
+            const resolved = resolveTabFromLocation(availableTabIds);
+            setActiveTab(resolved.tabId);
+            if (resolved.shouldScroll && resolved.targetElementId) {
+                scrollToElement(resolved.targetElementId);
+            }
+        };
+
+        window.addEventListener('hashchange', handleLocationChange);
+        window.addEventListener('popstate', handleLocationChange);
+        return () => {
+            window.removeEventListener('hashchange', handleLocationChange);
+            window.removeEventListener('popstate', handleLocationChange);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [availableTabIds, scrollToElement]);
+
+    // Auto-poll every 15s when a court has a live match in progress
+    const hasLiveCourt = useMemo(
+        () => courts.some((court) => court.active_match?.status === 'in_progress'),
+        [courts],
+    );
 
     useEffect(() => {
-        const hasActive = courts.some((c) => c.active_match && c.active_match.status === 'in_progress');
-        if (!hasActive) return;
+        if (!hasLiveCourt) {
+            return undefined;
+        }
 
-        const interval = setInterval(() => {
+        const timer = window.setInterval(() => {
             router.reload({
-                only: ['courts', 'embuScores', 'championGroups'],
+                only: [
+                    'courts',
+                    'matchSchedule',
+                    'championGroups',
+                    'embuScores',
+                    'randoriBrackets',
+                ],
                 preserveScroll: true,
                 preserveState: true,
             });
         }, 15000);
 
-        return () => clearInterval(interval);
-    }, [courts]);
-    const status = eventStatuses[event.status] || { label: 'Dalam persiapan', tone: 'preparation' };
-    const isAuthenticated = Boolean(auth?.user);
-    const hasDashboard = canAccessDashboard;
-    const dashboardHref = canAccessDashboard ? `/event/${event.slug}/admin` : (auth?.user?.dashboard_url || '/admin/dashboard');
-    const registrationHref = `/event/${event.slug}/register`;
-    const actionHref = hasDashboard ? dashboardHref : registrationHref;
-    const filteredMatches = matchCategories.filter((category) => matchFilter === 'all' || category.type === matchFilter);
-    const filteredChampionGroups = championGroups.filter((group) => championFilter === 'all' || group.type === championFilter);
-    const championCounts = {
-        all: championGroups.length,
-        embu: championGroups.filter((group) => group.type === 'embu').length,
-        randori: championGroups.filter((group) => group.type === 'randori').length,
-    };
-    const scheduleDays = useMemo(() => rundowns.reduce((days, session) => {
-        const date = session.date_only || '';
-        const day = days.find((item) => item.date === date);
-        if (day) {
-            day.sessions.push(session);
-        } else {
-            days.push({ date, sessions: [session] });
+        return () => window.clearInterval(timer);
+    }, [hasLiveCourt]);
+
+    useEffect(() => {
+        return () => {
+            if (copyTimerRef.current) {
+                window.clearTimeout(copyTimerRef.current);
+            }
+        };
+    }, []);
+
+    const handleCopy = useCallback((text, id) => {
+        if (!text || typeof navigator === 'undefined' || !navigator.clipboard) {
+            return;
         }
-        return days;
-    }, []), [rundowns]);
-    const matchScheduleDays = useMemo(() => matchSchedule.reduce((days, match) => {
-        const day = days.find((item) => item.date === match.date);
-        if (day) day.matches.push(match);
-        else days.push({ date: match.date, dateLabel: match.date_label, matches: [match] });
-        return days;
-    }, []), [matchSchedule]);
-    const selectedScheduleDay = matchScheduleDays.find((day) => day.date === activeScheduleDate) || matchScheduleDays[0];
-    const embuScoreOptions = useMemo(() => {
-        const categoryCounts = embuScores.reduce((counts, score) => {
-            const category = score.category || 'Nomor Embu belum tercatat';
-            counts.set(category, (counts.get(category) || 0) + 1);
-            return counts;
-        }, new Map());
 
-        return [
-            { value: 'all', label: 'Semua nomor Embu', sublabel: `${embuScores.length} hasil` },
-            ...Array.from(categoryCounts, ([category, count]) => ({
-                value: category,
-                label: category,
-                sublabel: `${count} hasil`,
-            })),
-        ];
-    }, [embuScores]);
-    const activeEmbuScoreFilter = embuScoreOptions.some((option) => option.value === embuScoreFilter) ? embuScoreFilter : 'all';
-    const filteredEmbuScores = embuScores.filter((score) => (
-        activeEmbuScoreFilter === 'all'
-        || (score.category || 'Nomor Embu belum tercatat') === activeEmbuScoreFilter
-    ));
-    const randoriBracketOptions = useMemo(() => [
-        { value: 'all', label: 'Semua bagan Randori', sublabel: `${randoriBrackets.length} bagan` },
-        ...randoriBrackets.map((bracket) => ({
-            value: bracket.id,
-            label: bracket.category || 'Nomor Randori belum tercatat',
-            sublabel: bracket.format?.replaceAll('_', ' ') || 'Bagan pertandingan',
-        })),
-    ], [randoriBrackets]);
-    const activeRandoriBracketFilter = randoriBracketOptions.some((option) => String(option.value) === String(randoriBracketFilter)) ? randoriBracketFilter : 'all';
-    const filteredRandoriBrackets = randoriBrackets.filter((bracket) => (
-        activeRandoriBracketFilter === 'all' || String(bracket.id) === String(activeRandoriBracketFilter)
-    ));
+        navigator.clipboard.writeText(String(text)).then(() => {
+            setCopiedId(id);
+            if (copyTimerRef.current) {
+                window.clearTimeout(copyTimerRef.current);
+            }
+            copyTimerRef.current = window.setTimeout(() => {
+                setCopiedId(null);
+            }, 2200);
+        });
+    }, []);
 
-    useEffect(() => () => clearTimeout(copyTimer.current), []);
-
-    const handleCopy = async (accountNumber, id) => {
-        clearTimeout(copyTimer.current);
-        setCopiedAccount(null);
-        try {
-            await navigator.clipboard.writeText(accountNumber);
-            setCopiedAccount(id);
-            setCopyMessage('Nomor rekening berhasil disalin.');
-            copyTimer.current = setTimeout(() => {
-                setCopiedAccount(null);
-                setCopyMessage('');
-            }, 2500);
-        } catch {
-            setCopyMessage('Nomor rekening belum tersalin. Silakan pilih dan salin nomor secara manual.');
+    const handleTabKeyDown = (e, index) => {
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const next = tabs[(index + 1) % tabs.length];
+            activateTab(next.id, { shouldScroll: false, direction: 1 });
+            tabButtonRefs.current[next.id]?.focus();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const prev = tabs[(index - 1 + tabs.length) % tabs.length];
+            activateTab(prev.id, { shouldScroll: false, direction: -1 });
+            tabButtonRefs.current[prev.id]?.focus();
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            activateTab(tabs[0].id, { shouldScroll: false, direction: -1 });
+            tabButtonRefs.current[tabs[0].id]?.focus();
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            const last = tabs[tabs.length - 1];
+            activateTab(last.id, { shouldScroll: false, direction: 1 });
+            tabButtonRefs.current[last.id]?.focus();
         }
     };
+
+    const activeTabContent = () => {
+        switch (activeTab) {
+            case 'courts':
+                return (
+                    <CourtsTab
+                        courts={courts}
+                        event={event}
+                        copiedId={copiedId}
+                        onCopy={handleCopy}
+                        onShowQr={(court) => setSelectedQrCourt(court)}
+                    />
+                );
+            case 'schedule':
+                return <ScheduleTab matchSchedule={matchSchedule} rundowns={rundowns} />;
+            case 'champions':
+                return <ChampionsTab championGroups={championGroups} />;
+            case 'embu':
+                return <EmbuScoresTab embuScores={embuScores} />;
+            case 'randori':
+                return <RandoriBracketTab randoriBrackets={randoriBrackets} />;
+            case 'contingents':
+                return <ContingentsTab contingents={contingents} />;
+            case 'referees':
+                return <RefereesTab referees={referees} />;
+            case 'payment':
+                return (
+                    <PaymentTab
+                        event={event}
+                        ageCategories={ageCategories}
+                        paymentMethods={paymentMethods}
+                        copiedId={copiedId}
+                        onCopy={handleCopy}
+                        hasDashboard={hasDashboard}
+                        actionHref={actionHref}
+                    />
+                );
+            case 'categories':
+            default:
+                return (
+                    <CategoriesTab
+                        ageCategories={ageCategories}
+                        matchCategories={matchCategories}
+                        participantRequirements={event?.participant_requirements}
+                    />
+                );
+        }
+    };
+
+    const mapsHref =
+        event?.google_maps_url ||
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            [event?.venue, event?.city, event?.province].filter(Boolean).join(', '),
+        )}`;
+
+    const liveTickerCourts = useMemo(
+        () => courts.filter((c) => Boolean(c.active_match)),
+        [courts],
+    );
 
     return (
-        <div className="event-page min-h-screen antialiased">
-            <Head title={`${event.name} - Smart PERKEMI`}>
-                {event.description && <meta name="description" content={event.description} />}
-            </Head>
-            <a href="#event-content" className="event-skip-link">Langsung ke informasi kejuaraan</a>
+        <MotionConfig reducedMotion="user">
+            <div className="event-page min-h-screen antialiased">
+                <Head title={`${event.name} - Smart PERKEMI`}>
+                    {event.description && <meta name="description" content={event.description} />}
+                </Head>
+                <a href="#event-tab-stage" className="event-skip-link">
+                    Langsung ke informasi kejuaraan
+                </a>
 
-            <header id="event-top" className="event-header">
-                <div className="event-container flex min-h-20 items-center justify-between gap-4 py-3">
-                    <Link href="/" className="event-brand flex shrink-0 items-center gap-3" aria-label="SMART PERKEMI, beranda">
-                        <img src="/android-chrome-192x192.png" width="44" height="44" alt="" className="h-11 w-11 object-contain" />
-                        <span>
-                            <span className="event-brand-name block">SMART PERKEMI</span>
-                            <span className="event-brand-caption block">Portal kejuaraan Shorinji Kempo</span>
-                        </span>
-                    </Link>
-                    <nav aria-label="Navigasi utama" className="hidden items-center gap-7 xl:flex">
-                        <a className="event-text-link" href="#referees">Wasit</a>
-                        <Link className="event-text-link" href="/athelete">Peserta</Link>
-                        <a className="event-text-link" href="#schedule">Jadwal</a>
-                        <a className="event-text-link" href="#champions">Hasil Juara</a>
-                        <a className="event-text-link" href="#embu-scores">Skor Embu</a>
-                        <a className="event-text-link" href="#randori-bracket">Randori</a>
-                    </nav>
-                    <div className="flex items-center gap-2 sm:gap-4">
-                        <ThemeToggle />
-                        {hasDashboard ? (
-                            <>
-                                <Link href="/logout" method="post" as="button" className="event-text-link hidden sm:inline-flex">Keluar</Link>
-                                <Link href={dashboardHref} className="event-button event-button-primary">Dashboard</Link>
-                            </>
-                        ) : (
-                            <>
-                                <Link href="/login" className="event-text-link hidden sm:inline-flex">Masuk</Link>
-                                <Link href={registrationHref} className="event-button event-button-primary">
-                                    <span className="sm:hidden">Daftar</span><span className="hidden sm:inline">Daftar kontingen</span>
-                                </Link>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </header>
-
-            {event.is_training_mode && (
-                <div role="alert" className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 text-amber-950 font-bold px-4 py-3 text-center text-xs sm:text-sm border-b border-amber-600/30 shadow-inner flex items-center justify-center gap-2.5">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-950/15 text-amber-950">
-                        <i className="fa-solid fa-flask" aria-hidden="true" />
-                    </span>
-                    <span>
-                        <strong>MODE GLADI BERSIH / SIMULASI:</strong> Seluruh jadwal, bagan, dan perolehan skor pada event ini adalah data simulasi uji coba dan bukan hasil resmi kejuaraan.
-                    </span>
-                </div>
-            )}
-
-            {courts.some((c) => Boolean(c.active_match)) && (
-                <aside aria-label="Ticker Pertandingan Tatami Terbuka" className="sticky top-0 z-30 bg-[#120f0d]/95 backdrop-blur-md border-b border-[#d4a843]/30 px-4 py-2.5 shadow-md">
-                    <div className="event-container flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2 shrink-0">
-                            <span className="relative flex h-2.5 w-2.5">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                {/* Original Brand & Menu Header + Responsive Mobile Drawer */}
+                <header id="event-top" className="event-header">
+                    <div className="event-container flex min-h-20 items-center justify-between gap-3 py-3">
+                        <Link
+                            href="/"
+                            className="event-brand flex min-w-0 shrink items-center gap-3"
+                            aria-label="SMART PERKEMI, beranda"
+                        >
+                            <img
+                                src="/android-chrome-192x192.png"
+                                width="44"
+                                height="44"
+                                alt=""
+                                className="h-11 w-11 shrink-0 object-contain"
+                            />
+                            <span className="min-w-0">
+                                <span className="event-brand-name block truncate">
+                                    SMART PERKEMI
+                                </span>
+                                <span className="event-brand-caption block truncate">
+                                    Portal kejuaraan Shorinji Kempo
+                                </span>
                             </span>
-                            <span className="text-[11px] font-black uppercase tracking-wider text-red-500 flex items-center gap-1.5">
-                                <span>LIVE TATAMI</span>
-                            </span>
+                        </Link>
+
+                        <nav aria-label="Navigasi utama" className="hidden items-center gap-7 xl:flex">
+                            <button
+                                type="button"
+                                onClick={() => activateTab('referees')}
+                                className="event-text-link"
+                            >
+                                Wasit
+                            </button>
+                            <Link className="event-text-link" href="/athelete">
+                                Peserta
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={() => activateTab('schedule')}
+                                className="event-text-link"
+                            >
+                                Jadwal
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => activateTab('champions')}
+                                className="event-text-link"
+                            >
+                                Hasil Juara
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => activateTab('embu')}
+                                className="event-text-link"
+                            >
+                                Skor Embu
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => activateTab('randori')}
+                                className="event-text-link"
+                            >
+                                Randori
+                            </button>
+                        </nav>
+
+                        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                            <ThemeToggle />
+                            {hasDashboard ? (
+                                <>
+                                    <Link
+                                        href="/logout"
+                                        method="post"
+                                        as="button"
+                                        className="event-text-link hidden sm:inline-flex"
+                                    >
+                                        Keluar
+                                    </Link>
+                                    <Link
+                                        href={dashboardHref}
+                                        className="event-button event-button-primary"
+                                    >
+                                        Dashboard
+                                    </Link>
+                                </>
+                            ) : (
+                                <>
+                                    <Link
+                                        href="/login"
+                                        className="event-text-link hidden sm:inline-flex"
+                                    >
+                                        Masuk
+                                    </Link>
+                                    <Link
+                                        href={registrationHref}
+                                        className="event-button event-button-primary"
+                                    >
+                                        <span className="sm:hidden">Daftar</span>
+                                        <span className="hidden sm:inline">Daftar kontingen</span>
+                                    </Link>
+                                </>
+                            )}
+                            <Button
+                                variant="unstyled"
+                                size="none"
+                                className="home-menu-button xl:hidden"
+                                aria-expanded={mobileMenuOpen}
+                                aria-controls="event-mobile-nav"
+                                aria-label={mobileMenuOpen ? 'Tutup navigasi' : 'Buka navigasi'}
+                                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                            >
+                                <Icon name={mobileMenuOpen ? 'fa-xmark' : 'fa-bars'} />
+                            </Button>
                         </div>
-                        <div className="flex-1 overflow-x-auto no-scrollbar flex items-center gap-3 py-0.5">
-                            {courts.filter((c) => Boolean(c.active_match)).map((court) => (
-                                <a
-                                    key={`ticker-${court.id}`}
-                                    href={`#court-${court.id}`}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#d4a843]/60 px-3 py-1 text-xs text-white transition whitespace-nowrap shadow-xs"
+                    </div>
+
+                    {mobileMenuOpen && (
+                        <nav
+                            id="event-mobile-nav"
+                            aria-label="Navigasi seluler"
+                            className="home-mobile-nav event-container flex flex-col border-t border-[var(--event-border)] xl:hidden"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                    setMobileMenuOpen(false);
+                                }
+                            }}
+                        >
+                            <Link href="/" onClick={() => setMobileMenuOpen(false)}>
+                                Beranda Event
+                            </Link>
+                            <Link href="/athelete" onClick={() => setMobileMenuOpen(false)}>
+                                Peserta &amp; Prestasi Atlet
+                            </Link>
+                            <button
+                                type="button"
+                                className="py-3 text-left text-sm text-[var(--event-muted)]"
+                                onClick={() => activateTab('referees')}
+                            >
+                                Wasit ({referees.length})
+                            </button>
+                            <button
+                                type="button"
+                                className="py-3 text-left text-sm text-[var(--event-muted)]"
+                                onClick={() => activateTab('schedule')}
+                            >
+                                Jadwal ({matchSchedule.length})
+                            </button>
+                            <button
+                                type="button"
+                                className="py-3 text-left text-sm text-[var(--event-muted)]"
+                                onClick={() => activateTab('champions')}
+                            >
+                                Hasil Juara ({championGroups.length})
+                            </button>
+                            <button
+                                type="button"
+                                className="py-3 text-left text-sm text-[var(--event-muted)]"
+                                onClick={() => activateTab('embu')}
+                            >
+                                Skor Embu ({embuScores.length})
+                            </button>
+                            <button
+                                type="button"
+                                className="py-3 text-left text-sm text-[var(--event-muted)]"
+                                onClick={() => activateTab('randori')}
+                            >
+                                Bagan Randori ({randoriBrackets.length})
+                            </button>
+                            {hasDashboard ? (
+                                <Link
+                                    href="/logout"
+                                    method="post"
+                                    as="button"
+                                    className="py-3 text-left text-sm font-medium text-[var(--event-accent)]"
+                                    onClick={() => setMobileMenuOpen(false)}
                                 >
-                                    <span className="font-bold text-[#d4a843]">{court.name}:</span>
-                                    <span className="text-white/80 font-medium">Partai #{court.active_match.sequence} · {court.active_match.category}</span>
-                                    <span className="rounded bg-black/40 border border-white/10 px-2 py-0.5 font-mono font-bold text-amber-300">
-                                        {court.active_match.score_display}
-                                    </span>
-                                </a>
-                            ))}
-                        </div>
-                        <a href="#courts" className="shrink-0 text-xs text-[#d4a843] hover:underline hidden lg:inline-flex items-center gap-1.5 font-bold">
-                            <span>Layar Arena</span>
-                            <Icon name="fa-arrow-down" className="text-[10px]" />
-                        </a>
-                    </div>
-                </aside>
-            )}
+                                    Keluar
+                                </Link>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    className="font-medium text-[var(--event-accent)]"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    Masuk ke portal
+                                </Link>
+                            )}
+                        </nav>
+                    )}
+                </header>
 
-            <main id="event-content">
+                {event.is_training_mode && (
+                    <div
+                        role="alert"
+                        className="flex items-center justify-center gap-2.5 border-b border-amber-600/30 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 px-4 py-3 text-center text-xs font-bold text-amber-950 shadow-inner sm:text-sm"
+                    >
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-950/15 text-amber-950">
+                            <Icon name="fa-flask" />
+                        </span>
+                        <span>
+                            <strong>MODE GLADI BERSIH / SIMULASI:</strong> Seluruh jadwal, bagan,
+                            dan perolehan skor pada event ini adalah data simulasi uji coba dan
+                            bukan hasil resmi kejuaraan.
+                        </span>
+                    </div>
+                )}
+
+                {/* Non-sticky Live Tatami Ticker Banner (clicking auto-opens Gelanggang tab & scrolls to court) */}
+                {liveTickerCourts.length > 0 && (
+                    <aside
+                        aria-label="Ticker Pertandingan Tatami Terbuka"
+                        className="border-b border-[#d4a843]/30 bg-[#120f0d] px-4 py-2.5 shadow-md"
+                    >
+                        <div className="event-container flex items-center justify-between gap-4">
+                            <div className="flex shrink-0 items-center gap-2">
+                                <span className="relative flex h-2.5 w-2.5">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                                </span>
+                                <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-red-500">
+                                    <span>LIVE TATAMI</span>
+                                </span>
+                            </div>
+                            <div className="no-scrollbar flex flex-1 items-center gap-3 overflow-x-auto py-0.5">
+                                {liveTickerCourts.map((court) => (
+                                    <button
+                                        key={`ticker-${court.id}`}
+                                        type="button"
+                                        onClick={() =>
+                                            activateTab('courts', {
+                                                scrollTargetId: `court-${court.id}`,
+                                                shouldScroll: true,
+                                            })
+                                        }
+                                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs whitespace-nowrap text-white shadow-xs transition hover:border-[#d4a843]/60 hover:bg-white/10"
+                                    >
+                                        <span className="font-bold text-[#d4a843]">{court.name}:</span>
+                                        <span className="font-medium text-white/80">
+                                            Partai #{court.active_match.sequence} ·{' '}
+                                            {court.active_match.category}
+                                        </span>
+                                        <span className="rounded border border-white/10 bg-black/40 px-2 py-0.5 font-mono font-bold text-amber-300">
+                                            {court.active_match.score_display}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => activateTab('courts')}
+                                className="hidden shrink-0 items-center gap-1.5 text-xs font-bold text-[#d4a843] hover:underline lg:inline-flex"
+                            >
+                                <span>Layar Arena</span>
+                                <Icon name="fa-arrow-down" className="text-[10px]" />
+                            </button>
+                        </div>
+                    </aside>
+                )}
+
+                {/* Original Event Hero & Summary Strip */}
                 <section className="event-hero" aria-labelledby="event-title">
                     <div className="event-container">
                         <div className="event-breadcrumb flex flex-wrap items-center gap-2 pt-7 text-xs sm:pt-9">
-                            {isHomepage ? <span>Portal kejuaraan</span> : <Link href="/" className="event-text-link">Beranda</Link>}
+                            {isHomepage ? (
+                                <span>Portal kejuaraan</span>
+                            ) : (
+                                <Link href="/" className="event-text-link">
+                                    Beranda
+                                </Link>
+                            )}
                             <Icon name="fa-chevron-right" className="text-[8px]" />
                             <span>Informasi event</span>
                         </div>
-                        <div className="grid items-center gap-10 py-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)] lg:gap-16 lg:pb-14 lg:pt-10">
-                            <div className="min-w-0">
+
+                        <div className="grid items-center gap-10 py-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)] lg:gap-16 lg:pt-10 lg:pb-14">
+                            <motion.div
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                                className="min-w-0"
+                            >
                                 {event.status === 'ongoing' ? (
-                                    <div className="inline-flex items-center gap-2 rounded-full border border-red-500/40 bg-red-500/15 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-red-600 dark:text-red-400 shadow-sm animate-pulse mb-3">
+                                    <div className="mb-3 inline-flex animate-pulse items-center gap-2 rounded-full border border-red-500/40 bg-red-500/15 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-red-600 shadow-sm dark:text-red-400">
                                         <span className="relative flex h-2.5 w-2.5">
                                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                                             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
@@ -814,64 +956,138 @@ export default function EventShow({
                                     </div>
                                 ) : (
                                     <div className={`event-status event-status-${status.tone}`}>
-                                        <span aria-hidden="true" />{status.label}
+                                        <span aria-hidden="true" />
+                                        {status.label}
                                     </div>
                                 )}
-                                <h1 id="event-title" className="event-title">{event.name}</h1>
-                                {event.description && <p className="event-intro">{event.description}</p>}
+
+                                <h1 id="event-title" className="event-title">
+                                    {event.name}
+                                </h1>
+                                {event.description && (
+                                    <p className="event-intro">{event.description}</p>
+                                )}
+
                                 <dl className="event-hero-details grid gap-5 sm:grid-cols-2">
                                     <div className="flex items-start gap-3">
                                         <Icon name="fa-calendar-days" className="event-detail-icon" />
-                                        <div><dt>Pelaksanaan</dt><dd>{event.dates_formatted}</dd></div>
+                                        <div>
+                                            <dt>Pelaksanaan</dt>
+                                            <dd>{event.dates_formatted}</dd>
+                                        </div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Icon name="fa-location-dot" className="event-detail-icon text-red-500" />
-                                        <div>
+                                        <Icon
+                                            name="fa-location-dot"
+                                            className="event-detail-icon text-red-500"
+                                        />
+                                        <div className="min-w-0">
                                             <dt>Lokasi kejuaraan</dt>
                                             <dd>
                                                 <a
-                                                    href={event.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue, event.city, event.province].filter(Boolean).join(', '))}`}
+                                                    href={mapsHref}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="hover:underline inline-flex items-center gap-1.5 font-medium text-inherit"
+                                                    className="inline-flex items-center gap-1.5 font-medium text-inherit hover:underline"
                                                     title="Buka petunjuk arah di Google Maps"
                                                 >
-                                                    {event.venue}
-                                                    <Icon name="fa-arrow-up-right-from-square" className="text-[10px] opacity-70" />
+                                                    <span>{event.venue}</span>
+                                                    <Icon
+                                                        name="fa-arrow-up-right-from-square"
+                                                        className="shrink-0 text-[10px] opacity-70"
+                                                    />
                                                 </a>
-                                                {event.city && <span className="event-muted mt-1 block font-normal">{event.city}{event.province ? `, ${event.province}` : ''}</span>}
+                                                {event.city && (
+                                                    <span className="event-muted mt-1 block font-normal">
+                                                        {event.city}
+                                                        {event.province ? `, ${event.province}` : ''}
+                                                    </span>
+                                                )}
                                             </dd>
                                         </div>
                                     </div>
                                 </dl>
+
                                 <div className="mt-8 flex flex-wrap items-center gap-3">
-                                    <Link href={actionHref} className="event-button event-button-primary event-button-large">
+                                    <Link
+                                        href={actionHref}
+                                        className="event-button event-button-primary event-button-large"
+                                    >
                                         {hasDashboard ? 'Buka dashboard' : 'Daftarkan kontingen'}
-                                        <Icon name={hasDashboard ? 'fa-gauge-high' : 'fa-arrow-right'} className="text-xs" />
+                                        <Icon
+                                            name={hasDashboard ? 'fa-gauge-high' : 'fa-arrow-right'}
+                                            className="text-xs"
+                                        />
                                     </Link>
                                     {event.rules_doc ? (
-                                        <a href={event.rules_doc} target="_blank" rel="noreferrer" className="event-button event-button-secondary event-button-large">
-                                            <Icon name="fa-file-arrow-down" />Proposal & juknis
+                                        <a
+                                            href={event.rules_doc}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="event-button event-button-secondary event-button-large"
+                                        >
+                                            <Icon name="fa-file-arrow-down" />
+                                            Proposal &amp; juknis
                                         </a>
-                                    ) : <a href="#categories" className="event-button event-button-secondary event-button-large">Lihat nomor pertandingan</a>}
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => activateTab('categories')}
+                                            className="event-button event-button-secondary event-button-large"
+                                        >
+                                            Lihat nomor pertandingan
+                                        </button>
+                                    )}
                                 </div>
-                                {!isAuthenticated && <p className="event-login-note">Sudah memiliki akun? <Link href="/login">Masuk ke portal kontingen</Link></p>}
-                            </div>
-                            <figure className="event-poster mx-auto w-full max-w-sm lg:ml-auto lg:mr-0">
+
+                                {!isAuthenticated && (
+                                    <p className="event-login-note">
+                                        Sudah memiliki akun?{' '}
+                                        <Link href="/login">Masuk ke portal kontingen</Link>
+                                    </p>
+                                )}
+                            </motion.div>
+
+                            <figure className="event-poster mx-auto w-full max-w-sm lg:mr-0 lg:ml-auto">
                                 {event.cover_image_url ? (
-                                    <a href={event.cover_image_url} target="_blank" rel="noreferrer" aria-label={`Lihat poster lengkap ${event.name}`} className="event-poster-link block">
-                                        <img src={event.cover_image_url} alt={`Poster ${event.name}`} width="800" height="1000" fetchPriority="high" className="event-poster-image" />
+                                    <a
+                                        href={event.cover_image_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        aria-label={`Lihat poster lengkap ${event.name}`}
+                                        className="event-poster-link block"
+                                    >
+                                        <img
+                                            src={event.cover_image_url}
+                                            alt={`Poster ${event.name}`}
+                                            width="800"
+                                            height="1000"
+                                            fetchPriority="high"
+                                            className="event-poster-image"
+                                        />
                                     </a>
                                 ) : (
                                     <div className="event-poster-placeholder flex aspect-[4/5] flex-col items-center justify-center gap-6 p-8 text-center">
-                                        <img src="/android-chrome-192x192.png" width="100" height="100" alt="" />
+                                        <img
+                                            src="/android-chrome-192x192.png"
+                                            width="100"
+                                            height="100"
+                                            alt=""
+                                        />
                                         <p className="text-xl font-semibold">{event.name}</p>
-                                        <p className="event-muted text-sm">Poster kejuaraan akan diumumkan panitia.</p>
+                                        <p className="event-muted text-sm">
+                                            Poster kejuaraan akan diumumkan panitia.
+                                        </p>
                                     </div>
                                 )}
                                 <figcaption className="flex items-center justify-between gap-4 px-1 pt-4 text-xs">
                                     <span>{event.edition || 'Shorinji Kempo'}</span>
-                                    {event.cover_image_url && <Icon name="fa-up-right-from-square" className="shrink-0" />}
+                                    {event.cover_image_url && (
+                                        <Icon
+                                            name="fa-up-right-from-square"
+                                            className="shrink-0"
+                                        />
+                                    )}
                                 </figcaption>
                             </figure>
                         </div>
@@ -880,671 +1096,343 @@ export default function EventShow({
 
                 <section className="event-summary" aria-label="Ringkasan pendaftaran">
                     <dl className="event-container grid grid-cols-2 lg:grid-cols-4">
-                        <div><dt>Batas pendaftaran</dt><dd>{event.registration_end_formatted || 'Hingga kuota terpenuhi'}</dd></div>
-                        <div><dt>Biaya kontingen</dt><dd>{event.is_paid ? event.fee_per_contingent_formatted : 'Gratis'}</dd></div>
-                        <div><dt>Biaya per atlet</dt><dd>{event.is_paid ? event.fee_per_athlete_formatted : 'Gratis'}</dd></div>
-                        <div><dt>Nomor per atlet</dt><dd>{event.max_match_categories_per_athlete > 0 ? `Maksimal ${event.max_match_categories_per_athlete} nomor` : 'Tidak dibatasi'}</dd></div>
+                        <div>
+                            <dt>Batas pendaftaran</dt>
+                            <dd>{event.registration_end_formatted || 'Hingga kuota terpenuhi'}</dd>
+                        </div>
+                        <div>
+                            <dt>Biaya kontingen</dt>
+                            <dd>{event.is_paid ? event.fee_per_contingent_formatted : 'Gratis'}</dd>
+                        </div>
+                        <div>
+                            <dt>Biaya per atlet</dt>
+                            <dd>{event.is_paid ? event.fee_per_athlete_formatted : 'Gratis'}</dd>
+                        </div>
+                        <div>
+                            <dt>Nomor per atlet</dt>
+                            <dd>
+                                {event.max_match_categories_per_athlete > 0
+                                    ? `Maksimal ${event.max_match_categories_per_athlete} nomor`
+                                    : 'Tidak dibatasi'}
+                            </dd>
+                        </div>
                     </dl>
                 </section>
 
-                <div className="event-section-nav">
-                    <nav className="event-container flex gap-7 overflow-x-auto sm:gap-10" aria-label="Navigasi informasi event">
-                        <a href="#categories">Kategori pertandingan <span>{matchCategories.length}</span></a>
-                        {contingents.length > 0 && <a href="#contingents">Kontingen <span>{contingents.length}</span></a>}
-                        {courts.length > 0 && <a href="#courts" className="text-red-500 font-bold"><Icon name="fa-tv" className="mr-1 text-xs" />LIVE Gelanggang <span>{courts.length}</span></a>}
-                        <a href="#referees">Wasit <span>{referees.length}</span></a>
-                        <a href="#schedule">Jadwal <span>{matchSchedule.length}</span></a>
-                        <a href="#champions">Hasil Juara <span>{championGroups.length}</span></a>
-                        <a href="#embu-scores">Skor Embu <span>{embuScores.length}</span></a>
-                        <a href="#randori-bracket">Randori <span>{randoriBrackets.length}</span></a>
-                        <a href="#payment">Biaya & kontak</a>
-                    </nav>
-                </div>
-
-                <div className="event-container">
-                    {event.participant_requirements?.length > 0 && <section className="event-section"><SectionHeading title="Persyaratan peserta" description="Ketentuan usia dan sekolah yang berlaku untuk event ini." /><ul className="event-muted mt-5 list-disc space-y-2 pl-5 text-sm leading-7">{event.participant_requirements.map((line) => <li key={line}>{line}</li>)}</ul></section>}
-                    <section id="categories" className="event-section">
-                        <SectionHeading title="Kategori pertandingan" description="Temukan nomor tanding yang sesuai dengan usia dan tingkatan atlet." />
-                        <div className={`grid gap-4 ${ageCategories.length > 1 ? 'md:grid-cols-2' : ''}`}>
-                            {ageCategories.length > 0 ? ageCategories.map((category) => (
-                                <div key={category.id} className="event-eligibility grid gap-4 sm:grid-cols-[minmax(140px,0.65fr)_minmax(0,2fr)] sm:gap-8">
-                                    <div><h3>{category.name}</h3><p className="event-accent mt-1 text-sm font-medium">{category.age_range}</p></div>
-                                    <div>
-                                        <p className="event-muted text-sm leading-7">{category.description || 'Peserta mengikuti ketentuan usia yang ditetapkan panitia.'}</p>
-                                        <p className="event-muted mt-3 text-xs">Tarif kategori <span className="event-strong ml-2 font-semibold">{category.fee_formatted}</span></p>
-                                    </div>
-                                </div>
-                            )) : <p className="event-empty">Ketentuan kelompok umur akan diumumkan panitia.</p>}
-                        </div>
-
-                        <div className="mb-5 mt-9 flex flex-wrap items-center justify-between gap-4">
-                            <p className="event-muted text-sm" role="status"><strong className="event-strong font-semibold">{filteredMatches.length} nomor pertandingan</strong>{matchFilter !== 'all' ? ` ${matchFilter === 'embu' ? 'Embu' : 'Randori'}` : ' tersedia'}</p>
-                            <div className="event-filters inline-flex gap-1" role="group" aria-label="Filter jenis pertandingan">
-                                {[['all', 'Semua'], ['embu', 'Embu'], ['randori', 'Randori']].map(([value, label]) => (
-                                    <Button key={value} variant="unstyled" size="none" className="event-filter" aria-pressed={matchFilter === value} onClick={() => setMatchFilter(value)}>{label}</Button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="event-table-wrap">
-                            <TableContainer ariaLabel="Daftar nomor pertandingan, geser untuk melihat semua kolom">
-                                <table className="event-table responsive-data-table w-full text-left text-sm">
-                                    <thead><tr>
-                                        <th scope="col">Nomor pertandingan</th><th scope="col">Jenis</th><th scope="col">Peserta</th><th scope="col">Tingkatan</th><th scope="col">Berat badan</th><th scope="col" className="text-right">Kapasitas</th>
-                                    </tr></thead>
-                                    <tbody>
-                                        {filteredMatches.length > 0 ? filteredMatches.map((category) => (
-                                            <tr key={category.id}>
-                                                <th scope="row" className="whitespace-normal font-medium">{category.name}</th>
-                                                <td><span className={`event-match-type ${category.type === 'randori' ? 'event-match-randori' : ''}`}>{category.type === 'randori' ? 'Randori' : category.type === 'embu' ? 'Embu' : category.type}</span></td>
-                                                <td>{category.gender === 'male' ? 'Putra' : category.gender === 'female' ? 'Putri' : 'Campuran'}</td>
-                                                <td>{category.min_kyu && category.max_kyu ? category.min_kyu === category.max_kyu ? category.min_kyu : `${category.min_kyu} – ${category.max_kyu}` : '—'}</td>
-                                                <td>{category.weight_range || '—'}</td>
-                                                <td className="text-right">{category.capacity ? `${category.capacity} peserta` : 'Tidak dibatasi'}</td>
-                                            </tr>
-                                        )) : <tr><td colSpan={6} className="event-empty">{matchCategories.length ? 'Belum ada nomor untuk jenis pertandingan ini.' : 'Nomor pertandingan akan diumumkan panitia.'}</td></tr>}
-                                    </tbody>
-                                </table>
-                            </TableContainer>
-                        </div>
-                        <p className="event-muted mt-3 text-xs sm:hidden">Geser tabel ke samping untuk melihat seluruh informasi.</p>
-                    </section>
-
-                    <section id="referees" className="event-section">
-                        <SectionHeading title="Wasit & juri event" description="Daftar korps Wasit yang terdaftar untuk memimpin dan menilai pertandingan." />
-                        {referees.length > 0
-                            ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{referees.map((referee) => <RefereeCard key={referee.id} referee={referee} />)}</div>
-                            : <p className="event-empty">Susunan Wasit event akan diumumkan panitia.</p>}
-                    </section>
-
-                    <section id="schedule" className="event-section">
-                        <SectionHeading title="Jadwal pertandingan" description="Urutan partai per court berdasarkan jadwal resmi panitia." />
-                        {matchScheduleDays.length > 0 ? (
-                            <div className="event-schedule">
-                                <div className="event-date-tabs" role="tablist" aria-label="Pilih tanggal jadwal pertandingan">
-                                    {matchScheduleDays.map((day, index) => {
-                                        const isSelected = day.date === selectedScheduleDay?.date;
-                                        return (
-                                            <Button
-                                                key={day.date || index}
-                                                id={`schedule-tab-${index + 1}`}
-                                                type="button"
-                                                variant="unstyled"
-                                                size="none"
-                                                role="tab"
-                                                aria-selected={isSelected}
-                                                aria-controls="schedule-date-panel"
-                                                tabIndex={isSelected ? 0 : -1}
-                                                className="event-date-tab"
-                                                onKeyDown={handleDateTabKeyDown}
-                                                onClick={() => {
-                                                    setActiveScheduleDate(day.date);
-                                                    updatePublicFilter('schedule_date', day.date, '');
-                                                }}
-                                            >
-                                                <span>Tanggal {index + 1}</span>
-                                                <small>{formatScheduleTabDate(day.date)}</small>
-                                            </Button>
-                                        );
-                                    })}
-                                </div>
-                                <div
-                                    id="schedule-date-panel"
-                                    role="tabpanel"
-                                    aria-labelledby={`schedule-tab-${Math.max(matchScheduleDays.findIndex((day) => day.date === selectedScheduleDay?.date), 0) + 1}`}
-                                    className="event-schedule-panel"
-                                >
-                                    <div className="event-schedule-day grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-12">
-                                        <h3>{selectedScheduleDay?.dateLabel || formatScheduleDate(selectedScheduleDay?.date)}</h3>
-                                        <ol>
-                                            {selectedScheduleDay?.matches.map((match) => (
-                                                <li key={match.id} className="event-session grid grid-cols-[90px_minmax(0,1fr)] gap-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-7">
-                                                    <div className="event-session-time">
-                                                        <p>{match.time || 'Menyusul'}{match.end_time && <span className="block sm:inline"> – {match.end_time}</span>}</p>
-                                                        {match.time && <span className="event-muted text-xs font-normal">WIB</span>}
-                                                    </div>
-                                                    <div><div className="flex flex-wrap items-center gap-2"><h4>{match.category}</h4><span className={`event-match-type ${match.type === 'randori' ? 'event-match-randori' : ''}`}>{match.type === 'randori' ? 'Randori' : 'Embu'}</span></div><p className="event-muted mt-2 text-sm leading-6">Partai #{match.sequence} · {match.round}{match.court ? ` · ${match.court}` : ''}</p>{match.participant && <p className="event-strong mt-1 text-sm font-medium">{match.participant}</p>}</div>
-                                                </li>
-                                            ))}
-                                        </ol>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : <p className="event-empty">Jadwal pertandingan akan diumumkan panitia.</p>}
-                        {scheduleDays.length > 0 && <details className="event-rundown mt-7"><summary>Rangkaian acara umum</summary><div className="mt-5">{scheduleDays.map((day) => <div key={day.date} className="event-schedule-day grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-12"><h3>{formatScheduleDate(day.date)}</h3><ol>{day.sessions.map((session) => <li key={session.id} className="event-session grid grid-cols-[90px_minmax(0,1fr)] gap-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-7"><div className="event-session-time"><p>{session.time_only || 'Menyusul'}</p></div><div><h4>{session.name}</h4>{session.description && <p className="event-muted mt-2 text-sm leading-6">{session.description}</p>}</div></li>)}</ol></div>)}</div></details>}
-                    </section>
-
-                    <section id="champions" className="event-section">
-                        <SectionHeading title="Hasil juara" description="Juara resmi per nomor pertandingan yang telah dikonfirmasi panitia.">
-                            <div className="event-filters inline-flex gap-1" role="group" aria-label="Filter hasil juara">
-                                {[['all', 'Semua'], ['embu', 'Embu'], ['randori', 'Randori']].map(([value, label]) => (
-                                    <Button key={value} variant="unstyled" size="none" className="event-filter" aria-pressed={championFilter === value} onClick={() => setChampionFilter(value)}>
-                                        {label} <span className="event-filter-count">{championCounts[value]}</span>
-                                    </Button>
-                                ))}
-                            </div>
-                        </SectionHeading>
-                        <p className="sr-only" role="status">Menampilkan {filteredChampionGroups.length} hasil {championFilter === 'all' ? 'semua nomor pertandingan' : championFilter}.</p>
-                        {filteredChampionGroups.length > 0
-                            ? <div className="grid gap-5 lg:grid-cols-2">{filteredChampionGroups.map((group) => <ChampionGroup key={group.id} group={group} />)}</div>
-                            : <p className="event-empty">Belum ada hasil juara {championFilter === 'all' ? 'yang dikonfirmasi' : championFilter === 'embu' ? 'Embu' : 'Randori'}.</p>}
-                    </section>
-
-                    <section id="embu-scores" className="event-section">
-                        <SectionHeading title="Skor Embu" description="Nilai akhir terverifikasi, lima nilai Juri, skor tengah, dan denda waktu.">
-                            {embuScores.length > 0 && (
-                                <Select
-                                    id="embu-score-filter"
-                                    label="Filter nomor Embu"
-                                    ariaLabel="Filter skor berdasarkan nomor Embu"
-                                    options={embuScoreOptions}
-                                    value={activeEmbuScoreFilter}
-                                    onChange={(value) => {
-                                        setEmbuScoreFilter(value);
-                                        updatePublicFilter('embu_category', value);
-                                    }}
-                                    clearable={false}
-                                    searchPlaceholder="Cari nomor Embu..."
-                                    containerClassName="event-filter-select w-full sm:w-80"
-                                    labelClassName="event-select-label"
-                                />
-                            )}
-                        </SectionHeading>
-                        <p className="sr-only" role="status">Menampilkan {filteredEmbuScores.length} dari {embuScores.length} skor Embu.</p>
-                        {embuScores.length > 0
-                            ? <div className="grid gap-5 lg:grid-cols-2">{filteredEmbuScores.map((score) => <EmbuScoreCard key={score.id} score={score} />)}</div>
-                            : <p className="event-empty">Belum ada skor Embu terverifikasi.</p>}
-                    </section>
-
-                    <section id="randori-bracket" className="event-section">
-                        <SectionHeading title="Bagan Randori" description="Perjalanan pertandingan AKA dan SHIRO dari babak awal hingga final.">
-                            {randoriBrackets.length > 0 && (
-                                <Select
-                                    id="randori-bracket-filter"
-                                    label="Filter nomor Randori"
-                                    ariaLabel="Filter bagan berdasarkan nomor Randori"
-                                    options={randoriBracketOptions}
-                                    value={activeRandoriBracketFilter}
-                                    onChange={(value) => {
-                                        setRandoriBracketFilter(value);
-                                        updatePublicFilter('randori_bracket', value);
-                                    }}
-                                    clearable={false}
-                                    searchPlaceholder="Cari nomor Randori..."
-                                    containerClassName="event-filter-select w-full sm:w-80"
-                                    labelClassName="event-select-label"
-                                />
-                            )}
-                        </SectionHeading>
-                        <p className="sr-only" role="status">Menampilkan {filteredRandoriBrackets.length} dari {randoriBrackets.length} bagan Randori.</p>
-                        {randoriBrackets.length > 0
-                            ? <div className="space-y-6">{filteredRandoriBrackets.map((bracket) => <RandoriBracket key={bracket.id} bracket={bracket} />)}</div>
-                            : <p className="event-empty">Bagan Randori belum dipublikasikan.</p>}
-                    </section>
-
-                    {contingents.length > 0 && (
-                        <section id="contingents" className="event-section">
-                            <SectionHeading
-                                title="Kontingen terdaftar"
-                                description={`${contingents.length} kontingen dari berbagai daerah telah terdaftar untuk mengikuti kejuaraan.`}
-                            />
-                            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {contingents.map((contingent) => (
-                                    <div
-                                        key={contingent.id}
-                                        className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all hover:border-amber-300 dark:hover:border-amber-500/40 flex flex-col justify-between gap-3"
+                {/* Sticky Scrollable Tab Navigation */}
+                <nav
+                    className="event-section-nav"
+                    aria-label="Navigasi informasi event"
+                >
+                    <div className="event-container flex items-center gap-2">
+                        <div
+                            role="tablist"
+                            aria-label="Bagian halaman kejuaraan"
+                            className="event-section-nav-scroll flex min-w-0 flex-1 items-center gap-5 overflow-x-auto sm:gap-8"
+                        >
+                            {tabs.map((tab, index) => {
+                                const isSelected = activeTab === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        ref={(el) => {
+                                            tabButtonRefs.current[tab.id] = el;
+                                        }}
+                                        id={`tab-btn-${tab.id}`}
+                                        role="tab"
+                                        type="button"
+                                        aria-selected={isSelected}
+                                        aria-controls="event-tab-stage"
+                                        tabIndex={isSelected ? 0 : -1}
+                                        onClick={() => activateTab(tab.id)}
+                                        onKeyDown={(e) => handleTabKeyDown(e, index)}
+                                        className={`event-tab-btn ${
+                                            tab.id === 'courts' ? 'font-bold text-red-500' : ''
+                                        }`}
                                     >
-                                        <div>
-                                            <div className="flex items-start justify-between gap-2.5">
-                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 text-xs">
-                                                        <Icon name="fa-flag" />
-                                                    </span>
-                                                    <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug truncate" title={contingent.name}>
-                                                        {contingent.name}
-                                                    </h3>
-                                                </div>
-                                                <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950/80 px-2.5 py-1 text-xs font-black text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs">
-                                                    <Icon name="fa-user-group" className="text-[10px] text-amber-800 dark:text-amber-400" />
-                                                    {contingent.athletes_count} atlet
-                                                </span>
-                                            </div>
-                                            <p className="mt-2.5 text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 font-medium">
-                                                <Icon name="fa-location-dot" className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0" />
-                                                <span className="truncate">
-                                                    {[contingent.city, contingent.province].filter(Boolean).join(', ') || 'Daerah belum disetel'}
-                                                </span>
-                                            </p>
-                                        </div>
-                                        {contingent.manager_name && (
-                                            <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <Icon name="fa-user-tie" className="text-[10px] text-slate-400 shrink-0" />
-                                                <span className="text-slate-400 dark:text-slate-500">Manajer:</span>
-                                                <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{contingent.manager_name}</span>
-                                            </div>
+                                        {tab.id === 'courts' && (
+                                            <Icon name="fa-tv" className="text-xs" />
                                         )}
-                                    </div>
-                                ))}
+                                        <span>{tab.label}</span>
+                                        {typeof tab.count === 'number' && (
+                                            <span className="event-tab-badge">{tab.count}</span>
+                                        )}
+                                        {isSelected && (
+                                            <motion.span
+                                                layoutId="public-event-active-tab"
+                                                transition={{
+                                                    type: 'spring',
+                                                    stiffness: 420,
+                                                    damping: 34,
+                                                }}
+                                                className="event-tab-indicator"
+                                            />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {tabs.length > 1 && (
+                            <div className="flex shrink-0 items-center gap-1 border-l border-[var(--event-border)] pl-2">
+                                <button
+                                    type="button"
+                                    onClick={() => goToAdjacentTab(-1)}
+                                    aria-label={`Tab sebelumnya: ${prevTab.label}`}
+                                    title={`Tab sebelumnya: ${prevTab.label}`}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--event-border)] bg-[var(--event-surface)] text-xs font-semibold text-[var(--event-ink)] transition hover:border-[var(--event-accent)] hover:text-[var(--event-accent)]"
+                                >
+                                    ←
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => goToAdjacentTab(1)}
+                                    aria-label={`Tab berikutnya: ${nextTab.label}`}
+                                    title={`Tab berikutnya: ${nextTab.label}`}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--event-border)] bg-[var(--event-surface)] text-xs font-semibold text-[var(--event-ink)] transition hover:border-[var(--event-accent)] hover:text-[var(--event-accent)]"
+                                >
+                                    →
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </nav>
+
+                {/* Active Tab Panel Stage */}
+                <main
+                    id="event-tab-stage"
+                    role="tabpanel"
+                    aria-labelledby={`tab-btn-${activeTab}`}
+                    className="event-tab-stage event-container min-w-0 py-8 sm:py-10"
+                >
+                    <AnimatePresence mode="wait" custom={tabDirection} initial={false}>
+                        <motion.div
+                            key={activeTab}
+                            custom={tabDirection}
+                            variants={TAB_SLIDE_VARIANTS}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                            className="min-w-0"
+                        >
+                            {activeTabContent()}
+                        </motion.div>
+                    </AnimatePresence>
+
+                    {/* Auto-advance boundary strip (Desktop & Mobile) */}
+                    {tabs.length > 1 && (
+                        <section
+                            aria-label="Navigasi antar tab"
+                            className="mt-10 overflow-hidden rounded-2xl border border-[var(--event-border)] bg-[var(--event-surface)]/80 p-4"
+                        >
+                            <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-[var(--event-border)]">
+                                <motion.div
+                                    className="h-full rounded-full bg-[var(--event-accent)]"
+                                    animate={{ width: `${Math.round(overscrollProgress * 100)}%` }}
+                                    transition={{ duration: 0.08, ease: 'linear' }}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <button
+                                    type="button"
+                                    onClick={() => goToAdjacentTab(-1)}
+                                    className="inline-flex items-center justify-between gap-2 rounded-xl border border-[var(--event-border)] bg-[var(--event-bg)] px-3.5 py-2.5 text-left text-xs font-medium text-[var(--event-ink)] transition hover:border-[var(--event-accent)] sm:justify-start"
+                                >
+                                    <span className="text-[var(--event-muted)]">← Sebelumnya</span>
+                                    <span className="font-semibold">{prevTab.label}</span>
+                                </button>
+
+                                <p className="text-center text-[11px] text-[var(--event-muted)]">
+                                    {overscrollProgress > 0.05
+                                        ? `Lanjut geser untuk membuka tab ${nextTab.label}…`
+                                        : activeTabIndex === tabs.length - 1
+                                          ? `Sudah di tab terakhir — scroll mentok ke bawah untuk kembali ke ${nextTab.label}`
+                                          : `Scroll mentok ke bawah (atau geser kiri) untuk otomatis pindah ke ${nextTab.label}`}
+                                </p>
+
+                                <button
+                                    type="button"
+                                    onClick={() => goToAdjacentTab(1)}
+                                    className="inline-flex items-center justify-between gap-2 rounded-xl bg-[var(--event-accent)] px-4 py-2.5 text-right text-xs font-semibold text-white transition hover:opacity-90 sm:justify-end"
+                                >
+                                    <span>
+                                        {activeTabIndex === tabs.length - 1 ? 'Awal: ' : 'Lanjut: '}
+                                        {nextTab.label} →
+                                    </span>
+                                </button>
                             </div>
                         </section>
                     )}
+                </main>
 
-                    <section id="courts" className="event-section">
-                        <SectionHeading
-                            title="Lokasi & layar monitor gelanggang"
-                            description="Pantau langsung skor, antrean partai, dan waktu pertandingan per gelanggang secara publik (tanpa login)."
-                        />
-                        <div className="grid gap-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14">
-                            <div className="event-venue flex flex-col justify-between border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 rounded-2xl p-6 sm:p-7 shadow-xs">
-                                <div>
-                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300 border border-red-200 dark:border-red-800/40 mb-4">
-                                        <Icon name="fa-location-dot" className="text-red-600 dark:text-red-400 text-xs" />
-                                        Lokasi Arena
-                                    </div>
-                                    <h3 className="text-xl sm:text-2xl font-black text-slate-950 dark:text-white leading-snug">
-                                        {event.venue || 'Lokasi akan diumumkan'}
-                                    </h3>
-                                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                                        <Icon name="fa-city" className="text-xs text-slate-400" />
-                                        {[event.city, event.province].filter(Boolean).join(', ') || 'Lokasi Kota/Provinsi belum dicatat'}
-                                    </p>
-                                    <div className="mt-5">
-                                        <a
-                                            href={event.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([event.venue, event.city, event.province].filter(Boolean).join(', '))}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-red-400 dark:hover:border-red-500 font-bold text-xs shadow-2xs transition hover:bg-slate-50 dark:hover:bg-slate-700/60"
-                                            title="Buka petunjuk arah di Google Maps"
-                                        >
-                                            <Icon name="fa-map-location-dot" className="text-red-600 dark:text-red-400 text-sm" />
-                                            Buka Google Maps
-                                        </a>
-                                    </div>
-                                </div>
-                                {event.dates_formatted && (
-                                    <div className="mt-8 pt-5 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
-                                        <Icon name="fa-calendar-days" className="text-amber-600 dark:text-amber-400" />
-                                        <span className="font-semibold">{event.dates_formatted}</span>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="event-courts grid gap-6">
-                                {courts.length > 0 ? courts.map((court) => (
-                                    <article key={court.id} className="relative overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 sm:p-6 shadow-xs hover:shadow-md transition-all hover:border-amber-300 dark:hover:border-amber-500/40">
-                                        {/* Card Top: Tatami Title & Status */}
-                                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 shadow-2xs">
-                                                    <Icon name="fa-tv" className="text-lg" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-xl font-black text-slate-950 dark:text-white tracking-tight leading-snug">{court.name}</h3>
-                                                    {court.location && (
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
-                                                            <Icon name="fa-location-dot" className="text-[10px] text-amber-600 dark:text-amber-400" />
-                                                            {court.location}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                {court.active_match ? (
-                                                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider ${
-                                                        court.active_match.status === 'in_progress'
-                                                            ? 'border border-red-300 bg-red-100 text-red-950 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200 animate-pulse'
-                                                            : 'border border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/60 dark:text-amber-200'
-                                                    }`}>
-                                                        <span className={`h-2 w-2 rounded-full ${court.active_match.status === 'in_progress' ? 'bg-red-600' : 'bg-amber-600 dark:bg-amber-400'}`} />
-                                                        {court.active_match.status_label}
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
-                                                        <span className="h-2 w-2 rounded-full bg-slate-400" />
-                                                        Gelanggang Siaga
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Active Match Arena Display */}
-                                        {court.active_match ? (
-                                            <div className="mt-4 space-y-3.5">
-                                                {/* Match Header Bar */}
-                                                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-900 text-white dark:bg-slate-800 px-4 py-2.5 text-xs border border-slate-800 dark:border-slate-700/80 shadow-xs">
-                                                    <div className="flex items-center gap-2.5">
-                                                        <span className="rounded-md bg-amber-400 px-2.5 py-0.5 text-[11px] font-black text-slate-950 shadow-2xs">
-                                                            Partai #{court.active_match.sequence}
-                                                        </span>
-                                                        <span className="font-bold text-white text-xs sm:text-sm">{court.active_match.category}</span>
-                                                    </div>
-                                                    <span className="text-slate-300 dark:text-slate-300 font-semibold text-[11px] sm:text-xs">{court.active_match.round}</span>
-                                                </div>
-
-                                                {/* Split Battle Display for Randori or Score for Embu */}
-                                                {court.active_match.type === 'randori' || court.active_match.aka_score !== null ? (
-                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                        {/* AKA Side */}
-                                                        <div className="relative overflow-hidden rounded-xl border-2 border-red-500/40 bg-gradient-to-br from-red-50 via-white to-red-50/50 dark:from-red-950/40 dark:via-red-900/20 dark:to-slate-900 p-4 shadow-2xs">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <span className="rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-2xs">
-                                                                    AKA (MERAH)
-                                                                </span>
-                                                                {Boolean(court.active_match.aka_waza_ari) && (
-                                                                    <span className="rounded bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                                                        Waza-ari: {court.active_match.aka_waza_ari}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2">
-                                                                {court.active_match.aka_label || 'Sudut Merah'}
-                                                            </p>
-                                                            {court.active_match.aka_contingent && (
-                                                                <p className="mt-0.5 text-xs text-rose-800/80 dark:text-rose-300/80 font-medium truncate">
-                                                                    {court.active_match.aka_contingent}
-                                                                </p>
-                                                            )}
-                                                            <div className="mt-2 flex items-baseline justify-end">
-                                                                <span className="text-4xl font-black tabular-nums text-red-600 dark:text-red-400">
-                                                                    {court.active_match.aka_score ?? 0}
-                                                                </span>
-                                                                <span className="ml-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">poin</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* SHIRO Side */}
-                                                        <div className="relative overflow-hidden rounded-xl border-2 border-sky-500/40 bg-gradient-to-br from-sky-50 via-white to-sky-50/50 dark:from-sky-950/40 dark:via-sky-900/20 dark:to-slate-900 p-4 shadow-2xs">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <span className="rounded-md bg-sky-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-2xs">
-                                                                    SHIRO (PUTIH)
-                                                                </span>
-                                                                {Boolean(court.active_match.shiro_waza_ari) && (
-                                                                    <span className="rounded bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                                                        Waza-ari: {court.active_match.shiro_waza_ari}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white line-clamp-2">
-                                                                {court.active_match.shiro_label || 'Sudut Putih'}
-                                                            </p>
-                                                            {court.active_match.shiro_contingent && (
-                                                                <p className="mt-0.5 text-xs text-sky-800/80 dark:text-sky-300/80 font-medium truncate">
-                                                                    {court.active_match.shiro_contingent}
-                                                                </p>
-                                                            )}
-                                                            <div className="mt-2 flex items-baseline justify-end">
-                                                                <span className="text-4xl font-black tabular-nums text-sky-600 dark:text-sky-400">
-                                                                    {court.active_match.shiro_score ?? 0}
-                                                                </span>
-                                                                <span className="ml-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">poin</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    /* Embu Performance Display */
-                                                    <div className="rounded-xl border border-amber-300/80 dark:border-amber-500/40 bg-amber-50/90 dark:bg-slate-900/90 p-4 shadow-2xs">
-                                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                            <div>
-                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-200/90 text-amber-950 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60">
-                                                                    <Icon name="fa-trophy" className="text-[9px] text-amber-800 dark:text-amber-400" /> Penampilan Embu
-                                                                </span>
-                                                                <p className="text-base sm:text-lg font-black text-slate-950 dark:text-white mt-1.5 tracking-tight leading-snug">{court.active_match.participant || 'Menunggu peserta'}</p>
-                                                            </div>
-                                                            <div className="text-left sm:text-right shrink-0 bg-white/90 dark:bg-slate-800/90 sm:bg-transparent sm:dark:bg-transparent p-3 sm:p-0 rounded-xl border border-amber-200/80 sm:border-0 shadow-2xs sm:shadow-none">
-                                                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">Nilai Terbuka Arena</span>
-                                                                <span className="text-2xl sm:text-3xl font-black tabular-nums text-amber-950 dark:text-amber-300 tracking-tight">
-                                                                    {court.active_match.score_display}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            /* Standby Idle State */
-                                            <div className="my-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-6 text-center">
-                                                <Icon name="fa-hourglass-half" className="text-2xl text-slate-400 dark:text-slate-500" />
-                                                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">Menunggu Partai Berikutnya</p>
-                                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Pertandingan pada gelanggang ini akan segera dimulai sesuai jadwal pengundian.</p>
-                                            </div>
-                                        )}
-
-                                        {/* On-Deck / Next Match Queue */}
-                                        {court.next_match && (
-                                            <div className="mt-3.5 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-xs border border-slate-200/70 dark:border-slate-700/60">
-                                                <span className="rounded bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                                                    Partai Selanjutnya
-                                                </span>
-                                                <span className="font-bold text-amber-600 dark:text-amber-400">#{court.next_match.sequence}</span>
-                                                <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{court.next_match.participant}</span>
-                                                <span className="text-slate-500 dark:text-slate-400 font-normal">({court.next_match.category} · {court.next_match.round})</span>
-                                            </div>
-                                        )}
-
-                                        {/* Actions Bar & QR Code Access */}
-                                        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <a
-                                                    href={court.monitor_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-700 hover:bg-red-800 text-white font-bold text-xs shadow-xs transition"
-                                                    title={`Buka monitor layar penuh ${court.name}`}
-                                                >
-                                                    <Icon name="fa-tv" /> Buka Layar Penuh
-                                                </a>
-                                                <Button
-                                                    type="button"
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    onClick={() => setSelectedQrCourt(court)}
-                                                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 font-semibold text-xs shadow-2xs transition"
-                                                    title="Tampilkan QR code untuk scan dari HP tribun"
-                                                >
-                                                    <Icon name="fa-qrcode" className="text-sm text-slate-600 dark:text-slate-400" /> QR Code Penonton
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    onClick={() => handleCopyCourtUrl(court.monitor_full_url, court.id)}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                                                    title="Salin tautan monitor gelanggang"
-                                                >
-                                                    <Icon name={copiedCourtUrl === court.id ? 'fa-check text-emerald-600' : 'fa-copy'} />
-                                                    <span>{copiedCourtUrl === court.id ? 'Tersalin!' : 'Salin Link'}</span>
-                                                </Button>
-                                            </div>
-
-                                            {court.qr_url && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedQrCourt(court)}
-                                                    className="group flex items-center gap-2.5 rounded-xl bg-white dark:bg-slate-800 p-1.5 pr-3 text-left border border-slate-200 dark:border-slate-700 shadow-2xs transition hover:border-amber-400 hover:ring-2 hover:ring-amber-400/20"
-                                                    title="Klik untuk memperbesar QR Code"
-                                                >
-                                                    <img
-                                                        src={court.qr_url}
-                                                        alt={`QR Code ${court.name}`}
-                                                        width="44"
-                                                        height="44"
-                                                        className="h-11 w-11 rounded object-contain border border-slate-100 dark:border-slate-700"
-                                                        loading="lazy"
-                                                    />
-                                                    <div className="text-[11px] leading-tight">
-                                                        <span className="font-bold text-slate-900 dark:text-white block">Scan HP</span>
-                                                        <span className="text-[9px] text-slate-500 dark:text-slate-400">Buka di tribun</span>
-                                                    </div>
-                                                </button>
-                                            )}
-                                        </div>
-                                    </article>
-                                )) : <p className="event-empty">Pembagian gelanggang akan diumumkan panitia.</p>}
-                            </div>
-                        </div>
-                    </section>
-
-                    <section id="payment" className="event-section">
-                        <SectionHeading title="Biaya & informasi pendaftaran" description="Ketentuan administrasi dan narahubung panitia kejuaraan." />
-                        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-14">
-                            <div>
-                                <div className="event-payment-note flex items-start gap-4">
-                                    <Icon name={event.is_paid ? 'fa-circle-info' : 'fa-circle-check'} className="event-accent mt-1 text-lg" />
-                                    <div>
-                                        <h3>{event.is_paid ? 'Pembayaran melalui rekening resmi' : 'Pendaftaran tanpa biaya'}</h3>
-                                        <p className="event-muted mt-2 text-sm leading-7">{event.is_paid ? 'Transfer biaya kontingen dan atlet ke rekening resmi panitia. Simpan bukti transfer untuk diunggah saat verifikasi pendaftaran.' : 'Tidak ada biaya pendaftaran kontingen maupun atlet. Anda dapat melanjutkan pendaftaran tanpa mengunggah bukti pembayaran.'}</p>
-                                    </div>
-                                </div>
-                                {event.is_paid && <div className="mt-6 grid gap-4">
-                                    {paymentMethods.length > 0 ? paymentMethods.map((method) => (
-                                        <div key={method.id} className="event-bank">
-                                            <div className="flex items-center justify-between gap-3"><h3>{method.provider || method.name}</h3><span className="event-muted text-xs capitalize">{method.type}</span></div>
-                                            <p className="event-muted mb-2 mt-5 text-xs">Nomor rekening / akun</p>
-                                            <div className="flex items-center justify-between gap-3">
-                                                <span className="min-w-0 break-all text-lg font-semibold tabular-nums select-all">{method.account_number}</span>
-                                                <Button variant="unstyled" size="none" className="event-button event-button-secondary" onClick={() => handleCopy(method.account_number, method.id)} aria-label={`Salin nomor rekening ${method.provider || method.name}`}>{copiedAccount === method.id ? 'Tersalin' : 'Salin'}</Button>
-                                            </div>
-                                            <p className="event-muted mt-3 text-sm">Atas nama <strong className="event-strong font-medium">{method.account_name}</strong></p>
-                                            {method.instructions && <p className="event-muted mt-4 text-sm leading-6">{method.instructions}</p>}
-                                        </div>
-                                    )) : <p className="event-empty">Informasi rekening akan diumumkan panitia.</p>}
-                                    <p className="event-muted text-sm" role="status">{copyMessage}</p>
-                                </div>}
-                            </div>
-                            <aside id="contact" className="event-contact">
-                                <p className="event-muted mb-3 text-sm">Narahubung panitia</p>
-                                <h3>{event.contact_person || 'Sekretariat panitia kejuaraan'}</h3>
-                                {event.contact_phone ? (
-                                    <a href={`https://wa.me/${event.contact_phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" className="event-button event-button-secondary mt-6">
-                                        <i className="fa-brands fa-whatsapp text-lg" aria-hidden="true" />{event.contact_phone}
-                                    </a>
-                                ) : <p className="event-muted mt-3 text-sm">Kontak panitia akan diumumkan.</p>}
-                            </aside>
-                        </div>
-                    </section>
-
-                    <section className="event-registration flex flex-col items-start justify-between gap-7 lg:flex-row lg:items-center">
+                {/* Original Footer */}
+                <footer className="event-footer mt-16 border-t border-white/10 py-12">
+                    <div className="event-container flex flex-col justify-between gap-7 md:flex-row md:items-center">
                         <div>
-                            <h2>{hasDashboard ? 'Kelola keikutsertaan Anda.' : 'Persiapkan kontingen Anda.'}</h2>
-                            <p>{hasDashboard ? 'Lanjutkan pengelolaan data dan pendaftaran melalui dashboard.' : 'Lengkapi data kontingen dan atlet untuk mengikuti kejuaraan.'}</p>
-                            {!hasDashboard && event.registration_end_formatted && <p className="event-registration-deadline">Pendaftaran hingga {event.registration_end_formatted}</p>}
-                        </div>
-                        <Link href={actionHref} className="event-button event-button-light shrink-0">{hasDashboard ? 'Buka dashboard' : 'Daftar kontingen'}<Icon name="fa-arrow-right" className="text-xs" /></Link>
-                    </section>
-                </div>
-            </main>
-
-            <footer className="event-footer border-t border-white/10 mt-16 py-12">
-                <div className="event-container flex flex-col justify-between gap-7 md:flex-row md:items-center">
-                    <div>
-                        <p className="event-brand-name font-black tracking-wider">SMART PERKEMI</p>
-                        <p className="event-muted mt-2 text-xs leading-6">
-                            Pengurus Besar Persaudaraan Shorinji Kempo Indonesia<br />
-                            Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak: sekretariat@perkemi.org<br />
-                            &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta dilindungi.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-6 text-sm">
-                        <Link href="/" className="event-text-link">Beranda</Link>
-                        <Link href="/login" className="font-semibold text-[#d4a843] hover:underline inline-flex items-center gap-1.5">
-                            <Icon name="fa-user-shield" className="text-xs" />Login Panitera / Ofisial
-                        </Link>
-                        <Link href="/login" className="font-semibold hover:underline inline-flex items-center gap-1.5">
-                            <Icon name="fa-users" className="text-xs" />Login Koordinator
-                        </Link>
-                        <a href="#event-top" className="event-text-link inline-flex items-center gap-1">
-                            Kembali ke atas <Icon name="fa-arrow-up" className="text-xs" />
-                        </a>
-                    </div>
-                </div>
-            </footer>
-
-            {selectedQrCourt && (
-                <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="qr-modal-title"
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-                    onClick={() => setSelectedQrCourt(null)}
-                >
-                    <div
-                        className="relative w-full max-w-sm rounded-3xl border border-white/20 bg-[#161d26] p-6 text-white shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                            <div className="flex items-center gap-2.5">
-                                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#d4a843]">
-                                    <Icon name="fa-qrcode" className="text-sm" />
-                                </span>
-                                <div>
-                                    <h4 id="qr-modal-title" className="text-sm font-bold text-white">QR Monitor Arena</h4>
-                                    <p className="text-[11px] text-[#d4a843]">{selectedQrCourt.name}</p>
-                                </div>
-                            </div>
-                            <Button
-                                type="button"
-                                variant="unstyled"
-                                size="none"
-                                onClick={() => setSelectedQrCourt(null)}
-                                className="h-8 w-8 rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white flex items-center justify-center transition"
-                                aria-label="Tutup modal QR"
-                            >
-                                <Icon name="fa-xmark" />
-                            </Button>
-                        </div>
-
-                        <div className="my-5 flex flex-col items-center">
-                            <div className="rounded-2xl bg-white p-4 shadow-xl">
-                                <img
-                                    src={selectedQrCourt.qr_url}
-                                    alt={`QR Code ${selectedQrCourt.name}`}
-                                    width="220"
-                                    height="220"
-                                    className="h-56 w-56 rounded-lg object-contain"
-                                />
-                            </div>
-                            <p className="mt-4 text-center text-xs leading-relaxed text-white/70">
-                                Arahkan kamera smartphone penonton di tribun atau ofisial di area pemanasan untuk membuka layar gelanggang ini langsung tanpa login.
+                            <p className="event-brand-name font-black tracking-wider">
+                                SMART PERKEMI
+                            </p>
+                            <p className="event-muted mt-2 text-xs leading-6">
+                                Pengurus Besar Persaudaraan Shorinji Kempo Indonesia
+                                <br />
+                                Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak:
+                                sekretariat@perkemi.org
+                                <br />
+                                &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta
+                                dilindungi.
                             </p>
                         </div>
-
-                        <div className="rounded-xl bg-black/40 p-2.5 border border-white/10">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="truncate text-[11px] text-white/60 select-all font-mono">
-                                    {selectedQrCourt.monitor_full_url}
-                                </span>
-                                <Button
-                                    type="button"
-                                    variant="unstyled"
-                                    size="none"
-                                    onClick={() => handleCopyCourtUrl(selectedQrCourt.monitor_full_url, selectedQrCourt.id)}
-                                    className="shrink-0 rounded bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-white/20 transition"
-                                >
-                                    {copiedCourtUrl === selectedQrCourt.id ? 'Tersalin!' : 'Salin'}
-                                </Button>
-                            </div>
-                        </div>
-
-                        <div className="mt-5 flex gap-2">
+                        <div className="flex flex-wrap items-center gap-6 text-sm">
+                            <Link href="/" className="event-text-link">
+                                Beranda
+                            </Link>
+                            <Link href="/athelete" className="event-text-link">
+                                Peserta
+                            </Link>
+                            <Link
+                                href="/login"
+                                className="inline-flex items-center gap-1.5 font-semibold text-[#d4a843] hover:underline"
+                            >
+                                <Icon name="fa-user-shield" className="text-xs" />
+                                Login Panitera / Ofisial
+                            </Link>
+                            <Link
+                                href="/login"
+                                className="inline-flex items-center gap-1.5 font-semibold hover:underline"
+                            >
+                                <Icon name="fa-users" className="text-xs" />
+                                Login Koordinator
+                            </Link>
                             <a
-                                href={selectedQrCourt.monitor_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="event-button event-button-primary flex-1 text-xs font-bold text-center"
+                                href="#event-top"
+                                className="event-text-link inline-flex items-center gap-1"
                             >
-                                <Icon name="fa-arrow-up-right-from-square" /> Buka Layar Penuh
+                                Kembali ke atas <Icon name="fa-arrow-up" className="text-xs" />
                             </a>
-                            <Button
-                                type="button"
-                                variant="unstyled"
-                                size="none"
-                                onClick={() => setSelectedQrCourt(null)}
-                                className="event-button event-button-secondary text-xs"
-                            >
-                                Tutup
-                            </Button>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                </footer>
+
+                {/* Original QR Monitor Modal with Framer Motion */}
+                <AnimatePresence>
+                    {selectedQrCourt && (
+                        <motion.div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="qr-modal-title"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.16 }}
+                            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+                            onClick={() => setSelectedQrCourt(null)}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.94, y: 8 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.96, y: 6 }}
+                                transition={{ duration: 0.18 }}
+                                className="relative w-full max-w-sm rounded-3xl border border-white/20 bg-[#161d26] p-6 text-white shadow-2xl"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#d4a843]">
+                                            <Icon name="fa-qrcode" className="text-sm" />
+                                        </span>
+                                        <div>
+                                            <h4 id="qr-modal-title" className="text-sm font-bold text-white">
+                                                QR Monitor Arena
+                                            </h4>
+                                            <p className="text-[11px] text-[#d4a843]">
+                                                {selectedQrCourt.name}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="unstyled"
+                                        size="none"
+                                        onClick={() => setSelectedQrCourt(null)}
+                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
+                                        aria-label="Tutup modal QR"
+                                    >
+                                        <Icon name="fa-xmark" />
+                                    </Button>
+                                </div>
+
+                                <div className="my-5 flex flex-col items-center">
+                                    <div className="rounded-2xl bg-white p-4 shadow-xl">
+                                        <img
+                                            src={selectedQrCourt.qr_url}
+                                            alt={`QR Code ${selectedQrCourt.name}`}
+                                            width="220"
+                                            height="220"
+                                            className="h-56 w-56 rounded-lg object-contain"
+                                        />
+                                    </div>
+                                    <p className="mt-4 text-center text-xs leading-relaxed text-white/70">
+                                        Arahkan kamera smartphone penonton di tribun atau ofisial di
+                                        area pemanasan untuk membuka layar gelanggang ini langsung
+                                        tanpa login.
+                                    </p>
+                                </div>
+
+                                {selectedQrCourt.monitor_full_url && (
+                                    <div className="rounded-xl border border-white/10 bg-black/40 p-2.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="truncate font-mono text-[11px] text-white/60 select-all">
+                                                {selectedQrCourt.monitor_full_url}
+                                            </span>
+                                            <Button
+                                                type="button"
+                                                variant="unstyled"
+                                                size="none"
+                                                onClick={() =>
+                                                    handleCopy(
+                                                        selectedQrCourt.monitor_full_url,
+                                                        `court-${selectedQrCourt.id}`,
+                                                    )
+                                                }
+                                                className="shrink-0 rounded bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-white/20"
+                                            >
+                                                {copiedId === `court-${selectedQrCourt.id}`
+                                                    ? 'Tersalin!'
+                                                    : 'Salin'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mt-5 flex gap-2">
+                                    {selectedQrCourt.monitor_url && (
+                                        <a
+                                            href={selectedQrCourt.monitor_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="event-button event-button-primary flex-1 text-center text-xs font-bold"
+                                        >
+                                            <Icon name="fa-arrow-up-right-from-square" /> Buka Layar
+                                            Penuh
+                                        </a>
+                                    )}
+                                    <Button
+                                        type="button"
+                                        variant="unstyled"
+                                        size="none"
+                                        onClick={() => setSelectedQrCourt(null)}
+                                        className="event-button event-button-secondary text-xs"
+                                    >
+                                        Tutup
+                                    </Button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </MotionConfig>
     );
 }

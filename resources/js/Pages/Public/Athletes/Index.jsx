@@ -76,7 +76,7 @@ export default function AthleteDirectory({ athletes = { data: [], links: [] }, t
             <main>
                 <section className="home-hero athlete-directory-hero" aria-labelledby="athlete-directory-title">
                     <div className="event-container grid items-center gap-10 py-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,.92fr)] lg:gap-20 lg:py-16">
-                        <div>
+                        <div className="min-w-0">
                             <p className="home-intro-label">Direktori Kenshi Indonesia</p>
                             <h1 id="athlete-directory-title">Peserta, perjalanan, dan prestasi.</h1>
                             <p className="home-intro">Temukan profil atlet, pertandingan yang pernah dijalani, statistik kemenangan, serta gelar yang tercatat pada kejuaraan PB PERKEMI.</p>
@@ -89,7 +89,7 @@ export default function AthleteDirectory({ athletes = { data: [], links: [] }, t
                             {/* <p className="event-muted mt-4 text-xs leading-6"><i className="fa-solid fa-shield-halved mr-2 text-[var(--event-accent)]" aria-hidden="true" />Data pribadi seperti NIK tidak ditampilkan pada halaman publik.</p> */}
                         </div>
 
-                        <aside className="athlete-ranking-preview" aria-label="Atlet berprestasi">
+                        <aside className="athlete-ranking-preview min-w-0" aria-label="Atlet berprestasi">
                             <div className="athlete-ranking-heading"><span>Peringkat prestasi</span><i className="fa-solid fa-trophy" aria-hidden="true" /></div>
                             {topChampions.slice(0, 3).length ? topChampions.slice(0, 3).map((athlete, index) => (
                                 <Link key={athlete.id} href={athlete.show_url} className="athlete-ranking-row">
