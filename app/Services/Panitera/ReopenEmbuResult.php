@@ -2,7 +2,6 @@
 
 namespace App\Services\Panitera;
 
-use App\Events\PaniteraMatchStateUpdated;
 use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\TournamentMatch;
@@ -83,19 +82,7 @@ class ReopenEmbuResult
 
             $updatedMatch = $lockedMatch->fresh();
             abort_unless($updatedMatch instanceof TournamentMatch, 404);
-            $serverNow = now();
-
-            PaniteraMatchStateUpdated::dispatch(
-                eventId: $event->id,
-                courtId: (string) $updatedMatch->event_court_id,
-                matchId: $updatedMatch->id,
-                action: 'reopen_result',
-                matchStatus: $updatedMatch->status,
-                callStatus: $updatedMatch->call_status,
-                timer: $this->timerState->timer($updatedMatch),
-                serverNow: $serverNow->toIso8601String(),
-                serverNowMs: $serverNow->getTimestampMs(),
-            );
+            $this->timerState->broadcastUpdate($updatedMatch, 'reopen_result');
 
             return $score->fresh();
         });

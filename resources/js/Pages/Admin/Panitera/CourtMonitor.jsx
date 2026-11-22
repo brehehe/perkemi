@@ -1,279 +1,159 @@
-import { Head } from '@inertiajs/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
-import useSynchronizedTimer from './Partials/useSynchronizedTimer';
-import useLiveTimer from './Partials/useLiveTimer';
-import useTimerBell from './Partials/useTimerBell';
 import TimerBellControls from './Partials/TimerBellControls';
-import RandoriBracketTree from './Partials/RandoriBracketTree';
-import EmbuTiebreakPanel from '@/Components/Tiebreak/EmbuTiebreakPanel';
-import { displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
+import useLiveTimer from './Partials/useLiveTimer';
+import useSynchronizedTimer from './Partials/useSynchronizedTimer';
+import useTimerBell from './Partials/useTimerBell';
+import { acceptTimerState, displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
+import { formatTimer, monitorModes } from './CourtMonitor/courtMonitorPresentation';
 
-const getEmbuJudgeTrimming = (judgeScores = [], result = null, embuParams = null, isSaved = false) => {
-    if (!isSaved) {
-        return {
-            hasTrimmed: false,
-            minJudgeNum: null,
-            maxJudgeNum: null,
-            middleJudgeNumbers: [],
-            middleJudgesLabel: null,
-            param1_score: null,
-            param2_technique: null,
-            param3_chief_total: null,
-            param4_chief_technique: null,
-        };
-    }
+const ArenaMode = lazy(() => import('./CourtMonitor/Arena'));
+const MatchMode = lazy(() => import('./CourtMonitor/Match'));
+const TimerMode = lazy(() => import('./CourtMonitor/Timer'));
+const ResultMode = lazy(() => import('./CourtMonitor/Result'));
+const OfficialsMode = lazy(() => import('./CourtMonitor/Officials'));
+const VarPanel = lazy(() => import('./CourtMonitor/Match/VarPanel'));
 
-    if (embuParams && embuParams.trimmed_min_judge !== undefined && embuParams.trimmed_min_judge !== null) {
-        return {
-            hasTrimmed: Boolean(embuParams.trimmed_min_judge && embuParams.trimmed_max_judge),
-            minJudgeNum: embuParams.trimmed_min_judge,
-            maxJudgeNum: embuParams.trimmed_max_judge,
-            middleJudgeNumbers: embuParams.middle_judge_numbers || [],
-            middleJudgesLabel: embuParams.middle_judges_label || (embuParams.middle_judge_numbers?.length ? `Wasit ${embuParams.middle_judge_numbers.join(', Wasit ')}` : null),
-            param1_score: embuParams.param1_score ?? result?.final_score ?? null,
-            param2_technique: embuParams.param2_technique,
-            param3_chief_total: embuParams.param3_chief_total,
-            param4_chief_technique: embuParams.param4_chief_technique,
-        };
-    }
-
-    const scores = [1, 2, 3, 4, 5].map((num) => {
-        const live = judgeScores?.find((s) => s.judge_number === num);
-        const verified = result?.judge_scores?.[num - 1];
-        const val = verified !== undefined ? Number(verified) : (live?.total_score ? Number(live.total_score) : 0);
-        const tech = live?.technique_subtotal !== undefined && live?.technique_subtotal !== null ? Number(live.technique_subtotal) : null;
-        return {
-            judge_number: num,
-            total_score: val,
-            technique_subtotal: tech,
-            live,
-        };
-    });
-
-    const nonZero = scores.filter((s) => s.total_score > 0);
-    if (nonZero.length === 5) {
-        const sorted = [...nonZero].sort((a, b) => (a.total_score - b.total_score) || (a.judge_number - b.judge_number));
-        const minJudge = sorted[0];
-        const maxJudge = sorted[4];
-        const middleJudges = sorted.slice(1, 4);
-        const middleJudgeNumbers = middleJudges.map((j) => j.judge_number);
-        const middleTechSum = middleJudges.every((j) => j.technique_subtotal !== null)
-            ? Number(middleJudges.reduce((sum, j) => sum + (j.technique_subtotal || 0), 0).toFixed(2))
-            : null;
-        const chiefJudge = scores.find((s) => s.judge_number === 1);
-
-        return {
-            hasTrimmed: true,
-            minJudgeNum: minJudge.judge_number,
-            maxJudgeNum: maxJudge.judge_number,
-            middleJudgeNumbers,
-            middleJudgesLabel: `Wasit ${middleJudgeNumbers.join(', Wasit ')}`,
-            param1_score: result?.final_score ?? null,
-            param2_technique: middleTechSum,
-            param3_chief_total: chiefJudge?.total_score || null,
-            param4_chief_technique: chiefJudge?.technique_subtotal || null,
-        };
-    }
-
-    const chiefJudge = scores.find((s) => s.judge_number === 1);
-    return {
-        hasTrimmed: false,
-        minJudgeNum: null,
-        maxJudgeNum: null,
-        middleJudgeNumbers: [],
-        middleJudgesLabel: null,
-        param1_score: result?.final_score ?? null,
-        param2_technique: null,
-        param3_chief_total: chiefJudge?.total_score || null,
-        param4_chief_technique: chiefJudge?.technique_subtotal || null,
-    };
+const modeComponents = {
+    arena: ArenaMode,
+    match: MatchMode,
+    timer: TimerMode,
+    result: ResultMode,
+    officials: OfficialsMode,
 };
 
-const modes = [
-    ['arena', 'Arena', 'fa-tv'],
-    ['match', 'Layar Tanding', 'fa-display'],
-    ['timer', 'Timer', 'fa-stopwatch'],
-    ['result', 'Hasil', 'fa-ranking-star'],
-    ['officials', 'Ofisial', 'fa-user-shield'],
-];
-
-const formatTimer = (totalSeconds) => {
-    const seconds = Math.max(0, Math.floor(totalSeconds));
-    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-};
-
-function ParticipantDisplay({ match }) {
-    if (match.category_type === 'embu') {
-        const athletes = match.participant?.athletes || [];
-        const techniques = match.participant?.techniques || [];
-
-        return (
-            <div className="rounded-3xl border border-blue-300 dark:border-blue-400/20 bg-blue-50/70 dark:bg-blue-400/10 p-5 md:p-8 shadow-sm">
-                <div className="text-center">
-                    <p className="text-xs font-black uppercase tracking-[.18em] text-blue-700 dark:text-blue-300">{match.participant?.kind || 'Tim Embu'}</p>
-                    <p className="mt-2 text-2xl font-black leading-tight text-slate-950 dark:text-white md:text-4xl">{match.participant_label || 'Peserta belum ditentukan'}</p>
-                </div>
-                <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                    <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 p-4 md:p-5 shadow-xs" aria-labelledby="monitor-athletes-title">
-                        <div className="flex items-center justify-between gap-3">
-                            <h3 id="monitor-athletes-title" className="text-sm font-black uppercase tracking-[.14em] text-amber-800 dark:text-[#f2cd73]">Nama Atlet</h3>
-                            <span className="text-xs font-bold text-slate-500 dark:text-white/55">{athletes.length} atlet</span>
-                        </div>
-                        <ol className="mt-4 grid gap-2 sm:grid-cols-2">
-                            {athletes.map((athlete, index) => (
-                                <li key={athlete.id || `${athlete.name}-${index}`} className="flex min-h-12 items-center gap-3 rounded-xl bg-slate-50 dark:bg-white/[.07] border border-slate-100 dark:border-transparent px-3 py-2">
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-sm font-black text-amber-800 dark:text-[#f2cd73]">{index + 1}</span>
-                                    <span className="break-words text-base font-bold text-slate-900 dark:text-white md:text-lg">{athlete.name}</span>
-                                </li>
-                            ))}
-                            {athletes.length === 0 && <li className="rounded-xl border border-dashed border-slate-200 dark:border-white/15 p-4 text-sm text-slate-500 dark:text-white/50 sm:col-span-2">Nama atlet belum tersedia.</li>}
-                        </ol>
-                    </section>
-                    <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 p-4 md:p-5 shadow-xs" aria-labelledby="monitor-techniques-title">
-                        <div className="flex items-center justify-between gap-3">
-                            <h3 id="monitor-techniques-title" className="text-sm font-black uppercase tracking-[.14em] text-blue-800 dark:text-blue-300">Teknik Terdaftar</h3>
-                            <span className="text-xs font-bold text-slate-500 dark:text-white/55">{techniques.length} teknik</span>
-                        </div>
-                        <ol className="mt-4 grid gap-2 sm:grid-cols-2">
-                            {techniques.map((technique, index) => (
-                                <li key={technique.id} className="flex min-h-12 items-center gap-3 rounded-xl bg-slate-50 dark:bg-white/[.07] border border-slate-100 dark:border-transparent px-3 py-2">
-                                    <span className="font-mono text-xs font-black text-blue-700 dark:text-blue-300">{String(technique.order || index + 1).padStart(2, '0')}</span>
-                                    <span className="break-words text-sm font-semibold text-slate-900 dark:text-white md:text-base">{technique.name}</span>
-                                </li>
-                            ))}
-                            {techniques.length === 0 && <li className="rounded-xl border border-dashed border-slate-200 dark:border-white/15 p-4 text-sm text-slate-500 dark:text-white/50 sm:col-span-2">Teknik belum tercatat saat registrasi.</li>}
-                        </ol>
-                    </section>
-                </div>
-            </div>
-        );
-    }
-
-    const winner = match.result?.winner_corner;
-
+function ModeLoading() {
     return (
-        <div className="grid overflow-hidden rounded-3xl border border-slate-200 dark:border-white/10 md:grid-cols-[1fr_auto_1fr] shadow-xl">
-            {/* AKA (MERAH) */}
-            <div
-                className={`p-6 transition-all md:p-10 corner-aka force-white ${winner === 'aka'
-                    ? 'border-4 border-amber-400 bg-red-600 dark:bg-red-700 shadow-2xl'
-                    : winner === 'shiro'
-                        ? 'bg-red-900/40 opacity-50 grayscale'
-                        : 'bg-red-600 dark:bg-red-700'
-                    }`}
-                style={{ backgroundColor: winner === 'shiro' ? '#7f1d1d' : '#dc2626' }}
-            >
-                <div className="flex items-center justify-between gap-2">
-                    <span
-                        className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-xs"
-                        style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                    >
-                        AKA · MERAH
-                    </span>
-                    {winner === 'aka' && (
-                        <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                            <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                        </span>
-                    )}
-                </div>
-                <div className="mt-4 flex items-start gap-4">
-                    {match.aka_photo_url ? (
-                        <img
-                            src={match.aka_photo_url}
-                            alt={match.aka_label || 'AKA'}
-                            className="h-14 w-14 md:h-16 md:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
-                        />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                        <p className="text-2xl font-black leading-tight text-white md:text-4xl drop-shadow-sm" style={{ color: '#ffffff' }}>
-                            {match.aka_label || 'Menunggu peserta'}
-                        </p>
-                        {(match.aka_contingent || match.red_contingent) && (
-                            <p className="mt-2 text-sm md:text-base font-bold text-amber-200 flex items-center gap-1.5 drop-shadow-sm">
-                                <i className="fa-solid fa-shield-halved text-xs text-amber-300" aria-hidden="true" />
-                                {match.aka_contingent || match.red_contingent}
-                            </p>
-                        )}
-                    </div>
-                </div>
-            </div>
+        <div className="flex min-h-full items-center justify-center rounded-2xl border border-stone-200 bg-white dark:border-white/10 dark:bg-[#151210]" role="status">
+            <span className="flex items-center gap-3 text-sm font-bold text-slate-600 dark:text-white/60">
+                <i className="fa-solid fa-hourglass-half" aria-hidden="true" /> Memuat tampilan court...
+            </span>
+        </div>
+    );
+}
 
-            {/* VS DIVIDER */}
-            <div className="flex items-center justify-center border-y border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-black/40 px-6 py-3 text-xl font-black text-slate-600 dark:text-white/50 md:border-x md:border-y-0">
-                VS
-            </div>
-
-            {/* SHIRO (PUTIH) */}
-            <div className={`p-6 text-right transition-all md:p-10 corner-shiro ${winner === 'shiro'
-                ? 'border-4 border-amber-400 bg-white dark:bg-slate-900 shadow-2xl'
-                : winner === 'aka'
-                    ? 'bg-slate-200/50 dark:bg-black/60 opacity-50 grayscale'
-                    : 'bg-white dark:bg-slate-900'
-                }`}>
-                <div className="flex items-center justify-end gap-2">
-                    {winner === 'shiro' && (
-                        <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                            <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                        </span>
-                    )}
-                    <span className="rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-950 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-xs force-white">
-                        SHIRO · PUTIH
-                    </span>
-                </div>
-                <div className="mt-4 flex items-start justify-end gap-4">
-                    <div className="min-w-0 flex-1">
-                        <p className="text-2xl font-black leading-tight text-slate-950 dark:text-white md:text-4xl">{match.shiro_label || 'Menunggu peserta'}</p>
-                        {(match.shiro_contingent || match.blue_contingent) && (
-                            <p className="mt-2 text-sm md:text-base font-bold text-slate-600 dark:text-slate-300 flex items-center justify-end gap-1.5">
-                                <i className="fa-solid fa-shield-halved text-xs text-amber-500" aria-hidden="true" />
-                                {match.shiro_contingent || match.blue_contingent}
-                            </p>
-                        )}
-                    </div>
-                    {match.shiro_photo_url ? (
-                        <img
-                            src={match.shiro_photo_url}
-                            alt={match.shiro_label || 'SHIRO'}
-                            className="h-14 w-14 md:h-16 md:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/20 object-cover shadow-md"
-                        />
-                    ) : null}
-                </div>
+function HeaderMeta({ icon, title, detail }) {
+    return (
+        <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-stone-200 bg-[#f7f4ee] px-3 py-2 dark:border-white/10 dark:bg-white/5">
+            <i className={`fa-solid ${icon} shrink-0 text-base text-slate-600 dark:text-white/55`} aria-hidden="true" />
+            <div className="min-w-0">
+                <p className="line-clamp-2 text-xs font-black leading-tight text-[#071126] dark:text-white sm:text-sm">{title}</p>
+                <p className="truncate text-[10px] font-semibold text-slate-600 dark:text-white/45 sm:text-xs">{detail}</p>
             </div>
         </div>
     );
 }
 
-function EmptyCourt({ court }) {
+function MonitorHeader({
+    activeEvent,
+    court,
+    activeMatch,
+    mode,
+    monitorUrl,
+    synchronizationLabel,
+    synchronizationClass,
+    backUrl,
+    backLabel,
+    bell,
+    isVarActive,
+    onToggleVar,
+}) {
+    const categoryTitle = activeMatch?.category_name || 'Menunggu kategori';
+    const matchDetail = activeMatch ? `Partai #${activeMatch.sequence}` : 'Belum ada partai';
+    const roundTitle = activeMatch?.round_label || 'Menunggu babak';
+    const roundDetail = activeMatch?.pool ? `Pool ${activeMatch.pool}` : activeMatch?.category_type || 'Court monitor';
+
+    const requestFullscreen = () => {
+        document.documentElement.requestFullscreen?.();
+    };
+
     return (
-        <div className="flex min-h-[55vh] flex-col items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/[.03] p-5 text-center sm:p-8">
-            <i className="fa-solid fa-hourglass-start text-5xl text-[#d4a843]" aria-hidden="true" />
-            <h2 className="mt-6 text-3xl font-black">Menunggu Panggilan</h2>
-            <p className="mt-2 max-w-xl text-white/55">Belum ada partai aktif di {court.name}. Layar akan diperbarui otomatis saat Panitera memanggil ofisial atau peserta.</p>
+        <header className="shrink-0 border-b border-stone-200 bg-white/95 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur dark:border-white/10 dark:bg-[#100e0d]/95">
+            <div className="w-full px-3 py-2.5 sm:px-4 lg:px-5 2xl:px-6">
+                <div className="grid gap-3 xl:grid-cols-[minmax(250px,.72fr)_minmax(0,1.45fr)] xl:items-center">
+                    <div className="min-w-0">
+                        <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300 sm:text-xs">{activeEvent.name || 'Turnamen Kempo'}</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                            <h1 className="text-2xl font-black tracking-[-0.04em] text-[#071126] dark:text-white sm:text-3xl">{court.name}</h1>
+                            <span className={`inline-flex min-h-7 items-center gap-2 rounded-full border px-2.5 text-[10px] font-black sm:text-xs ${synchronizationClass}`}>
+                                <span className="h-2 w-2 rounded-full bg-current" aria-hidden="true" /> {synchronizationLabel}
+                            </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs font-semibold text-slate-600 dark:text-white/45">{court.location || court.area || 'Monitor pertandingan resmi'}</p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                        <HeaderMeta icon="fa-trophy" title={activeMatch?.category_type || 'Pertandingan'} detail={matchDetail} />
+                        <HeaderMeta icon="fa-users" title={categoryTitle} detail={activeMatch?.category_class || activeMatch?.weight_class || 'Kategori aktif'} />
+                        <HeaderMeta icon="fa-layer-group" title={roundTitle} detail={roundDetail} />
+                    </div>
+                </div>
+
+                <div className="mt-2 flex flex-col gap-2 border-t border-stone-200 pt-2 dark:border-white/10 xl:flex-row xl:items-center xl:justify-between">
+                    <nav className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Mode court monitor">
+                        {monitorModes.map(([value, label, icon]) => (
+                            <Link
+                                key={value}
+                                href={monitorUrl(value)}
+                                preserveScroll
+                                aria-current={mode === value ? 'page' : undefined}
+                                className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black transition-colors active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 sm:text-xs xl:min-h-9 ${mode === value
+                                    ? 'border-[#071126] bg-[#071126] text-white dark:border-amber-400 dark:bg-amber-400 dark:text-[#071126]'
+                                    : 'border-stone-200 bg-[#f7f4ee] text-slate-700 hover:border-amber-500 hover:text-amber-800 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:text-amber-300'}`}
+                            >
+                                <i className={`fa-solid ${icon}`} aria-hidden="true" /> {label}
+                            </Link>
+                        ))}
+                    </nav>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <TimerBellControls bell={bell} />
+                        {mode === 'match' && (
+                            <button type="button" aria-pressed={isVarActive} onClick={() => onToggleVar()} className={`inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 sm:text-xs xl:min-h-9 ${isVarActive ? 'border-red-600 bg-red-600 text-white' : 'border-stone-300 bg-white text-slate-700 dark:border-white/15 dark:bg-white/5 dark:text-white'}`}>
+                                <i className="fa-solid fa-video" aria-hidden="true" /> VAR
+                            </button>
+                        )}
+                        <button type="button" onClick={requestFullscreen} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs xl:min-h-9">
+                            <i className="fa-solid fa-expand" aria-hidden="true" /> Layar penuh
+                        </button>
+                        <ThemeToggle className="active:translate-y-px xl:min-h-9 xl:min-w-9 xl:rounded-lg" />
+                        {backUrl && (
+                            <Link href={backUrl} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs xl:min-h-9">
+                                <i className="fa-solid fa-arrow-left" aria-hidden="true" /> {backLabel || 'Kembali'}
+                            </Link>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </header>
+    );
+}
+
+function VarReviewBanner({ match }) {
+    if (!match?.var_review?.is_under_review) return null;
+
+    return (
+        <div className="border-b border-amber-300 bg-amber-100 px-4 py-3 text-center text-sm font-black text-amber-950" role="status">
+            <i className="fa-solid fa-video mr-2" aria-hidden="true" /> Review VAR aktif: {match.var_review.reason || 'Pemeriksaan video pertandingan'}
         </div>
     );
 }
 
 export default function CourtMonitor({ activeEvent, court, mode = 'arena', monitor, stateUrl, timerStateUrl, backUrl, backLabel }) {
     const [snapshot, setSnapshot] = useState(monitor);
+    const [snapshotError, setSnapshotError] = useState('');
     const [varKey, setVarKey] = useState(0);
     const [varUrlInput, setVarUrlInput] = useState('');
-    const [isVarActive, setIsVarActive] = useState(() => {
-        if (monitor?.is_var_enabled !== undefined) return Boolean(monitor.is_var_enabled);
-        if (court?.is_var_enabled !== undefined) return Boolean(court.is_var_enabled);
-        return true;
-    });
+    const [isVarActive, setIsVarActive] = useState(() => Boolean(monitor?.is_var_enabled ?? court?.is_var_enabled ?? true));
     const [showVarConfig, setShowVarConfig] = useState(false);
     const [showLockedArchive, setShowLockedArchive] = useState(false);
-    const [akaImgError, setAkaImgError] = useState(false);
-    const [shiroImgError, setShiroImgError] = useState(false);
+    const [savingVarUrl, setSavingVarUrl] = useState(false);
+    const [varSaveMessage, setVarSaveMessage] = useState('');
     const varIframeRef = useRef(null);
     const refreshController = useRef(null);
+    const bellRef = useRef(null);
 
     useEffect(() => {
-        if (snapshot?.is_var_enabled !== undefined) {
-            setIsVarActive(Boolean(snapshot.is_var_enabled));
-        }
+        if (snapshot?.is_var_enabled !== undefined) setIsVarActive(Boolean(snapshot.is_var_enabled));
     }, [snapshot?.is_var_enabled]);
 
     const refreshSnapshot = useCallback(async () => {
@@ -287,49 +167,69 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
                 cache: 'no-store',
                 signal: controller.signal,
             });
-
             if (!response.ok) throw new Error('Monitor tidak dapat diperbarui.');
             const nextSnapshot = await response.json();
-
             setSnapshot((current) => {
                 const isSameMatch = nextSnapshot.active_match?.id === current.active_match?.id;
                 const isOlderState = isSameMatch
                     && timerVersion(nextSnapshot.active_match?.timer) < timerVersion(current.active_match?.timer);
 
-                if (isOlderState) return current;
-                return nextSnapshot;
+                return isOlderState ? current : nextSnapshot;
             });
+            setSnapshotError('');
         } catch (error) {
-            // Timer synchronization has its own lightweight connection and retry.
+            if (error.name !== 'AbortError') setSnapshotError('Data pendukung belum tersambung. Timer resmi tetap mencoba sinkronisasi.');
         } finally {
             if (refreshController.current === controller) refreshController.current = null;
         }
     }, [stateUrl]);
 
     const initialTimerState = useMemo(() => ({
-        event_id: activeEvent.id, court_id: court.id, match_id: monitor.active_match?.id ?? null,
-        match_status: monitor.active_match?.status, call_status: monitor.active_match?.call_status,
-        timer: monitor.active_match?.timer, server_now_ms: monitor.server_now_ms,
+        event_id: activeEvent.id,
+        court_id: court.id,
+        match_id: monitor.active_match?.id ?? null,
+        match_status: monitor.active_match?.status,
+        call_status: monitor.active_match?.call_status,
+        timer: monitor.active_match?.timer,
+        server_now_ms: monitor.server_now_ms,
     }), [activeEvent.id, court.id, monitor]);
-    const bellRef = useRef(null);
+
     const liveTimer = useLiveTimer({
-        initialState: initialTimerState, stateUrl: timerStateUrl,
-        channelName: `event-court.${court.id}`, eventId: activeEvent.id, courtId: court.id,
+        initialState: initialTimerState,
+        stateUrl: timerStateUrl,
+        channelName: `event-court.${court.id}`,
+        eventId: activeEvent.id,
+        courtId: court.id,
         onChange: (next, previous) => {
             if (next.action === 'finish' || (next.timer?.is_finished && !previous?.timer?.is_finished)) {
                 bellRef.current?.playClosingBell?.();
             }
             if (next.match_id !== previous?.match_id || next.timer?.is_finished
-                || !['start', 'pause', 'reset_timer', 'configure_timer'].includes(next.action)) refreshSnapshot();
+                || !['start', 'pause', 'reset_timer', 'configure_timer'].includes(next.action)) {
+                refreshSnapshot();
+            }
         },
     });
+
     const { connected: realtimeConnected, httpConnected } = liveTimer;
+    const snapshotTimerState = snapshot.active_match ? {
+        event_id: activeEvent.id,
+        court_id: court.id,
+        match_id: snapshot.active_match.id,
+        match_status: snapshot.active_match.status,
+        call_status: snapshot.active_match.call_status,
+        timer: snapshot.active_match.timer,
+        server_now_ms: snapshot.server_now_ms,
+    } : null;
+    const selectedTimerState = liveTimer.state?.match_id === snapshotTimerState?.match_id
+        ? acceptTimerState(liveTimer.state, snapshotTimerState, { canonical: true })
+        : snapshotTimerState;
     const activeMatch = snapshot.active_match ? {
         ...snapshot.active_match,
-        ...(snapshot.active_match.id === liveTimer.state?.match_id ? {
-            status: liveTimer.state.match_status,
-            call_status: liveTimer.state.call_status,
-            timer: liveTimer.state.timer,
+        ...(selectedTimerState ? {
+            status: selectedTimerState.match_status,
+            call_status: selectedTimerState.call_status,
+            timer: selectedTimerState.timer,
         } : {}),
     } : null;
 
@@ -338,17 +238,14 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     useEffect(() => {
         let cancelled = false;
         let timeoutId;
-
         const poll = async () => {
             await refreshSnapshot();
             if (!cancelled) {
-                const nextInterval = (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000;
-                timeoutId = window.setTimeout(poll, nextInterval);
+                const delay = (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000;
+                timeoutId = window.setTimeout(poll, delay);
             }
         };
-
-        const initialInterval = (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000;
-        timeoutId = window.setTimeout(poll, initialInterval);
+        timeoutId = window.setTimeout(poll, (!realtimeConnected || liveTimer.state?.timer?.status === 'running') ? 4000 : 10000);
 
         return () => {
             cancelled = true;
@@ -360,7 +257,6 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
         const resynchronize = () => {
             if (document.visibilityState === 'visible') refreshSnapshot();
         };
-
         window.addEventListener('online', resynchronize);
         document.addEventListener('visibilitychange', resynchronize);
 
@@ -372,111 +268,60 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
 
     useEffect(() => {
         if (!window.Echo) return undefined;
-        const channel = window.Echo.private(`event-court.${court.id}`);
-        channel.listen('.var.updated', refreshSnapshot);
-        channel.listen('.embu.score.updated', refreshSnapshot);
-        channel.listen('.score.updated', refreshSnapshot);
-        channel.listen('.panitera.match-state.updated', refreshSnapshot);
-        channel.listen('.embu.judge-score.updated', refreshSnapshot);
-        channel.listen('.embu.penalties.updated', refreshSnapshot);
-        channel.listen('.randori.score-state.updated', refreshSnapshot);
+        const courtChannel = window.Echo.private(`event-court.${court.id}`);
+        const events = ['.var.review.updated', '.embu.score.updated', '.score.updated', '.embu.judge-score.updated', '.embu.penalties.updated', '.randori.score-state.updated'];
+        events.forEach((event) => courtChannel.listen(event, refreshSnapshot));
 
-        let matchChannel = null;
         const currentMatchId = activeMatch?.id || snapshot.active_match?.id;
-        if (currentMatchId) {
-            matchChannel = window.Echo.private(`tournament-match.${currentMatchId}`);
-            matchChannel.listen('.embu.judge-score.updated', refreshSnapshot);
-            matchChannel.listen('.embu.penalties.updated', refreshSnapshot);
-            matchChannel.listen('.score.updated', refreshSnapshot);
-            matchChannel.listen('.panitera.match-state.updated', refreshSnapshot);
-            matchChannel.listen('.var.updated', refreshSnapshot);
-            matchChannel.listen('.randori.score-state.updated', refreshSnapshot);
-        }
+        const matchChannel = currentMatchId ? window.Echo.private(`tournament-match.${currentMatchId}`) : null;
+        events.filter((event) => event !== '.embu.score.updated').forEach((event) => matchChannel?.listen(event, refreshSnapshot));
 
         return () => {
-            channel.stopListening('.var.updated');
-            channel.stopListening('.embu.score.updated');
-            channel.stopListening('.score.updated');
-            channel.stopListening('.panitera.match-state.updated');
-            channel.stopListening('.embu.judge-score.updated');
-            channel.stopListening('.embu.penalties.updated');
-            channel.stopListening('.randori.score-state.updated');
-            if (matchChannel) {
-                matchChannel.stopListening('.embu.judge-score.updated');
-                matchChannel.stopListening('.embu.penalties.updated');
-                matchChannel.stopListening('.score.updated');
-                matchChannel.stopListening('.panitera.match-state.updated');
-                matchChannel.stopListening('.var.updated');
-                matchChannel.stopListening('.randori.score-state.updated');
-            }
+            events.forEach((event) => courtChannel.stopListening(event, refreshSnapshot));
+            events.filter((event) => event !== '.embu.score.updated').forEach((event) => matchChannel?.stopListening(event, refreshSnapshot));
         };
     }, [court.id, activeMatch?.id, snapshot.active_match?.id, refreshSnapshot]);
 
-    const defaultCourtVarUrl = court?.var_url || activeMatch?.var_stream_url || 'https://var.smart-perkemi.id/kempo/demo/live_stream.html';
-    const activeVarUrl = varUrlInput.trim() || defaultCourtVarUrl;
-    const [savingVarUrl, setSavingVarUrl] = useState(false);
-    const [varSaveMessage, setVarSaveMessage] = useState('');
+    const updateCourtVar = async ({ enabled = isVarActive, url = varUrlInput.trim() || court?.var_url || null } = {}) => {
+        const eventId = court?.event_id || activeEvent.id;
+        const response = await fetch(`/admin/panitera/scoring/courts/${court.id}/var-url?event_id=${encodeURIComponent(eventId)}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+            body: JSON.stringify({ event_id: eventId, is_var_enabled: enabled, var_url: url }),
+        });
+        if (!response.ok) throw new Error('Pengaturan VAR gagal disimpan.');
+
+        return response.json();
+    };
 
     const toggleVarStatus = async (enabled) => {
-        const nextVal = enabled !== undefined ? enabled : !isVarActive;
-        setIsVarActive(nextVal);
+        const nextValue = enabled ?? !isVarActive;
+        setIsVarActive(nextValue);
         try {
-            const eventId = court?.event_id || activeEvent?.id || '';
-            const url = `/admin/panitera/scoring/courts/${court.id}/var-url${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`;
-            await fetch(url, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                },
-                body: JSON.stringify({
-                    event_id: eventId,
-                    is_var_enabled: nextVal,
-                    var_url: varUrlInput.trim() || court?.var_url || null,
-                }),
-            });
-        } catch (err) {
-            // Local state updated; non-critical network failure
+            await updateCourtVar({ enabled: nextValue });
+        } catch {
+            setIsVarActive(!nextValue);
+            setVarSaveMessage('Status VAR gagal disimpan.');
         }
     };
 
-    const saveCourtVarUrlPermanently = async () => {
-        const urlToSave = varUrlInput.trim();
+    const saveCourtVarUrl = async () => {
         setSavingVarUrl(true);
         setVarSaveMessage('');
         try {
-            const eventId = court?.event_id || activeEvent?.id || '';
-            const url = `/admin/panitera/scoring/courts/${court.id}/var-url${eventId ? `?event_id=${encodeURIComponent(eventId)}` : ''}`;
-            const response = await fetch(url, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                },
-                body: JSON.stringify({
-                    event_id: eventId,
-                    var_url: urlToSave || null,
-                    is_var_enabled: isVarActive,
-                }),
-            });
-            const data = await response.json();
+            const data = await updateCourtVar({ url: varUrlInput.trim() || null });
             if (data.success) {
-                setVarSaveMessage('Tersimpan permanen!');
-                setVarKey((k) => k + 1);
-                setTimeout(() => setVarSaveMessage(''), 3000);
+                setVarSaveMessage('URL VAR tersimpan.');
+                setVarKey((key) => key + 1);
             }
-        } catch (err) {
-            setVarSaveMessage('Gagal menyimpan.');
+        } catch {
+            setVarSaveMessage('URL VAR gagal disimpan.');
         } finally {
             setSavingVarUrl(false);
-        }
-    };
-
-    const handleFullscreenVar = () => {
-        if (varIframeRef.current?.requestFullscreen) {
-            varIframeRef.current.requestFullscreen();
         }
     };
 
@@ -484,1531 +329,107 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const elapsedMilliseconds = useSynchronizedTimer(timer, liveTimer.serverClock, liveTimer.state?.match_id);
     const bell = useTimerBell({ timer, elapsedMilliseconds, matchId: liveTimer.state?.match_id, synchronized: liveTimer.synchronized });
     bellRef.current = bell;
-    const elapsedSeconds = useMemo(() => Math.floor(elapsedMilliseconds / 1000), [elapsedMilliseconds]);
 
     const displayMatch = activeMatch || snapshot.last_result;
-    const isResultSaved = Boolean(
-        displayMatch?.is_result_saved ||
-        displayMatch?.result?.is_saved ||
-        displayMatch?.result?.status === 'verified'
-    );
-
+    const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
+    const isResultSaved = Boolean(displayMatch?.is_result_saved || displayMatch?.result?.is_saved || displayMatch?.result?.status === 'verified');
     const timerDirection = displayMatch?.timer?.direction || 'up';
     const timerDuration = Number(displayMatch?.timer?.duration_seconds) || 120;
-    const displayedSeconds = displayedTimerSeconds(displayMatch?.timer, elapsedMilliseconds);
-    const timerText = formatTimer(displayedSeconds);
+    const timerText = formatTimer(displayedTimerSeconds(displayMatch?.timer, elapsedMilliseconds));
     const isExpired = timerDirection === 'down' && elapsedSeconds >= timerDuration;
-    const akaTotal = displayMatch?.aka_total ?? displayMatch?.result?.aka_total ?? 0;
-    const shiroTotal = displayMatch?.shiro_total ?? displayMatch?.result?.shiro_total ?? 0;
-    const akaBreakdown = displayMatch?.aka_breakdown || displayMatch?.result?.aka_breakdown || {};
-    const shiroBreakdown = displayMatch?.shiro_breakdown || displayMatch?.result?.shiro_breakdown || {};
-    const winnerCorner = displayMatch?.result?.winner_corner ?? null;
-
-    useEffect(() => {
-        setAkaImgError(false);
-        setShiroImgError(false);
-    }, [displayMatch?.id, displayMatch?.aka_photo_url, displayMatch?.shiro_photo_url]);
-
     const resultMatch = activeMatch?.result ? activeMatch : snapshot.last_result;
+    const ActiveMode = modeComponents[mode] || MatchMode;
+    const activeVarUrl = varUrlInput.trim() || court?.var_url || activeMatch?.var_stream_url || '';
     const monitorUrl = (targetMode) => `/admin/panitera/scoring/monitors/${court.id}?event_id=${encodeURIComponent(activeEvent.id)}&mode=${targetMode}`;
-    const synchronizationLabel = realtimeConnected
-        ? 'Real-time Reverb'
-        : httpConnected
-            ? 'Sinkronisasi cadangan'
-            : 'Menghubungkan ulang';
+    const synchronizationLabel = realtimeConnected ? 'Real-time aktif' : httpConnected ? 'Sinkronisasi cadangan' : 'Menghubungkan ulang';
     const synchronizationClass = realtimeConnected
-        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300'
         : httpConnected
-            ? 'border-amber-400/30 bg-amber-400/10 text-amber-200'
-            : 'border-rose-400/30 bg-rose-400/10 text-rose-300';
+            ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200'
+            : 'border-red-300 bg-red-50 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300';
 
-    const renderMatchTimerCard = () => {
-        if (!displayMatch) return null;
-        return (
-            <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 text-center shadow-xl">
-                <div className="flex items-center justify-center gap-2">
-                    <span className="rounded-full bg-red-600 text-white font-black px-3.5 py-1 text-xs uppercase tracking-wider shadow-sm force-white">
-                        RANDORI · PARTAI #{displayMatch.sequence}
-                    </span>
-                    <span className="rounded-full bg-slate-100 dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-white/80 border border-slate-200 dark:border-transparent">
-                        {displayMatch.round_label}
-                    </span>
-                </div>
-                <h2 className="mt-3 text-2xl md:text-3xl font-black text-slate-950 dark:text-white tracking-tight">
-                    {displayMatch.category_name}
-                </h2>
-
-                {/* Big Timer Box */}
-                <div className="mt-5 rounded-2xl border-2 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 p-6 shadow-inner">
-                    <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-950 dark:text-[#f2cd73]">
-                        {timerDirection === 'down' ? 'WAKTU PERTANDINGAN' : 'HITUNG MAJU'}
-                    </p>
-                    <p className={`mt-2 font-mono text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl ${isExpired ? 'text-red-600 dark:text-red-500 animate-pulse' : 'text-slate-950 dark:text-white'}`}>
-                        {timerText}
-                    </p>
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                        <span className={`inline-block rounded-full px-4 py-1.5 text-xs uppercase font-black tracking-wider shadow-sm ${displayMatch.timer?.is_finished
-                            ? 'bg-slate-800 text-white dark:bg-slate-700 force-white'
-                            : isExpired
-                                ? 'bg-red-600 text-white animate-pulse force-white'
-                                : displayMatch.timer?.status === 'running'
-                                    ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                    : displayMatch.timer?.status === 'paused'
-                                        ? 'bg-amber-500 text-slate-950 font-black'
-                                        : 'bg-slate-200 text-slate-900 border border-slate-300 dark:border-white/20 dark:bg-white/15 dark:text-white font-black'
-                            }`}>
-                            {displayMatch.timer?.is_finished ? 'Partai Selesai' : isExpired ? 'WAKTU HABIS' : displayMatch.timer?.status === 'running' ? 'WAKTU BERJALAN' : displayMatch.timer?.status === 'paused' ? 'WAKTU DIJEDA' : 'MENUNGGU WASIT'}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        );
+    const modeProps = {
+        arena: { activeMatch, snapshot, timerText, court },
+        match: {
+            match: displayMatch,
+            court,
+            timerText,
+            timerDirection,
+            timerDuration,
+            isExpired,
+            isResultSaved,
+            akaTotal: displayMatch?.aka_total ?? displayMatch?.result?.aka_total ?? 0,
+            shiroTotal: displayMatch?.shiro_total ?? displayMatch?.result?.shiro_total ?? 0,
+            akaBreakdown: displayMatch?.aka_breakdown || displayMatch?.result?.aka_breakdown || {},
+            shiroBreakdown: displayMatch?.shiro_breakdown || displayMatch?.result?.shiro_breakdown || {},
+            winnerCorner: displayMatch?.result?.winner_corner ?? null,
+            varPanel: isVarActive ? (
+                <Suspense fallback={<ModeLoading />}>
+                    <VarPanel
+                        match={activeMatch}
+                        activeVarUrl={activeVarUrl}
+                        varKey={varKey}
+                        iframeRef={varIframeRef}
+                        showConfig={showVarConfig}
+                        varUrlInput={varUrlInput}
+                        savingVarUrl={savingVarUrl}
+                        saveMessage={varSaveMessage}
+                        onClose={() => toggleVarStatus(false)}
+                        onReload={() => setVarKey((key) => key + 1)}
+                        onFullscreen={() => varIframeRef.current?.requestFullscreen?.()}
+                        onToggleConfig={() => setShowVarConfig((current) => !current)}
+                        onUrlChange={setVarUrlInput}
+                        onSave={saveCourtVarUrl}
+                    />
+                </Suspense>
+            ) : null,
+        },
+        timer: { match: displayMatch, court, timerText, isExpired, timerDirection },
+        result: {
+            snapshot,
+            court,
+            activeEvent,
+            activeMatch,
+            resultMatch,
+            showLockedArchive,
+            onToggleLockedArchive: () => setShowLockedArchive((current) => !current),
+        },
+        officials: { staff: snapshot.staff, court },
     };
-
-    const renderMatchCornersCard = () => {
-        if (!displayMatch) return null;
-        return (
-            <div className="grid gap-4 sm:grid-cols-2">
-                {/* SUDUT AKA (MERAH) */}
-                <div
-                    className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-aka force-white flex flex-col justify-between ${winnerCorner === 'aka'
-                        ? 'border-amber-400 bg-red-600 dark:bg-red-700 ring-4 ring-amber-400/50'
-                        : 'border-red-700 bg-red-600 dark:bg-red-700'
-                        }`}
-                    style={{ backgroundColor: '#dc2626', borderColor: winnerCorner === 'aka' ? '#fbbf24' : '#b91c1c' }}
-                >
-                    <div>
-                        <div className="flex items-center justify-between gap-2">
-                            <span
-                                className="rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow-sm"
-                                style={{ backgroundColor: 'rgba(69, 10, 10, 0.85)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                            >
-                                AKA · MERAH
-                            </span>
-                            {winnerCorner === 'aka' && (
-                                <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                    <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                                </span>
-                            )}
-                        </div>
-                        <div className="mt-3.5 flex items-start gap-3.5">
-                            {displayMatch.aka_photo_url && !akaImgError ? (
-                                <img
-                                    src={displayMatch.aka_photo_url}
-                                    alt={displayMatch.aka_label || 'AKA'}
-                                    onError={() => setAkaImgError(true)}
-                                    className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-white/40 object-cover shadow-md"
-                                />
-                            ) : (
-                                <div
-                                    className="corner-aka-avatar flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 shadow-md text-white"
-                                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.35)', color: '#ffffff' }}
-                                >
-                                    <i className="fa-solid fa-user-ninja text-2xl" style={{ color: '#ffffff' }} />
-                                </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                                <p
-                                    className="text-xl sm:text-2xl font-black leading-snug text-white line-clamp-2 drop-shadow-sm min-h-[3rem]"
-                                    style={{ color: '#ffffff' }}
-                                >
-                                    {displayMatch.aka_label || 'Sudut Merah'}
-                                </p>
-                                <div className="mt-2 flex items-center">
-                                    <span
-                                        className="corner-aka-badge inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs"
-                                        style={{
-                                            backgroundColor: 'rgba(0, 0, 0, 0.55)',
-                                            borderColor: 'rgba(255, 255, 255, 0.3)',
-                                            borderWidth: '1px',
-                                            borderStyle: 'solid',
-                                            color: '#ffffff',
-                                        }}
-                                    >
-                                        <i className="fa-solid fa-shield-halved text-[11px]" style={{ color: '#facc15' }} aria-hidden="true" />
-                                        <span className="truncate max-w-[200px]" style={{ color: '#ffffff' }}>
-                                            {displayMatch.aka_contingent || displayMatch.red_contingent || 'Kontingen belum dicatat'}
-                                        </span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="mt-4 text-center border-t border-white/20 pt-4">
-                            <p
-                                className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-white drop-shadow-md"
-                                style={{ color: '#ffffff' }}
-                            >
-                                {akaTotal}
-                            </p>
-                            <p
-                                className="mt-1 text-xs font-black uppercase tracking-widest text-white/90"
-                                style={{ color: 'rgba(255, 255, 255, 0.95)' }}
-                            >
-                                TOTAL POIN
-                            </p>
-                        </div>
-                        {(Boolean(akaBreakdown?.waza_ari) || Boolean(akaBreakdown?.ippon) || Boolean(akaBreakdown?.yuko) || Boolean(akaBreakdown?.yusei)) && (
-                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-white/20 pt-3 text-xs font-bold text-white">
-                                {Boolean(akaBreakdown?.ippon) && (
-                                    <span
-                                        className="rounded-lg px-2.5 py-0.5 border"
-                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                    >
-                                        Ippon: {akaBreakdown.ippon}
-                                    </span>
-                                )}
-                                {Boolean(akaBreakdown?.waza_ari) && (
-                                    <span
-                                        className="rounded-lg px-2.5 py-0.5 border"
-                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                    >
-                                        Waza-ari: {akaBreakdown.waza_ari}
-                                    </span>
-                                )}
-                                {Boolean(akaBreakdown?.yuko) && (
-                                    <span
-                                        className="rounded-lg px-2.5 py-0.5 border"
-                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                    >
-                                        Yuko: {akaBreakdown.yuko}
-                                    </span>
-                                )}
-                                {Boolean(akaBreakdown?.yusei) && (
-                                    <span
-                                        className="rounded-lg px-2.5 py-0.5 border"
-                                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', borderColor: 'rgba(255, 255, 255, 0.3)', color: '#ffffff' }}
-                                    >
-                                        Yusei: {akaBreakdown.yusei}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* SUDUT SHIRO (PUTIH) */}
-                <div
-                    className={`rounded-3xl border-2 p-6 transition-all shadow-xl corner-shiro flex flex-col justify-between ${winnerCorner === 'shiro'
-                        ? 'border-amber-400 bg-white dark:bg-slate-900 ring-4 ring-amber-400/50'
-                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900'
-                        }`}
-                >
-                    <div>
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="rounded-full bg-slate-950 text-white dark:bg-white dark:text-slate-950 border border-slate-700 dark:border-white/30 px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
-                                SHIRO · PUTIH
-                            </span>
-                            {winnerCorner === 'shiro' && (
-                                <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md">
-                                    <i className="fa-solid fa-trophy mr-1 text-xs" /> Pemenang
-                                </span>
-                            )}
-                        </div>
-                        <div className="mt-3.5 flex items-start gap-3.5">
-                            {displayMatch.shiro_photo_url && !shiroImgError ? (
-                                <img
-                                    src={displayMatch.shiro_photo_url}
-                                    alt={displayMatch.shiro_label || 'SHIRO'}
-                                    onError={() => setShiroImgError(true)}
-                                    className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-2xl border-2 border-slate-300 dark:border-white/30 object-cover shadow-md"
-                                />
-                            ) : (
-                                <div className="flex h-14 w-14 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-slate-200 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-md">
-                                    <i className="fa-solid fa-user-ninja text-2xl" />
-                                </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                                <p className="text-xl sm:text-2xl font-black leading-snug text-slate-950 dark:text-white line-clamp-2 min-h-[3rem]">
-                                    {displayMatch.shiro_label || 'Sudut Putih'}
-                                </p>
-                                <div className="mt-2 flex items-center">
-                                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs">
-                                        <i className="fa-solid fa-shield-halved text-[11px] text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                                        <span className="truncate max-w-[200px]">{displayMatch.shiro_contingent || displayMatch.blue_contingent || 'Kontingen belum dicatat'}</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="mt-4 text-center border-t border-slate-200 dark:border-white/10 pt-4">
-                            <p className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black text-slate-950 dark:text-white">
-                                {shiroTotal}
-                            </p>
-                            <p className="mt-1 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                TOTAL POIN
-                            </p>
-                        </div>
-                        {(Boolean(shiroBreakdown?.waza_ari) || Boolean(shiroBreakdown?.ippon) || Boolean(shiroBreakdown?.yuko) || Boolean(shiroBreakdown?.yusei)) && (
-                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-xs font-bold text-slate-800 dark:text-slate-200">
-                                {Boolean(shiroBreakdown?.ippon) && (
-                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Ippon: {shiroBreakdown.ippon}</span>
-                                )}
-                                {Boolean(shiroBreakdown?.waza_ari) && (
-                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Waza-ari: {shiroBreakdown.waza_ari}</span>
-                                )}
-                                {Boolean(shiroBreakdown?.yuko) && (
-                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yuko: {shiroBreakdown.yuko}</span>
-                                )}
-                                {Boolean(shiroBreakdown?.yusei) && (
-                                    <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 border border-slate-200 dark:border-slate-700">Yusei: {shiroBreakdown.yusei}</span>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const renderVarStreamCard = () => (
-        <section className="flex flex-col rounded-3xl border border-white/10 bg-[#151210] p-5 shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-                <div className="flex items-center gap-3">
-                    <span className="relative flex h-3 w-3">
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping" />
-                        <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
-                    </span>
-                    <div>
-                        <h3 className="flex items-center gap-2 text-base font-black uppercase tracking-wider text-white">
-                            <i className="fa-solid fa-video text-rose-400" aria-hidden="true" />
-                            Video Assistant Review (VAR)
-                        </h3>
-                        <a
-                            href={activeVarUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-mono text-xs text-[#d4a843] hover:underline"
-                        >
-                            {activeVarUrl} <i className="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]" />
-                        </a>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => toggleVarStatus(false)}
-                        title="Tutup tayangan VAR (meringankan perangkat laptop/layar)"
-                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition-colors"
-                    >
-                        <i className="fa-solid fa-video-slash" aria-hidden="true" />
-                        Tutup VAR
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setVarKey((k) => k + 1)}
-                        title="Muat ulang tayangan VAR"
-                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
-                    >
-                        <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
-                        Reload
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleFullscreenVar}
-                        title="Tampilkan VAR Layar Penuh"
-                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold text-white hover:bg-white/10 transition-colors"
-                    >
-                        <i className="fa-solid fa-expand" aria-hidden="true" />
-                        Layar Penuh
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setShowVarConfig((prev) => !prev)}
-                        title="Ubah URL Stream VAR (Lokal / IP Camera)"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-xs text-white/70 hover:bg-white/10 transition-colors"
-                    >
-                        <i className="fa-solid fa-gear" aria-hidden="true" />
-                    </button>
-                </div>
-            </div>
-
-            {showVarConfig && (
-                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-3">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <input
-                            type="url"
-                            value={varUrlInput}
-                            onChange={(e) => setVarUrlInput(e.target.value)}
-                            placeholder={`Default: ${defaultCourtVarUrl}`}
-                            className="flex-1 rounded-lg border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-[#d4a843]"
-                        />
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setVarKey((k) => k + 1)}
-                                className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-xs font-bold text-black hover:bg-[#e0b852] transition-colors"
-                                title="Terapkan preview untuk sesi monitor ini"
-                            >
-                                Terapkan
-                            </button>
-                            <button
-                                type="button"
-                                disabled={savingVarUrl}
-                                onClick={saveCourtVarUrlPermanently}
-                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                                title="Simpan permanen untuk gelanggang ini"
-                            >
-                                {savingVarUrl ? 'Menyimpan…' : 'Simpan Permanen'}
-                            </button>
-                        </div>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-white/50">
-                        <span>Default Stream: <code className="text-[#d4a843]">https://var.smart-perkemi.id/kempo/demo/live_stream.html</code></span>
-                        {varSaveMessage && <span className="font-bold text-emerald-400">{varSaveMessage}</span>}
-                    </div>
-                </div>
-            )}
-
-            {/* Active VAR Challenge Notification Banner */}
-            {displayMatch?.var_review?.is_under_review && (
-                <div className="my-3 overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-500/20 p-4 animate-pulse">
-                    <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg font-black text-black">
-                            <i className="fa-solid fa-video" />
-                        </span>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white">
-                                    VAR REVIEW IN PROGRESS
-                                </span>
-                                <span className="text-xs font-black uppercase text-amber-300">
-                                    Sudut {displayMatch.var_review?.corner ? displayMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
-                                </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-amber-200">
-                                Alasan: {displayMatch.var_review?.reason || 'Permintaan review video'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div
-                ref={varIframeRef}
-                className="relative mt-4 aspect-video w-full flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/80"
-            >
-                <iframe
-                    key={varKey}
-                    src={activeVarUrl}
-                    className="h-full w-full border-0"
-                    allow="autoplay; fullscreen; camera; microphone"
-                    title="VAR Video Assistant Review"
-                    loading="eager"
-                />
-            </div>
-
-            <p className="mt-3 text-center text-xs text-white/40">
-                Kamera VAR terhubung langsung ke sistem pertandingan gelanggang.
-                Jika streaming tidak memuat di dalam frame, klik <a href={activeVarUrl} target="_blank" rel="noreferrer" className="font-bold text-[#d4a843] underline">Buka Tab Penuh (var.smart-perkemi.id)</a>.
-            </p>
-        </section>
-    );
 
     return (
         <>
-            <Head title={`${court.name} · Monitor ${mode} | Smart Perkemi`} />
-            <main className="court-monitor min-h-dvh bg-[#090807] px-3 py-3 text-white sm:px-6 sm:py-5 lg:px-8">
-                <header className="mx-auto max-w-[1800px] rounded-2xl border border-white/10 bg-[#151210] p-4 shadow-2xl">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                        <div className="min-w-0">
-                            <p className="text-xs font-bold uppercase tracking-[.18em] text-[#d4a843]">{activeEvent.name}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-3">
-                                <h1 className="text-2xl font-black md:text-3xl">{court.name}</h1>
-                                <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold ${synchronizationClass}`} role="status">
-                                    <span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-emerald-400' : httpConnected ? 'bg-amber-400' : 'bg-rose-400'}`} />
-                                    {synchronizationLabel}
-                                </span>
-                            </div>
-                            <p className="mt-1 text-sm text-white/50">{court.location || activeEvent.venue || activeEvent.city}</p>
+            <Head title={`${court.name} · Court Monitor`} />
+            <div className="flex min-h-dvh flex-col bg-[#f3f0e9] text-[#071126] dark:bg-[#090807] dark:text-white lg:h-dvh lg:overflow-hidden">
+                <MonitorHeader
+                    activeEvent={activeEvent}
+                    court={court}
+                    activeMatch={activeMatch}
+                    mode={mode}
+                    monitorUrl={monitorUrl}
+                    synchronizationLabel={synchronizationLabel}
+                    synchronizationClass={synchronizationClass}
+                    backUrl={backUrl}
+                    backLabel={backLabel}
+                    bell={bell}
+                    isVarActive={isVarActive}
+                    onToggleVar={toggleVarStatus}
+                />
+                <VarReviewBanner match={activeMatch} />
+                <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-4 lg:px-5 lg:py-4 2xl:px-6">
+                    {snapshotError && (
+                        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 sm:flex-row sm:items-center sm:justify-between" role="alert">
+                            <span>{snapshotError}</span>
+                            <button type="button" onClick={refreshSnapshot} className="min-h-11 cursor-pointer rounded-lg border border-amber-700 px-3 font-black active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700">Coba lagi</button>
                         </div>
-                        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center xl:w-auto">
-                            <nav className="col-span-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Mode monitor">
-                                {modes.map(([key, label, icon]) => (
-                                    <a key={key} href={monitorUrl(key)} aria-current={mode === key ? 'page' : undefined} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10 ${mode === key ? 'bg-[#d4a843] text-black' : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'}`}>
-                                        <i className={`fa-solid ${icon}`} aria-hidden="true" />{label}
-                                    </a>
-                                ))}
-                            </nav>
-                            <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
-                                <i className="fa-solid fa-expand" aria-hidden="true" />Layar Penuh
-                            </button>
-                            {mode === 'match' && (
-                                <button
-                                    type="button"
-                                    onClick={() => toggleVarStatus(!isVarActive)}
-                                    title={isVarActive ? 'Matikan streaming VAR (meringankan beban laptop)' : 'Aktifkan streaming VAR'}
-                                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10 ${isVarActive
-                                            ? 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
-                                            : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
-                                        }`}
-                                >
-                                    <i className={`fa-solid ${isVarActive ? 'fa-video text-rose-400' : 'fa-video-slash text-slate-400'}`} aria-hidden="true" />
-                                    <span>VAR: {isVarActive ? 'ON' : 'OFF'}</span>
-                                </button>
-                            )}
-                            <ThemeToggle className="border-white/10 bg-white/5 text-white/70 shadow-none hover:bg-white/10 dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10" />
-                            <TimerBellControls bell={bell} />
-                            <a href={backUrl || `/admin/panitera/scoring?event_id=${encodeURIComponent(activeEvent.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/70 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4a843] sm:min-h-10">
-                                <i className="fa-solid fa-arrow-left" aria-hidden="true" />{backLabel || (backUrl ? 'Kembali' : 'Panitera')}
-                            </a>
-                        </div>
+                    )}
+                    <div className="min-h-0 flex-1">
+                        <Suspense fallback={<ModeLoading />}>
+                            <ActiveMode {...(modeProps[mode] || modeProps.match)} />
+                        </Suspense>
                     </div>
-                </header>
-
-                <div className="mx-auto mt-5 max-w-[1800px]">
-                    {/* VAR Review Overlay on Court Monitor */}
-                    {activeMatch?.var_review?.is_under_review && (
-                        <div className="mb-5 overflow-hidden rounded-3xl border-2 border-amber-500 bg-amber-500/20 p-5 shadow-2xl backdrop-blur-md animate-pulse">
-                            <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
-                                <div className="flex items-center gap-4">
-                                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-2xl font-black text-black shadow-lg">
-                                        <i className="fa-solid fa-video" aria-hidden="true" />
-                                    </span>
-                                    <div>
-                                        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                                            <span className="rounded-full bg-rose-600 px-3 py-0.5 text-xs font-black uppercase tracking-wider text-white">
-                                                VAR REVIEW IN PROGRESS
-                                            </span>
-                                            <span className="font-mono text-xs font-bold text-amber-300">
-                                                WAKTU PERTANDINGAN DIJEDA
-                                            </span>
-                                        </div>
-                                        <h2 className="mt-1 text-xl font-black uppercase text-white sm:text-2xl">
-                                            Pemeriksaan Video Assistant Review
-                                        </h2>
-                                        <p className="text-sm font-semibold text-amber-200">
-                                            Alasan: {activeMatch?.var_review?.reason || 'Tantangan Video Replay'} · Pengaju: {activeMatch?.var_review?.corner ? activeMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="rounded-2xl border border-amber-500/40 bg-black/60 px-5 py-3 text-center sm:text-right">
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Status Putusan</p>
-                                    <p className="mt-1 font-mono text-sm font-black text-white">DALAM PENILAIAN WASIT</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {mode === 'arena' && (
-                        activeMatch ? (
-                            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-                                <section className="rounded-3xl border border-white/10 bg-[#151210] p-4 shadow-2xl sm:p-5 md:p-8">
-                                    <div className="flex flex-wrap items-start justify-between gap-4">
-                                        <div><p className="text-sm font-bold uppercase tracking-[.16em] text-[#d4a843]">{activeMatch.category_type} · Partai #{activeMatch.sequence}</p><h2 className="mt-2 text-2xl font-black md:text-4xl">{activeMatch.category_name}</h2><p className="mt-2 text-white/55">{activeMatch.round_label}{activeMatch.pool ? ` · Pool ${activeMatch.pool}` : ''}</p></div>
-                                        <div className="rounded-2xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-3 text-right"><p className="text-xs font-bold text-[#e8c66b]">{activeMatch.call_status_label}</p><p className="mt-1 font-mono text-3xl font-black">{timerText}</p></div>
-                                    </div>
-                                    <div className="mt-8"><ParticipantDisplay match={activeMatch} /></div>
-                                </section>
-                                <aside className="rounded-3xl border border-white/10 bg-[#151210] p-5">
-                                    <div className="flex items-center justify-between"><h2 className="font-bold">Antrean Berikutnya</h2><span className="text-xs text-white/45">{snapshot.progress.completed}/{snapshot.progress.total} selesai</span></div>
-                                    <div className="mt-4 space-y-3">{snapshot.queue.map((item) => <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs font-bold text-[#d4a843]">{item.scheduled_at || '—'} · Partai #{item.sequence}</p><p className="mt-1 text-sm font-bold">{item.category_name}</p><p className="mt-1 text-xs text-white/45">{item.round_label}</p></div>)}{snapshot.queue.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-white/45">Tidak ada antrean berikutnya.</p>}</div>
-                                </aside>
-                            </div>
-                        ) : <EmptyCourt court={court} />
-                    )}
-
-                    {mode === 'match' && (
-                        displayMatch ? (
-                            displayMatch.category_type === 'embu' ? (
-                                <div className="space-y-6">
-                                    {/* Header & Match Details */}
-                                    <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 shadow-xl">
-                                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                                            <div>
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="rounded-full bg-amber-500 text-slate-950 px-3.5 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
-                                                        EMBU · PARTAI #{displayMatch.sequence}
-                                                    </span>
-                                                    <span className="rounded-full bg-blue-100 text-blue-900 dark:bg-blue-500/20 dark:text-blue-300 px-3 py-1 text-xs font-bold border border-blue-200 dark:border-transparent">
-                                                        {displayMatch.round_label}{displayMatch.pool ? ` · Pool ${displayMatch.pool}` : ''}
-                                                    </span>
-                                                    <span className="rounded-full border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-transparent px-3 py-1 text-xs font-bold text-slate-700 dark:text-white/60">
-                                                        {displayMatch.call_status_label}
-                                                    </span>
-                                                </div>
-                                                <h2 className="mt-3 text-2xl font-black text-slate-950 dark:text-white md:text-4xl tracking-tight">{displayMatch.category_name}</h2>
-                                                <p className="mt-1 text-lg font-bold text-amber-700 dark:text-[#f2cd73]">{displayMatch.participant_label || 'Peserta Embu'}</p>
-                                            </div>
-
-                                            {/* Digital Timer Block */}
-                                            <div className="flex items-center gap-5 rounded-3xl border-2 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 px-6 py-4 shadow-inner">
-                                                <div>
-                                                    <p className="text-[10px] font-black uppercase tracking-[.25em] text-amber-700 dark:text-[#f2cd73]">
-                                                        {isResultSaved ? 'Durasi Resmi' : (timerDirection === 'down' ? 'Waktu Sisa' : 'Waktu Berjalan')}
-                                                    </p>
-                                                    <p className="font-mono text-5xl font-black text-slate-950 dark:text-white sm:text-6xl tracking-tight">
-                                                        {isResultSaved && displayMatch.result?.duration_seconds
-                                                            ? formatTimer(displayMatch.result.duration_seconds)
-                                                            : timerText}
-                                                    </p>
-                                                </div>
-                                                <div className="border-l-2 border-slate-200 dark:border-white/10 pl-5 text-xs font-bold space-y-1.5">
-                                                    <span className={`inline-block rounded-full px-3 py-1 text-[11px] uppercase font-black tracking-wider shadow-sm ${isResultSaved
-                                                            ? 'bg-emerald-600 text-white force-white'
-                                                            : displayMatch.timer?.status === 'running'
-                                                                ? 'bg-emerald-600 text-white animate-pulse force-white'
-                                                                : displayMatch.timer?.status === 'paused'
-                                                                    ? 'bg-amber-500 text-slate-950'
-                                                                    : 'bg-slate-200 text-slate-800 dark:bg-white/15 dark:text-white/80'
-                                                        }`}>
-                                                        {isResultSaved
-                                                            ? 'Disahkan'
-                                                            : displayMatch.timer?.is_finished
-                                                                ? 'Selesai'
-                                                                : isExpired
-                                                                    ? 'Waktu Habis'
-                                                                    : displayMatch.timer?.status === 'running'
-                                                                        ? 'Berjalan'
-                                                                        : displayMatch.timer?.status === 'paused'
-                                                                            ? 'Dijeda'
-                                                                            : 'Menunggu'}
-                                                    </span>
-                                                    <p className="text-slate-500 dark:text-white/50 text-[11px]">
-                                                        Durasi: {isResultSaved && displayMatch.result?.duration_seconds ? displayMatch.result.duration_seconds : timerDuration}s
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    {/* Scoreboard: 5 Wasit & Juri */}
-                                    <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 shadow-xl">
-                                        <div className="flex items-center justify-between mb-5">
-                                            <div>
-                                                <h3 className="text-lg font-black uppercase tracking-wider text-slate-950 dark:text-[#f2cd73] flex items-center gap-2">
-                                                    <i className="fa-solid fa-users-viewfinder text-amber-600 dark:text-[#f2cd73]" aria-hidden="true" />
-                                                    Hasil Nilai Para Wasit (5 Juri)
-                                                </h3>
-                                                <p className="text-xs text-slate-600 dark:text-white/50">Skor penguasaan teknik (maks. 60) dan penghayatan ekspresi (maks. 40)</p>
-                                            </div>
-                                            <span className={`rounded-full px-3 py-1 text-xs font-bold border ${isResultSaved
-                                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-                                                    : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-                                                }`}>
-                                                {isResultSaved ? 'Disahkan & Disimpan Panitera' : 'Menunggu Pengesahan Nilai Embu'}
-                                            </span>
-                                        </div>
-
-                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                                            {(() => {
-                                                const embuTrimming = getEmbuJudgeTrimming(
-                                                    displayMatch.judge_scores,
-                                                    displayMatch.result,
-                                                    displayMatch.embu_parameters,
-                                                    isResultSaved,
-                                                );
-
-                                                return [1, 2, 3, 4, 5].map((judgeNum) => {
-                                                    const liveScore = displayMatch.judge_scores?.find((s) => s.judge_number === judgeNum);
-                                                    const verifiedScore = displayMatch.result?.judge_scores?.[judgeNum - 1];
-                                                    const isSubmitted = liveScore?.status === 'submitted' || verifiedScore !== undefined;
-
-                                                    const isMaxTrimmed = isResultSaved && embuTrimming.hasTrimmed && judgeNum === embuTrimming.maxJudgeNum;
-                                                    const isMinTrimmed = isResultSaved && embuTrimming.hasTrimmed && judgeNum === embuTrimming.minJudgeNum;
-                                                    const isMiddle = isResultSaved && embuTrimming.hasTrimmed && embuTrimming.middleJudgeNumbers.includes(judgeNum);
-
-                                                    const totalScoreVal = isResultSaved
-                                                        ? (verifiedScore !== undefined
-                                                            ? Number(verifiedScore).toFixed(2)
-                                                            : liveScore?.total_score ? Number(liveScore.total_score).toFixed(2) : '—')
-                                                        : '—';
-
-                                                    return (
-                                                        <div
-                                                            key={judgeNum}
-                                                            className={`rounded-2xl border-2 p-4 transition-all shadow-sm ${isMaxTrimmed || isMinTrimmed
-                                                                    ? 'border-rose-400 bg-rose-50/70 dark:border-rose-500/40 dark:bg-rose-950/25'
-                                                                    : isMiddle
-                                                                        ? 'border-emerald-500 bg-emerald-50/80 dark:border-emerald-500/40 dark:bg-emerald-950/35 shadow-md ring-1 ring-emerald-400/20'
-                                                                        : isSubmitted
-                                                                            ? 'border-emerald-500/60 bg-emerald-50/40 dark:bg-emerald-950/20'
-                                                                            : 'border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[.04]'
-                                                                }`}
-                                                        >
-                                                            <div className="flex items-center justify-between gap-1">
-                                                                <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-[#d4a843]/20 dark:text-[#f2cd73] px-2.5 py-0.5 text-[10px] font-black uppercase">
-                                                                    Juri {judgeNum} {judgeNum === 1 ? '(Utama)' : ''}
-                                                                </span>
-                                                                {isMaxTrimmed ? (
-                                                                    <span className="rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 text-[9px] font-black uppercase">
-                                                                        <i className="fa-solid fa-xmark mr-1" />Dicoret (Tertinggi)
-                                                                    </span>
-                                                                ) : isMinTrimmed ? (
-                                                                    <span className="rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 text-[9px] font-black uppercase">
-                                                                        <i className="fa-solid fa-xmark mr-1" />Dicoret (Terendah)
-                                                                    </span>
-                                                                ) : isMiddle ? (
-                                                                    <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 px-2 py-0.5 text-[9px] font-black uppercase">
-                                                                        <i className="fa-solid fa-check mr-1" />Dihitung (Wasit Tengah)
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className={`text-[10px] font-bold uppercase ${isSubmitted ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'}`}>
-                                                                        {isSubmitted ? 'Terkirim' : 'Menilai'}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-
-                                                            <p className="mt-2 text-xs font-bold text-slate-700 dark:text-white/80 truncate">
-                                                                {liveScore?.referee_name || `Juri ${judgeNum}`}
-                                                            </p>
-
-                                                            <div className="mt-4 text-center">
-                                                                <p className={`text-3xl font-black sm:text-4xl ${isMaxTrimmed || isMinTrimmed
-                                                                        ? 'text-rose-600 dark:text-rose-400 line-through opacity-75'
-                                                                        : isMiddle
-                                                                            ? 'text-emerald-700 dark:text-emerald-300'
-                                                                            : isResultSaved
-                                                                                ? 'text-slate-950 dark:text-white'
-                                                                                : 'text-slate-400 dark:text-white/40'
-                                                                    }`}>
-                                                                    {totalScoreVal}
-                                                                </p>
-                                                                <p className={`mt-1 text-[10px] uppercase font-bold ${isMaxTrimmed
-                                                                        ? 'text-rose-600 dark:text-rose-400'
-                                                                        : isMinTrimmed
-                                                                            ? 'text-rose-600 dark:text-rose-400'
-                                                                            : isMiddle
-                                                                                ? 'text-emerald-700 dark:text-emerald-300'
-                                                                                : isResultSaved
-                                                                                    ? 'text-slate-500 dark:text-white/40'
-                                                                                    : 'text-amber-600 dark:text-amber-400/80'
-                                                                    }`}>
-                                                                    {isMaxTrimmed
-                                                                        ? 'Dicoret · Nilai Tertinggi'
-                                                                        : isMinTrimmed
-                                                                            ? 'Dicoret · Nilai Terendah'
-                                                                            : isMiddle
-                                                                                ? 'Dihitung · 3 Wasit Tengah'
-                                                                                : isResultSaved
-                                                                                    ? 'Total Nilai'
-                                                                                    : (isSubmitted ? 'Nilai Masuk · Menunggu Disimpan' : 'Sedang Dinilai')}
-                                                                </p>
-                                                            </div>
-
-                                                            <div className="mt-3 grid grid-cols-2 gap-1 border-t border-slate-200 dark:border-white/10 pt-2 text-center text-[11px]">
-                                                                <div>
-                                                                    <span className="block text-slate-500 dark:text-white/50">Teknik</span>
-                                                                    <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                        {isResultSaved && liveScore?.technique_subtotal ? Number(liveScore.technique_subtotal).toFixed(1) : '—'}
-                                                                    </span>
-                                                                </div>
-                                                                <div>
-                                                                    <span className="block text-slate-500 dark:text-white/50">Ekspresi</span>
-                                                                    <span className="font-bold text-slate-900 dark:text-white/90">
-                                                                        {isResultSaved && liveScore?.expression_subtotal ? Number(liveScore.expression_subtotal).toFixed(1) : '—'}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                });
-                                            })()}
-                                        </div>
-
-                                        {/* Rekap Nilai Akhir & Penalti */}
-                                        <div className="mt-6 grid gap-4 sm:grid-cols-3">
-                                            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[.03] p-4 text-center">
-                                                <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-white/50">Durasi Penampilan</p>
-                                                <p className="mt-2 font-mono text-3xl font-black text-slate-950 dark:text-white">
-                                                    {isResultSaved && displayMatch.result?.duration_seconds
-                                                        ? `${displayMatch.result.duration_seconds}s`
-                                                        : (displayMatch.timer?.is_finished || elapsedSeconds > 0 ? `${Math.floor(elapsedSeconds)}s` : '—')}
-                                                </p>
-                                            </div>
-
-                                            <div className="rounded-2xl border-2 border-rose-300 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 p-4 text-center">
-                                                <p className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Total Denda / Penalti</p>
-                                                <p className="mt-2 font-mono text-3xl font-black text-rose-700 dark:text-rose-300">
-                                                    {isResultSaved
-                                                        ? `-${Number(displayMatch.result?.total_penalty ?? displayMatch.result?.time_penalty ?? 0).toFixed(2)}`
-                                                        : '—'}
-                                                </p>
-                                            </div>
-
-                                            <div className={`rounded-2xl border-2 p-4 text-center shadow-xl transition-all ${isResultSaved
-                                                    ? 'border-emerald-500 bg-emerald-600 text-white dark:bg-gradient-to-br dark:from-emerald-600/40 dark:to-emerald-950/60 force-white'
-                                                    : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[.04] dark:text-white/70'
-                                                }`}>
-                                                <p className={`text-xs font-black uppercase tracking-widest ${isResultSaved ? 'text-emerald-100 dark:text-emerald-300 force-white' : 'text-slate-500 dark:text-white/50'
-                                                    }`}>
-                                                    {isResultSaved ? 'NILAI AKHIR RESMI' : 'NILAI AKHIR'}
-                                                </p>
-                                                <p className={`mt-2 font-mono text-4xl font-black ${isResultSaved ? 'text-white dark:text-emerald-200 force-white' : 'text-slate-400 dark:text-white/40'
-                                                    }`}>
-                                                    {isResultSaved && displayMatch.result?.final_score
-                                                        ? Number(displayMatch.result.final_score).toFixed(2)
-                                                        : '—'}
-                                                </p>
-                                                {!isResultSaved && (
-                                                    <p className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                                                        Menunggu Simpan Nilai Embu
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Panel 5 Parameter PB PERKEMI */}
-                                        {(() => {
-                                            const embuParams = getEmbuJudgeTrimming(
-                                                displayMatch.judge_scores,
-                                                displayMatch.result,
-                                                displayMatch.embu_parameters,
-                                                isResultSaved,
-                                            );
-
-                                            return (
-                                                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/40 dark:border-amber-900/30 dark:bg-amber-950/15 p-4 sm:p-5">
-                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-amber-200/60 dark:border-amber-900/30 pb-3">
-                                                        <div className="flex items-center gap-2.5">
-                                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-slate-950 font-black text-xs shadow-2xs">
-                                                                <i className="fa-solid fa-scale-balanced" />
-                                                            </span>
-                                                            <div>
-                                                                <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                                                                    5 Parameter Penilaian & Pemutus Nilai Seri (Regulasi PB PERKEMI)
-                                                                </h4>
-                                                                <p className="text-[11px] text-slate-600 dark:text-white/60 mt-0.5">
-                                                                    Urutan prioritas penentuan peringkat jika terjadi kesamaan nilai antar kontingen.
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <span className={`rounded-full px-3 py-1 text-xs font-bold border ${isResultSaved && embuParams.middleJudgesLabel
-                                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 border-amber-300 dark:border-transparent'
-                                                                : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/60 border-transparent'
-                                                            }`}>
-                                                            {isResultSaved && embuParams.middleJudgesLabel ? (
-                                                                <>3 Wasit Tengah: <strong>{embuParams.middleJudgesLabel}</strong></>
-                                                            ) : (
-                                                                'Menunggu Simpan Nilai Embu'
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    {!isResultSaved && (
-                                                        <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-100/70 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                                            <i className="fa-solid fa-circle-info text-amber-600 dark:text-amber-400 text-sm shrink-0" aria-hidden="true" />
-                                                            <span>
-                                                                Nilai resmi para wasit, pencoretan nilai tertinggi/terendah, dan 5 parameter PB PERKEMI akan dimunculkan setelah Panitera menekan tombol <strong>Simpan Nilai Embu</strong>.
-                                                            </span>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs">
-                                                        {/* Parameter 1 */}
-                                                        <div className="rounded-xl border border-amber-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
-                                                            <span className="rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                Parameter 1
-                                                            </span>
-                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Nilai Akhir (Trimmed)</p>
-                                                            <p className="mt-1 font-mono text-xl font-black text-amber-700 dark:text-amber-300">
-                                                                {isResultSaved && (displayMatch.result?.final_score !== undefined || embuParams.param1_score !== null)
-                                                                    ? Number(displayMatch.result?.final_score ?? embuParams.param1_score).toFixed(2)
-                                                                    : '—'}
-                                                            </p>
-                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                {isResultSaved && (embuParams.maxJudgeNum || embuParams.minJudgeNum)
-                                                                    ? `Tertinggi (${embuParams.maxJudgeNum ? `J${embuParams.maxJudgeNum}` : '—'}) & Terendah (${embuParams.minJudgeNum ? `J${embuParams.minJudgeNum}` : '—'}) dicoret`
-                                                                    : 'Nilai tertinggi dan terendah dicoret'}
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Parameter 2 */}
-                                                        <div className="rounded-xl border border-emerald-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
-                                                            <span className="rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                Parameter 2
-                                                            </span>
-                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik 3 Wasit Tengah</p>
-                                                            <p className="mt-1 font-mono text-xl font-black text-emerald-600 dark:text-emerald-400">
-                                                                {isResultSaved && embuParams.param2_technique !== null
-                                                                    ? Number(embuParams.param2_technique).toFixed(2)
-                                                                    : '—'}
-                                                            </p>
-                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                {isResultSaved && embuParams.middleJudgesLabel
-                                                                    ? `Fokus teknik ${embuParams.middleJudgesLabel}`
-                                                                    : 'Fokus nilai teknik 3 wasit tidak dicoret'}
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Parameter 3 */}
-                                                        <div className="rounded-xl border border-blue-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
-                                                            <span className="rounded-md bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300 px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                Parameter 3
-                                                            </span>
-                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Total Wasit Utama (W1)</p>
-                                                            <p className="mt-1 font-mono text-xl font-black text-blue-700 dark:text-blue-300">
-                                                                {isResultSaved && embuParams.param3_chief_total !== null
-                                                                    ? Number(embuParams.param3_chief_total).toFixed(2)
-                                                                    : '—'}
-                                                            </p>
-                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                Nilai keseluruhan W1 (meski sempat dicoret di P1)
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Parameter 4 */}
-                                                        <div className="rounded-xl border border-indigo-200 bg-white dark:border-white/10 dark:bg-slate-900/80 p-3 shadow-2xs">
-                                                            <span className="rounded-md bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300 px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                Parameter 4
-                                                            </span>
-                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Teknik Wasit Utama (W1)</p>
-                                                            <p className="mt-1 font-mono text-xl font-black text-indigo-700 dark:text-indigo-300">
-                                                                {isResultSaved && embuParams.param4_chief_technique !== null
-                                                                    ? Number(embuParams.param4_chief_technique).toFixed(2)
-                                                                    : '—'}
-                                                            </p>
-                                                            <p className="text-[10.5px] text-slate-500 dark:text-white/50 mt-1">
-                                                                Khusus nilai penguasaan teknik Wasit Utama
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Parameter 5 */}
-                                                        <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50/80 to-white dark:border-amber-900/40 dark:bg-slate-900/80 p-3 shadow-2xs">
-                                                            <span className="rounded-md bg-amber-200 text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                Parameter 5
-                                                            </span>
-                                                            <p className="font-bold text-slate-900 dark:text-white mt-1.5 text-xs">Keputusan Wasit Utama</p>
-                                                            <p className="mt-1 font-mono text-sm font-black text-amber-800 dark:text-amber-300">
-                                                                Manual / Request
-                                                            </p>
-                                                            <p className="text-[10.5px] text-slate-600 dark:text-white/60 mt-1">
-                                                                Panitera request ke Wasit Utama jika P1–P4 seri
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()}
-                                    </section>
-
-                                    {/* Panel Kasus Nilai Seri (Tie-Break) untuk Panitera */}
-                                    {monitor?.embu_ties && monitor.embu_ties.length > 0 && (
-                                        <section className="space-y-3">
-                                            <div className="flex items-center gap-2">
-                                                <span className="relative flex h-3 w-3">
-                                                    <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
-                                                    <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
-                                                </span>
-                                                <h3 className="text-base font-black uppercase tracking-wider text-slate-950 dark:text-white">
-                                                    Penetapan Nilai Seri Kategori Ini (Parameter 5 Wasit Utama)
-                                                </h3>
-                                            </div>
-                                            <EmbuTiebreakPanel ties={monitor.embu_ties} isArbitration={false} />
-                                        </section>
-                                    )}
-                                </div>
-                            ) : (
-                                isVarActive ? (
-                                    <div className="grid gap-6 items-start lg:grid-cols-12">
-                                        {/* SISI KIRI: VAR STREAM */}
-                                        <div className="lg:col-span-6">
-                                            {renderVarStreamCard()}
-                                        </div>
-
-                                        {/* SISI KANAN: TIMER DI ATAS, YANG BERTANDING DI BAWAH */}
-                                        <div className="flex flex-col gap-5 lg:col-span-6">
-                                            {renderMatchTimerCard()}
-                                            {renderMatchCornersCard()}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-6 items-start lg:grid-cols-12">
-                                        {/* SISI KIRI: TIMER */}
-                                        <div className="flex flex-col gap-4 lg:col-span-5 xl:col-span-5">
-                                            {renderMatchTimerCard()}
-
-                                            {/* Banner Status VAR Nonaktif + Tombol Nyalakan VAR */}
-                                            {/* <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/5 p-4 text-xs shadow-xs">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-white/60 text-sm">
-                                                        <i className="fa-solid fa-video-slash" aria-hidden="true" />
-                                                    </span>
-                                                    <div>
-                                                        <p className="font-bold text-slate-900 dark:text-white">Streaming VAR Dinonaktifkan</p>
-                                                        <p className="text-[11px] text-slate-500 dark:text-white/50">Layar lebih ringan & hemat resource laptop.</p>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleVarStatus(true)}
-                                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors"
-                                                >
-                                                    <i className="fa-solid fa-video" aria-hidden="true" />
-                                                    Nyalakan VAR
-                                                </button>
-                                            </div> */}
-
-                                            {/* Banner VAR Review jika ada tantangan VAR yang sedang aktif */}
-                                            {displayMatch?.var_review?.is_under_review && (
-                                                <div className="overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-500/20 p-4 animate-pulse">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg font-black text-black">
-                                                            <i className="fa-solid fa-video" />
-                                                        </span>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-black uppercase text-white">
-                                                                    VAR REVIEW IN PROGRESS
-                                                                </span>
-                                                                <span className="text-xs font-black uppercase text-amber-300">
-                                                                    Sudut {displayMatch.var_review?.corner ? displayMatch.var_review.corner.toUpperCase() : 'AKA / SHIRO'}
-                                                                </span>
-                                                            </div>
-                                                            <p className="mt-0.5 text-xs text-amber-200">
-                                                                Alasan: {displayMatch.var_review?.reason || 'Permintaan review video'}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* SISI KANAN: YANG BERTANDING (AKA & SHIRO BERDAMPINGAN) */}
-                                        <div className="lg:col-span-7 xl:col-span-7">
-                                            {renderMatchCornersCard()}
-                                        </div>
-                                    </div>
-                                )
-                            )
-                        ) : <EmptyCourt court={court} />
-                    )}
-
-                    {mode === 'timer' && (
-                        <section className={`flex min-h-[65vh] flex-col items-center justify-center rounded-3xl border-2 p-4 text-center shadow-2xl sm:p-8 ${isExpired ? 'border-red-500 bg-red-600/10' : 'border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210]'}`}>
-                            {activeMatch ? (
-                                <>
-                                    <p className="text-sm font-black uppercase tracking-[.25em] text-amber-700 dark:text-[#d4a843]">
-                                        {timerDirection === 'down' ? 'Hitung Mundur' : 'Hitung Maju'} · {activeMatch.timer.is_finished ? 'Selesai' : isExpired ? 'Waktu Habis' : activeMatch.timer.status === 'running' ? 'Berjalan' : activeMatch.timer.status === 'paused' ? 'Dijeda' : 'Berhenti'}
-                                    </p>
-                                    <p className={`mt-5 font-mono text-[22vw] font-black leading-none tracking-[-.08em] sm:text-[18vw] lg:text-[14vw] ${isExpired ? 'text-red-600 dark:text-rose-400 animate-pulse' : 'text-slate-950 dark:text-white'}`} aria-live="off">
-                                        {timerText}
-                                    </p>
-                                    <p className="mt-6 text-xl font-black text-slate-950 dark:text-white md:text-3xl">{isExpired ? 'WAKTU HABIS' : activeMatch.category_name}</p>
-                                    <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-white/50">Partai #{activeMatch.sequence} · {activeMatch.round_label}</p>
-                                </>
-                            ) : <EmptyCourt court={court} />}
-                        </section>
-                    )}
-
-                    {mode === 'result' && (
-                        <section className="min-h-[60vh] space-y-6">
-                            {snapshot.category_recap ? (
-                                <>
-                                    {/* Header Nomor Pertandingan & Progres Gelanggang */}
-                                    <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 md:p-8 shadow-xl">
-                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                            <div>
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider text-white ${snapshot.category_recap.type === 'embu' ? 'bg-blue-600' : 'bg-red-600'
-                                                        }`}>
-                                                        {snapshot.category_recap.type?.toUpperCase()}
-                                                    </span>
-                                                    <span className="rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 px-3 py-1 text-xs font-black border border-amber-300 dark:border-amber-700">
-                                                        <i className="fa-solid fa-location-dot mr-1" /> {court.name}
-                                                    </span>
-                                                    {snapshot.category_recap.is_locked ? (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 px-3 py-1 text-xs font-black border border-emerald-300 dark:border-emerald-700">
-                                                            <i className="fa-solid fa-lock text-[10px]" /> Terkunci {snapshot.category_recap.locked_at ? `(${snapshot.category_recap.locked_at})` : ''}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-white px-3 py-1 text-xs font-bold">
-                                                            <i className="fa-regular fa-clock text-[10px]" /> Pertandingan Berjalan
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <h1 className="mt-3 text-2xl font-black text-slate-950 dark:text-white sm:text-3xl md:text-4xl">
-                                                    {snapshot.category_recap.name}
-                                                </h1>
-                                                <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-500 dark:text-white/60">
-                                                    Rekapitulasi nilai seluruh partai nomor pertandingan ini pada {court.name}. Terhubung langsung secara real-time via Reverb.
-                                                </p>
-                                            </div>
-
-                                            <div className="flex items-center gap-4 shrink-0 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-4">
-                                                <div className="text-right">
-                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-white/50">Progres Partai</p>
-                                                    <p className="text-2xl font-black text-slate-950 dark:text-white">
-                                                        {snapshot.category_recap.completed_matches}/{snapshot.category_recap.total_matches}
-                                                    </p>
-                                                </div>
-                                                <div className="h-10 w-1 bg-slate-200 dark:bg-white/10 rounded-full" />
-                                                <div className="text-left">
-                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-white/50">Status</p>
-                                                    <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">
-                                                        {snapshot.category_recap.completed_matches === snapshot.category_recap.total_matches && snapshot.category_recap.total_matches > 0
-                                                            ? 'Selesai Sempurna'
-                                                            : `${snapshot.category_recap.total_matches - snapshot.category_recap.completed_matches} Tersisa`}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Highlight Partai Aktif bila sedang bertanding */}
-                                        {activeMatch && (
-                                            <div className="mt-5 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-blue-950/40 p-4 text-slate-950 dark:text-white shadow-sm">
-                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-sm">
-                                                            <i className="fa-solid fa-play" />
-                                                        </span>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="rounded-full bg-blue-600 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
-                                                                    SEDANG BERTANDING DI COURT
-                                                                </span>
-                                                                <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
-                                                                    Partai #{activeMatch.sequence} · {activeMatch.round_label}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-base font-black text-slate-950 dark:text-white mt-0.5">
-                                                                {activeMatch.participant_label || `${activeMatch.aka_label} vs ${activeMatch.shiro_label}`}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="rounded-xl bg-white dark:bg-black/40 border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-mono font-black text-blue-800 dark:text-blue-300">
-                                                            Status: {activeMatch.status_label}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Live Panel Wasit Nilai Embu */}
-                                                {activeMatch.category_type === 'embu' && (
-                                                    <div className="mt-3.5 border-t border-blue-200/80 dark:border-blue-900/60 pt-3">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="text-xs font-black uppercase tracking-wider text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
-                                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                                                                Live Nilai 5 Juri (Real-Time Reverb)
-                                                            </span>
-                                                            <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300">
-                                                                Nilai muncul otomatis saat juri mengisi
-                                                            </span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                                                            {[1, 2, 3, 4, 5].map((jNum) => {
-                                                                const jScore = activeMatch.judge_scores?.find((s) => s.judge_number === jNum);
-                                                                const verifiedScore = activeMatch.result?.judge_scores?.[jNum - 1];
-                                                                const hasScore = verifiedScore !== undefined || (jScore && Number(jScore.total_score) > 0);
-                                                                const scoreVal = isResultSaved
-                                                                    ? (verifiedScore !== undefined
-                                                                        ? Number(verifiedScore).toFixed(2)
-                                                                        : jScore?.total_score ? Number(jScore.total_score).toFixed(2) : '—')
-                                                                    : '—';
-                                                                const isSubmitted = jScore?.status === 'submitted' || verifiedScore !== undefined;
-
-                                                                return (
-                                                                    <div
-                                                                        key={jNum}
-                                                                        className={`rounded-xl border p-2.5 text-center transition-all ${hasScore
-                                                                            ? 'border-emerald-400 bg-white dark:bg-emerald-950/40 shadow-xs'
-                                                                            : 'border-blue-200/80 bg-white/70 dark:border-white/10 dark:bg-white/5'
-                                                                            }`}
-                                                                    >
-                                                                        <div className="flex items-center justify-between text-[10px] font-bold">
-                                                                            <span className="text-slate-600 dark:text-white/70">Juri {jNum}</span>
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${isSubmitted
-                                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
-                                                                                : hasScore
-                                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                                    : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60'
-                                                                                }`}>
-                                                                                {isSubmitted ? 'Terkirim' : hasScore ? 'Mengisi' : 'Menilai'}
-                                                                            </span>
-                                                                        </div>
-                                                                        <p className="mt-1 font-mono text-xl sm:text-2xl font-black text-slate-950 dark:text-white">
-                                                                            {scoreVal}
-                                                                        </p>
-                                                                        <p className="text-[10px] text-slate-500 dark:text-white/50 truncate mt-0.5">
-                                                                            {jScore?.referee_name || `Juri ${jNum}`}
-                                                                        </p>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Jika nomor pertandingan telah dikunci, otomatis tutup hasil & tampilkan mode standby */}
-                                    {snapshot.category_recap.is_locked && !showLockedArchive ? (
-                                        <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-3xl border-2 border-emerald-400/40 bg-gradient-to-b from-emerald-500/10 via-white dark:via-black/20 to-emerald-500/5 p-8 text-center shadow-xl">
-                                            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-600 text-white text-3xl shadow-lg ring-8 ring-emerald-500/20">
-                                                <i className="fa-solid fa-lock" />
-                                            </span>
-                                            <span className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-4 py-1 text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
-                                                HASIL PERTANDINGAN TELAH DIKUNCI RESMI
-                                            </span>
-                                            <h2 className="mt-3 text-3xl sm:text-4xl font-black text-slate-950 dark:text-white">
-                                                {snapshot.category_recap.name}
-                                            </h2>
-                                            <p className="mt-2 max-w-lg text-sm sm:text-base font-semibold text-slate-600 dark:text-white/70">
-                                                Seluruh partai nomor pertandingan ini telah selesai dan dikunci pada {snapshot.category_recap.locked_at || 'hari ini'}. Papan monitor ditutup otomatis.
-                                            </p>
-                                            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                                                <div className="inline-flex items-center gap-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-950 px-4 py-2.5 text-xs font-bold shadow-md">
-                                                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-                                                    <span>Menunggu nomor pertandingan berikutnya dibuka Panitera...</span>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowLockedArchive(true)}
-                                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-white/20 bg-white dark:bg-white/10 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-white hover:bg-slate-100 dark:hover:bg-white/20 transition shadow-2xs"
-                                                >
-                                                    <i className="fa-solid fa-eye text-[11px]" />
-                                                    Lihat Rekap Nilai Akhir
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {snapshot.category_recap.is_locked && (
-                                                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 text-emerald-900 dark:text-emerald-200 shadow-2xs">
-                                                    <span className="text-xs font-bold flex items-center gap-2">
-                                                        <i className="fa-solid fa-lock text-emerald-700 dark:text-emerald-400" />
-                                                        Menampilkan arsip rekap hasil nomor pertandingan yang telah dikunci.
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowLockedArchive(false)}
-                                                        className="text-xs font-black underline hover:text-emerald-950 dark:hover:text-white"
-                                                    >
-                                                        Tutup Kembali (Mode Siaga)
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Tabel Rekap Embu */}
-                                            {snapshot.category_recap.type === 'embu' ? (
-                                                <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] shadow-2xl">
-                                                    <div className="border-b border-slate-200 dark:border-white/10 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                        <div>
-                                                            <h3 className="text-lg font-black text-slate-950 dark:text-white">
-                                                                Papan Rekap Nilai & Klasemen Embu
-                                                            </h3>
-                                                            <p className="text-xs text-slate-500 dark:text-white/50">
-                                                                Urutan tampil dan akumulasi nilai resmi 5 Juri setelah membuang nilai tertinggi dan terendah.
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                                                                Live Reverb Aktif
-                                                            </span>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="overflow-x-auto">
-                                                        <table className="min-w-full text-left text-xs">
-                                                            <thead className="bg-slate-50 dark:bg-white/5 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-white/60">
-                                                                <tr>
-                                                                    <th className="px-4 py-3.5 text-center">Rank</th>
-                                                                    <th className="px-4 py-3.5">Partai & Babak</th>
-                                                                    <th className="px-4 py-3.5">Kontingen & Atlet</th>
-                                                                    <th className="px-4 py-3.5 text-center">Nilai 5 Juri</th>
-                                                                    <th className="px-4 py-3.5 text-center">Denda</th>
-                                                                    <th className="px-4 py-3.5 text-center">Durasi</th>
-                                                                    <th className="px-4 py-3.5 text-right font-black">Nilai Akhir</th>
-                                                                    <th className="px-4 py-3.5 text-center">Status</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                                                {snapshot.category_recap.matches.map((row) => {
-                                                                    const isRowActive = row.is_active;
-                                                                    const isCompleted = row.is_completed;
-                                                                    const score = row.embu_result;
-                                                                    const rank = row.rank;
-
-                                                                    return (
-                                                                        <tr
-                                                                            key={row.id}
-                                                                            className={`transition-colors ${isRowActive
-                                                                                ? 'bg-blue-100/60 dark:bg-blue-950/50 border-y-2 border-blue-400'
-                                                                                : isCompleted
-                                                                                    ? 'hover:bg-slate-50 dark:hover:bg-white/[.03]'
-                                                                                    : 'opacity-70 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/[.02]'
-                                                                                }`}
-                                                                        >
-                                                                            {/* Rank / Medali */}
-                                                                            <td className="px-4 py-4 text-center align-middle">
-                                                                                {rank === 1 ? (
-                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-sm shadow-md" title="Peringkat 1">
-                                                                                        🥇
-                                                                                    </span>
-                                                                                ) : rank === 2 ? (
-                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-950 font-black text-sm shadow-sm" title="Peringkat 2">
-                                                                                        🥈
-                                                                                    </span>
-                                                                                ) : rank === 3 ? (
-                                                                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-700 text-white font-black text-sm shadow-sm" title="Peringkat 3">
-                                                                                        🥉
-                                                                                    </span>
-                                                                                ) : rank === 'DQ' ? (
-                                                                                    <span className="inline-flex items-center justify-center rounded-md bg-red-600 text-white px-2 py-0.5 text-[10px] font-black uppercase">
-                                                                                        DQ
-                                                                                    </span>
-                                                                                ) : rank ? (
-                                                                                    <span className="font-mono text-sm font-bold text-slate-700 dark:text-white/70">
-                                                                                        #{rank}
-                                                                                    </span>
-                                                                                ) : isRowActive ? (
-                                                                                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-black animate-pulse">
-                                                                                        ▶
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono">-</span>
-                                                                                )}
-                                                                            </td>
-
-                                                                            {/* Partai & Babak */}
-                                                                            <td className="px-4 py-4 align-middle">
-                                                                                <div className="font-bold text-slate-900 dark:text-white text-sm">
-                                                                                    Partai #{row.sequence}
-                                                                                </div>
-                                                                                <div className="text-[11px] text-slate-500 dark:text-white/50">
-                                                                                    {row.round_label}
-                                                                                    {row.scheduled_at && ` · ${row.scheduled_at}`}
-                                                                                </div>
-                                                                            </td>
-
-                                                                            {/* Peserta & Atlet */}
-                                                                            <td className="px-4 py-4 align-middle">
-                                                                                <div className="font-black text-slate-950 dark:text-white text-sm">
-                                                                                    {row.participant_label}
-                                                                                </div>
-                                                                                {row.athletes?.length > 0 && (
-                                                                                    <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-semibold text-slate-600 dark:text-white/70">
-                                                                                        {row.athletes.join(' · ')}
-                                                                                    </div>
-                                                                                )}
-                                                                            </td>
-
-                                                                            {/* Nilai 5 Juri */}
-                                                                            <td className="px-4 py-4 text-center align-middle">
-                                                                                {score?.judge_scores?.length > 0 ? (
-                                                                                    <div className="flex flex-col items-center gap-1">
-                                                                                        <div className="flex flex-wrap items-center justify-center gap-1">
-                                                                                            {score.judge_scores.map((jScore, jIdx) => (
-                                                                                                <span
-                                                                                                    key={jIdx}
-                                                                                                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-bold ${score.is_live
-                                                                                                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 shadow-2xs'
-                                                                                                        : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-white'
-                                                                                                        }`}
-                                                                                                    title={`Juri ${jIdx + 1}: ${Number(jScore).toFixed(2)}`}
-                                                                                                >
-                                                                                                    {Number(jScore).toFixed(1)}
-                                                                                                </span>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                        {score.is_live && (
-                                                                                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 dark:text-amber-300">
-                                                                                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
-                                                                                                Live Wasit ({score.judge_scores.length}/5)
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ) : isRowActive ? (
-                                                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 animate-pulse">
-                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
-                                                                                        Sedang dinilai...
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-xs">Belum dinilai</span>
-                                                                                )}
-                                                                            </td>
-
-                                                                            {/* Denda */}
-                                                                            <td className="px-4 py-4 text-center align-middle">
-                                                                                {score && Number(score.total_penalty || 0) > 0 ? (
-                                                                                    <span className="inline-flex items-center rounded-md border border-rose-300 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 font-mono text-xs font-bold text-rose-700 dark:text-rose-300">
-                                                                                        -{Number(score.total_penalty).toFixed(1)}
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-xs">0</span>
-                                                                                )}
-                                                                            </td>
-
-                                                                            {/* Durasi */}
-                                                                            <td className="px-4 py-4 text-center align-middle font-mono text-xs font-bold text-slate-700 dark:text-white/70">
-                                                                                {score?.duration_seconds ? formatTimer(score.duration_seconds) : isRowActive && elapsedSeconds > 0 ? formatTimer(elapsedSeconds) : '-'}
-                                                                            </td>
-
-                                                                            {/* Nilai Akhir */}
-                                                                            <td className="px-4 py-4 text-right align-middle">
-                                                                                {score?.is_disqualified ? (
-                                                                                    <span className="text-red-600 font-bold text-xs uppercase">Diskualifikasi</span>
-                                                                                ) : score?.final_score !== undefined && score?.final_score !== null ? (
-                                                                                    <div>
-                                                                                        <span className={`font-mono text-lg md:text-xl font-black ${score.is_live
-                                                                                            ? 'text-amber-600 dark:text-amber-400'
-                                                                                            : 'text-emerald-700 dark:text-emerald-400'
-                                                                                            }`}>
-                                                                                            {Number(score.final_score).toFixed(2)}
-                                                                                        </span>
-                                                                                        {score.is_live && (
-                                                                                            <span className="block text-[9px] font-bold text-amber-700 dark:text-amber-300">
-                                                                                                (Sementara)
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <span className="text-slate-400 dark:text-white/30 font-mono text-sm">-</span>
-                                                                                )}
-                                                                            </td>
-
-                                                                            {/* Status */}
-                                                                            <td className="px-4 py-4 text-center align-middle">
-                                                                                {isRowActive ? (
-                                                                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider animate-pulse shadow-xs">
-                                                                                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                                                                                        {score?.is_live ? 'DINILAI WASIT' : 'SEDANG TAMPIL'}
-                                                                                    </span>
-                                                                                ) : isCompleted ? (
-                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 text-[10.5px] font-bold border border-emerald-300 dark:border-emerald-700">
-                                                                                        <i className="fa-solid fa-check text-[9px]" /> Selesai
-                                                                                    </span>
-                                                                                ) : score?.is_live ? (
-                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold border border-amber-300 dark:border-amber-700">
-                                                                                        Menunggu Simpan
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white/60 px-2 py-0.5 text-[10px] font-semibold">
-                                                                                        {row.status_label}
-                                                                                    </span>
-                                                                                )}
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                /* Bagan Randori Tournament Tree */
-                                                <RandoriBracketTree
-                                                    matches={snapshot.category_recap.matches}
-                                                    activeEvent={activeEvent}
-                                                    categoryName={snapshot.category_recap.name}
-                                                    categoryFormat={snapshot.category_recap.format}
-                                                    isMonitor={true}
-                                                    activeMatchId={activeMatch?.id}
-                                                />
-                                            )}
-                                        </>
-                                    )}
-                                </>
-                            ) : resultMatch?.result ? (
-                                /* Fallback Single Result jika category_recap belum terload */
-                                <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-6 md:p-10 shadow-2xl">
-                                    <div className="text-center">
-                                        <p className="text-xs font-black uppercase tracking-[.18em] text-amber-700 dark:text-[#d4a843] sm:text-sm">Hasil Terverifikasi · Partai #{resultMatch.sequence}</p>
-                                        <h2 className="mt-3 text-2xl font-black text-slate-950 dark:text-white sm:text-3xl md:text-5xl">{resultMatch.category_name}</h2>
-                                        <p className="mt-2 font-semibold text-slate-600 dark:text-white/50">{resultMatch.round_label}</p>
-                                    </div>
-                                    {resultMatch.category_type === 'embu' ? (
-                                        <div className="mx-auto mt-7 max-w-5xl sm:mt-10">
-                                            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                                                {resultMatch.result.judge_scores.map((score, index) => (
-                                                    <div key={`${index}-${score}`} className="rounded-2xl border-2 border-blue-200 dark:border-blue-400/20 bg-blue-50/70 dark:bg-blue-400/10 p-3 text-center sm:p-4 shadow-xs">
-                                                        <p className="text-xs font-black text-blue-800 dark:text-blue-300">Juri {index + 1}</p>
-                                                        <p className="mt-2 text-2xl font-black text-slate-950 dark:text-white sm:text-3xl">{Number(score).toFixed(2)}</p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-                                                <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-5 text-center">
-                                                    <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-white/45">Durasi</p>
-                                                    <p className="mt-2 text-3xl font-black text-slate-950 dark:text-white">{resultMatch.result.duration_seconds ?? 0}s</p>
-                                                </div>
-                                                <div className="rounded-2xl border-2 border-rose-300 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 p-5 text-center">
-                                                    <p className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Total Denda</p>
-                                                    <p className="mt-2 text-3xl font-black text-rose-700 dark:text-rose-300">-{Number(resultMatch.result.total_penalty ?? resultMatch.result.time_penalty).toFixed(2)}</p>
-                                                </div>
-                                                <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-600 text-white dark:bg-emerald-500/20 p-5 text-center shadow-xl force-white">
-                                                    <p className="text-xs font-black uppercase tracking-widest text-emerald-100 dark:text-emerald-300 force-white">NILAI AKHIR</p>
-                                                    <p className="mt-2 text-4xl font-black text-white dark:text-emerald-300 force-white">{Number(resultMatch.result.final_score).toFixed(2)}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            ) : (
-                                <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 dark:border-white/15 bg-white dark:bg-[#151210] p-8 text-center">
-                                    <i className="fa-solid fa-ranking-star text-5xl text-amber-500/40" aria-hidden="true" />
-                                    <h2 className="mt-5 text-2xl font-black text-slate-950 dark:text-white">Menunggu Nilai Partai</h2>
-                                    <p className="mt-2 text-slate-600 dark:text-white/50 max-w-md">Belum ada pertandingan yang dinilai atau partai yang dibuka pada {court.name}. Layar rekap akan muncul otomatis saat Panitera membuka partai.</p>
-                                </div>
-                            )}
-                        </section>
-                    )}
-
-                    {mode === 'officials' && (() => {
-                        const officialStaff = (snapshot.staff || [])
-                            .filter((member) => member.judge_number !== null && member.judge_number !== undefined)
-                            .slice(0, 5);
-
-                        return (
-                            <section className="min-h-[60vh] rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151210] p-4 shadow-2xl sm:p-6 md:p-10">
-                                <div className="text-center">
-                                    <p className="text-sm font-black uppercase tracking-[.18em] text-amber-700 dark:text-[#d4a843]">Susunan Wasit & Juri</p>
-                                    <h2 className="mt-3 text-3xl font-black text-slate-950 dark:text-white md:text-5xl">{court.name}</h2>
-                                    <p className="mt-2 text-sm font-medium text-slate-600 dark:text-white/50">Diurutkan dari Wasit Utama hingga Juri 5</p>
-                                </div>
-                                <div className="mx-auto mt-10 grid max-w-7xl gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                                    {officialStaff.map((member) => {
-                                        const initials = member.name?.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WS';
-                                        return (
-                                            <article key={member.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 shadow-xs">
-                                                <div className="aspect-[4/3] overflow-hidden bg-slate-200 dark:bg-black/20">
-                                                    {member.photo_url ? (
-                                                        <img src={member.photo_url} alt={`Foto ${member.name}`} className="h-full w-full object-cover" />
-                                                    ) : (
-                                                        <div className="flex h-full items-center justify-center text-4xl font-black text-amber-700 dark:text-[#d4a843]">{initials}</div>
-                                                    )}
-                                                </div>
-                                                <div className="p-5">
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <span className="rounded-full bg-amber-100 dark:bg-[#d4a843]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900 dark:text-[#d4a843]">
-                                                            Juri {member.judge_number || '—'}
-                                                        </span>
-                                                        <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${member.is_present
-                                                            ? 'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/15 dark:text-emerald-300'
-                                                            : 'border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200'
-                                                            }`}>
-                                                            {member.is_present ? 'Hadir' : 'Belum Scan'}
-                                                        </span>
-                                                    </div>
-                                                    <p className="mt-4 text-lg font-black leading-tight text-slate-950 dark:text-white">{member.name}</p>
-                                                    <p className="mt-2 text-sm font-bold text-amber-700 dark:text-[#d4a843]">{member.role}</p>
-                                                    {(member.certification || member.region) && (
-                                                        <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-white/45">
-                                                            {[member.certification, member.region].filter(Boolean).join(' · ')}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </article>
-                                        );
-                                    })}
-                                    {officialStaff.length === 0 && (
-                                        <p className="rounded-2xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-slate-500 dark:text-white/45 sm:col-span-2 xl:col-span-5">
-                                            Wasit dan Juri belum ditugaskan ke court ini.
-                                        </p>
-                                    )}
-                                </div>
-                            </section>
-                        );
-                    })()}
-                </div>
-            </main>
+                </main>
+            </div>
         </>
     );
 }

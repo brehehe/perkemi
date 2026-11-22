@@ -2,7 +2,6 @@
 
 namespace App\Services\Panitera;
 
-use App\Events\PaniteraMatchStateUpdated;
 use App\Models\EmbuScore;
 use App\Models\Event;
 use App\Models\EventCourt;
@@ -128,7 +127,7 @@ class PaniteraMatchWorkflow
             $updatedMatch = $lockedMatch->fresh(['matchCategory', 'court', 'embuScores', 'randoriScore']);
             abort_unless($updatedMatch instanceof TournamentMatch, 404);
 
-            $this->broadcastMatchState($updatedMatch, $action);
+            $this->timerState->broadcastUpdate($updatedMatch, $action);
 
             return $updatedMatch;
         });
@@ -152,7 +151,7 @@ class PaniteraMatchWorkflow
                     'timer_elapsed_ms' => 0,
                     'timer_version' => max(0, (int) $match->timer_version) + 1,
                 ]);
-                $this->broadcastMatchState($match, 'release');
+                $this->timerState->broadcastUpdate($match, 'release');
             });
     }
 
@@ -444,22 +443,5 @@ class PaniteraMatchWorkflow
             'final_score' => max(0, (float) $score->middle_score - (float) $score->violation_penalty),
             'status' => 'draft',
         ]);
-    }
-
-    private function broadcastMatchState(TournamentMatch $match, string $action): void
-    {
-        $serverNow = now();
-
-        PaniteraMatchStateUpdated::dispatch(
-            eventId: $match->event_id,
-            courtId: (string) $match->event_court_id,
-            matchId: $match->id,
-            action: $action,
-            matchStatus: $match->status,
-            callStatus: $match->call_status,
-            timer: $this->timerState->timer($match),
-            serverNow: $serverNow->toIso8601String(),
-            serverNowMs: $serverNow->getTimestampMs(),
-        );
     }
 }

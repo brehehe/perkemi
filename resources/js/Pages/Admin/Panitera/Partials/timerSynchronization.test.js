@@ -5,6 +5,7 @@ import {
     calculateElapsedMilliseconds,
     createServerClock,
     displayedTimerSeconds,
+    hasTimerStateConflict,
     timerSynchronizationPollDelay,
 } from './timerSynchronization.js';
 
@@ -84,6 +85,38 @@ test('old snapshots cannot undo a pause, reset, or switch to another match', () 
     assert.equal(acceptTimerState(current, { ...current, event_id: 'other', server_now_ms: epoch + 5000 }), current);
     const reset = { ...current, timer: { ...running, status: 'stopped', elapsed_ms: 0, version: 6 }, server_now_ms: epoch + 3000 };
     assert.equal(acceptTimerState(current, reset), reset);
+});
+
+test('equal versions are idempotent and conflicting websocket state requires a canonical snapshot', () => {
+    const current = {
+        event_id: 'event', court_id: 'court', match_id: 'match', match_status: 'in_progress',
+        timer: { ...running, status: 'paused', started_at_ms: null, elapsed_ms: 34000, version: 8 },
+        server_now_ms: epoch + 1000,
+    };
+    const duplicate = { ...current, server_now_ms: epoch + 5000 };
+    const conflict = {
+        ...current,
+        timer: { ...current.timer, status: 'running', started_at_ms: epoch + 5000 },
+        server_now_ms: epoch + 5000,
+    };
+
+    assert.equal(hasTimerStateConflict(current, duplicate), false);
+    assert.equal(acceptTimerState(current, duplicate), current);
+    assert.equal(hasTimerStateConflict(current, conflict), true);
+    assert.equal(acceptTimerState(current, conflict), current);
+    assert.equal(acceptTimerState(current, conflict, { canonical: true }), conflict);
+});
+
+test('state from another court is rejected even when its version and timestamp are newer', () => {
+    const current = {
+        event_id: 'event', court_id: 'court-a', match_id: 'match',
+        timer: { ...running, version: 4 }, server_now_ms: epoch + 1000,
+    };
+    const otherCourt = {
+        ...current, court_id: 'court-b', timer: { ...running, version: 9 }, server_now_ms: epoch + 5000,
+    };
+
+    assert.equal(acceptTimerState(current, otherCourt), current);
 });
 
 test('reset, direction and expiration use the same display calculation', () => {

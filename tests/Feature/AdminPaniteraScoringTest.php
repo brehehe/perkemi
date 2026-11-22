@@ -1688,10 +1688,11 @@ test('the court monitor shows the registered Embu athletes and techniques', func
         'phone' => '081234567891',
     ]);
     $athletes = collect(['Kenshi Monitor Satu', 'Kenshi Monitor Dua'])
-        ->map(fn (string $name): Athlete => Athlete::query()->create([
+        ->map(fn (string $name, int $index): Athlete => Athlete::query()->create([
             'contingent_id' => $contingent->id,
             'name' => $name,
             'gender' => 'L',
+            'profile_photo_path' => $index === 0 ? 'athlete-photos/kenshi-monitor-satu.webp' : null,
         ]));
     $entries = $athletes->map(fn (Athlete $athlete): AthleteMatchCategoryEntry => AthleteMatchCategoryEntry::query()->create([
         'event_id' => $event->id,
@@ -1738,7 +1739,9 @@ test('the court monitor shows the registered Embu athletes and techniques', func
         ->assertJsonPath('active_match.id', $match->id)
         ->assertJsonPath('active_match.participant.kind', 'Pasangan')
         ->assertJsonPath('active_match.participant.athletes.0.name', 'Kenshi Monitor Satu')
+        ->assertJsonPath('active_match.participant.athletes.0.photo_url', route('athletes.photo', $athletes->first()))
         ->assertJsonPath('active_match.participant.athletes.1.name', 'Kenshi Monitor Dua')
+        ->assertJsonPath('active_match.participant.athletes.1.photo_url', null)
         ->assertJsonPath('active_match.participant.techniques.0.name', 'Ryuoken Dai Ichi');
 });
 
@@ -1807,9 +1810,16 @@ test('an assigned clerk stores a verified embu trimmed score with automatic pena
     $event = createPaniteraEvent('Event Nilai Embu');
     $user = createPaniteraUser($event);
     [$category, $drawing] = createPaniteraCategory($event, 'Embu Tandoku Putra', 'embu', 'embu_direct_final');
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Tatami Legacy Embu',
+        'court_number' => 1,
+        'is_active' => true,
+    ]);
     $match = TournamentMatch::create([
         'tournament_drawing_id' => $drawing->id,
         'event_id' => $event->id,
+        'event_court_id' => $court->id,
         'event_match_category_id' => $category->id,
         'phase' => 'preliminary',
         'round_label' => 'Babak Penyisihan',
@@ -1818,6 +1828,8 @@ test('an assigned clerk stores a verified embu trimmed score with automatic pena
         'participant_label' => 'Kontingen A · Tim 1',
         'metadata' => ['key' => 'team-a', 'contingent_name' => 'Kontingen A'],
     ]);
+
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
 
     $this->actingAs($user)
         ->post("/admin/panitera/scoring/embu-result/{$match->id}", [
@@ -1841,6 +1853,13 @@ test('an assigned clerk stores a verified embu trimmed score with automatic pena
         ->and($match->fresh()->status)->toBe('completed')
         ->and($match->fresh()->call_status)->toBe('completed')
         ->and($match->fresh()->timer_status)->toBe('stopped');
+
+    EventFacade::assertDispatched(
+        PaniteraMatchStateUpdated::class,
+        fn (PaniteraMatchStateUpdated $broadcast): bool => $broadcast->matchId === $match->id
+            && $broadcast->action === 'save_result'
+            && $broadcast->timer['version'] === 1,
+    );
 });
 
 test('randori rejects a drawn score and accepts a result signed by all six parties', function () {

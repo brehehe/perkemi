@@ -2,10 +2,12 @@
 
 use App\Enums\PaymentStatus;
 use App\Enums\RegistrationStatus;
+use App\Events\PaniteraMatchStateUpdated;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Contingent;
 use App\Models\Event;
+use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
 use App\Models\Registration;
 use App\Models\Role;
@@ -15,6 +17,7 @@ use App\Models\User;
 use App\Services\TournamentDrawingGenerator;
 use App\Services\WeighInService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event as EventFacade;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
@@ -317,6 +320,13 @@ test('syncMatchDisqualifications flags bracket and applies WO when match is read
         'is_active' => true,
     ]);
 
+    $court = EventCourt::create([
+        'event_id' => $event->id,
+        'name' => 'Tatami WO',
+        'court_number' => 1,
+        'is_active' => true,
+    ]);
+
     $contingentA = makeTestContingent('Surabaya', 'Surabaya');
     $contingentB = makeTestContingent('Malang', 'Malang');
 
@@ -347,6 +357,7 @@ test('syncMatchDisqualifications flags bracket and applies WO when match is read
 
     $match = TournamentMatch::create([
         'event_id' => $event->id,
+        'event_court_id' => $court->id,
         'tournament_drawing_id' => $drawing->id,
         'event_match_category_id' => $category->id,
         'phase' => 'upper',
@@ -354,6 +365,10 @@ test('syncMatchDisqualifications flags bracket and applies WO when match is read
         'round_number' => 1,
         'round_label' => 'Babak Penyisihan',
         'status' => 'ready',
+        'timer_status' => 'paused',
+        'timer_elapsed_seconds' => 12,
+        'timer_elapsed_ms' => 12345,
+        'timer_version' => 4,
         'red_entry_id' => $redEntry->id,
         'blue_entry_id' => $blueEntry->id,
         'red_label' => 'Kenshi Merah',
@@ -364,9 +379,9 @@ test('syncMatchDisqualifications flags bracket and applies WO when match is read
         ],
     ]);
 
-    // Red fails weigh-in on match day -> overweight
     $user = User::factory()->create();
     $user->assignRole('Super Admin');
+    EventFacade::fake([PaniteraMatchStateUpdated::class]);
     app(WeighInService::class)->recordWeighIn($redEntry, 67.5, 'Overweight Hari-H', $user->id);
 
     $match->refresh();
@@ -374,7 +389,17 @@ test('syncMatchDisqualifications flags bracket and applies WO when match is read
         ->and($match->metadata['red_weigh_in_disqualified'])->toBeTrue()
         ->and($match->metadata['result']['is_walkover'])->toBeTrue()
         ->and($match->metadata['result']['win_method'])->toBe('walkover_weigh_in')
-        ->and($match->metadata['result']['winner_corner'])->toBe('blue');
+        ->and($match->metadata['result']['winner_corner'])->toBe('blue')
+        ->and($match->timer_status)->toBe('stopped')
+        ->and($match->timer_elapsed_ms)->toBe(12345)
+        ->and($match->timer_version)->toBe(5);
+
+    EventFacade::assertDispatched(
+        PaniteraMatchStateUpdated::class,
+        fn (PaniteraMatchStateUpdated $broadcast): bool => $broadcast->matchId === $match->id
+            && $broadcast->action === 'weigh_in_walkover'
+            && $broadcast->timer['version'] === 5,
+    );
 });
 
 test('admin can view berita acara export page', function () {

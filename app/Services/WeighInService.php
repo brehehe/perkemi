@@ -6,11 +6,14 @@ use App\Models\AthleteMatchCategoryEntry;
 use App\Models\Event;
 use App\Models\EventMatchCategory;
 use App\Models\TournamentMatch;
+use App\Services\Panitera\PaniteraTimerState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class WeighInService
 {
+    public function __construct(private readonly PaniteraTimerState $timerState) {}
+
     /**
      * Evaluasi status timbang badan berdasarkan berat aktual dan batas kelas berat.
      */
@@ -108,8 +111,10 @@ class WeighInService
     public function applyWeighInWalkover(TournamentMatch $match, string $disqualifiedCorner): TournamentMatch
     {
         return DB::transaction(function () use ($match, $disqualifiedCorner): TournamentMatch {
+            $lockedMatch = TournamentMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
+            $lockedMatch->loadMissing('matchCategory:id,name,type');
             $winnerCorner = $disqualifiedCorner === 'red' ? 'blue' : 'red';
-            $metadata = $match->metadata ?? [];
+            $metadata = $lockedMatch->metadata ?? [];
             $metadata['result'] = [
                 'winner_corner' => $winnerCorner,
                 'win_method' => 'walkover_weigh_in',
@@ -126,31 +131,39 @@ class WeighInService
                 $metadata['blue_weigh_in_disqualified'] = true;
             }
 
-            $match->update([
+            $elapsedMilliseconds = $this->timerState->elapsedMilliseconds($lockedMatch);
+            $lockedMatch->update([
                 'status' => 'completed',
                 'call_status' => 'completed',
                 'timer_status' => 'stopped',
                 'timer_started_at' => null,
                 'timer_started_at_ms' => null,
+                'timer_elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
+                'timer_elapsed_ms' => $elapsedMilliseconds,
+                'timer_version' => max(0, (int) $lockedMatch->timer_version) + 1,
                 'metadata' => $metadata,
             ]);
 
             $winner = $metadata[$winnerCorner === 'red' ? 'red' : 'blue'] ?? null;
 
-            if ($winner && $match->nextMatch) {
-                $sources = $match->nextMatch->sourceMatches()->orderBy('match_sequence')->pluck('id')->values();
-                $corner = $sources->search($match->id) === 1 ? 'blue' : 'red';
+            if ($winner && $lockedMatch->nextMatch) {
+                $sources = $lockedMatch->nextMatch->sourceMatches()->orderBy('match_sequence')->pluck('id')->values();
+                $corner = $sources->search($lockedMatch->id) === 1 ? 'blue' : 'red';
 
-                $nextMetadata = $match->nextMatch->metadata ?? [];
+                $nextMetadata = $lockedMatch->nextMatch->metadata ?? [];
                 $nextMetadata[$corner] = $winner;
-                $match->nextMatch->update([
+                $lockedMatch->nextMatch->update([
                     $corner === 'red' ? 'red_entry_id' : 'blue_entry_id' => $winner['entry_id'] ?? null,
                     $corner === 'red' ? 'red_label' : 'blue_label' => $winner['label'] ?? 'Pemenang WO',
                     'metadata' => $nextMetadata,
                 ]);
             }
 
-            return $match->fresh(['nextMatch']);
+            $updatedMatch = $lockedMatch->fresh(['matchCategory', 'nextMatch']);
+            abort_unless($updatedMatch instanceof TournamentMatch, 404);
+            $this->timerState->broadcastUpdate($updatedMatch, 'weigh_in_walkover');
+
+            return $updatedMatch;
         });
     }
 

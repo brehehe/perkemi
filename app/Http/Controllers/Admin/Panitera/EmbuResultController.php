@@ -12,6 +12,7 @@ use App\Services\Panitera\EmbuResultService;
 use App\Services\Panitera\EmbuScoreCalculator;
 use App\Services\Panitera\EventContext;
 use App\Services\Panitera\PaniteraCourtAccess;
+use App\Services\Panitera\PaniteraTimerState;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -89,6 +90,7 @@ class EmbuResultController extends Controller
         EventContext $eventContext,
         PaniteraCourtAccess $courtAccess,
         EmbuScoreCalculator $calculator,
+        PaniteraTimerState $timerState,
     ): RedirectResponse {
         $event = $eventContext->eventFor($request);
         $eventContext->ensureCanManage($request, $event);
@@ -183,6 +185,7 @@ class EmbuResultController extends Controller
             'timer_version' => max(0, (int) $tournamentMatch->timer_version) + 1,
             'metadata' => $metadata,
         ]);
+        $timerState->broadcastUpdate($tournamentMatch, 'save_result');
 
         $redirect = $request->boolean('return_to_match')
             ? redirect()->route('admin.panitera.matches.show', [

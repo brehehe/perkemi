@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     acceptTimerState,
     createServerClock,
+    hasTimerStateConflict,
     monotonicNow,
     timerSynchronizationPollDelay,
 } from './timerSynchronization';
+import { listenForPaniteraTimerState } from './timerChannel';
 
 export default function useLiveTimer({ initialState, stateUrl, channelName, eventId, courtId, onChange }) {
     const [state, setState] = useState(initialState);
@@ -21,9 +23,9 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
     onChangeRef.current = onChange;
     const expectedMatchId = courtId ? null : initialState.match_id;
 
-    const acceptState = useCallback((incoming) => {
+    const acceptState = useCallback((incoming, options = {}) => {
         const current = stateRef.current;
-        const next = acceptTimerState(current, incoming);
+        const next = acceptTimerState(current, incoming, options);
         if (next === current) return;
         stateRef.current = next;
         setState(next);
@@ -37,7 +39,7 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             stateRef.current = initialState;
             setState(initialState);
         } else {
-            acceptState(initialState);
+            acceptState(initialState, { canonical: true });
         }
     }, [initialState, stateUrl, acceptState]);
 
@@ -57,7 +59,7 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             if (controller.signal.aborted) return;
             clockRef.current.observe(payload, sentAt, receivedAt);
             setSynchronized(clockRef.current.synchronized);
-            acceptState(payload);
+            acceptState(payload, { canonical: true });
             setHttpConnected(true);
         } catch {
             if (requestRef.current === controller) setHttpConnected(false);
@@ -121,7 +123,12 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
             if (expectedMatchId && incoming.match_id !== expectedMatchId) return;
             if (courtId && incoming.action === 'release') { refresh(); return; }
             const cleared = courtId && incoming.match_status === 'completed';
-            acceptState(cleared ? { ...incoming, match_id: null, timer: null } : incoming);
+            const nextState = cleared ? { ...incoming, match_id: null, timer: null } : incoming;
+            if (hasTimerStateConflict(stateRef.current, nextState)) {
+                refresh();
+                return;
+            }
+            acceptState(nextState);
             if (!clockRef.current.synchronized) refresh();
         };
         const connection = window.Echo.connector?.pusher?.connection;
@@ -133,10 +140,10 @@ export default function useLiveTimer({ initialState, stateUrl, channelName, even
         if (channel.subscription?.subscribed) subscribed();
         channel.subscription?.bind('pusher:subscription_succeeded', subscribed);
         channel.subscription?.bind('pusher:subscription_error', disconnected);
-        channel.listen('.panitera.match-state.updated', handleState);
+        const stopListeningForTimer = listenForPaniteraTimerState(channel, handleState);
         return () => {
             connection?.unbind('state_change', onConnectionChange);
-            channel.stopListening('.panitera.match-state.updated', handleState);
+            stopListeningForTimer();
             channel.subscription?.unbind('pusher:subscription_succeeded', subscribed);
             channel.subscription?.unbind('pusher:subscription_error', disconnected);
             window.Echo.leave(channelName);

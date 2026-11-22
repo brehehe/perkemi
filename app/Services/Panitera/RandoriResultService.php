@@ -2,7 +2,6 @@
 
 namespace App\Services\Panitera;
 
-use App\Events\PaniteraMatchStateUpdated;
 use App\Models\AthleteMatchCategoryEntry;
 use App\Models\RandoriScore;
 use App\Models\TournamentMatch;
@@ -187,18 +186,7 @@ class RandoriResultService
             $this->routeResult($match->fresh(['drawing', 'nextMatch']), $winner, $loser);
 
             if ($match->event_court_id) {
-                $serverNow = now();
-                PaniteraMatchStateUpdated::dispatch(
-                    eventId: $match->event_id,
-                    courtId: $match->event_court_id,
-                    matchId: $match->id,
-                    action: 'save_result',
-                    matchStatus: 'completed',
-                    callStatus: 'completed',
-                    timer: $this->timerState->timer($match),
-                    serverNow: $serverNow->toIso8601String(),
-                    serverNowMs: $serverNow->getTimestampMs(),
-                );
+                $this->timerState->broadcastUpdate($match, 'save_result');
             }
 
             return $score;

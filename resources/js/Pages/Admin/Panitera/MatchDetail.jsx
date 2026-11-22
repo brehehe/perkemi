@@ -620,13 +620,13 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
             channel.listen('.embu.judge-score.updated', refreshLiveData);
             channel.listen('.embu.penalties.updated', refreshLiveData);
         }
-        channel.listen('.var.updated', refreshLiveData);
+        channel.listen('.var.review.updated', refreshLiveData);
         return () => {
             if (match.category_type === 'embu') {
                 channel.stopListening('.embu.judge-score.updated', refreshLiveData);
                 channel.stopListening('.embu.penalties.updated', refreshLiveData);
             }
-            channel.stopListening('.var.updated', refreshLiveData);
+            channel.stopListening('.var.review.updated', refreshLiveData);
         };
     }, [activeEvent.id, match.category_type, match.id, refreshLiveData]);
 
@@ -653,7 +653,7 @@ export default function MatchDetail({ activeEvent, events = [], match: initialMa
                 data: JSON.stringify({ event_id: activeEvent.id, action, timer_version: match.timer.version, ...payload }),
                 headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
             });
-            liveTimer.acceptState({ ...JSON.parse(response.data), action });
+            liveTimer.acceptState({ ...JSON.parse(response.data), action }, { canonical: true });
             if (action === 'finish') setFinishConfirmationOpen(false);
             if (action === 'reset_timer') setResetTimerConfirmationOpen(false);
             if (action === 'restart') setRestartConfirmationOpen(false);

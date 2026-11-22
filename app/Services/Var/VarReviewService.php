@@ -5,11 +5,14 @@ namespace App\Services\Var;
 use App\Events\VarReviewStateUpdated;
 use App\Models\TournamentMatch;
 use App\Models\TournamentMatchVarReview;
+use App\Services\Panitera\PaniteraTimerState;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class VarReviewService
 {
+    public function __construct(private readonly PaniteraTimerState $timerState) {}
+
     /**
      * Calculate remaining VAR challenge cards for AKA and SHIRO corners.
      * Each corner begins with 1 challenge card. If a challenge is rejected (upheld),
@@ -49,66 +52,69 @@ class VarReviewService
     {
         $corner = $input['corner'] ?? 'neutral';
         $requestedBy = $input['requested_by'] ?? ($corner === 'aka' ? 'aka_coach' : ($corner === 'shiro' ? 'shiro_coach' : 'referee'));
-        $cards = $this->calculateCardsRemaining($match);
 
-        if (in_array($requestedBy, ['aka_coach', 'aka'], true) && $cards['aka'] <= 0) {
-            throw new InvalidArgumentException('Sudut AKA sudah tidak memiliki kuota kartu challenge VAR.');
-        }
+        return DB::transaction(function () use ($match, $input, $corner, $requestedBy, $userName) {
+            $lockedMatch = TournamentMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
+            $lockedMatch->loadMissing('matchCategory:id,name,type');
 
-        if (in_array($requestedBy, ['shiro_coach', 'shiro'], true) && $cards['shiro'] <= 0) {
-            throw new InvalidArgumentException('Sudut SHIRO sudah tidak memiliki kuota kartu challenge VAR.');
-        }
-
-        return DB::transaction(function () use ($match, $input, $corner, $requestedBy, $userName, $cards) {
-            // Check if active review already exists
             $existing = TournamentMatchVarReview::query()
-                ->where('tournament_match_id', $match->id)
+                ->where('tournament_match_id', $lockedMatch->id)
                 ->where('status', 'reviewing')
+                ->lockForUpdate()
                 ->first();
 
             if ($existing) {
                 return $existing;
             }
 
-            // Auto-pause match timer if currently running
-            $metadata = $match->metadata ?? [];
-            if ($match->timer_status === 'running') {
-                $now = now();
-                $elapsed = (int) ($match->timer_elapsed_seconds ?? 0);
-                if ($match->timer_started_at) {
-                    $elapsed += max(0, $now->diffInSeconds($match->timer_started_at));
-                }
+            $cards = $this->calculateCardsRemaining($lockedMatch);
+            if (in_array($requestedBy, ['aka_coach', 'aka'], true) && $cards['aka'] <= 0) {
+                throw new InvalidArgumentException('Sudut AKA sudah tidak memiliki kuota kartu challenge VAR.');
+            }
 
-                $match->update([
+            if (in_array($requestedBy, ['shiro_coach', 'shiro'], true) && $cards['shiro'] <= 0) {
+                throw new InvalidArgumentException('Sudut SHIRO sudah tidak memiliki kuota kartu challenge VAR.');
+            }
+
+            $elapsedMilliseconds = $this->timerState->elapsedMilliseconds($lockedMatch);
+            $metadata = $lockedMatch->metadata ?? [];
+            if ($lockedMatch->timer_status === 'running') {
+                $lockedMatch->update([
                     'timer_status' => 'paused',
-                    'timer_elapsed_seconds' => $elapsed,
+                    'timer_elapsed_seconds' => (int) floor($elapsedMilliseconds / 1000),
+                    'timer_elapsed_ms' => $elapsedMilliseconds,
                     'timer_started_at' => null,
+                    'timer_started_at_ms' => null,
+                    'timer_version' => max(0, (int) $lockedMatch->timer_version) + 1,
                 ]);
+
+                $lockedMatch->refresh();
+                $lockedMatch->loadMissing('matchCategory:id,name,type');
+                $this->timerState->broadcastUpdate($lockedMatch, 'var_pause');
             }
 
             $metadata['under_var_review'] = true;
             $metadata['var_review_reason'] = $input['reason'] ?? 'Tantangan Video Review';
             $metadata['var_review_corner'] = $corner;
-            $match->update(['metadata' => $metadata]);
+            $lockedMatch->update(['metadata' => $metadata]);
 
             $review = TournamentMatchVarReview::query()->create([
-                'tournament_match_id' => $match->id,
-                'event_id' => $match->event_id,
+                'tournament_match_id' => $lockedMatch->id,
+                'event_id' => $lockedMatch->event_id,
                 'corner' => $corner,
                 'requested_by' => $requestedBy,
                 'reason' => $input['reason'] ?? 'Pemeriksaan Video Replay',
-                'match_second' => (int) ($input['match_second'] ?? $match->timer_elapsed_seconds ?? 0),
+                'match_second' => (int) ($input['match_second'] ?? floor($elapsedMilliseconds / 1000)),
                 'status' => 'reviewing',
                 'camera_angle' => $input['camera_angle'] ?? 'cam_table',
                 'video_url' => $input['video_url'] ?? null,
                 'reviewed_by' => $userName,
             ]);
 
-            // Broadcast real-time event to Court Monitor & Panitera
             event(new VarReviewStateUpdated(
-                eventId: $match->event_id,
-                courtId: (string) ($match->event_court_id ?? ''),
-                matchId: $match->id,
+                eventId: $lockedMatch->event_id,
+                courtId: (string) ($lockedMatch->event_court_id ?? ''),
+                matchId: $lockedMatch->id,
                 isUnderReview: true,
                 reviewData: $this->formatReview($review),
                 cardsRemaining: $cards,

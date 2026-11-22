@@ -2,7 +2,6 @@
 
 namespace App\Services\Panitera;
 
-use App\Events\PaniteraMatchStateUpdated;
 use App\Models\EmbuJudgeScore;
 use App\Models\EmbuScore;
 use App\Models\Event;
@@ -124,25 +123,12 @@ class VerifyEmbuResult
             ]);
 
             $lockedMatch->refresh();
-            $serverNow = now();
-
-            PaniteraMatchStateUpdated::dispatch(
-                eventId: $event->id,
-                courtId: (string) $lockedMatch->event_court_id,
-                matchId: $lockedMatch->id,
-                action: 'save_result',
-                matchStatus: 'completed',
-                callStatus: 'completed',
-                timer: [
-                    ...$this->timerState->timer($lockedMatch),
-                    'time_penalty' => $calculation['time_penalty'],
-                    'violation_penalty' => $calculation['violation_penalty'],
-                    'total_penalty' => $calculation['total_penalty'],
-                    'is_disqualified' => $calculation['is_disqualified'],
-                ],
-                serverNow: $serverNow->toIso8601String(),
-                serverNowMs: $serverNow->getTimestampMs(),
-            );
+            $this->timerState->broadcastUpdate($lockedMatch, 'save_result', [
+                'time_penalty' => $calculation['time_penalty'],
+                'violation_penalty' => $calculation['violation_penalty'],
+                'total_penalty' => $calculation['total_penalty'],
+                'is_disqualified' => $calculation['is_disqualified'],
+            ]);
 
             return $score;
         });

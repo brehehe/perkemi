@@ -14,7 +14,7 @@ class EmbuParticipantDetails
      *     kind: string,
      *     team_number: int|null,
      *     contingent_name: string|null,
-     *     athletes: list<array{id: string|null, name: string}>,
+     *     athletes: list<array{id: string|null, name: string, photo_url: string|null}>,
      *     techniques: list<array{id: string, name: string, order: int}>
      * }
      */
@@ -63,20 +63,23 @@ class EmbuParticipantDetails
                 'athlete',
                 fn ($athleteQuery) => $athleteQuery->where('contingent_id', $contingentId),
             ))
-            ->with('athlete:id,contingent_id,name')
+            ->with('athlete:id,contingent_id,name,profile_photo_path')
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
             ->map(fn (AthleteMatchCategoryEntry $entry): array => [
                 'id' => $entry->athlete?->id,
                 'name' => $entry->athlete?->name ?? 'Nama atlet belum dicatat',
+                'photo_url' => filled($entry->athlete?->profile_photo_path)
+                    ? route('athletes.photo', $entry->athlete)
+                    : null,
             ])
             ->values();
 
         if ($athletes->isEmpty()) {
             $athletes = collect(data_get($metadata, 'members', []))
                 ->filter()
-                ->map(fn (string $name): array => ['id' => null, 'name' => $name])
+                ->map(fn (string $name): array => ['id' => null, 'name' => $name, 'photo_url' => null])
                 ->values();
         }
 

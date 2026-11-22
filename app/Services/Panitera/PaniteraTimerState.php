@@ -2,6 +2,7 @@
 
 namespace App\Services\Panitera;
 
+use App\Events\PaniteraMatchStateUpdated;
 use App\Models\TournamentMatch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -9,6 +10,29 @@ use Illuminate\Support\Str;
 
 class PaniteraTimerState
 {
+    /** @param array<string, mixed> $timerOverrides */
+    public function broadcastUpdate(TournamentMatch $match, string $action, array $timerOverrides = []): void
+    {
+        if (! $match->event_court_id) {
+            return;
+        }
+
+        $match->loadMissing('matchCategory:id,name,type');
+        $serverNow = now();
+
+        PaniteraMatchStateUpdated::dispatch(
+            eventId: $match->event_id,
+            courtId: (string) $match->event_court_id,
+            matchId: $match->id,
+            action: $action,
+            matchStatus: $match->status,
+            callStatus: $match->call_status,
+            timer: [...$this->timer($match), ...$timerOverrides],
+            serverNow: $serverNow->toIso8601String(),
+            serverNowMs: $serverNow->getTimestampMs(),
+        );
+    }
+
     /** @return array<string, mixed> */
     public function timer(TournamentMatch $match): array
     {

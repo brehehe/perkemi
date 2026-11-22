@@ -1,5 +1,7 @@
 <?php
 
+use App\Events\PaniteraMatchStateUpdated;
+use App\Events\VarReviewStateUpdated;
 use App\Models\Event;
 use App\Models\EventCourt;
 use App\Models\EventMatchCategory;
@@ -9,6 +11,7 @@ use App\Models\TournamentMatch;
 use App\Models\TournamentMatchVarReview;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event as EventFacade;
 
 uses(RefreshDatabase::class);
 
@@ -17,6 +20,7 @@ beforeEach(function () {
 });
 
 test('admin can initiate a VAR review which pauses match timer', function () {
+    $this->travelTo(now()->startOfSecond()->addMilliseconds(500));
     $admin = User::factory()->create();
     $admin->assignRole('Super Admin');
 
@@ -66,8 +70,13 @@ test('admin can initiate a VAR review which pauses match timer', function () {
         'timer_status' => 'running',
         'timer_duration_seconds' => 120,
         'timer_elapsed_seconds' => 45,
+        'timer_elapsed_ms' => 45000,
         'timer_started_at' => now()->subSeconds(5),
+        'timer_started_at_ms' => now()->getTimestampMs() - 5125,
+        'timer_version' => 7,
     ]);
+
+    EventFacade::fake([PaniteraMatchStateUpdated::class, VarReviewStateUpdated::class]);
 
     $response = $this->actingAs($admin)
         ->postJson(route('admin.panitera.matches.var.store', ['tournamentMatch' => $match->id]), [
@@ -85,11 +94,28 @@ test('admin can initiate a VAR review which pauses match timer', function () {
         ->assertJsonPath('review.corner', 'aka');
 
     $match->refresh();
-    // Timer is auto-paused
     expect($match->timer_status)->toBe('paused')
+        ->and($match->timer_started_at)->toBeNull()
+        ->and($match->timer_started_at_ms)->toBeNull()
+        ->and($match->timer_elapsed_seconds)->toBe(50)
+        ->and($match->timer_elapsed_ms)->toBe(50125)
+        ->and($match->timer_version)->toBe(8)
         ->and($match->metadata['under_var_review'])->toBeTrue();
 
-    // Verify DB entry
+    EventFacade::assertDispatched(
+        PaniteraMatchStateUpdated::class,
+        fn (PaniteraMatchStateUpdated $broadcast): bool => $broadcast->matchId === $match->id
+            && $broadcast->action === 'var_pause'
+            && $broadcast->timer['status'] === 'paused'
+            && $broadcast->timer['elapsed_ms'] === 50125
+            && $broadcast->timer['version'] === 8,
+    );
+    EventFacade::assertDispatched(
+        VarReviewStateUpdated::class,
+        fn (VarReviewStateUpdated $broadcast): bool => $broadcast->matchId === $match->id
+            && $broadcast->isUnderReview,
+    );
+
     $review = TournamentMatchVarReview::query()->where('tournament_match_id', $match->id)->first();
     expect($review)->not->toBeNull()
         ->and($review->reason)->toBe('Tantangan Poin Waza-ari')

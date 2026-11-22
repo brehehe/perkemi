@@ -1,6 +1,28 @@
 export const monotonicNow = () => performance.now();
 export const timerVersion = (timer) => Math.max(0, Number(timer?.version) || 0);
 
+const canonicalTimerFields = (state) => ({
+    match_id: state?.match_id ?? null,
+    match_status: state?.match_status ?? null,
+    call_status: state?.call_status ?? null,
+    timer: state?.timer ? {
+        status: state.timer.status ?? null,
+        started_at_ms: Number(state.timer.started_at_ms) || Date.parse(state.timer.started_at) || null,
+        elapsed_ms: Math.max(0, Number(state.timer.elapsed_ms) || Number(state.timer.elapsed_seconds) * 1000 || 0),
+        direction: state.timer.direction ?? null,
+        duration_ms: Math.max(0, Number(state.timer.duration_ms) || Number(state.timer.duration_seconds) * 1000 || 0),
+        run_id: state.timer.run_id ?? null,
+        version: timerVersion(state.timer),
+        is_finished: Boolean(state.timer.is_finished),
+    } : null,
+});
+
+export function hasTimerStateConflict(current, incoming) {
+    if (!current || !incoming || current.match_id !== incoming.match_id) return false;
+    if (timerVersion(current.timer) !== timerVersion(incoming.timer)) return false;
+    return JSON.stringify(canonicalTimerFields(current)) !== JSON.stringify(canonicalTimerFields(incoming));
+}
+
 // Only request/response samples measure clock offset. A one-way WebSocket
 // message has unknown travel time and must never reset the clock.
 export function createServerClock(now = monotonicNow, initialServerNowMs = null) {
@@ -77,13 +99,24 @@ export function createServerClock(now = monotonicNow, initialServerNowMs = null)
     return clock;
 }
 
-export function acceptTimerState(current, incoming) {
+export function acceptTimerState(current, incoming, { canonical = false } = {}) {
     if (!incoming || (current?.event_id && incoming.event_id !== current.event_id)) return current;
+    if (current?.court_id && incoming.court_id !== current.court_id) return current;
+    if (!current) return incoming;
+
     const sameMatch = current?.match_id === incoming.match_id;
-    if (sameMatch && timerVersion(incoming.timer) < timerVersion(current?.timer)) return current;
+    const currentVersion = timerVersion(current.timer);
+    const incomingVersion = timerVersion(incoming.timer);
+
+    if (sameMatch && incomingVersion < currentVersion) return current;
+    if (sameMatch && incomingVersion === currentVersion) {
+        if (!hasTimerStateConflict(current, incoming)) return current;
+        return canonical ? incoming : current;
+    }
+
     const observedAt = (state) => Number(state?.observed_at_ms ?? state?.server_now_ms) || 0;
-    if ((!sameMatch || timerVersion(incoming.timer) === timerVersion(current?.timer))
-        && observedAt(incoming) <= observedAt(current)) return current;
+    if (!sameMatch && observedAt(incoming) <= observedAt(current)) return current;
+
     return incoming;
 }
 
