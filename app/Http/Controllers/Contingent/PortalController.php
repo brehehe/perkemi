@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers\Contingent;
 
+use App\Enums\ContingentStatus;
+use App\Enums\EventStatus;
+use App\Enums\PaymentStatus;
+use App\Enums\RegistrationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Athlete;
 use App\Models\AthleteMatchCategoryEntry;
@@ -22,6 +26,8 @@ use App\Services\TournamentDrawingGenerator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,7 +36,7 @@ class PortalController extends Controller
 {
     public function registration(Request $request): Response
     {
-        [$contingent, $event, $eventOptions] = $this->context($request);
+        [$contingent, $event, $eventOptions] = $this->context($request, true);
 
         $registration = Registration::query()
             ->whereBelongsTo($event)
@@ -43,8 +49,10 @@ class PortalController extends Controller
             ->whereBelongsTo($event)
             ->whereHas('athlete', fn ($query) => $query->whereBelongsTo($contingent))
             ->count();
+        $isAdmin = $request->user()->hasAnyRole(['Super Admin', 'Admin']);
         $registrationEvents = Contingent::query()
-            ->where('user_id', $request->user()->id)
+            ->when(! $isAdmin, fn ($query) => $query->where('user_id', $request->user()->id))
+            ->when($isAdmin, fn ($query) => $query->where('event_id', $event->id))
             ->with([
                 'event:id,name,slug,start_date,end_date,status,is_active,is_paid',
                 'registrations' => fn ($query) => $query->latest(),
@@ -82,6 +90,35 @@ class PortalController extends Controller
             ->unique('id')
             ->values();
 
+        $joinedEventIds = $registrationEvents->pluck('id')->filter()->unique();
+
+        $openEvents = Event::query()
+            ->whereNotIn('id', $joinedEventIds)
+            ->where('is_active', true)
+            ->where('status', EventStatus::OpenRegistration)
+            ->orderByDesc('is_active')
+            ->orderByDesc('start_date')
+            ->get();
+
+        $availableEventsToJoin = $openEvents->map(fn (Event $openEvent): array => [
+            'id' => $openEvent->id,
+            'name' => $openEvent->name,
+            'slug' => $openEvent->slug,
+            'start_date' => $openEvent->start_date?->format('Y-m-d'),
+            'end_date' => $openEvent->end_date?->format('Y-m-d'),
+            'status' => $openEvent->status->value,
+            'status_label' => $openEvent->status->label(),
+            'is_active' => (bool) $openEvent->is_active,
+            'is_paid' => (bool) $openEvent->is_paid,
+            'contingent_name' => $contingent?->name ?? 'Kontingen Anda',
+            'is_current' => $openEvent->is($event),
+            'registration' => null,
+            'action_label' => 'Daftar Event Ini',
+            'action_url' => route('kontingen.registrasi.join', $openEvent),
+        ]);
+
+        $allRegistrationEvents = $registrationEvents->concat($availableEventsToJoin)->values();
+
         return $this->render('registration', $contingent, $event, $eventOptions, [
             'registration' => $registration ? [
                 ...$registration->only([
@@ -106,7 +143,7 @@ class PortalController extends Controller
                 'match_entries' => $entryCount,
                 'is_paid' => (bool) $event->is_paid,
             ],
-            'registration_events' => $registrationEvents,
+            'registration_events' => $allRegistrationEvents,
         ]);
     }
 
@@ -1042,10 +1079,12 @@ class PortalController extends Controller
 
     public function history(Request $request): Response
     {
-        [$contingent, $event, $eventOptions] = $this->context($request);
+        [$contingent, $event, $eventOptions] = $this->context($request, allowAnyEvent: true);
+        $isAdmin = $request->user()->hasAnyRole(['Super Admin', 'Admin']);
 
         $registrations = Registration::query()
-            ->whereHas('contingent', fn ($query) => $query->where('user_id', $request->user()->id))
+            ->when(! $isAdmin, fn ($query) => $query->whereHas('contingent', fn ($q) => $q->where('user_id', $request->user()->id)))
+            ->when($isAdmin && $event, fn ($query) => $query->whereBelongsTo($event))
             ->with([
                 'event:id,name,slug,start_date,end_date,is_paid',
                 'contingent' => fn ($query) => $query
@@ -1075,8 +1114,9 @@ class PortalController extends Controller
 
     public function openRegistration(Request $request, Registration $registration): RedirectResponse
     {
+        $isAdmin = $request->user()->hasAnyRole(['Super Admin', 'Admin']);
         $registration->loadMissing(['contingent:id,user_id', 'event:id,slug']);
-        abort_unless($registration->contingent?->user_id === $request->user()->id, 404);
+        abort_unless($registration->contingent?->user_id === $request->user()->id || $isAdmin, 404);
         abort_unless($registration->event instanceof Event, 404);
 
         $request->session()->put('tenant_event_id', $registration->event->id);
@@ -1092,15 +1132,21 @@ class PortalController extends Controller
 
     public function startRegistration(Request $request, Event $event): RedirectResponse
     {
+        $user = $request->user();
+        $isAdmin = $user->hasAnyRole(['Super Admin', 'Admin']);
+
         $contingent = Contingent::query()
             ->whereBelongsTo($event)
-            ->where('user_id', $request->user()->id)
-            ->firstOrFail();
-        $registration = Registration::query()
+            ->when(! $isAdmin, fn ($query) => $query->where('user_id', $user->id))
+            ->first();
+
+        abort_unless($contingent instanceof Contingent || $isAdmin, 404);
+
+        $registration = $contingent ? Registration::query()
             ->whereBelongsTo($event)
             ->whereBelongsTo($contingent)
             ->latest()
-            ->first();
+            ->first() : null;
 
         if ($registration instanceof Registration) {
             return $this->openRegistration($request, $registration);
@@ -1112,13 +1158,95 @@ class PortalController extends Controller
         return redirect()->route('admin.pendaftaran.registrasi.create', ['event_id' => $event->id]);
     }
 
+    public function joinEvent(Request $request, Event $event): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user && ($user->hasAnyRole(['kontingen', 'Contingent']) || $user->contingents()->exists() || $user->hasAnyRole(['Super Admin', 'Admin'])), 403);
+        abort_unless($event->status === EventStatus::OpenRegistration || (bool) $event->is_active, 404, 'Event ini tidak membuka pendaftaran.');
+
+        $contingent = Contingent::query()
+            ->whereBelongsTo($event)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (! $contingent) {
+            $baseContingent = Contingent::query()
+                ->where('user_id', $user->id)
+                ->with(['athletes', 'officials'])
+                ->latest()
+                ->first();
+
+            $contingent = DB::transaction(function () use ($event, $user, $baseContingent): Contingent {
+                $sourceContingentId = $baseContingent?->source_contingent_id ?? $baseContingent?->id;
+
+                $newContingent = Contingent::create([
+                    'event_id' => $event->id,
+                    'user_id' => $user->id,
+                    'name' => $baseContingent?->name ?? $user->name,
+                    'city' => $baseContingent?->city ?? 'Indonesia',
+                    'manager_name' => $baseContingent?->manager_name ?? $user->name,
+                    'phone' => $baseContingent?->phone ?? $user->phone ?? '',
+                    'address' => $baseContingent?->address ?? '',
+                    'status' => ContingentStatus::Pending,
+                    'source_contingent_id' => $sourceContingentId,
+                ]);
+
+                if ($baseContingent) {
+                    foreach ($baseContingent->athletes as $athlete) {
+                        $copy = $athlete->replicate(['school_document_path', 'school_verified_at', 'school_verified_by', 'school_verification_hash']);
+                        $copy->contingent_id = $newContingent->id;
+                        $copy->event_age_category_id = null;
+                        $copy->save();
+                    }
+                    foreach ($baseContingent->officials as $official) {
+                        $copy = $official->replicate();
+                        $copy->contingent_id = $newContingent->id;
+                        $copy->save();
+                    }
+                }
+
+                $isPaid = (bool) $event->is_paid;
+                Registration::create([
+                    'event_id' => $event->id,
+                    'contingent_id' => $newContingent->id,
+                    'registration_number' => 'REG-'.($event->start_date?->format('Y') ?? date('Y')).'-'.Str::upper((string) Str::ulid()),
+                    'status' => RegistrationStatus::Pending,
+                    'total_amount' => $isPaid ? ($event->fee_per_contingent ?? 0) : 0,
+                    'final_amount' => $isPaid ? ($event->fee_per_contingent ?? 0) : 0,
+                    'payment_status' => $isPaid ? PaymentStatus::Pending : PaymentStatus::Verified,
+                    'payment_amount' => 0,
+                    'payment_note' => $isPaid ? null : 'Event gratis; pembayaran tidak diperlukan.',
+                ]);
+
+                return $newContingent;
+            });
+        }
+
+        $registration = Registration::query()
+            ->whereBelongsTo($event)
+            ->whereBelongsTo($contingent)
+            ->latest()
+            ->first();
+
+        $request->session()->put('tenant_event_id', $event->id);
+        $request->session()->put('tenant_event_slug', $event->slug);
+
+        if ($registration instanceof Registration) {
+            return $this->openRegistration($request, $registration);
+        }
+
+        return redirect()->route('admin.pendaftaran.registrasi.create', ['event_id' => $event->id]);
+    }
+
     /**
      * @return array{Contingent, Event, Collection<int, array<string, mixed>>}
      */
-    private function context(Request $request): array
+    private function context(Request $request, bool $allowAnyEvent = false): array
     {
+        $isAdmin = $request->user()->hasAnyRole(['Super Admin', 'Admin']);
+
         $contingents = Contingent::query()
-            ->where('user_id', $request->user()->id)
+            ->when(! $isAdmin, fn ($query) => $query->where('user_id', $request->user()->id))
             ->with('event:id,name,slug,start_date,end_date,status,is_active,is_paid,fee_per_athlete,fee_per_contingent')
             ->withCount(['athletes', 'officials'])
             ->orderByDesc(Event::select('is_active')->whereColumn('events.id', 'contingents.event_id'))
@@ -1133,14 +1261,75 @@ class PortalController extends Controller
         $requestedContingent = $requestedEventId
             ? $contingents->firstWhere('event_id', $requestedEventId)
             : null;
-        if ($requestedEventId) {
-            abort_unless($requestedContingent instanceof Contingent, 404, 'Event kontingen tidak ditemukan.');
+
+        if ($isAdmin && $requestedEventId && ! $requestedContingent) {
+            $requestedContingent = Contingent::query()
+                ->where('event_id', $requestedEventId)
+                ->with('event:id,name,slug,start_date,end_date,status,is_active,is_paid,fee_per_athlete,fee_per_contingent')
+                ->withCount(['athletes', 'officials'])
+                ->first();
+        }
+
+        $requestedEvent = $requestedEventId ? Event::find($requestedEventId) : null;
+        if ($requestedEventId && ! $requestedEvent) {
+            abort(404, 'Event kontingen tidak ditemukan.');
+        }
+
+        if ($requestedEventId && ! $allowAnyEvent) {
+            abort_unless($requestedContingent instanceof Contingent || $isAdmin, 404, 'Event kontingen tidak ditemukan.');
         }
 
         $contingent = $requestedContingent
-            ?? $contingents->firstWhere('event_id', $tenantEventId)
+            ?? ($tenantEventId ? $contingents->firstWhere('event_id', $tenantEventId) : null)
             ?? $contingents->first(fn (Contingent $item): bool => (bool) $item->event?->is_active)
             ?? $contingents->first();
+
+        if ($requestedEvent && (! $contingent || $contingent->event_id !== $requestedEvent->id)) {
+            $baseContingent = $contingents->first();
+            if ($baseContingent) {
+                $virtualContingent = clone $baseContingent;
+                $virtualContingent->event_id = $requestedEvent->id;
+                $virtualContingent->setRelation('event', $requestedEvent);
+                $contingent = $virtualContingent;
+            } elseif ($isAdmin) {
+                $contingent = Contingent::query()->where('event_id', $requestedEvent->id)->first()
+                    ?? new Contingent([
+                        'id' => 'admin-preview-'.$requestedEvent->id,
+                        'event_id' => $requestedEvent->id,
+                        'user_id' => $request->user()->id,
+                        'name' => 'Kontingen Admin',
+                        'city' => $requestedEvent->city ?? 'Jawa Timur',
+                    ]);
+                $contingent->setRelation('event', $requestedEvent);
+            }
+        }
+
+        if ($isAdmin && ! $contingent && $tenantEventId) {
+            $contingent = Contingent::query()
+                ->where('event_id', $tenantEventId)
+                ->with('event:id,name,slug,start_date,end_date,status,is_active,is_paid,fee_per_athlete,fee_per_contingent')
+                ->withCount(['athletes', 'officials'])
+                ->first();
+        }
+
+        if (! $contingent) {
+            $eventModel = ($requestedEventId ? Event::find($requestedEventId) : null)
+                ?? ($tenantEventId ? Event::find($tenantEventId) : null)
+                ?? Event::query()->where('is_active', true)->first()
+                ?? Event::first();
+
+            if ($eventModel) {
+                $contingent = Contingent::query()->where('event_id', $eventModel->id)->first()
+                    ?? new Contingent([
+                        'id' => 'temp-'.$eventModel->id,
+                        'event_id' => $eventModel->id,
+                        'user_id' => $request->user()->id,
+                        'name' => $isAdmin ? 'Kontingen Admin' : $request->user()->name,
+                        'city' => $eventModel->city ?? 'Indonesia',
+                    ]);
+                $contingent->setRelation('event', $eventModel);
+            }
+        }
 
         abort_unless($contingent?->event instanceof Event, 404, 'Event kontingen tidak ditemukan.');
 
@@ -1148,21 +1337,49 @@ class PortalController extends Controller
         $request->session()->put('tenant_event_id', $event->id);
         $request->session()->put('tenant_event_slug', $event->slug);
 
-        $eventOptions = $contingents
-            ->filter(fn (Contingent $item): bool => $item->event instanceof Event)
-            ->map(fn (Contingent $item): array => [
-                'id' => $item->event->id,
-                'name' => $item->event->name,
-                'slug' => $item->event->slug,
-                'start_date' => $item->event->start_date?->format('Y-m-d'),
-                'end_date' => $item->event->end_date?->format('Y-m-d'),
-                'status' => $item->event->status->value,
-                'status_label' => $item->event->status->label(),
-                'is_active' => (bool) $item->event->is_active,
-                'contingent_name' => $item->name,
-            ])
-            ->unique('id')
-            ->values();
+        if ($isAdmin) {
+            $eventOptions = Event::query()
+                ->orderByDesc('is_active')
+                ->orderByDesc('start_date')
+                ->get()
+                ->map(fn (Event $ev): array => [
+                    'id' => $ev->id,
+                    'name' => $ev->name,
+                    'slug' => $ev->slug,
+                    'city' => $ev->city,
+                    'start_date' => $ev->start_date?->format('Y-m-d'),
+                    'end_date' => $ev->end_date?->format('Y-m-d'),
+                    'status' => $ev->status->value,
+                    'status_label' => $ev->status->label(),
+                    'is_active' => (bool) $ev->is_active,
+                    'contingent_name' => $contingent->name ?? 'Kontingen Admin',
+                    'assignment_label' => 'Admin Mode',
+                ])
+                ->values();
+        } else {
+            $allEvents = Event::query()
+                ->orderByDesc('is_active')
+                ->orderByDesc('start_date')
+                ->get();
+
+            $eventOptions = $allEvents->map(function (Event $ev) use ($contingents, $contingent): array {
+                $ownedContingent = $contingents->firstWhere('event_id', $ev->id);
+
+                return [
+                    'id' => $ev->id,
+                    'name' => $ev->name,
+                    'slug' => $ev->slug,
+                    'city' => $ev->city,
+                    'start_date' => $ev->start_date?->format('Y-m-d'),
+                    'end_date' => $ev->end_date?->format('Y-m-d'),
+                    'status' => $ev->status->value,
+                    'status_label' => $ev->status->label(),
+                    'is_active' => (bool) $ev->is_active,
+                    'contingent_name' => $ownedContingent?->name ?? $contingent?->name ?? 'Kontingen',
+                    'assignment_label' => $ownedContingent ? 'Kontingen: '.$ownedContingent->name : 'Daftar Event Ini',
+                ];
+            })->values();
+        }
 
         return [$contingent, $event, $eventOptions];
     }
@@ -1211,8 +1428,9 @@ class PortalController extends Controller
     /** @return Collection<int, string> */
     private function masterContingentIds(Request $request): Collection
     {
+        $isAdmin = $request->user()->hasAnyRole(['Super Admin', 'Admin']);
         $ownedContingents = Contingent::query()
-            ->where('user_id', $request->user()->id)
+            ->when(! $isAdmin, fn ($query) => $query->where('user_id', $request->user()->id))
             ->get(['id', 'source_contingent_id']);
         $ownedIds = $ownedContingents->pluck('id');
 

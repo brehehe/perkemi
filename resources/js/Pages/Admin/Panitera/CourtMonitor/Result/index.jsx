@@ -1,6 +1,6 @@
 import RandoriBracketTree from '../../Partials/RandoriBracketTree';
 import EmptyState from '../Shared/EmptyState';
-import { formatTimer } from '../courtMonitorPresentation';
+import { formatEmbuScore, formatTimer } from '../courtMonitorPresentation';
 
 function ResultHeader({ recap, court }) {
     const remaining = Math.max(0, Number(recap.total_matches) - Number(recap.completed_matches));
@@ -53,7 +53,7 @@ function EmbuRecap({ matches, activeMatchId }) {
                         <div className="flex flex-wrap gap-1.5">
                             {(score?.judge_scores || []).map((judgeScore, index) => (
                                 <span key={`${row.id}-${index}`} className="rounded-lg border border-stone-200 bg-[#f7f4ee] px-2 py-1 font-mono text-xs font-bold text-slate-700 dark:border-white/10">
-                                    J{index + 1} {Number(judgeScore).toFixed(1)}
+                                    J{index + 1} {formatEmbuScore(judgeScore)}
                                 </span>
                             ))}
                             {!score?.judge_scores?.length && <span className="text-xs font-semibold text-slate-500 dark:text-white/45">Belum dinilai</span>}
@@ -61,7 +61,7 @@ function EmbuRecap({ matches, activeMatchId }) {
                         <div className="text-left sm:text-right">
                             <p className="text-[10px] font-black uppercase text-slate-500 dark:text-white/50">Nilai akhir</p>
                             <p className={`mt-1 font-mono text-2xl font-black ${score?.is_disqualified ? 'text-red-700' : score?.is_live ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
-                                {score?.is_disqualified ? 'DQ' : score?.final_score !== null && score?.final_score !== undefined ? Number(score.final_score).toFixed(2) : '–'}
+                                {score?.is_disqualified ? 'DQ' : formatEmbuScore(score?.final_score)}
                             </p>
                             {score?.duration_seconds && <p className="text-[10px] text-slate-500 dark:text-white/45">{formatTimer(score.duration_seconds)}</p>}
                         </div>
@@ -73,6 +73,8 @@ function EmbuRecap({ matches, activeMatchId }) {
 }
 
 function SingleResult({ match }) {
+    const totalPenalty = Number(match.result.total_penalty || 0);
+
     return (
         <section className="rounded-[2rem] border border-stone-200 bg-white p-6 text-center shadow-[0_20px_55px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-[#151210] sm:p-10">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-800 dark:text-amber-300">Hasil terakhir · Partai #{match.sequence}</p>
@@ -93,8 +95,8 @@ function SingleResult({ match }) {
             ) : (
                 <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-[#f7f4ee] p-5 text-[#071126]"><p className="text-xs font-bold text-slate-600">Durasi</p><p className="mt-2 text-3xl font-black">{formatTimer(match.result.duration_seconds || 0)}</p></div>
-                    <div className="rounded-2xl bg-red-50 p-5 text-red-800"><p className="text-xs font-bold">Total denda</p><p className="mt-2 text-3xl font-black">-{Number(match.result.total_penalty || 0).toFixed(2)}</p></div>
-                    <div className="rounded-2xl bg-emerald-700 p-5 text-white"><p className="text-xs font-bold">Nilai akhir</p><p className="mt-2 text-3xl font-black">{Number(match.result.final_score || 0).toFixed(2)}</p></div>
+                    <div className="rounded-2xl bg-red-50 p-5 text-red-800"><p className="text-xs font-bold">Total denda</p><p className="mt-2 text-3xl font-black">{totalPenalty > 0 ? `-${formatEmbuScore(totalPenalty, '0')}` : '0'}</p></div>
+                    <div className="rounded-2xl bg-emerald-700 p-5 text-white"><p className="text-xs font-bold">Nilai akhir</p><p className="mt-2 text-3xl font-black">{formatEmbuScore(match.result.final_score, '0')}</p></div>
                 </div>
             )}
         </section>

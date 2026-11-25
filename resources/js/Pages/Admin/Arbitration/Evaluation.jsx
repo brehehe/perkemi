@@ -1,4 +1,3 @@
-import Combobox from '@/Components/UI/Forms/Combobox';
 import Modal from '@/Components/UI/Overlays/Modal';
 import Tabs from '@/Components/UI/Navigation/Tabs';
 import { Button, Input } from '@/Components/UI';
@@ -768,32 +767,18 @@ export default function Evaluation({
                             </p>
                         </div>
 
-                        <div className="flex w-full flex-col gap-3 xl:w-96">
-                            <Combobox
-                                label="Event Kejuaraan"
-                                labelClassName="text-white/60"
-                                value={activeEvent?.id || ''}
-                                onChange={(value) => router.get('/admin/arbitrase/evaluasi', { event_id: value })}
-                                clearable={false}
-                                options={events.map((event) => ({
-                                    value: event.id,
-                                    label: event.name,
-                                    sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · '),
-                                }))}
-                            />
-                            <div className="flex flex-wrap justify-end gap-2">
-                                <Link href="/admin/arbitrase/scoring" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white/90 hover:bg-white/10">
-                                    <i className="fa-solid fa-chart-column" aria-hidden="true" />
-                                    Hasil Nilai
-                                </Link>
-                                <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="border-white/20 bg-white/5 text-xs text-white hover:bg-white/10" iconLeft={<i className="fa-solid fa-print" aria-hidden="true" />}>
-                                    Cetak
-                                </Button>
-                                <a href={exportUrl} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow hover:bg-emerald-700">
-                                    <i className="fa-solid fa-file-excel" aria-hidden="true" />
-                                    Excel
-                                </a>
-                            </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2 self-start xl:self-auto">
+                            <Link href="/admin/arbitrase/scoring" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white/90 hover:bg-white/10">
+                                <i className="fa-solid fa-chart-column" aria-hidden="true" />
+                                Hasil Nilai
+                            </Link>
+                            <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="border-white/20 bg-white/5 text-xs text-white hover:bg-white/10" iconLeft={<i className="fa-solid fa-print" aria-hidden="true" />}>
+                                Cetak
+                            </Button>
+                            <a href={exportUrl} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow hover:bg-emerald-700">
+                                <i className="fa-solid fa-file-excel" aria-hidden="true" />
+                                Excel
+                            </a>
                         </div>
                     </div>
                 </section>

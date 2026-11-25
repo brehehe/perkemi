@@ -19,11 +19,11 @@ const sectionMeta = {
 };
 
 const statusClass = {
-    draft: 'border-stone-200 bg-stone-50 text-stone-700',
+    draft: 'border-slate-200 bg-slate-50 text-slate-700',
     open_registration: 'border-blue-200 bg-blue-50 text-blue-700',
-    ongoing: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    completed: 'border-violet-200 bg-violet-50 text-violet-700',
-    closed: 'border-slate-200 bg-slate-50 text-slate-700',
+    ongoing: 'border-amber-200 bg-amber-50 text-amber-700',
+    completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    closed: 'border-rose-200 bg-rose-50 text-rose-700',
     pending: 'border-amber-200 bg-amber-50 text-amber-700',
     verified: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     rejected: 'border-red-200 bg-red-50 text-red-700',
@@ -118,9 +118,9 @@ function RegistrationSection({ registration, summary = {}, registrationEvents = 
             </div>
 
             <section className="rounded-2xl border border-[#e6dfd6] bg-white p-5 shadow-sm shadow-stone-200/50">
-                <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a47c25]">Event Kontingen</p>
-                    <h2 className="mt-1 text-base font-black text-[#1c1815]">Pilih event untuk melanjutkan registrasi</h2>
-                    <p className="mt-1 text-xs leading-5 text-[#817970]">Hanya event yang terhubung dengan akun kontingen ini yang ditampilkan.</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a47c25]">Event Kejuaraan</p>
+                    <h2 className="mt-1 text-base font-black text-[#1c1815]">Kejuaraan yang Diikuti & Terbuka</h2>
+                    <p className="mt-1 text-xs leading-5 text-[#817970]">Kelola registrasi pada event yang sedang diikuti, atau ikuti kejuaraan lain yang membuka pendaftaran.</p></div>
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">{registrationEvents.map((event) => <article key={event.id}
                     className={`rounded-xl border p-4 ${event.id === activeEventId ? 'border-[#d7a743] bg-[#fffaf0]' : 'border-[#e8e1d8] bg-[#fcfaf7]'}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2">

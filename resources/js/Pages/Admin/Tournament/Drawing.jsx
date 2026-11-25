@@ -1361,9 +1361,6 @@ export default function TournamentDrawing({ activeEvent, events = [], categories
                             <h1 className="mt-1.5 text-2xl font-bold leading-tight tracking-tight md:text-3xl">Generate Bagan & Jadwal Pertandingan</h1>
                             <p className="mt-2.5 max-w-3xl text-sm leading-relaxed text-white/70">Peserta terverifikasi dipisahkan antar-kontingen, dibentuk menjadi pool atau bracket, lalu dijadwalkan ke sesi dan lapangan event.</p>
                         </div>
-                        <Combobox label="Event dipilih" labelClassName="text-white/60" containerClassName="w-full xl:w-96"
-                            value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pertandingan/drawing', { event_id: value })}
-                            clearable={false} options={events.map((item) => ({ value: item.id, label: item.name, sublabel: item.option_description }))} />
                     </div>
                     <div className="relative mt-5 flex gap-3 overflow-x-auto">{stages.map((stage, index) => <WorkflowStep key={stage.title} number={index + 1} {...stage} />)}</div>
                 </section>

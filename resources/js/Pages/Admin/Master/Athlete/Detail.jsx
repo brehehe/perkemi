@@ -49,12 +49,12 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
                         {athlete.profile_photo_url ? (
                             <img src={athlete.profile_photo_url} alt={`Foto ${athlete.name}`} className="h-20 w-20 rounded-2xl border border-[#e7ded0] object-cover" />
                         ) : (
-                            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#2d2420] font-cinzel text-2xl font-bold text-[#e3bd69]" aria-hidden="true">
+                            <div className="flex size-20 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#b92f24] font-sans text-2xl font-bold" aria-hidden="true">
                                 {athlete.name?.charAt(0)}
                             </div>
                         )}
                         <div>
-                            <h1 className="font-cinzel text-2xl font-bold text-[#17120f]">{athlete.name}</h1>
+                            <h1 className="font-sans text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">{athlete.name}</h1>
                             <p className="mt-1 text-sm text-[#706860]">{athlete.contingent?.name} · {athlete.kyu_dan || 'Tingkatan belum diisi'}</p>
                         </div>
                     </div>
@@ -64,7 +64,7 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
                     <div className="space-y-6">
                         <form onSubmit={save} className="space-y-5 rounded-2xl border border-[#e8e1d7] bg-white p-5 shadow-sm md:p-7">
                             <div>
-                                <h2 className="font-cinzel text-lg font-bold text-[#17120f]">Informasi Kenshi</h2>
+                                <h2 className="font-sans text-lg font-bold text-slate-900 dark:text-white">Informasi Kenshi</h2>
                                 <p className="mt-1 text-xs text-[#706860]">Data identitas, domisili, dojo, dan tingkatan atlet.</p>
                             </div>
                             <Input label="Nama Lengkap" required value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} error={form.errors.name} />
@@ -97,7 +97,7 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
                         </form>
 
                         <form onSubmit={uploadPhoto} className="rounded-2xl border border-[#e8e1d7] bg-white p-5 shadow-sm md:p-7">
-                            <h2 className="font-cinzel text-lg font-bold text-[#17120f]">Foto Profil</h2>
+                            <h2 className="font-sans text-lg font-bold text-slate-900 dark:text-white">Foto Profil</h2>
                             <p className="mt-1 text-xs text-[#706860]">Opsional. JPG, PNG, atau WebP, maksimal 2 MB.</p>
                             <div className="mt-4 flex flex-wrap items-end gap-3">
                                 <div className="min-w-0 flex-1">
@@ -110,7 +110,7 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
 
                     <div className="space-y-6">
                         <section className="rounded-2xl border border-[#e8e1d7] bg-white p-5 shadow-sm md:p-6">
-                            <h2 className="font-cinzel text-lg font-bold text-[#17120f]">Riwayat Tingkatan</h2>
+                            <h2 className="font-sans text-lg font-bold text-slate-900 dark:text-white">Riwayat Tingkatan</h2>
                             {rankHistory.length ? (
                                 <ol className="mt-4 space-y-4 border-l-2 border-[#e6d5b6] pl-4">
                                     {rankHistory.map((item) => (
@@ -125,7 +125,7 @@ export default function AthleteDetail({ athlete, contingents = [], kyus = [], ra
                         </section>
 
                         <section className="rounded-2xl border border-[#e8e1d7] bg-white p-5 shadow-sm md:p-6">
-                            <h2 className="font-cinzel text-lg font-bold text-[#17120f]">Event & Prestasi</h2>
+                            <h2 className="font-sans text-lg font-bold text-slate-900 dark:text-white">Event & Prestasi</h2>
                             <p className="mt-1 text-xs text-[#706860]">{historyScopedToEvent ? 'Riwayat untuk event yang sedang Anda kelola.' : 'Riwayat ditautkan melalui NIK atau Nomor Induk Kenshi yang sama.'}</p>
                             {eventHistory.length ? (
                                 <div className="mt-4 space-y-4">

@@ -32,11 +32,14 @@ use App\Models\TournamentResult;
 use App\Models\User;
 use App\Services\Admin\Master\EventDetailViewService;
 use App\Services\Arbitration\ArbitrationExportService;
+use App\Support\PhoneNumber;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -166,6 +169,62 @@ class EventDetailController extends Controller
         $syncEventUsers->execute($event, $validated['users'] ?? []);
 
         return back()->with('success', 'Penanggung jawab dan akses pengguna event berhasil diperbarui.');
+    }
+
+    /**
+     * Quickly create a new user from event detail modal and optionally attach to event.
+     */
+    public function quickCreateUser(Request $request, Event $event): JsonResponse
+    {
+        $request->merge(['phone' => PhoneNumber::normalize($request->input('phone'))]);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', 'max:30', 'unique:users,phone'],
+            'password' => ['required', Password::defaults()],
+            'role' => ['nullable', 'string'],
+            'access_role' => ['nullable', 'string', Rule::in([
+                Event::AccessRoleResponsible,
+                Event::AccessRoleAdmin,
+                Event::AccessRoleStaff,
+                Event::AccessRoleViewer,
+            ])],
+        ]);
+
+        $globalRole = $validated['role'] ?? ($validated['access_role'] === Event::AccessRoleViewer ? 'Viewer' : 'kontingen');
+        if (! Role::query()->where('name', $globalRole)->exists()) {
+            Role::query()->firstOrCreate(['name' => $globalRole, 'guard_name' => 'web']);
+        }
+
+        $user = User::query()->create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        $user->assignRole($globalRole);
+
+        $accessRole = $validated['access_role'] ?? null;
+        if ($accessRole) {
+            $event->users()->syncWithoutDetaching([
+                $user->id => ['access_role' => $accessRole],
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Pengguna {$user->name} berhasil ditambahkan.",
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'roles' => $user->roles->pluck('name'),
+                'access_role' => $accessRole,
+            ],
+        ], 201);
     }
 
     /**

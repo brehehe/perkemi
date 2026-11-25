@@ -596,3 +596,45 @@ html:not(.dark) .gold-sep {
         animation: none;
     }
 }
+
+/* Viewer Mode: Read-Only UI Enforcement */
+.viewer-mode button[type="submit"],
+.viewer-mode input[type="submit"],
+.viewer-mode form button:not([data-viewer-allowed]):not([type="button"].tab-button):not([data-dismiss]),
+.viewer-mode button:has(.fa-plus),
+.viewer-mode button:has(.fa-trash),
+.viewer-mode button:has(.fa-trash-can),
+.viewer-mode button:has(.fa-pen),
+.viewer-mode button:has(.fa-pen-to-square),
+.viewer-mode button:has(.fa-floppy-disk),
+.viewer-mode button:has(.fa-save),
+.viewer-mode button:has(.fa-arrows-rotate),
+.viewer-mode button:has(.fa-right-left),
+.viewer-mode button:has(.fa-repeat),
+.viewer-mode button:has(.fa-upload),
+.viewer-mode button:has(.fa-shuffle),
+.viewer-mode button:has(.fa-user-plus),
+.viewer-mode a[href*="destroy"],
+.viewer-mode a[href*="delete"],
+.viewer-mode [data-viewer-disabled] {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    filter: grayscale(0.6);
+    user-select: none !important;
+}
+
+.viewer-mode form input:not([type="search"]):not([data-viewer-allowed]):not([name="search"]):not([placeholder*="Cari"]):not([placeholder*="Search"]),
+.viewer-mode form textarea:not([data-viewer-allowed]),
+.viewer-mode form select:not([name="filter"]):not([data-viewer-allowed]):not([data-filter]) {
+    opacity: 0.75 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    background-color: rgba(240, 240, 240, 0.6) !important;
+}
+
+.dark .viewer-mode form input:not([type="search"]):not([data-viewer-allowed]):not([name="search"]):not([placeholder*="Cari"]):not([placeholder*="Search"]),
+.dark .viewer-mode form textarea:not([data-viewer-allowed]),
+.dark .viewer-mode form select:not([name="filter"]):not([data-viewer-allowed]):not([data-filter]) {
+    background-color: rgba(30, 34, 42, 0.6) !important;
+}

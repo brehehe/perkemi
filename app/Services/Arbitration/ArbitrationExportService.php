@@ -599,24 +599,23 @@ class ArbitrationExportService
     {
         $rundowns = Rundown::query()
             ->whereBelongsTo($event)
-            ->with(['court:id,name', 'matchCategory:id,name'])
-            ->orderBy('day')
-            ->orderBy('start_time')
+            ->orderBy('date')
+            ->orderBy('order')
             ->get();
 
         $rows = [];
         foreach ($rundowns as $index => $rd) {
-            $timeRange = ($rd->start_time ?: '-').' s/d '.($rd->end_time ?: '-');
+            $timeRange = ($rd->date?->format('H:i') ?: '-').' s/d '.($rd->end_time?->format('H:i') ?: '-');
 
             $rows[] = [
                 $index + 1,
-                $rd->day ? 'Hari ke-'.$rd->day : '-',
+                $rd->date ? $rd->date->format('d/m/Y') : '-',
                 $rd->name ?: 'Sesi Pertandingan',
                 $timeRange,
-                $rd->court?->name ?? 'Semua Court',
-                $rd->matchCategory?->name ?? 'Seluruh Nomor',
+                'Semua Court',
+                $rd->type ?: '-',
                 $rd->description ?: '-',
-                ucfirst((string) ($rd->status ?: 'Tersedia')),
+                $rd->is_match_session ? 'Sesi Tanding' : 'Acara',
             ];
         }
 

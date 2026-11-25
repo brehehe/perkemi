@@ -875,3 +875,40 @@ test('contingent category results report lists all matches and marks own conting
             ->where('matches.0.is_own', true)
             ->where('matches.1.is_own', false));
 });
+
+test('admin can access contingent registration history with event_id without owning a contingent', function () {
+    Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+
+    $event = portalEvent('Kejurnas Pasuruan', 'kejurnas-pasuruan', true);
+
+    $this->actingAs($admin)
+        ->get('/kontingen/riwayat-pendaftaran?event_id='.$event->id)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Contingent/Portal')
+            ->where('section', 'history')
+            ->where('portal.event.id', $event->id));
+});
+
+test('entering contingent portal target for unowned event safely redirects to registration join', function () {
+    $owner = User::factory()->create();
+    $owner->assignRole('kontingen');
+
+    $firstEvent = portalEvent('Event Pertama', 'event-pertama', true);
+    portalContingent($owner, $firstEvent, 'Kontingen Pertama');
+
+    $secondEvent = portalEvent('Event Kedua', 'event-kedua', true);
+
+    $this->actingAs($owner)
+        ->get("/admin/event/{$secondEvent->id}/enter?target=".urlencode("/kontingen/riwayat-pendaftaran?event_id={$secondEvent->id}"))
+        ->assertRedirect(route('kontingen.registrasi.join', $secondEvent));
+
+    // Follow the join route and verify contingent & registration are created and redirected
+    $response = $this->actingAs($owner)->get(route('kontingen.registrasi.join', $secondEvent));
+    $response->assertRedirect();
+
+    expect(Contingent::where('user_id', $owner->id)->where('event_id', $secondEvent->id)->exists())->toBeTrue();
+    expect(Registration::where('event_id', $secondEvent->id)->exists())->toBeTrue();
+});

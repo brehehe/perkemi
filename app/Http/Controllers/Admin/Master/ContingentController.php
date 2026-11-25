@@ -24,16 +24,15 @@ class ContingentController extends Controller
     public function index(Request $request): Response
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
-        $activeEvent = $tenantEvent instanceof Event
-            ? $tenantEvent
-            : Event::where('is_active', true)->first();
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? true;
 
         $search = $request->input('search');
         $status = $request->input('status', 'all');
+        $eventId = $request->input('event_id', 'all');
 
         $query = Contingent::query()
             ->with([
-                'event:id,name,city',
+                'event:id,name,city,slug',
                 'user:id,name,email',
                 'athletes:id,contingent_id,name,gender,kyu_dan,weight,height',
                 'officials:id,contingent_id,name,role,gender,phone,email',
@@ -41,7 +40,9 @@ class ContingentController extends Controller
             ->withCount(['athletes', 'officials', 'registrations'])
             ->latest();
 
-        if ($tenantEvent instanceof Event) {
+        if ($eventId && $eventId !== 'all') {
+            $query->where('event_id', $eventId);
+        } elseif (! $isFullAdmin && $tenantEvent instanceof Event) {
             $query->whereBelongsTo($tenantEvent);
         }
 
@@ -62,7 +63,9 @@ class ContingentController extends Controller
 
         $contingentStatsQuery = Contingent::query();
 
-        if ($tenantEvent instanceof Event) {
+        if ($eventId && $eventId !== 'all') {
+            $contingentStatsQuery->where('event_id', $eventId);
+        } elseif (! $isFullAdmin && $tenantEvent instanceof Event) {
             $contingentStatsQuery->whereBelongsTo($tenantEvent);
         }
 
@@ -70,18 +73,29 @@ class ContingentController extends Controller
             'total_contingents' => (clone $contingentStatsQuery)->count(),
             'verified_contingents' => (clone $contingentStatsQuery)->where('status', ContingentStatus::Verified)->count(),
             'pending_contingents' => (clone $contingentStatsQuery)->where('status', ContingentStatus::Pending)->count(),
-            'total_athletes' => Athlete::query()->when($tenantEvent instanceof Event, fn ($query) => $query->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->whereBelongsTo($tenantEvent)))->count(),
-            'total_officials' => Official::query()->when($tenantEvent instanceof Event, fn ($query) => $query->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->whereBelongsTo($tenantEvent)))->count(),
+            'total_athletes' => Athlete::query()->when($eventId && $eventId !== 'all', fn ($q) => $q->whereHas('contingent', fn ($cq) => $cq->where('event_id', $eventId)))->when(! $isFullAdmin && $tenantEvent instanceof Event && ($eventId === 'all' || ! $eventId), fn ($q) => $q->whereHas('contingent', fn ($cq) => $cq->whereBelongsTo($tenantEvent)))->count(),
+            'total_officials' => Official::query()->when($eventId && $eventId !== 'all', fn ($q) => $q->whereHas('contingent', fn ($cq) => $cq->where('event_id', $eventId)))->when(! $isFullAdmin && $tenantEvent instanceof Event && ($eventId === 'all' || ! $eventId), fn ($q) => $q->whereHas('contingent', fn ($cq) => $cq->whereBelongsTo($tenantEvent)))->count(),
         ];
+
+        $events = Event::query()
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'city']);
+
+        $activeEvent = $eventId && $eventId !== 'all'
+            ? $events->firstWhere('id', $eventId)
+            : ($tenantEvent instanceof Event ? $tenantEvent : $events->firstWhere('is_active', true));
 
         return Inertia::render('Admin/Master/Contingent/Index', [
             'contingents' => $contingents,
             'stats' => $stats,
             'activeEvent' => $activeEvent,
+            'events' => $events,
             'users' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
             'filters' => [
                 'search' => $search ?? '',
                 'status' => $status,
+                'event_id' => $eventId,
             ],
         ]);
     }
@@ -94,14 +108,16 @@ class ContingentController extends Controller
         $validated = $request->validated();
         $tenantEvent = $request->attributes->get('tenantEvent');
 
-        if ($tenantEvent instanceof Event) {
-            $validated['event_id'] = $tenantEvent->id;
-        }
-
         if (empty($validated['event_id'])) {
-            $activeEvent = Event::where('is_active', true)->first();
-            if ($activeEvent) {
-                $validated['event_id'] = $activeEvent->id;
+            if ($request->filled('event_id')) {
+                $validated['event_id'] = $request->input('event_id');
+            } elseif ($tenantEvent instanceof Event) {
+                $validated['event_id'] = $tenantEvent->id;
+            } else {
+                $activeEvent = Event::where('is_active', true)->first();
+                if ($activeEvent) {
+                    $validated['event_id'] = $activeEvent->id;
+                }
             }
         }
 
@@ -124,13 +140,13 @@ class ContingentController extends Controller
     public function update(UpdateContingentRequest $request, Contingent $contingent): RedirectResponse
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
-        abort_unless(! ($tenantEvent instanceof Event) || $contingent->event_id === $tenantEvent->id, 404);
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false;
+
+        if (! $isFullAdmin && $tenantEvent instanceof Event) {
+            abort_unless($contingent->event_id === $tenantEvent->id, 404);
+        }
 
         $validated = $request->validated();
-
-        if ($tenantEvent instanceof Event) {
-            $validated['event_id'] = $tenantEvent->id;
-        }
 
         if (empty($validated['user_id'])) {
             unset($validated['user_id']);
@@ -147,7 +163,11 @@ class ContingentController extends Controller
     public function verify(Request $request, Contingent $contingent): RedirectResponse
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
-        abort_unless(! ($tenantEvent instanceof Event) || $contingent->event_id === $tenantEvent->id, 404);
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false;
+
+        if (! $isFullAdmin && $tenantEvent instanceof Event) {
+            abort_unless($contingent->event_id === $tenantEvent->id, 404);
+        }
 
         $contingent->update([
             'status' => ContingentStatus::Verified,
@@ -162,7 +182,11 @@ class ContingentController extends Controller
     public function destroy(Request $request, Contingent $contingent): RedirectResponse
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
-        abort_unless(! ($tenantEvent instanceof Event) || $contingent->event_id === $tenantEvent->id, 404);
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']) ?? false;
+
+        if (! $isFullAdmin && $tenantEvent instanceof Event) {
+            abort_unless($contingent->event_id === $tenantEvent->id, 404);
+        }
 
         $contingent->delete();
 

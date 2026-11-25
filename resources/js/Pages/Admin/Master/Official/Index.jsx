@@ -2,6 +2,7 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
+import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 import { Modal, Pagination, Input, Textarea, Combobox, Button } from '@/Components/UI';
 
 export default function OfficialIndex({
@@ -179,34 +180,32 @@ export default function OfficialIndex({
         <AdminLayout auth={auth}>
             <Head title="Master Data Official - Smart Perkemi" />
 
-            {/* ════ HEADER SECTION (CINZEL TITLE & ACTION) ════ */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            {/* ════ HEADER SECTION ════ */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <div className="flex items-center gap-2.5 text-xs text-[#8c827a] mb-1">
-                        <Link href="/admin/dashboard" className="hover:text-[#c0392b] transition-colors">
-                            Dashboard
-                        </Link>
-                        <span>/</span>
-                        <span className="text-[#0f0d0b] font-medium">Master Data</span>
-                        <span>/</span>
-                        <span className="text-[#c0392b] font-semibold">Official</span>
-                    </div>
-                    <h1 className="font-cinzel text-xl md:text-2xl font-bold text-[#0f0d0b] tracking-wide flex items-center gap-3">
+                    {/* <div className="flex items-center gap-2 mb-1">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <i className="fa-solid fa-id-badge text-[9px] text-[#c0392b]" />
+                            Official & Pelatih
+                        </span>
+                    </div> */}
+                    <h1 className="font-sans text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
                         <span>Master Data Official Kontingen</span>
-                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#c0392b]/10 text-[#c0392b] border border-[#c0392b]/20 font-sans font-bold">
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-[#c0392b] border border-rose-200 dark:border-rose-900/30 font-sans font-bold tabular-nums">
                             {officials.total} Terdaftar
                         </span>
                     </h1>
-                    <p className="text-xs text-[#706860] mt-1 max-w-xl">
+                    <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
                         Kelola data manajer, pelatih kepala, pelatih, ofisial, dan tim medis seluruh kontingen dojo Shorinji Kempo.
                     </p>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                    <MasterDataTransfer type="official" label="Official" />
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-transparent bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs md:text-sm shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                     >
                         <i className="fa-solid fa-user-plus text-xs"></i>
                         <span>Tambah Official Baru</span>
@@ -216,62 +215,62 @@ export default function OfficialIndex({
 
             {/* ════ STATS METRICS (4 CARDS) ════ */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-[#706860]">Total Official</span>
-                        <div className="w-8 h-8 rounded-xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center text-xs">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Official</span>
+                        <div className="size-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-[#c0392b] flex items-center justify-center text-xs border border-rose-100 dark:border-rose-900/30">
                             <i className="fa-solid fa-id-badge"></i>
                         </div>
                     </div>
-                    <p className="font-cinzel font-bold text-2xl text-[#0f0d0b] mt-2">
+                    <p className="font-sans font-extrabold text-2xl text-slate-900 dark:text-white tracking-tight mt-2 tabular-nums">
                         {stats.total_officials || 0}
                     </p>
-                    <span className="text-[10px] text-[#8c827a] mt-0.5 block">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
                         Semua jabatan terdaftar
                     </span>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-[#706860]">Manajer Tim</span>
-                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center text-xs">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Manajer Tim</span>
+                        <div className="size-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 flex items-center justify-center text-xs border border-purple-100 dark:border-purple-900/30">
                             <i className="fa-solid fa-user-tie"></i>
                         </div>
                     </div>
-                    <p className="font-cinzel font-bold text-2xl text-purple-700 mt-2">
+                    <p className="font-sans font-extrabold text-2xl text-purple-700 dark:text-purple-300 tracking-tight mt-2 tabular-nums">
                         {stats.total_managers || 0}
                     </p>
-                    <span className="text-[10px] text-[#8c827a] mt-0.5 block">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
                         Penanggung jawab kontingen
                     </span>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-[#706860]">Pelatih & Asisten</span>
-                        <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center text-xs">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Pelatih & Asisten</span>
+                        <div className="size-8 rounded-xl bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 flex items-center justify-center text-xs border border-teal-100 dark:border-teal-900/30">
                             <i className="fa-solid fa-chalkboard-user"></i>
                         </div>
                     </div>
-                    <p className="font-cinzel font-bold text-2xl text-teal-700 mt-2">
+                    <p className="font-sans font-extrabold text-2xl text-teal-700 dark:text-teal-300 tracking-tight mt-2 tabular-nums">
                         {stats.total_coaches || 0}
                     </p>
-                    <span className="text-[10px] text-[#8c827a] mt-0.5 block">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
                         Pelatih teknik dan fisik
                     </span>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-[#706860]">Tim Medis</span>
-                        <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center text-xs">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tim Medis</span>
+                        <div className="size-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 flex items-center justify-center text-xs border border-rose-100 dark:border-rose-900/30">
                             <i className="fa-solid fa-kit-medical"></i>
                         </div>
                     </div>
-                    <p className="font-cinzel font-bold text-2xl text-rose-700 mt-2">
+                    <p className="font-sans font-extrabold text-2xl text-rose-700 dark:text-rose-300 tracking-tight mt-2 tabular-nums">
                         {stats.total_medics || 0}
                     </p>
-                    <span className="text-[10px] text-[#8c827a] mt-0.5 block">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
                         Tenaga kesehatan & fisioterapi
                     </span>
                 </div>
@@ -377,11 +376,10 @@ export default function OfficialIndex({
                             key={tab.key}
                             type="button"
                             onClick={() => handleGenderTabClick(tab.key)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                                selectedGender === tab.key
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${selectedGender === tab.key
                                     ? 'bg-[#c0392b] text-white shadow-xs'
                                     : 'bg-[#f7f4ef] text-[#706860] hover:bg-[#ede9e1]'
-                            }`}
+                                }`}
                         >
                             {tab.label}
                         </Button>
@@ -395,7 +393,7 @@ export default function OfficialIndex({
                     <div className="w-14 h-14 rounded-2xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center mx-auto mb-3 text-xl">
                         <i className="fa-solid fa-id-badge"></i>
                     </div>
-                    <h3 className="font-cinzel text-sm font-bold text-[#0f0d0b]">
+                    <h3 className="font-sans text-sm font-bold text-slate-900 dark:text-white">
                         Tidak Ada Data Official Ditemukan
                     </h3>
                     <p className="text-xs text-[#706860] mt-1 max-w-sm mx-auto">
@@ -439,7 +437,7 @@ export default function OfficialIndex({
                                         {/* Column 1: Nama & Avatar */}
                                         <td className="py-3.5 px-4 min-w-[200px]">
                                             <div className="flex items-center gap-2.5">
-                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#c0392b] to-[#d4a843] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                                <div className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#b92f24] font-bold text-xs flex items-center justify-center shrink-0">
                                                     {(off.name || 'O').substring(0, 2).toUpperCase()}
                                                 </div>
                                                 <div>
@@ -483,11 +481,10 @@ export default function OfficialIndex({
                                         {/* Column 4: Gender */}
                                         <td className="py-3.5 px-3 text-center whitespace-nowrap">
                                             <span
-                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${
-                                                    off.gender === 'male' || off.gender === 'putra'
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${off.gender === 'male' || off.gender === 'putra'
                                                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                                         : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                                }`}
+                                                    }`}
                                             >
                                                 <i className={`fa-solid ${off.gender === 'male' || off.gender === 'putra' ? 'fa-mars text-[9px]' : 'fa-venus text-[9px]'}`}></i>
                                                 <span>{off.gender === 'male' || off.gender === 'putra' ? 'Putra' : 'Putri'}</span>
@@ -729,7 +726,7 @@ export default function OfficialIndex({
                     <div className="space-y-4 text-xs">
                         {/* Header Box */}
                         <div className="p-4 rounded-xl bg-[#f7f4ef] border border-[#ede9e1] flex items-center gap-3.5">
-                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#c0392b] to-[#d4a843] text-white font-bold text-base flex items-center justify-center shrink-0 shadow-sm">
+                            <div className="size-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#b92f24] font-bold text-base flex items-center justify-center shrink-0">
                                 {(detailOfficial.name || 'O').substring(0, 2).toUpperCase()}
                             </div>
                             <div className="min-w-0 flex-1">

@@ -82,14 +82,16 @@ Route::get('/event/{slug}/court/{eventCourt}/monitor', [PublicCourtMonitorContro
 Route::get('/event/{slug}/court/{eventCourt}/monitor/state', [PublicCourtMonitorController::class, 'state'])->name('event.public.court.monitor.state');
 Route::get('/event/{slug}/court/{eventCourt}/monitor/timer', [PublicCourtMonitorController::class, 'timer'])->name('event.public.court.monitor.timer');
 
-// Tenant Admin Entry & Exit (Slug-based)
+// Tenant Admin Entry & Exit (Slug-based & ID-based)
 Route::get('/event/{slug}/admin', [TenantAccessController::class, 'enter'])->name('event.tenant.enter');
+Route::get('/admin/event/{event}/enter', [TenantAccessController::class, 'enterById'])->name('admin.event.enter');
 Route::post('/admin/tenant/exit', [TenantAccessController::class, 'exit'])->name('admin.tenant.exit');
 
 Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.')->group(function () {
     Route::redirect('/', '/kontingen/registrasi')->name('index');
     Route::get('registrasi', [ContingentPortalController::class, 'registration'])->name('registrasi');
     Route::get('registrasi/event/{event}/mulai', [ContingentPortalController::class, 'startRegistration'])->name('registrasi.start');
+    Route::match(['get', 'post'], 'registrasi/event/{event}/daftar', [ContingentPortalController::class, 'joinEvent'])->name('registrasi.join');
     Route::get('registrasi/{registration}', [ContingentPortalController::class, 'openRegistration'])->name('registrasi.detail');
     Route::get('jadwal', [ContingentPortalController::class, 'schedule'])->name('jadwal');
     Route::get('bagan', [ContingentPortalController::class, 'bracket'])->name('bagan');
@@ -112,7 +114,7 @@ Route::prefix('kontingen')->middleware(['auth', 'contingent'])->name('kontingen.
 });
 
 Route::redirect('/admin', '/admin/dashboard');
-Route::get('/admin/dashboard', [DashboardController::class, 'index'])->middleware('auth')->name('admin.dashboard');
+Route::get('/admin/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'event.tenant'])->name('admin.dashboard');
 Route::get('/admin/checklist-uji', [DocumentationController::class, 'checklist'])->middleware('auth')->name('admin.checklist');
 Route::get('/admin/checklist-uji/download', [DocumentationController::class, 'download'])->middleware('auth')->name('admin.checklist.download');
 
@@ -140,6 +142,7 @@ Route::prefix('admin/master')->middleware(['auth', 'event.tenant'])->name('admin
     Route::post('event/{event}/cover', [EventDetailController::class, 'updateCover'])->name('event.cover.update');
     Route::delete('event/{event}/cover', [EventDetailController::class, 'destroyCover'])->name('event.cover.destroy');
     Route::put('event/{event}/users', [EventDetailController::class, 'updateEventUsers'])->name('event.users.update');
+    Route::post('event/{event}/users/quick-create', [EventDetailController::class, 'quickCreateUser'])->name('event.users.quick-create');
     Route::put('event/{event}/dates', [EventDetailController::class, 'updateDates'])->name('event.update.dates');
     Route::put('event/{event}/fees', [EventDetailController::class, 'updateFees'])->name('event.update.fees');
     Route::put('event/{event}/tournament-settings', [EventDetailController::class, 'updateTournamentSettings'])->name('event.update.tournament-settings');

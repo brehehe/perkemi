@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\Event;
 use App\Services\AuthenticatedLandingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,13 +17,29 @@ class AuthenticatedSessionController extends Controller
     /**
      * Display the login view.
      */
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        $targetEvent = null;
+        $eventId = $request->query('event_id');
+        $eventSlug = $request->query('event');
+
+        if (is_string($eventId) && $eventId !== '') {
+            $targetEvent = Event::query()->find($eventId);
+        } elseif (is_string($eventSlug) && $eventSlug !== '') {
+            $targetEvent = Event::query()->where('slug', $eventSlug)->first();
+        }
+
         return Inertia::render('Auth/Login', [
             'totalAthletes' => 520,
             'totalProvinces' => 38,
             'year' => (int) date('Y'),
             'status' => session('status'),
+            'targetEvent' => $targetEvent ? [
+                'id' => $targetEvent->id,
+                'name' => $targetEvent->name,
+                'city' => $targetEvent->city,
+                'status_label' => $targetEvent->status?->label() ?? 'Aktif',
+            ] : null,
         ]);
     }
 

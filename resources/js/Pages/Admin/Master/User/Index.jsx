@@ -2,6 +2,7 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
+import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 import { Modal, Pagination, Input, Combobox, Button } from '@/Components/UI';
 
 export default function UserIndex({
@@ -169,29 +170,30 @@ export default function UserIndex({
             <Head title="Pengguna & Hak Akses — Smart Perkemi" />
 
             {/* ════ HEADER SECTION ════ */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#8c827a] tracking-wider uppercase mb-1">
-                        <i className="fa-solid fa-folder-tree text-[11px]"></i>
-                        <span>Master Data</span>
-                        <i className="fa-solid fa-chevron-right text-[9px] text-[#b5afa6]"></i>
-                        <span className="text-[#c0392b]">Pengguna & Role</span>
-                    </div>
-                    <h1 className="font-cinzel text-xl md:text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    {/* <div className="flex items-center gap-2 mb-1">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <i className="fa-solid fa-users text-[9px] text-[#c0392b]" />
+                            Pengguna & Otorisasi
+                        </span>
+                    </div> */}
+                    <h1 className="font-sans text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                         Manajemen Pengguna & Hak Akses
                     </h1>
-                    <p className="text-xs md:text-sm text-[#706860] mt-0.5">
+                    <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
                         Kelola akun administrator, manajer kontingen, wasit, dan hak akses otorisasi sistem Smart Perkemi.
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                    <MasterDataTransfer type="user" label="Pengguna & Role" supportsLogin requiresLogin />
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#d33a2a] hover:to-[#a93226] text-white font-medium text-xs md:text-sm shadow-md shadow-[#c0392b]/25 transition-all cursor-pointer hover:shadow-lg active:scale-98"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-transparent bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs md:text-sm shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                     >
-                        <i className="fa-solid fa-user-plus text-sm"></i>
+                        <i className="fa-solid fa-user-plus text-xs" />
                         <span>Tambah Pengguna Baru</span>
                     </Button>
                 </div>
@@ -200,22 +202,22 @@ export default function UserIndex({
             {/* ════ 4 POLISHED STAT CARDS ════ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                 {/* 1. Total Pengguna */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8c827a]">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Total Pengguna
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-users text-xs"></i>
+                        <div className="size-9 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-[#c0392b] flex items-center justify-center shrink-0 border border-rose-100 dark:border-rose-900/30">
+                            <i className="fa-solid fa-users text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.total_users}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#f7f4ef] text-[#0f0d0b] font-medium text-[10.5px] border border-[#ede9e1]">
-                                <i className="fa-solid fa-database text-[9px] text-[#c0392b]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11px] border border-slate-200 dark:border-slate-700">
+                                <i className="fa-solid fa-database text-[9px] text-[#c0392b]" />
                                 Akun terdaftar
                             </span>
                         </div>
@@ -223,22 +225,22 @@ export default function UserIndex({
                 </div>
 
                 {/* 2. Administrator */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-slate-300 bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-800">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Administrator
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center shrink-0 shadow-2xs">
-                            <i className="fa-solid fa-shield-halved text-xs"></i>
+                        <div className="size-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-[#b8860b] flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-900/30">
+                            <i className="fa-solid fa-shield-halved text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-slate-900 tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.admin_users}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium text-[10.5px] border border-slate-200">
-                                <i className="fa-solid fa-key text-[9px]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11px] border border-slate-200 dark:border-slate-700">
+                                <i className="fa-solid fa-key text-[9px]" />
                                 Akses penuh sistem
                             </span>
                         </div>
@@ -246,22 +248,22 @@ export default function UserIndex({
                 </div>
 
                 {/* 3. Akun Kontingen */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-emerald-200/80 bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-emerald-800">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Akun Kontingen
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-flag text-xs"></i>
+                        <div className="size-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/30">
+                            <i className="fa-solid fa-flag text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-emerald-700 tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.contingent_users}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[10.5px] border border-emerald-200/70">
-                                <i className="fa-solid fa-user-check text-[9px]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium text-[11px] border border-emerald-200 dark:border-emerald-800">
+                                <i className="fa-solid fa-user-check text-[9px]" />
                                 Manajer dojo/cabang
                             </span>
                         </div>
@@ -269,22 +271,22 @@ export default function UserIndex({
                 </div>
 
                 {/* 4. Wasit & Juri */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-blue-200/80 bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-blue-800">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Wasit & Perangkat
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-gavel text-xs"></i>
+                        <div className="size-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/30">
+                            <i className="fa-solid fa-gavel text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-blue-700 tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.referee_users}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[10.5px] border border-blue-200/70">
-                                <i className="fa-solid fa-whistle text-[9px]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium text-[11px] border border-blue-200 dark:border-blue-800">
+                                <i className="fa-solid fa-whistle text-[9px]" />
                                 Petugas tatami
                             </span>
                         </div>
@@ -339,7 +341,7 @@ export default function UserIndex({
                     <div className="w-14 h-14 rounded-2xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center mx-auto mb-3 text-xl">
                         <i className="fa-solid fa-user-gear"></i>
                     </div>
-                    <h3 className="font-cinzel text-sm font-bold text-[#0f0d0b]">
+                    <h3 className="font-sans text-sm font-bold text-slate-900 dark:text-white">
                         Tidak Ada Data Pengguna Ditemukan
                     </h3>
                     <p className="text-xs text-[#706860] mt-1 max-w-sm mx-auto">
@@ -370,7 +372,7 @@ export default function UserIndex({
                                         {/* Column 1: Nama Pengguna & Avatar */}
                                         <td className="py-3.5 px-4 min-w-[200px]">
                                             <div className="flex items-center gap-2.5">
-                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0f0d0b] to-[#2c221a] text-[#f0c060] font-bold text-xs flex items-center justify-center shrink-0 shadow-xs border border-white/10">
+                                                <div className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#b92f24] font-bold text-xs flex items-center justify-center shrink-0">
                                                     {(user.name || 'U').substring(0, 2).toUpperCase()}
                                                 </div>
                                                 <span className="font-semibold text-xs md:text-[13px] text-[#0f0d0b] leading-snug">

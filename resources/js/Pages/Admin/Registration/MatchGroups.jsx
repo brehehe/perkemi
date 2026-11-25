@@ -33,7 +33,6 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
         .filter((entry) => usedCategories.some((category) => category.id === entry.event_match_category_id && category.type === 'embu'))
         .map((entry) => `${entry.event_match_category_id}:${entry.team_number || 1}`))).size;
 
-    const selectEvent = (eventId) => router.get(baseUrl, { event_id: eventId });
     const selectRegistration = (id) => router.get(baseUrl, { event_id: activeEvent.id, registration_id: id });
 
     const openEntryByNumber = () => {
@@ -138,15 +137,8 @@ export default function MatchGroups({ activeEvent, eventOptions = [], registrati
                                 },
                             ]}
                         />
-                        {eventOptions.length > 1 && <div className="w-full sm:w-64">
-                            <Combobox label="Event" value={activeEvent.id} onChange={selectEvent} placeholder=""
-                                options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))} />
-                        </div>}
                     </div>
                 </div>
-                {eventOptions.length <= 1 && <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#faf4e9] px-3 py-1.5 text-xs font-semibold text-[#74521f]">
-                    <i className="fa-solid fa-trophy" aria-hidden="true" />{activeEvent.name}
-                </div>}
             </header>
 
             <div className="grid items-start gap-5 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)]">

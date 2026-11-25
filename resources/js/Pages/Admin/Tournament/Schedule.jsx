@@ -519,15 +519,6 @@ export default function Schedule({
                                 Geser satu kartu untuk memindahkan satu partai. Jatuhkan ke kartu lain untuk menukar dua partai; kartu lainnya tetap pada jadwal semula.
                             </p>
                         </div>
-                        <Combobox
-                            label="Event dipilih"
-                            labelClassName="text-white/60"
-                            containerClassName="w-full xl:w-96"
-                            value={activeEvent?.id || ''}
-                            onChange={(value) => router.get('/admin/pertandingan/jadwal', { event_id: value }, { preserveState: false })}
-                            clearable={false}
-                            options={events.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))}
-                        />
                     </div>
                 </section>
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\PhoneNumber;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +89,7 @@ class UserController extends Controller
     /**
      * Store a newly created user.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $request->merge(['phone' => PhoneNumber::normalize($request->input('phone'))]);
 
@@ -108,6 +109,20 @@ class UserController extends Controller
         ]);
 
         $user->assignRole($validated['role']);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Pengguna {$user->name} berhasil ditambahkan dengan role {$validated['role']}.",
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'roles' => $user->roles->pluck('name'),
+                ],
+            ], 201);
+        }
 
         return redirect()->back()->with('success', "Pengguna {$user->name} berhasil ditambahkan dengan role {$validated['role']}.");
     }

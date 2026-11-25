@@ -223,12 +223,7 @@ export default function RegistrationVerification({
                 </div>
 
                 {/* Filter and Search */}
-                <div className="grid gap-4 rounded-xl border border-[#ede9e1] bg-white p-4 shadow-xs md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_13rem_minmax(16rem,1fr)] xl:items-end">
-                    {eventOptions.length > 1 && <Combobox label="Event" size="sm" clearable={false}
-                        value={activeEvent?.id || ''} onChange={(value) => router.get('/admin/pendaftaran/verifikasi',
-                            { event_id: value, search, contingent_id: '', category_type: filters.category_type || '' }, { preserveState: false })}
-                        options={eventOptions.map((event) => ({ value: event.id, label: event.name, sublabel: event.option_description }))}
-                        containerClassName="w-full" />}
+                <div className="grid gap-4 rounded-xl border border-[#ede9e1] bg-white p-4 shadow-xs md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_13rem_minmax(16rem,1fr)] xl:items-end">
                     <Combobox label="Filter Kontingen" size="sm" value={contingentFilter}
                         onChange={handleContingentChange} placeholder="Semua Kontingen / Dojo"
                         options={contingents.map((contingent) => ({ value: contingent.id, label: contingent.name }))}

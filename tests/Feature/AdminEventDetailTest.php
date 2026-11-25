@@ -563,3 +563,99 @@ test('updating or toggling match category exhibition automatically syncs associa
     expect($result->is_exhibition)->toBeFalse();
     expect($result->match_category)->toBe('Randori Dewasa -65kg (Updated)');
 });
+
+test('admin can view officials roster tab with personnel list and summary', function () {
+    $user = User::factory()->create();
+
+    $event = Event::create([
+        'name' => 'Kejurda Shorinji Kempo Jawa Timur 2026',
+        'slug' => 'kejurda-shorinji-kempo-jatim-2026-roster',
+        'venue' => 'GOR Uji',
+        'city' => 'Surabaya',
+        'province' => 'Jawa Timur',
+        'start_date' => '2026-10-24',
+        'end_date' => '2026-10-26',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->get("/admin/master/event/detail?event_id={$event->id}&tab=officials_roster");
+
+    $response->assertStatus(200);
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Master/Event/Detail')
+        ->has('event')
+        ->has('counts')
+        ->has('arbitrationSummary')
+        ->has('arbitrationPersonnel')
+        ->has('arbitrationAttendances')
+        ->has('arbitrationScores')
+    );
+});
+
+test('admin event detail scopes data when specific tab is requested for lightweight performance', function () {
+    $user = User::factory()->create();
+
+    $event = Event::create([
+        'name' => 'Event Scoped Test',
+        'slug' => 'event-scoped-test',
+        'venue' => 'GOR Scoped',
+        'city' => 'Surabaya',
+        'province' => 'Jawa Timur',
+        'start_date' => '2026-10-24',
+        'end_date' => '2026-10-26',
+        'is_active' => true,
+    ]);
+
+    // Requesting info tab should not load heavy arbitration personnel
+    $response = $this->actingAs($user)->get("/admin/master/event/detail?event_id={$event->id}&tab=info");
+
+    $response->assertStatus(200);
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Master/Event/Detail')
+        ->has('event')
+        ->has('counts')
+        ->where('arbitrationPersonnel', [])
+        ->where('arbitrationScores', [])
+        ->where('arbitrationAttendances', [])
+    );
+});
+
+test('admin can quickly create user from event detail modal and attach to event', function () {
+    $user = User::factory()->create();
+
+    $event = Event::create([
+        'name' => 'Event Quick User Test',
+        'slug' => 'event-quick-user-test',
+        'venue' => 'GOR Quick User',
+        'city' => 'Surabaya',
+        'province' => 'Jawa Timur',
+        'start_date' => '2026-10-24',
+        'end_date' => '2026-10-26',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)->postJson("/admin/master/event/{$event->id}/users/quick-create", [
+        'name' => 'Sensei Budi Santoso',
+        'email' => 'budi.santoso@smart-perkemi.id',
+        'phone' => '081234567899',
+        'password' => 'Password123!',
+        'role' => 'Viewer',
+        'access_role' => Event::AccessRoleViewer,
+    ]);
+
+    $response->assertCreated();
+    $response->assertJson([
+        'success' => true,
+        'user' => [
+            'name' => 'Sensei Budi Santoso',
+            'email' => 'budi.santoso@smart-perkemi.id',
+            'access_role' => 'viewer',
+        ],
+    ]);
+
+    $newUser = User::where('email', 'budi.santoso@smart-perkemi.id')->first();
+    expect($newUser)->not->toBeNull();
+    expect($newUser->hasRole('Viewer'))->toBeTrue();
+    expect($event->isViewerUser($newUser))->toBeTrue();
+    expect($event->users()->whereKey($newUser->id)->value('event_user.access_role'))->toBe('viewer');
+});

@@ -8,6 +8,7 @@ use App\Models\Official;
 use App\Models\Registration;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Admin\DashboardEventAccessService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -492,4 +493,207 @@ test('a tenant user only manages athletes and officials from their event conting
             'kyu_dan' => 'Kyu 2',
         ])
         ->assertNotFound();
+});
+
+test('a user with viewer role can view dashboard and reports but all management routes are forbidden', function () {
+    config()->set('app.tenant_base_domain', 'localhost');
+
+    $admin = User::factory()->create();
+    $adminRole = Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+    $admin->assignRole($adminRole);
+
+    $viewer = User::factory()->create(['name' => 'Tamu Pengamat', 'email' => 'viewer@perkemi.test']);
+    $event = Event::create([
+        'name' => 'Kejurda Pengamat 2026',
+        'slug' => 'kejurda-pengamat-2026',
+        'tenant_subdomain' => 'kejurda-pengamat-2026',
+        'venue' => 'GOR Pengamat',
+        'city' => 'Kediri',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+    ]);
+
+    // Admin saves user with viewer role via tab=info endpoint
+    $this->actingAs($admin)
+        ->put("/admin/master/event/{$event->id}/users", [
+            'users' => [
+                ['id' => $viewer->id, 'access_role' => Event::AccessRoleViewer],
+            ],
+        ])
+        ->assertRedirect();
+
+    expect($event->isViewerUser($viewer))->toBeTrue();
+    expect($viewer->viewerEvents()->whereKey($event->id)->exists())->toBeTrue();
+
+    // Viewer can enter event panel via /admin/event/{event}/enter
+    $this->actingAs($viewer)
+        ->get("/admin/event/{$event->id}/enter")
+        ->assertRedirect(route('admin.dashboard', ['event_id' => $event->id]))
+        ->assertSessionHas('tenant_event_id', $event->id);
+
+    // Viewer can access dashboard
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/dashboard')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Dashboard')
+            ->where('tenant.event.access_role', 'viewer')
+        );
+
+    // Viewer can access reports hub
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/laporan?report=champions')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Report/Index')
+            ->where('tenant.event.access_role', 'viewer')
+        );
+
+    // Viewer can view all event pages in read-only mode (GET)
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/master/event/detail')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pendaftaran/registrasi')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pertandingan/drawing')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/arbitrase/wasit')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pertandingan/wasit')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pendaftaran/nomor-pertandingan')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pendaftaran/nomor-pertandingan/laporan')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/pendaftaran/registrasi/export')
+        ->assertOk();
+
+    $this->actingAs($viewer)
+        ->get('http://kejurda-pengamat-2026.localhost/admin/panitera')
+        ->assertOk();
+
+    // Viewer cannot mutate data (POST/PUT/DELETE)
+    $this->actingAs($viewer)
+        ->post('http://kejurda-pengamat-2026.localhost/admin/pendaftaran/registrasi', [])
+        ->assertForbidden();
+
+    $this->actingAs($viewer)
+        ->put("http://kejurda-pengamat-2026.localhost/admin/master/event/{$event->id}/general", [])
+        ->assertForbidden();
+});
+
+test('a user with role Viewer assigned to multiple events can switch and enter each event panel without 403', function () {
+    $viewerRole = Role::firstOrCreate(['name' => 'Viewer', 'guard_name' => 'web']);
+    $viewer = User::factory()->create(['name' => 'User Viewer', 'email' => 'viewer2@perkemi.test']);
+    $viewer->assignRole($viewerRole);
+
+    $event1 = Event::create([
+        'name' => 'Event Pertama Viewer',
+        'slug' => 'event-pertama-viewer',
+        'venue' => 'GOR Pertama',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+
+    $event2 = Event::create([
+        'name' => 'Event Kedua Viewer',
+        'slug' => 'event-kedua-viewer',
+        'venue' => 'GOR Kedua',
+        'city' => 'Malang',
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-11-03',
+        'is_active' => false,
+    ]);
+
+    $event1->users()->attach($viewer, ['access_role' => Event::AccessRoleViewer]);
+    $event2->users()->attach($viewer, ['access_role' => Event::AccessRoleViewer]);
+
+    // Enter Event 1
+    $this->actingAs($viewer)
+        ->get("/admin/event/{$event1->id}/enter")
+        ->assertRedirect(route('admin.dashboard', ['event_id' => $event1->id]))
+        ->assertSessionHas('tenant_event_id', $event1->id);
+
+    $this->actingAs($viewer)
+        ->get("/admin/dashboard?event_id={$event1->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Dashboard')
+            ->where('tenant.event.id', $event1->id)
+            ->where('tenant.event.access_role', 'viewer')
+        );
+
+    // Enter Event 2
+    $this->actingAs($viewer)
+        ->get("/admin/event/{$event2->id}/enter")
+        ->assertRedirect(route('admin.dashboard', ['event_id' => $event2->id]))
+        ->assertSessionHas('tenant_event_id', $event2->id);
+
+    $this->actingAs($viewer)
+        ->get("/admin/dashboard?event_id={$event2->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Dashboard')
+            ->where('tenant.event.id', $event2->id)
+            ->where('tenant.event.access_role', 'viewer')
+        );
+});
+
+test('viewer or staff only sees assigned events in switchable events and cannot see or access unassigned active events', function () {
+    $viewerRole = Role::firstOrCreate(['name' => 'Viewer', 'guard_name' => 'web']);
+    $viewer = User::factory()->create(['name' => 'User Viewer Khusus', 'email' => 'viewer.khusus@perkemi.test']);
+    $viewer->assignRole($viewerRole);
+
+    $assignedEvent = Event::create([
+        'name' => 'Event Ditugaskan',
+        'slug' => 'event-ditugaskan',
+        'venue' => 'GOR Surabaya',
+        'city' => 'Surabaya',
+        'start_date' => '2026-10-01',
+        'end_date' => '2026-10-03',
+        'is_active' => true,
+    ]);
+    $assignedEvent->users()->attach($viewer, ['access_role' => Event::AccessRoleViewer]);
+
+    $unassignedEvent = Event::create([
+        'name' => 'Event Tidak Ditugaskan',
+        'slug' => 'event-tidak-ditugaskan',
+        'venue' => 'GOR Malang',
+        'city' => 'Malang',
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-11-03',
+        'status' => 'open_registration',
+        'is_active' => true,
+    ]);
+
+    $eventAccess = app(DashboardEventAccessService::class);
+    $switchable = $eventAccess->switchableEventsFor($viewer);
+
+    expect($switchable->pluck('id'))->toContain($assignedEvent->id)
+        ->and($switchable->pluck('id'))->not->toContain($unassignedEvent->id)
+        ->and($switchable)->toHaveCount(1);
+
+    expect($eventAccess->canAccess($viewer, $assignedEvent))->toBeTrue();
+    expect($eventAccess->canAccess($viewer, $unassignedEvent))->toBeFalse();
+
+    // Entering unassigned event must be forbidden 403
+    $this->actingAs($viewer)
+        ->get("/admin/event/{$unassignedEvent->id}/enter")
+        ->assertForbidden();
 });

@@ -1,5 +1,6 @@
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
+import EventSwitcherModal from '@/Components/Admin/EventSwitcherModal';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -9,6 +10,10 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
     const flash = props.flash || {};
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
+    const [isEventSwitcherOpen, setIsEventSwitcherOpen] = useState(false);
+    const availableEvents = props.tenant?.available_events?.length
+        ? props.tenant.available_events
+        : (Array.isArray(portal?.events) ? portal.events : []);
     const profileRef = useRef(null);
     const eventQuery = portal.event?.id ? `?event_id=${encodeURIComponent(portal.event.id)}` : '';
     const isDashboard = url === '/wasit' || url.startsWith('/wasit?');
@@ -41,14 +46,29 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
             <Head title={`${title} | Portal Wasit`} />
 
             <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle="Portal Wasit · 2026">
-                <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-3">
+                <div
+                    onClick={() => setIsEventSwitcherOpen(true)}
+                    className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-3 cursor-pointer hover:border-[#d4a843]/60 transition-colors group select-none"
+                    title="Klik untuk beralih event kejuaraan"
+                >
                     <div className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#f0c060]">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#f0c060] group-hover:scale-105 transition-transform">
                             <i className="fa-solid fa-gavel text-sm" aria-hidden="true" />
                         </span>
-                        <div className="min-w-0">
-                            <p className="truncate text-[11px] font-semibold text-white">{portal.event?.name || 'Event belum dipilih'}</p>
-                            <p className="mt-0.5 truncate text-[9.5px] uppercase tracking-wide text-[#d4a843]">{portal.referee?.name || 'Akun Wasit'}</p>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                                <p className="truncate text-[11px] font-semibold text-white group-hover:text-[#f0c060] transition-colors">{portal.event?.name || 'Event belum dipilih'}</p>
+                                <span className="text-[9px] text-[#f0c060] font-semibold flex items-center gap-1 shrink-0 bg-[#d4a843]/20 px-1.5 py-0.5 rounded">
+                                    <i className="fa-solid fa-arrows-rotate text-[8px]" />
+                                    <span>Ganti</span>
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1 mt-0.5">
+                                <p className="truncate text-[9.5px] uppercase tracking-wide text-[#d4a843]">{portal.referee?.name || 'Akun Wasit'}</p>
+                                {availableEvents.length > 1 && (
+                                    <span className="text-[9px] text-white/50">{availableEvents.length} Event</span>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -88,6 +108,22 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
                         <p className="truncate text-sm font-bold md:text-base">{title}</p>
                         <p className="hidden truncate text-xs text-[#888078] sm:block">{portal.event?.name}</p>
                     </div>
+
+                    {portal.event?.name && (
+                        <button
+                            type="button"
+                            onClick={() => setIsEventSwitcherOpen(true)}
+                            className="group hidden sm:inline-flex items-center gap-1.5 max-w-[200px] md:max-w-[280px] px-2.5 py-1 rounded-lg border border-[#ede9e1] bg-white hover:bg-[#ede9e1]/70 dark:border-slate-800 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-[#0f0d0b] dark:text-slate-200 text-xs shadow-2xs transition-all cursor-pointer ml-3"
+                            title="Klik untuk beralih event kejuaraan"
+                        >
+                            <span className="flex h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                            <i className="fa-solid fa-trophy text-[10px] text-[#d4a843] shrink-0" />
+                            <span className="truncate font-semibold text-[11px] sm:text-xs">
+                                {portal.event.name}
+                            </span>
+                            <i className="fa-solid fa-chevron-down text-[8.5px] text-[#8c827a] group-hover:text-[#0f0d0b] dark:group-hover:text-white shrink-0 transition-transform" />
+                        </button>
+                    )}
                     <div className="ml-auto flex items-center gap-2">
                         <ThemeToggle />
                     <div ref={profileRef} className="relative">
@@ -107,6 +143,14 @@ export default function RefereeLayout({ children, title = 'Portal Wasit', portal
                 </main>
                 <footer className="border-t border-[#e7e0d8] px-5 py-4 text-center text-[11px] text-[#aaa29a] dark:border-slate-800 dark:text-slate-500">© 2026 SMART-PERKEMI · Portal Wasit Shorinji Kempo Indonesia</footer>
             </div>
+
+            <EventSwitcherModal
+                isOpen={isEventSwitcherOpen}
+                onClose={() => setIsEventSwitcherOpen(false)}
+                events={availableEvents}
+                currentEventId={portal.event?.id}
+                isFullAdmin={false}
+            />
         </div>
     );
 }

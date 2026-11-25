@@ -2,6 +2,7 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState, useRef } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import {
     Card,
     Button,
@@ -30,7 +31,7 @@ export default function EventIndex({
     homepageEventOptions = [],
     auth = {},
 }) {
-    const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || 'all');
 
@@ -227,6 +228,13 @@ export default function EventIndex({
 
     const getStatusBadge = (status) => {
         switch (status) {
+            case 'completed':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 whitespace-nowrap">
+                        <i className="fa-solid fa-circle-check text-[9px] text-emerald-500"></i>
+                        Selesai
+                    </span>
+                );
             case 'open_registration':
                 return (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200/80 whitespace-nowrap">
@@ -241,13 +249,6 @@ export default function EventIndex({
                         Sedang Berlangsung
                     </span>
                 );
-            case 'completed':
-                return (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-                        <i className="fa-solid fa-flag-checkered text-[9px] text-slate-500"></i>
-                        Selesai
-                    </span>
-                );
             case 'closed':
                 return (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200/80 whitespace-nowrap">
@@ -259,8 +260,8 @@ export default function EventIndex({
             default:
                 return (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
-                        <i className="fa-solid fa-file-pen text-[9px] text-slate-400"></i>
-                        Draft
+                        <i className="fa-solid fa-clock text-[9px] text-slate-400"></i>
+                        Akan Datang
                     </span>
                 );
         }
@@ -275,52 +276,110 @@ export default function EventIndex({
         { key: 'draft', label: 'Draft', count: stats.draft_events },
     ];
 
+    const getEventActionItems = (event) => [
+        {
+            label: 'Mode Event (Panel Kerja)',
+            description: 'Buka panel kerja operasional dan kendali turnamen',
+            icon: <i className="fa-solid fa-right-to-bracket text-[#c0392b]" />,
+            href: `/admin/event/${event.id}/enter`,
+            tone: 'rose',
+        },
+        {
+            label: 'Rincian & Informasi Event',
+            description: 'Lihat ringkasan jadwal, lokasi, dan penyelenggara',
+            icon: <i className="fa-solid fa-eye text-blue-600" />,
+            onClick: () => setDetailEvent(event),
+        },
+        {
+            label: 'Edit Data Event',
+            description: 'Ubah nama, tanggal pelaksanaan, kuota, atau venue',
+            icon: <i className="fa-solid fa-pen text-amber-600" />,
+            onClick: () => openEditModal(event),
+        },
+        {
+            label: 'Pengaturan Lanjutan (14 Tab)',
+            description: 'Kelola kelompok umur, nomor tanding, wasit & court',
+            icon: <i className="fa-solid fa-sliders text-[#d4a843]" />,
+            href: `/admin/master/event/${event.id}/detail`,
+        },
+        {
+            label: 'Ekspor Paket Data (.json)',
+            description: 'Unduh paket sinkronisasi offline & backup arsip',
+            icon: <i className="fa-solid fa-cloud-arrow-down text-teal-600" />,
+            href: `/admin/master/event/${event.id}/export-package`,
+            download: true,
+            badge: 'JSON',
+        },
+        ...(event.slug ? [{
+            label: 'Halaman Publik Event',
+            description: 'Buka portal web pendaftaran publik kejuaraan',
+            icon: <i className="fa-solid fa-globe text-emerald-600" />,
+            href: `/event/${event.slug}`,
+        }] : []),
+        {
+            divider: true,
+        },
+        {
+            label: 'Hapus Event',
+            description: 'Hapus data kejuaraan ini dari database',
+            icon: <i className="fa-solid fa-trash-can text-rose-600" />,
+            onClick: () => setDeletingEvent(event),
+            tone: 'rose',
+        },
+    ];
+
+    const globalEventSettingsItems = [
+        {
+            label: 'Landing Beranda',
+            description: 'Atur event yang ditampilkan di halaman beranda utama',
+            icon: <i className="fa-solid fa-house-chimney-window text-[#c0392b]" />,
+            onClick: () => setIsHomepageModalOpen(true),
+        },
+        {
+            label: 'Pengaturan Global (14 Tab)',
+            description: 'Pengaturan detail komprehensif master event & aturan',
+            icon: <i className="fa-solid fa-sliders text-[#d4a843]" />,
+            href: '/admin/master/event/detail',
+            isLink: true,
+        },
+        {
+            label: 'Impor Event (.json)',
+            description: 'Impor paket data event dari file JSON (sinkronisasi offline/online)',
+            icon: <i className="fa-solid fa-cloud-arrow-up text-emerald-600" />,
+            onClick: () => setIsImportModalOpen(true),
+            badge: 'JSON',
+        },
+    ];
+
     return (
         <AdminLayout auth={auth} title="Master Event & Kejuaraan">
             <Head title="Master Event & Acara — Smart Perkemi" />
 
             {/* ════ HEADER SECTION ════ */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div>
-                    <h1 className="font-cinzel text-xl md:text-2xl font-bold text-[#0f0d0b] tracking-tight">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div className="min-w-0">
+                    <h1 className="font-sans text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                         Manajemen Event & Kejuaraan
                     </h1>
-                    <p className="text-xs md:text-sm text-[#706860] mt-0.5">
+                    <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
                         Kelola agenda kejuaraan, status operasional, serta pendaftaran setiap event secara terpisah.
                     </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5">
-                    <Button variant="unstyled" size="none"
-                        type="button"
-                        onClick={() => setIsHomepageModalOpen(true)}
-                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#faf8f5] text-[#504840] font-semibold text-xs md:text-sm border border-[#ded8ce] shadow-sm transition-all"
-                    >
-                        <i className="fa-solid fa-house-chimney-window text-[#c0392b] text-xs"></i>
-                        <span>Landing Beranda</span>
-                    </Button>
-                    <Link
-                        href="/admin/master/event/detail"
-                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#141210] hover:bg-black text-amber-400 font-semibold text-xs md:text-sm border border-amber-400/20 shadow-sm transition-all"
-                    >
-                        <i className="fa-solid fa-sliders text-xs"></i>
-                        <span>Pengaturan & Detail Event</span>
-                    </Link>
-                    <Button variant="unstyled" size="none"
-                        type="button"
-                        onClick={() => setIsImportModalOpen(true)}
-                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs md:text-sm border border-emerald-200 shadow-sm transition-all cursor-pointer"
-                        title="Impor paket data event dari file JSON (sinkronisasi offline/online)"
-                    >
-                        <i className="fa-solid fa-cloud-arrow-up text-emerald-600 text-xs"></i>
-                        <span>Impor Event (.json)</span>
-                    </Button>
+                <div className="flex items-center gap-2.5 shrink-0">
+                    <ActionMenuDropdown
+                        label="Pengaturan & Alat"
+                        theme="light"
+                        menuHeader="Alat & Konfigurasi Global"
+                        icon={<i className="fa-solid fa-sliders text-xs text-[#d4a843]" />}
+                        items={globalEventSettingsItems}
+                    />
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#d33a2a] hover:to-[#a93226] text-white font-medium text-xs md:text-sm shadow-md shadow-[#c0392b]/25 transition-all cursor-pointer hover:shadow-lg active:scale-98"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-transparent bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs md:text-sm shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                     >
-                        <i className="fa-solid fa-circle-plus text-sm"></i>
+                        <i className="fa-solid fa-circle-plus text-xs" />
                         <span>Tambah Event Baru</span>
                     </Button>
                 </div>
@@ -329,22 +388,22 @@ export default function EventIndex({
             {/* ════ 4 POLISHED STAT CARDS ════ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                 {/* 1. Total Seluruh Event */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8c827a]">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Total Seluruh Event
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-trophy text-xs"></i>
+                        <div className="size-9 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-[#c0392b] flex items-center justify-center shrink-0 border border-rose-100 dark:border-rose-900/30">
+                            <i className="fa-solid fa-trophy text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.total_events}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#f7f4ef] text-[#0f0d0b] font-medium text-[10.5px] border border-[#ede9e1]">
-                                <i className="fa-solid fa-database text-[9px] text-[#c0392b]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11px] border border-slate-200 dark:border-slate-700">
+                                <i className="fa-solid fa-database text-[9px] text-[#c0392b]" />
                                 Terdata di sistem
                             </span>
                         </div>
@@ -352,44 +411,44 @@ export default function EventIndex({
                 </div>
 
                 {/* 2. Event Operasional */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-[#d4a843]/40 bg-gradient-to-br from-white via-white to-amber-50/30 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#b8860b]">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Event Operasional
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-[#d4a843]/15 text-[#b8860b] flex items-center justify-center shrink-0 shadow-xs">
-                            <i className="fa-solid fa-star text-xs"></i>
+                        <div className="size-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-[#b8860b] flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-900/30 shadow-2xs">
+                            <i className="fa-solid fa-star text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl sm:text-3xl font-bold text-[#0f0d0b] tracking-tight leading-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.active_events || 0}
                         </div>
-                        <div className="mt-1.5 text-xs">
-                            <span className="text-[#8c827a] text-[10.5px]">
-                                {stats.active_events === 1 ? '1 event tersedia di menu kerja' : `${stats.active_events || 0} event dapat berjalan bersamaan`}
+                        <div className="mt-2 text-xs">
+                            <span className="text-slate-500 dark:text-slate-400 text-[11px] tabular-nums">
+                                {stats.active_events === 1 ? '1 event aktif di menu kerja' : `${stats.active_events || 0} event dapat berjalan bersamaan`}
                             </span>
                         </div>
                     </div>
                 </div>
 
                 {/* 3. Pendaftaran Terbuka */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8c827a]">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Pendaftaran Terbuka
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-door-open text-xs"></i>
+                        <div className="size-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/30">
+                            <i className="fa-solid fa-door-open text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.open_registration}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[10.5px] border border-blue-200/70">
-                                <i className="fa-solid fa-user-plus text-[9px]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium text-[11px] border border-blue-200 dark:border-blue-800">
+                                <i className="fa-solid fa-user-plus text-[9px]" />
                                 Menerima kontingen
                             </span>
                         </div>
@@ -397,22 +456,22 @@ export default function EventIndex({
                 </div>
 
                 {/* 4. Event Selesai / Arsip */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                <div className="p-4 sm:p-5 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8c827a]">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             Event Selesai / Arsip
                         </span>
-                        <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-box-archive text-xs"></i>
+                        <div className="size-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/30">
+                            <i className="fa-solid fa-box-archive text-xs" />
                         </div>
                     </div>
-                    <div className="mt-2.5">
-                        <div className="text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    <div className="mt-3">
+                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
                             {stats.completed_events}
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-[#706860]">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[10.5px] border border-emerald-200/70">
-                                <i className="fa-solid fa-medal text-[9px]"></i>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium text-[11px] border border-emerald-200 dark:border-emerald-800">
+                                <i className="fa-solid fa-medal text-[9px]" />
                                 Riwayat medali tersimpan
                             </span>
                         </div>
@@ -420,86 +479,79 @@ export default function EventIndex({
                 </div>
             </div>
 
-            {/* ════ ACTIVE EVENT HERO BANNER (POLISHED) ════ */}
-            {activeEvent && (
-                <div
-                    className="relative rounded-2xl p-5 md:p-6 mb-6 overflow-hidden border border-[#d4a843]/40 shadow-xl text-white"
-                    style={{
-                        background: 'linear-gradient(135deg, #0f0d0b 0%, #1a1410 50%, #241710 100%)',
-                    }}
-                >
-                    {/* Watermark Kanji Background */}
-                    <div className="absolute right-8 top-1/2 -translate-y-1/2 text-8xl md:text-9xl font-cinzel font-black text-white/[0.04] pointer-events-none select-none">
-                        拳
-                    </div>
-                    {/* Glowing radial accent */}
-                    <div className="absolute -right-10 -top-10 w-64 h-64 rounded-full bg-[radial-gradient(circle,rgba(212,168,67,0.25)_0%,transparent_70%)] pointer-events-none"></div>
-
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-                        <div className="space-y-2 max-w-2xl">
-                            {/* Chips Row */}
+            {/* ════ ACTIVE EVENT HERO BANNER (EXECUTIVE & CLEAN) ════ */}
+            {/* {activeEvent && (
+                <div className="relative rounded-2xl p-5 md:p-6 mb-6 border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-2xs transition-all">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                        <div className="space-y-2.5 max-w-2xl min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-[#d4a843] text-[#0f0d0b] shadow-xs">
-                                    <i className="fa-solid fa-crown text-[10px]"></i>
-                                    Event Aktif Terbaru
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+                                    <i className="fa-solid fa-crown text-[10px] text-[#b8860b]" />
+                                    Event Utama Aktif
                                 </span>
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-white/10 text-white border border-white/10">
-                                    <i className="fa-regular fa-calendar text-[#d4a843]"></i>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 tabular-nums">
+                                    <i className="fa-regular fa-calendar text-[#3498db]" />
                                     {activeEvent.dates}
                                 </span>
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-white/10 text-white border border-white/10">
-                                    <i className="fa-solid fa-location-dot text-[#e74c3c]"></i>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                    <i className="fa-solid fa-location-dot text-[#c0392b]" />
                                     {activeEvent.venue}, {activeEvent.city}
                                 </span>
                             </div>
 
-                            {/* Titles */}
                             <div>
-                                <h2 className="font-cinzel text-lg md:text-xl font-bold text-white tracking-normal leading-snug">
+                                <h2 className="font-sans text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-snug">
                                     {activeEvent.name}
                                 </h2>
                                 {activeEvent.edition && (
-                                    <p className="text-xs text-[#f0c060] font-normal tracking-wide mt-0.5">
+                                    <p className="text-xs text-[#b8860b] dark:text-[#f0c060] font-medium tracking-wide mt-0.5">
                                         {activeEvent.edition}
                                     </p>
                                 )}
                             </div>
 
-                            {/* Stat Chips */}
-                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-[#b5afa6]">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10">
-                                    <i className="fa-solid fa-flag text-[#d4a843] text-[11px]"></i>
-                                    <strong className="text-white">{activeEvent.contingents_count}</strong> Kontingen Terhubung
+                            <div className="flex flex-wrap items-center gap-2.5 pt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    <i className="fa-solid fa-flag text-[#b8860b] text-[11px]" />
+                                    <strong className="text-slate-900 dark:text-white tabular-nums">{activeEvent.contingents_count}</strong> Kontingen Terhubung
                                 </span>
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10">
-                                    <i className="fa-solid fa-file-signature text-[#27ae60] text-[11px]"></i>
-                                    <strong className="text-white">{activeEvent.registrations_count}</strong> Berkas Registrasi
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    <i className="fa-solid fa-file-signature text-emerald-600 text-[11px]" />
+                                    <strong className="text-slate-900 dark:text-white tabular-nums">{activeEvent.registrations_count}</strong> Berkas Registrasi
                                 </span>
                             </div>
                             {stats.active_events > 1 && (
-                                <p className="text-xs leading-relaxed text-white/65">
-                                    Ada {stats.active_events} event aktif. Data registrasi, nomor pertandingan, verifikasi, drawing, dan merge tetap dipisahkan berdasarkan event yang dipilih.
+                                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                                    Terdapat {stats.active_events} event aktif. Data registrasi, nomor pertandingan, verifikasi, drawing, dan merge dipisahkan berdasarkan event yang dipilih.
                                 </p>
                             )}
                         </div>
 
-                        {/* Action Button */}
-                        <div className="flex items-center shrink-0">
+                        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                            <a
+                                href={`/admin/event/${activeEvent.id}/enter`}
+                                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white text-xs md:text-sm font-semibold shadow-xs transition-all cursor-pointer active:scale-95"
+                                title="Masuk Mode Event untuk mengelola kejuaraan ini"
+                            >
+                                <i className="fa-solid fa-right-to-bracket text-xs" />
+                                <span>Masuk Mode Event</span>
+                                <i className="fa-solid fa-arrow-right text-[11px] text-white/80" />
+                            </a>
                             <Link
                                 href={`/admin/master/event/${activeEvent.id}/detail`}
-                                className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs md:text-sm font-semibold border border-white/20 transition-all hover:border-white/40 shadow-sm cursor-pointer"
+                                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs md:text-sm font-semibold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                                title="Pengaturan & Detail Event (Kelompok Umur, Court, Nomor Tanding)"
                             >
-                                <i className="fa-solid fa-sliders text-[#d4a843]"></i>
-                                <span>Kelola Event Ini</span>
-                                <i className="fa-solid fa-arrow-right text-xs text-white/70"></i>
+                                <i className="fa-solid fa-sliders text-[#b8860b] text-xs" />
+                                <span>Kelola Detail</span>
                             </Link>
                         </div>
                     </div>
                 </div>
-            )}
+            )} */}
 
-            {/* ════ FILTER, SEARCH & VIEW CONTROLS (TIDY & SLEEK) ════ */}
-            <div className="p-3.5 mb-6 rounded-2xl bg-white border border-[#ede9e1] shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* ════ FILTER, SEARCH & VIEW CONTROLS ════ */}
+            <div className="p-3.5 mb-6 rounded-2xl bg-white dark:bg-slate-900 border border-[#ede9e1] dark:border-slate-800 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 {/* Status Tabs */}
                 <div className="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
                     {statusTabs.map((tab) => {
@@ -509,19 +561,17 @@ export default function EventIndex({
                                 key={tab.key}
                                 type="button"
                                 onClick={() => handleStatusTabClick(tab.key)}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                                    isSelected
-                                        ? 'bg-[#0f0d0b] text-white shadow-xs font-semibold'
-                                        : 'text-[#706860] hover:text-[#0f0d0b] hover:bg-[#f7f4ef]'
-                                }`}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${isSelected
+                                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-2xs font-semibold'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
                             >
                                 <span>{tab.label}</span>
                                 <span
-                                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
-                                        isSelected
-                                            ? 'bg-white/20 text-white'
-                                            : 'bg-[#ede9e1] text-[#706860]'
-                                    }`}
+                                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none tabular-nums ${isSelected
+                                            ? 'bg-white/20 dark:bg-slate-900/20 text-white dark:text-slate-900'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                        }`}
                                 >
                                     {tab.count}
                                 </span>
@@ -548,31 +598,29 @@ export default function EventIndex({
                     </form>
 
                     {/* View Switcher */}
-                    <div className="flex items-center rounded-xl bg-[#ede9e1]/70 p-1 border border-black/5 shrink-0">
+                    <div className="flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700 shrink-0">
                         <Button variant="unstyled" size="none"
                             type="button"
                             onClick={() => setViewMode('table')}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                                viewMode === 'table'
-                                    ? 'bg-white text-[#0f0d0b] shadow-xs'
-                                    : 'text-[#8c827a] hover:text-[#0f0d0b]'
-                            }`}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${viewMode === 'table'
+                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                }`}
                             title="Tampilan Tabel"
                         >
-                            <i className="fa-solid fa-list text-xs"></i>
+                            <i className="fa-solid fa-list text-xs" />
                             <span className="hidden sm:inline">Tabel</span>
                         </Button>
                         <Button variant="unstyled" size="none"
                             type="button"
                             onClick={() => setViewMode('grid')}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                                viewMode === 'grid'
-                                    ? 'bg-white text-[#0f0d0b] shadow-xs'
-                                    : 'text-[#8c827a] hover:text-[#0f0d0b]'
-                            }`}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${viewMode === 'grid'
+                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                }`}
                             title="Tampilan Kartu"
                         >
-                            <i className="fa-solid fa-border-all text-xs"></i>
+                            <i className="fa-solid fa-border-all text-xs" />
                             <span className="hidden sm:inline">Kartu</span>
                         </Button>
                     </div>
@@ -581,139 +629,144 @@ export default function EventIndex({
 
             {/* ════ MAIN CONTENT (TABLE OR GRID) ════ */}
             {events.data.length === 0 ? (
-                <div className="p-12 text-center rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
-                    <div className="w-16 h-16 rounded-2xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center mx-auto mb-4 text-2xl">
-                        <i className="fa-solid fa-calendar-xmark"></i>
+                <div className="p-12 text-center rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+                    <div className="size-14 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-[#c0392b] flex items-center justify-center mx-auto mb-4 text-xl border border-rose-100 dark:border-rose-900/30">
+                        <i className="fa-solid fa-calendar-xmark" />
                     </div>
-                    <h3 className="font-cinzel text-base font-bold text-[#0f0d0b]">
+                    <h3 className="font-sans text-base font-bold text-slate-900 dark:text-white">
                         Tidak Ada Event Ditemukan
                     </h3>
-                    <p className="text-xs text-[#706860] mt-1 max-w-sm mx-auto">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
                         Belum ada event kejuaraan dengan kriteria pencarian ini. Anda dapat membuat agenda event baru.
                     </p>
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white text-xs font-medium cursor-pointer shadow-xs"
+                        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white text-xs font-semibold cursor-pointer shadow-2xs"
                     >
-                        <i className="fa-solid fa-plus"></i>
+                        <i className="fa-solid fa-plus" />
                         <span>Tambah Event Baru</span>
                     </Button>
                 </div>
             ) : viewMode === 'table' ? (
-                /* ════ ELEVATED & TIDY TABLE VIEW ════ */
-                <div className="mb-6 rounded-2xl border border-[#ede9e1] bg-white shadow-xs overflow-hidden">
-                    <TableContainer ariaLabel="Tabel data">
-                        <table className="responsive-data-table whitespace-nowrap w-full text-left text-xs border-collapse">
+                /* ════ ELEVATED & TIDY TABLE VIEW (NO HORIZONTAL OVERFLOW) ════ */
+                <div className="mb-6 rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden">
+                    <TableContainer ariaLabel="Tabel data master kejuaraan">
+                        <table className="w-full text-left text-xs border-collapse">
                             <thead>
-                                <tr className="bg-[#faf8f5] border-b border-[#ede9e1] text-[#8c827a] uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap">
+                                <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-[#ede9e1] dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                                     <th className="py-3 px-4">Nama Kejuaraan</th>
                                     <th className="py-3 px-3">Lokasi & Venue</th>
-                                    <th className="py-3 px-3">Jadwal Acara</th>
-                                    <th className="py-3 px-3">Biaya Registrasi</th>
-                                    <th className="py-3 px-3 text-center">Status</th>
-                                    <th className="py-3 px-3 text-center">Partisipasi</th>
-                                    <th className="py-3 px-4 text-right">Aksi</th>
+                                    <th className="py-3 px-3 whitespace-nowrap">Jadwal Acara</th>
+                                    <th className="py-3 px-3 whitespace-nowrap">Biaya Registrasi</th>
+                                    <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
+                                    <th className="py-3 px-3 text-center whitespace-nowrap">Partisipasi</th>
+                                    <th className="py-3 px-4 text-right whitespace-nowrap">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[#ede9e1]">
+                            <tbody className="divide-y divide-[#ede9e1] dark:divide-slate-800">
                                 {events.data.map((event) => (
                                     <tr
                                         key={event.id}
-                                        className={`transition-colors hover:bg-[#fcfaf7] ${
-                                            event.is_active
-                                                ? 'bg-amber-50/25 border-l-4 border-l-[#d4a843]'
+                                        className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${event.is_active
+                                                ? 'bg-amber-50/20 dark:bg-amber-950/10 border-l-4 border-l-[#d4a843]'
                                                 : 'border-l-4 border-l-transparent'
-                                        }`}
+                                            }`}
                                     >
                                         {/* Column 1: Nama Kejuaraan */}
-                                        <td className="py-3.5 px-4 min-w-[220px]">
+                                        <td className="py-3.5 px-4 min-w-[200px] max-w-[280px]">
                                             <div className="flex items-start gap-3">
                                                 {event.cover_image_url ? (
-                                                    <img src={event.cover_image_url} alt="" className="h-10 w-10 shrink-0 rounded-xl border border-[#ded8ce] object-cover" />
+                                                    <img src={event.cover_image_url} alt="" className="size-10 shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 object-cover" />
                                                 ) : (
-                                                    <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-[#17120f] text-[#d4a843]" title="Gambar event belum tersedia">
-                                                        <span className="font-cinzel text-sm font-bold">拳</span>
-                                                        <span className="text-[5px] font-bold uppercase tracking-wider text-white/50">No Image</span>
+                                                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500" title="Event Perkemi">
+                                                        <i className="fa-solid fa-trophy text-xs text-[#d4a843]" />
                                                     </div>
                                                 )}
-                                                <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span
-                                                    onClick={() => setDetailEvent(event)}
-                                                    className="font-semibold text-xs md:text-[13px] text-[#0f0d0b] hover:text-[#c0392b] transition-colors cursor-pointer leading-snug"
-                                                >
-                                                    {event.name}
-                                                </span>
-                                                {event.is_active && (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-[#d4a843]/20 text-[#b8860b] shrink-0 whitespace-nowrap">
-                                                        <i className="fa-solid fa-star text-[8px]"></i>
-                                                        Operasional
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {event.edition && (
-                                                <div className="text-[11px] text-[#8c827a] font-normal mt-0.5">
-                                                    {event.edition}
-                                                </div>
-                                            )}
-                                            {event.slug && (
-                                                <div className="mt-1">
-                                                    <a
-                                                        href={`/event/${event.slug}`}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#c0392b] bg-[#c0392b]/5 hover:bg-[#c0392b]/10 border border-[#c0392b]/20 transition-colors"
-                                                        title="Buka Halaman Publik Event"
-                                                    >
-                                                        <i className="fa-solid fa-link text-[8px]"></i>
-                                                        <span>/event/{event.slug}</span>
-                                                    </a>
-                                                </div>
-                                            )}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDetailEvent(event)}
+                                                            className="font-semibold text-xs md:text-[13px] text-slate-900 dark:text-white hover:text-[#c0392b] dark:hover:text-rose-400 transition-colors text-left leading-snug line-clamp-2 cursor-pointer"
+                                                        >
+                                                            {event.name}
+                                                        </button>
+                                                        {event.is_active && (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-amber-500/15 text-amber-800 dark:text-amber-300 shrink-0 whitespace-nowrap">
+                                                                <i className="fa-solid fa-star text-[8px]" />
+                                                                Operasional
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {event.edition && (
+                                                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-normal mt-0.5 line-clamp-1">
+                                                            {event.edition}
+                                                        </div>
+                                                    )}
+                                                    {event.slug && (
+                                                        <div className="mt-1">
+                                                            <a
+                                                                href={`/event/${event.slug}`}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#c0392b] dark:text-rose-400 hover:underline"
+                                                                title={`Buka Portal Publik: /event/${event.slug}`}
+                                                            >
+                                                                <i className="fa-solid fa-arrow-up-right-from-square text-[9px]" />
+                                                                <span>Portal Publik</span>
+                                                            </a>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </td>
 
                                         {/* Column 2: Lokasi & Venue */}
-                                        <td className="py-3.5 px-3 whitespace-nowrap">
-                                            <div className="font-medium text-[#0f0d0b] text-xs">
+                                        <td className="py-3.5 px-3 min-w-[140px] max-w-[200px]">
+                                            <div className="font-medium text-slate-900 dark:text-white text-xs truncate" title={event.venue}>
                                                 {event.venue}
                                             </div>
-                                            <div className="text-[11px] text-[#8c827a] mt-0.5 flex items-center gap-1">
-                                                <i className="fa-solid fa-location-dot text-[10px] text-[#c0392b]"></i>
-                                                <span>{event.city}</span>
+                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1 truncate" title={event.city}>
+                                                <i className="fa-solid fa-location-dot text-[10px] text-[#c0392b] shrink-0" />
+                                                <span className="truncate">{event.city}</span>
                                             </div>
                                         </td>
 
                                         {/* Column 3: Jadwal Acara */}
                                         <td className="py-3.5 px-3 whitespace-nowrap">
-                                            <div className="font-normal text-[#0f0d0b] text-xs flex items-center gap-1.5">
-                                                <i className="fa-regular fa-calendar text-[11px] text-[#3498db]"></i>
+                                            <div className="font-medium text-slate-900 dark:text-white text-xs flex items-center gap-1.5 tabular-nums">
+                                                <i className="fa-regular fa-calendar text-[11px] text-sky-500" />
                                                 <span>{event.start_date_formatted}</span>
-                                                <span className="text-[#8c827a]">—</span>
+                                                <span className="text-slate-400">—</span>
                                                 <span>{event.end_date_formatted}</span>
                                             </div>
                                             {event.registration_end_formatted && (
-                                                <div className="text-[10.5px] text-[#8c827a] mt-0.5">
+                                                <div className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
                                                     Pendaftaran s/d {event.registration_end_formatted}
                                                 </div>
                                             )}
                                         </td>
 
                                         {/* Column 4: Biaya Registrasi */}
-                                        <td className="py-3.5 px-3 whitespace-nowrap">
-                                            {event.is_paid ? <>
-                                                <div className="font-semibold text-xs text-[#27ae60]">
-                                                    {formatRupiah(event.fee_per_athlete)}
-                                                    <span className="text-[10px] font-normal text-[#8c827a]"> / atlet</span>
-                                                </div>
-                                                {event.fee_per_contingent > 0 && (
-                                                    <div className="text-[10.5px] text-[#706860] mt-0.5">
-                                                        Kontingen: {formatRupiah(event.fee_per_contingent)}
+                                        <td className="py-3.5 px-3 whitespace-nowrap tabular-nums">
+                                            {event.is_paid ? (
+                                                <>
+                                                    <div className="font-semibold text-xs text-emerald-600 dark:text-emerald-400">
+                                                        {formatRupiah(event.fee_per_athlete)}
+                                                        <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400"> / atlet</span>
                                                     </div>
-                                                )}
-                                            </> : <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Gratis</span>}
+                                                    {event.fee_per_contingent > 0 && (
+                                                        <div className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Kontingen: {formatRupiah(event.fee_per_contingent)}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <span className="inline-flex rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                                                    Gratis
+                                                </span>
+                                            )}
                                         </td>
 
                                         {/* Column 5: Status */}
@@ -721,109 +774,81 @@ export default function EventIndex({
                                             {getStatusBadge(event.status)}
                                         </td>
 
-                                        {/* Column 6: Partisipasi (Tidy Duo Blocks) */}
+                                        {/* Column 6: Partisipasi */}
                                         <td className="py-3.5 px-3 text-center whitespace-nowrap">
-                                            <div className="inline-flex items-center gap-1.5">
-                                                <div className="px-2 py-0.5 rounded-md bg-[#f7f4ef] border border-[#ede9e1] text-center min-w-[55px]">
-                                                    <span className="font-bold text-xs text-[#0f0d0b]">
+                                            <div className="inline-flex items-center gap-1.5 tabular-nums">
+                                                <div className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center min-w-[52px]">
+                                                    <span className="font-bold text-xs text-slate-900 dark:text-white">
                                                         {event.contingents_count}
                                                     </span>
-                                                    <span className="text-[9px] text-[#8c827a] block leading-tight">
+                                                    <span className="text-[9px] text-slate-500 dark:text-slate-400 block leading-tight">
                                                         Kontingen
                                                     </span>
                                                 </div>
-                                                <div className="px-2 py-0.5 rounded-md bg-[#f7f4ef] border border-[#ede9e1] text-center min-w-[55px]">
-                                                    <span className="font-bold text-xs text-[#0f0d0b]">
+                                                <div className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center min-w-[52px]">
+                                                    <span className="font-bold text-xs text-slate-900 dark:text-white">
                                                         {event.registrations_count}
                                                     </span>
-                                                    <span className="text-[9px] text-[#8c827a] block leading-tight">
+                                                    <span className="text-[9px] text-slate-500 dark:text-slate-400 block leading-tight">
                                                         Berkas
                                                     </span>
                                                 </div>
                                             </div>
                                         </td>
 
-                                        {/* Column 7: Aksi (Structured Group) */}
-                                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                        {/* Column 7: Aksi */}
+                                        <td className="py-3 px-4 text-right whitespace-nowrap">
                                             <div className="inline-flex items-center justify-end gap-1.5">
                                                 {!event.is_active ? (
-                                                    <Button variant="unstyled" size="none"
+                                                    <Button
+                                                        variant="unstyled"
+                                                        size="none"
                                                         type="button"
                                                         onClick={() => handleActivate(event.id)}
-                                                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 border border-amber-500/20 transition-all flex items-center gap-1 cursor-pointer active:scale-95 whitespace-nowrap"
+                                                        className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 border border-amber-500/20 transition-all flex items-center gap-1 cursor-pointer active:scale-95"
                                                         title="Aktifkan event ini untuk menu operasional"
                                                     >
-                                                        <i className="fa-solid fa-star text-[10px] text-[#d4a843]"></i>
+                                                        <i className="fa-solid fa-star text-[10px] text-[#d4a843]" />
                                                         <span>Aktifkan</span>
                                                     </Button>
                                                 ) : (
-                                                    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 whitespace-nowrap">
-                                                        <i className="fa-solid fa-check text-[10px]"></i>
+                                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                                        <i className="fa-solid fa-check text-[9px]" />
                                                         <span>Aktif</span>
                                                     </span>
                                                 )}
 
                                                 <a
-                                                    href={`/event/${event.slug}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="w-7 h-7 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Buka Halaman Publik Event"
+                                                    href={`/admin/event/${event.id}/enter`}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs shadow-2xs transition-all cursor-pointer active:scale-95"
+                                                    title="Masuk Mode Event untuk mengelola turnamen ini"
                                                 >
-                                                    <i className="fa-solid fa-globe text-xs"></i>
+                                                    <i className="fa-solid fa-right-to-bracket text-[10px]" />
+                                                    <span>Mode Event</span>
                                                 </a>
-                                                <a
-                                                    href={`/event/${event.slug}/admin`}
-                                                    className="w-7 h-7 rounded-lg border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Masuk ke Panel Panitia Event Ini"
-                                                >
-                                                    <i className="fa-solid fa-door-open text-xs"></i>
-                                                </a>
-                                                <Link
-                                                    href={`/admin/master/event/${event.id}/detail`}
-                                                    className="w-7 h-7 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Pengaturan & Detail Event (Kelompok Umur, Court, Nomer Tanding)"
-                                                >
-                                                    <i className="fa-solid fa-sliders text-xs"></i>
-                                                </Link>
-                                                <a
-                                                    href={`/admin/master/event/${event.id}/export-package`}
-                                                    download
-                                                    className="w-7 h-7 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-700 flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Ekspor Paket Data Event (.json)"
-                                                >
-                                                    <i className="fa-solid fa-cloud-arrow-down text-xs"></i>
-                                                </a>
-                                                <Button variant="unstyled" size="none"
-                                                    type="button"
-                                                    onClick={() => setDetailEvent(event)}
-                                                    className="w-7 h-7 rounded-lg border border-[#ede9e1] bg-white hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-[#706860] flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Lihat Detail Event"
-                                                >
-                                                    <i className="fa-solid fa-eye text-xs"></i>
-                                                </Button>
-                                                <Button variant="unstyled" size="none"
-                                                    type="button"
-                                                    onClick={() => openEditModal(event)}
-                                                    className="w-7 h-7 rounded-lg border border-[#ede9e1] bg-white hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 text-[#706860] flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Edit Data Event"
-                                                >
-                                                    <i className="fa-solid fa-pen text-xs"></i>
-                                                </Button>
-                                                <Button variant="unstyled" size="none"
-                                                    type="button"
-                                                    onClick={() => setDeletingEvent(event)}
-                                                    className="w-7 h-7 rounded-lg border border-[#ede9e1] bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-[#706860] flex items-center justify-center transition-all cursor-pointer"
-                                                    title="Hapus Event"
-                                                >
-                                                    <i className="fa-solid fa-trash-can text-xs"></i>
-                                                </Button>
+
+                                                <ActionMenuDropdown
+                                                    menuHeader="Aksi Kejuaraan"
+                                                    theme="light"
+                                                    items={getEventActionItems(event)}
+                                                    trigger={
+                                                        <button
+                                                            type="button"
+                                                            className="size-7 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-all cursor-pointer"
+                                                            title="Menu Aksi Lainnya"
+                                                            aria-label="Menu aksi lainnya"
+                                                        >
+                                                            <i className="fa-solid fa-ellipsis-vertical text-xs" />
+                                                        </button>
+                                                    }
+                                                />
                                             </div>
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
-                        </table></TableContainer>
+                        </table>
+                    </TableContainer>
 
                     {/* Pagination for Table View */}
                     {events.total > 0 && (
@@ -836,168 +861,174 @@ export default function EventIndex({
                 </div>
             ) : (
                 <>
-                    {/* ════ GRID CARDS VIEW (POLISHED) ════ */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mb-6">
-                    {events.data.map((event) => (
-                        <div
-                            key={event.id}
-                            className={`rounded-2xl border transition-all duration-200 flex flex-col justify-between bg-white relative overflow-hidden group hover:shadow-lg ${
-                                event.is_active
-                                    ? 'border-[#d4a843] ring-2 ring-[#d4a843]/30 shadow-md'
-                                    : 'border-[#ede9e1] hover:border-[#b5afa6]'
-                            }`}
-                        >
-                            {/* Accent Top Bar */}
+                    {/* ════ GRID CARDS VIEW (4 COLUMNS & RICH COVER IMAGES) ════ */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-4 md:gap-5 mb-6">
+                        {events.data.map((event) => (
                             <div
-                                className={`h-1.5 w-full ${
-                                    event.is_active
-                                        ? 'bg-gradient-to-r from-[#d4a843] via-[#e74c3c] to-[#c0392b]'
-                                        : 'bg-[#ede9e1] group-hover:bg-[#c0392b]/40'
-                                }`}
-                            />
-
-                            <div className="p-5 flex-1 flex flex-col">
-                                {/* Top Badge & Actions */}
-                                <div className="flex items-center justify-between gap-2 mb-3">
-                                    {getStatusBadge(event.status)}
-                                    <span className="text-[11px] font-mono text-[#8c827a] flex items-center gap-1">
-                                        <i className="fa-regular fa-calendar text-[10px]"></i>
-                                        {event.start_date_formatted}
-                                    </span>
-                                </div>
-
-                                {/* Event Title */}
-                                <h3
-                                    onClick={() => setDetailEvent(event)}
-                                    className="font-cinzel font-bold text-base text-[#0f0d0b] group-hover:text-[#c0392b] transition-colors line-clamp-2 leading-snug cursor-pointer"
-                                >
-                                    {event.name}
-                                </h3>
-                                {event.edition && (
-                                    <p className="text-xs text-[#b8860b] font-medium mt-0.5">
-                                        {event.edition}
-                                    </p>
-                                )}
-
-                                {/* Location & Details */}
-                                <div className="mt-3.5 space-y-2 text-xs text-[#706860]">
-                                    <div className="flex items-center gap-2">
-                                        <i className="fa-solid fa-location-dot w-4 text-[#e74c3c] text-[11px]"></i>
-                                        <span className="line-clamp-1">{event.venue}, {event.city}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <i className="fa-regular fa-calendar-days w-4 text-[#3498db] text-[11px]"></i>
-                                        <span>{event.start_date_formatted} — {event.end_date_formatted}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <i className="fa-solid fa-ticket w-4 text-[#27ae60] text-[11px]"></i>
-                                        <span className="font-semibold text-[#27ae60]">{event.is_paid ? formatRupiah(event.fee_per_athlete) : 'Gratis'}</span>
-                                        {event.is_paid && <span className="text-[10px] text-[#8c827a]">/ atlet</span>}
-                                    </div>
-                                    {event.organizer && (
-                                        <div className="flex items-center gap-2">
-                                            <i className="fa-solid fa-building-columns w-4 text-[#8e44ad] text-[11px]"></i>
-                                            <span className="line-clamp-1">{event.organizer}</span>
+                                key={event.id}
+                                className={`rounded-2xl border transition-all duration-200 flex flex-col justify-between bg-white dark:bg-slate-900 relative overflow-hidden group hover:shadow-md ${event.is_active
+                                        ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20 shadow-xs'
+                                        : 'border-[#ede9e1] dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                            >
+                                {/* Card Cover Image Header */}
+                                <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900 select-none">
+                                    {event.cover_image_url ? (
+                                        <img
+                                            src={event.cover_image_url}
+                                            alt={event.name}
+                                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                        />
+                                    ) : (
+                                        <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-[#1c1714] via-[#2a1c17] to-[#120f0e]">
+                                            <img
+                                                src="/hero-fighters.png"
+                                                alt=""
+                                                className="h-full w-full object-cover opacity-35 mix-blend-luminosity filter transition-transform duration-300 group-hover:scale-105"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/35" />
+                                            <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white/90">
+                                                <span className="font-serif text-2xl font-black text-white/25 select-none leading-none">拳</span>
+                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-xs text-[10px] font-semibold text-amber-200 border border-white/10">
+                                                    <i className="fa-solid fa-trophy text-[9px] text-[#d4a843]" />
+                                                    <span>PERKEMI</span>
+                                                </span>
+                                            </div>
                                         </div>
                                     )}
+
+                                    {/* Subtle Top & Bottom Gradient Overlay */}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
+
+                                    {/* Top Badges over Image */}
+                                    <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1.5 pointer-events-none">
+                                        <div className="pointer-events-auto shadow-xs">
+                                            {getStatusBadge(event.status)}
+                                        </div>
+
+                                        {event.is_active ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950 shadow-xs pointer-events-auto">
+                                                <i className="fa-solid fa-star text-[8px]" />
+                                                <span>Aktif</span>
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-black/60 backdrop-blur-md text-white border border-white/15 tabular-nums pointer-events-auto shadow-xs">
+                                                <i className="fa-regular fa-calendar text-[9px] text-sky-300" />
+                                                <span>{event.start_date_formatted}</span>
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
 
-                                {/* 3 Metric Chips */}
-                                <div className="mt-4 pt-3.5 border-t border-[#ede9e1] grid grid-cols-3 gap-2 text-center text-xs">
-                                    <div className="bg-[#f7f4ef] rounded-xl py-2 px-1 border border-[#ede9e1]">
-                                        <p className="font-bold text-xs text-[#0f0d0b]">{event.contingents_count}</p>
-                                        <p className="text-[9.5px] text-[#8c827a] mt-0.5">Kontingen</p>
+                                <div className="p-4 flex-1 flex flex-col justify-between">
+                                    <div>
+                                        {/* Event Title */}
+                                        <h3
+                                            onClick={() => setDetailEvent(event)}
+                                            className="font-sans font-bold text-sm text-slate-900 dark:text-white group-hover:text-[#c0392b] dark:group-hover:text-rose-400 transition-colors line-clamp-2 leading-snug cursor-pointer"
+                                            title={event.name}
+                                        >
+                                            {event.name}
+                                        </h3>
+                                        {event.edition && (
+                                            <p className="text-[11px] text-[#b8860b] dark:text-[#f0c060] font-medium mt-1 line-clamp-1" title={event.edition}>
+                                                {event.edition}
+                                            </p>
+                                        )}
+
+                                        {/* Location & Details */}
+                                        <div className="mt-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                                            <div className="flex items-center gap-2" title={`${event.venue}, ${event.city}`}>
+                                                <i className="fa-solid fa-location-dot w-3.5 text-[#c0392b] text-[11px] shrink-0" />
+                                                <span className="truncate">{event.venue}, {event.city}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 tabular-nums">
+                                                <i className="fa-regular fa-calendar-days w-3.5 text-sky-500 text-[11px] shrink-0" />
+                                                <span className="truncate">{event.start_date_formatted} — {event.end_date_formatted}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 tabular-nums">
+                                                <i className="fa-solid fa-ticket w-3.5 text-emerald-600 text-[11px] shrink-0" />
+                                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                                    {event.is_paid ? formatRupiah(event.fee_per_athlete) : 'Gratis'}
+                                                </span>
+                                                {event.is_paid && <span className="text-[10px] text-slate-500 dark:text-slate-400">/ atlet</span>}
+                                            </div>
+                                            {event.organizer && (
+                                                <div className="flex items-center gap-2" title={event.organizer}>
+                                                    <i className="fa-solid fa-building-columns w-3.5 text-purple-600 text-[11px] shrink-0" />
+                                                    <span className="truncate">{event.organizer}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="bg-[#f7f4ef] rounded-xl py-2 px-1 border border-[#ede9e1]">
-                                        <p className="font-bold text-xs text-[#0f0d0b]">{event.registrations_count}</p>
-                                        <p className="text-[9.5px] text-[#8c827a] mt-0.5">Pendaftar</p>
+
+                                    {/* 3 Metric Chips */}
+                                    <div className="mt-3.5 pt-3 border-t border-[#ede9e1] dark:border-slate-800 grid grid-cols-3 gap-1.5 text-center text-xs tabular-nums">
+                                        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-xl py-1.5 px-1 border border-slate-200/80 dark:border-slate-700">
+                                            <p className="font-bold text-xs text-slate-900 dark:text-white">{event.contingents_count}</p>
+                                            <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Kontingen</p>
+                                        </div>
+                                        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-xl py-1.5 px-1 border border-slate-200/80 dark:border-slate-700">
+                                            <p className="font-bold text-xs text-slate-900 dark:text-white">{event.registrations_count}</p>
+                                            <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Pendaftar</p>
+                                        </div>
+                                        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-xl py-1.5 px-1 border border-slate-200/80 dark:border-slate-700">
+                                            <p className="font-bold text-xs text-slate-900 dark:text-white">{event.rundowns_count}</p>
+                                            <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Rundown</p>
+                                        </div>
                                     </div>
-                                    <div className="bg-[#f7f4ef] rounded-xl py-2 px-1 border border-[#ede9e1]">
-                                        <p className="font-bold text-xs text-[#0f0d0b]">{event.rundowns_count}</p>
-                                        <p className="text-[9.5px] text-[#8c827a] mt-0.5">Rundown</p>
+                                </div>
+
+                                {/* Card Footer Actions */}
+                                <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-t border-[#ede9e1] dark:border-slate-800 flex items-center justify-between gap-1.5">
+                                    <div>
+                                        {!event.is_active ? (
+                                            <Button variant="unstyled" size="none"
+                                                type="button"
+                                                onClick={() => handleActivate(event.id)}
+                                                className="text-xs font-semibold text-amber-800 dark:text-amber-300 hover:text-amber-900 flex items-center gap-1 cursor-pointer py-1 px-2 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                                                title="Aktifkan event ini untuk menu operasional"
+                                            >
+                                                <i className="fa-solid fa-star text-[10px] text-[#d4a843]" />
+                                                <span>Aktifkan</span>
+                                            </Button>
+                                        ) : (
+                                            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                                                <i className="fa-solid fa-check text-[9px]" />
+                                                <span>Aktif</span>
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                        <a
+                                            href={`/admin/event/${event.id}/enter`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs shadow-2xs transition-all cursor-pointer hover:shadow-xs active:scale-95 shrink-0"
+                                            title="Masuk Mode Event untuk mengelola turnamen ini"
+                                        >
+                                            <i className="fa-solid fa-right-to-bracket text-[10px]" />
+                                            <span>Mode Event</span>
+                                        </a>
+
+                                        <ActionMenuDropdown
+                                            menuHeader="Aksi Kejuaraan"
+                                            theme="light"
+                                            items={getEventActionItems(event)}
+                                            trigger={
+                                                <button
+                                                    type="button"
+                                                    className="size-7.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+                                                    title="Menu Aksi Lainnya"
+                                                    aria-label="Menu aksi lainnya"
+                                                >
+                                                    <i className="fa-solid fa-ellipsis-vertical text-xs" />
+                                                </button>
+                                            }
+                                        />
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Card Footer Actions */}
-                            <div className="px-5 py-3 bg-[#faf8f5] border-t border-[#ede9e1] flex items-center justify-between gap-2">
-                                {!event.is_active ? (
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => handleActivate(event.id)}
-                                        className="text-xs font-semibold text-[#b8860b] hover:text-[#d4a843] flex items-center gap-1.5 cursor-pointer py-1.5 px-2.5 rounded-lg hover:bg-[#d4a843]/10 transition-colors"
-                                        title="Aktifkan event ini untuk menu operasional"
-                                    >
-                                        <i className="fa-solid fa-star text-[10px]"></i>
-                                        <span>Aktifkan Event</span>
-                                    </Button>
-                                ) : (
-                                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 px-2 py-1">
-                                        <i className="fa-solid fa-check text-[10px]"></i>
-                                        <span>Sedang Aktif</span>
-                                    </span>
-                                )}
-
-                                <div className="flex items-center gap-1">
-                                    <a
-                                        href={`/event/${event.slug}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="w-8 h-8 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Buka Halaman Publik Event"
-                                    >
-                                        <i className="fa-solid fa-globe text-xs"></i>
-                                    </a>
-                                    <a
-                                        href={`/event/${event.slug}/admin`}
-                                        className="w-8 h-8 rounded-lg border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Masuk ke Panel Panitia Event Ini"
-                                    >
-                                        <i className="fa-solid fa-door-open text-xs"></i>
-                                    </a>
-                                    <Link
-                                        href={`/admin/master/event/${event.id}/detail`}
-                                        className="w-8 h-8 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Pengaturan & Detail Event"
-                                    >
-                                        <i className="fa-solid fa-sliders text-xs"></i>
-                                    </Link>
-                                    <a
-                                        href={`/admin/master/event/${event.id}/export-package`}
-                                        download
-                                        className="w-8 h-8 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-700 flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Ekspor Paket Data Event (.json)"
-                                    >
-                                        <i className="fa-solid fa-cloud-arrow-down text-xs"></i>
-                                    </a>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setDetailEvent(event)}
-                                        className="w-8 h-8 rounded-lg border border-[#ede9e1] bg-white hover:bg-blue-50 hover:text-blue-600 text-[#706860] flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Lihat Rincian Event"
-                                    >
-                                        <i className="fa-solid fa-eye text-xs"></i>
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => openEditModal(event)}
-                                        className="w-8 h-8 rounded-lg border border-[#ede9e1] bg-white hover:bg-amber-50 hover:text-amber-600 text-[#706860] flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Edit Event"
-                                    >
-                                        <i className="fa-solid fa-pen text-xs"></i>
-                                    </Button>
-                                    <Button variant="unstyled" size="none"
-                                        type="button"
-                                        onClick={() => setDeletingEvent(event)}
-                                        className="w-8 h-8 rounded-lg border border-[#ede9e1] bg-white hover:bg-red-50 hover:text-red-600 text-[#706860] flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Hapus Event"
-                                    >
-                                        <i className="fa-solid fa-trash-can text-xs"></i>
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                        ))}
                     </div>
 
                     {/* Pagination for Grid View */}
@@ -1119,33 +1150,30 @@ export default function EventIndex({
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={() => setActiveTab('general')}
-                        className={`pb-2.5 transition-colors cursor-pointer relative ${
-                            activeTab === 'general'
+                        className={`pb-2.5 transition-colors cursor-pointer relative ${activeTab === 'general'
                                 ? 'text-[#c0392b] font-bold border-b-2 border-[#c0392b]'
                                 : 'text-[#706860] hover:text-black'
-                        }`}
+                            }`}
                     >
                         1. Informasi Dasar
                     </Button>
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={() => setActiveTab('schedule')}
-                        className={`pb-2.5 transition-colors cursor-pointer relative ${
-                            activeTab === 'schedule'
+                        className={`pb-2.5 transition-colors cursor-pointer relative ${activeTab === 'schedule'
                                 ? 'text-[#c0392b] font-bold border-b-2 border-[#c0392b]'
                                 : 'text-[#706860] hover:text-black'
-                        }`}
+                            }`}
                     >
                         2. Waktu & Lokasi
                     </Button>
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={() => setActiveTab('fees')}
-                        className={`pb-2.5 transition-colors cursor-pointer relative ${
-                            activeTab === 'fees'
+                        className={`pb-2.5 transition-colors cursor-pointer relative ${activeTab === 'fees'
                                 ? 'text-[#c0392b] font-bold border-b-2 border-[#c0392b]'
                                 : 'text-[#706860] hover:text-black'
-                        }`}
+                            }`}
                     >
                         3. Biaya, Status & Kontak
                     </Button>

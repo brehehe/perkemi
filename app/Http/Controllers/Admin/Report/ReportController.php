@@ -294,8 +294,9 @@ class ReportController extends Controller
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
         $requestedEventId = $this->requestedEventId($request);
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']);
 
-        if ($tenantEvent instanceof Event) {
+        if ($tenantEvent instanceof Event && ! $isFullAdmin) {
             abort_if($requestedEventId !== null && $requestedEventId !== $tenantEvent->id, 404);
 
             return $tenantEvent;
@@ -303,6 +304,10 @@ class ReportController extends Controller
 
         if ($requestedEventId !== null) {
             return Event::query()->findOrFail($requestedEventId);
+        }
+
+        if ($tenantEvent instanceof Event) {
+            return $tenantEvent;
         }
 
         if ($fallbackEventId !== null) {
@@ -346,9 +351,10 @@ class ReportController extends Controller
     private function eventOptions(Request $request): array
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
+        $isFullAdmin = $request->user()?->hasAnyRole(['Super Admin', 'Admin']);
 
         return Event::query()
-            ->when($tenantEvent instanceof Event, fn ($query) => $query->whereKey($tenantEvent))
+            ->when(! $isFullAdmin && $tenantEvent instanceof Event, fn ($query) => $query->whereKey($tenantEvent))
             ->orderByDesc('is_active')
             ->orderByDesc('start_date')
             ->get(['id', 'name', 'city', 'start_date', 'end_date', 'status', 'is_active'])

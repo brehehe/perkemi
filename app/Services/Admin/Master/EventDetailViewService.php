@@ -62,21 +62,61 @@ class EventDetailViewService
     public function build(Request $request, Event $event): array
     {
         $tenantEvent = $request->attributes->get('tenantEvent');
+        $tab = $request->input('tab');
+        $isAll = empty($tab) || $tab === 'all';
 
-        // Load all relations
-        $event->load([
-            'ageCategories' => fn ($q) => $q->withCount('matchCategories')->orderBy('order')->orderBy('min_age'),
-            'courts' => fn ($q) => $q->orderBy('order'),
-            'matchCategories.ageCategory',
-            'matchCategories.weightClass',
-            'rundowns' => fn ($q) => $q->orderBy('date')->orderBy('order'),
-            'paymentMethods',
-            'referees',
-            'clerks',
-            'fieldCoordinators',
-            'arbitrators',
-            'users:id,name,email',
-        ]);
+        // Define which domain data is required for the requested tab
+        $needsAgeCategories = $isAll || in_array($tab, ['age_categories', 'matches']);
+        $needsCourts = $isAll || in_array($tab, ['courts', 'rundown', 'field_coordinators']);
+        $needsMatchCategories = $isAll || in_array($tab, ['matches']);
+        $needsRundowns = $isAll || in_array($tab, ['rundown']);
+        $needsPaymentMethods = $isAll || in_array($tab, ['fees']);
+        $needsReferees = $isAll || in_array($tab, ['referees', 'officials_roster']);
+        $needsClerks = $isAll || in_array($tab, ['clerks', 'officials_roster']);
+        $needsCoordinators = $isAll || in_array($tab, ['field_coordinators', 'officials_roster']);
+        $needsArbitrators = $isAll || in_array($tab, ['arbitration', 'officials_roster']);
+        $needsUsers = $isAll || in_array($tab, ['info']);
+        $needsKyusWeightClasses = $isAll || in_array($tab, ['matches']);
+        $needsTournamentSummary = $isAll || in_array($tab, ['tournament', 'sync']);
+        $needsArbitrationRoster = $isAll || in_array($tab, ['officials_roster']);
+
+        // Scoped eager loading: only load models needed for this specific tab
+        $relationsToLoad = [];
+        if ($needsAgeCategories) {
+            $relationsToLoad['ageCategories'] = fn ($q) => $q->withCount('matchCategories')->orderBy('order')->orderBy('min_age');
+        }
+        if ($needsCourts) {
+            $relationsToLoad['courts'] = fn ($q) => $q->orderBy('order');
+        }
+        if ($needsMatchCategories) {
+            $relationsToLoad[] = 'matchCategories.ageCategory';
+            $relationsToLoad[] = 'matchCategories.weightClass';
+        }
+        if ($needsRundowns) {
+            $relationsToLoad['rundowns'] = fn ($q) => $q->orderBy('date')->orderBy('order');
+        }
+        if ($needsPaymentMethods) {
+            $relationsToLoad[] = 'paymentMethods';
+        }
+        if ($needsReferees) {
+            $relationsToLoad[] = 'referees';
+        }
+        if ($needsClerks) {
+            $relationsToLoad[] = 'clerks';
+        }
+        if ($needsCoordinators) {
+            $relationsToLoad[] = 'fieldCoordinators';
+        }
+        if ($needsArbitrators) {
+            $relationsToLoad[] = 'arbitrators';
+        }
+        if ($needsUsers) {
+            $relationsToLoad[] = 'users:id,name,email';
+        }
+
+        if (! empty($relationsToLoad)) {
+            $event->loadMissing($relationsToLoad);
+        }
 
         // List of all events for the quick switcher
         $allEventsQuery = Event::query()
@@ -102,184 +142,347 @@ class EventDetailViewService
                 'dates' => $e->start_date?->format('d/m/Y').' - '.$e->end_date?->format('d/m/Y'),
             ]);
 
-        $kyus = Kyu::query()
-            ->where('is_active', true)
-            ->orderBy('order')
-            ->orderByDesc('name')
-            ->get(['id', 'name', 'belt_color']);
-
-        $weightClasses = WeightClass::query()
-            ->where('is_active', true)
-            ->orderBy('gender')
-            ->orderBy('order')
-            ->get(['id', 'name', 'gender', 'min_weight', 'max_weight']);
-
-        $selectedPaymentMethodIds = $event->paymentMethods->modelKeys();
-        $paymentMethods = PaymentMethod::query()
-            ->where(fn ($query) => $query
+        $kyus = $needsKyusWeightClasses
+            ? Kyu::query()
                 ->where('is_active', true)
-                ->orWhereIn('id', $selectedPaymentMethodIds))
-            ->orderBy('order')
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'type', 'provider', 'account_name', 'account_number', 'instructions', 'is_active']);
+                ->orderBy('order')
+                ->orderByDesc('name')
+                ->get(['id', 'name', 'belt_color'])
+            : collect();
 
-        $selectedRefereeIds = $event->referees->modelKeys();
-        $referees = Referee::query()
-            ->where(fn ($query) => $query
+        $weightClasses = $needsKyusWeightClasses
+            ? WeightClass::query()
                 ->where('is_active', true)
-                ->orWhereIn('id', $selectedRefereeIds))
-            ->orderBy('name')
-            ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active']);
+                ->orderBy('gender')
+                ->orderBy('order')
+                ->get(['id', 'name', 'gender', 'min_weight', 'max_weight'])
+            : collect();
 
-        $eventReferees = $event->referees->map(fn (Referee $referee) => [
-            'id' => $referee->id,
-            'name' => $referee->name,
-            'gender' => $referee->gender ?? 'male',
-            'dan_grade' => $referee->dan_grade,
-            'license_number' => $referee->license_number,
-            'certification_level' => $referee->certification_level,
-            'region' => $referee->region,
-            'phone' => $referee->phone,
-            'email' => $referee->email,
-            'role' => $referee->pivot->role,
-        ]);
+        $selectedPaymentMethodIds = $event->relationLoaded('paymentMethods')
+            ? $event->paymentMethods->modelKeys()
+            : ($needsPaymentMethods ? $event->paymentMethods()->pluck('payment_methods.id')->all() : []);
 
-        $selectedClerkIds = $event->clerks->modelKeys();
-        $clerks = Clerk::query()
-            ->where(fn ($query) => $query
-                ->where('is_active', true)
-                ->orWhereIn('id', $selectedClerkIds))
-            ->orderBy('name')
-            ->get(['id', 'name', 'employee_number', 'certification', 'region', 'is_active']);
+        $paymentMethods = $needsPaymentMethods
+            ? PaymentMethod::query()
+                ->where(fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orWhereIn('id', $selectedPaymentMethodIds))
+                ->orderBy('order')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'type', 'provider', 'account_name', 'account_number', 'instructions', 'is_active'])
+            : collect();
 
-        $eventClerks = $event->clerks->map(fn (Clerk $clerk) => [
-            'id' => $clerk->id,
-            'name' => $clerk->name,
-            'employee_number' => $clerk->employee_number,
-            'certification' => $clerk->certification,
-            'region' => $clerk->region,
-            'role' => $clerk->pivot->role,
-        ]);
+        $selectedRefereeIds = $event->relationLoaded('referees')
+            ? $event->referees->modelKeys()
+            : ($needsReferees ? $event->referees()->pluck('referees.id')->all() : []);
 
-        $selectedCoordinatorIds = $event->fieldCoordinators->modelKeys();
-        $fieldCoordinators = FieldCoordinator::query()
-            ->where(fn ($query) => $query
-                ->where('is_active', true)
-                ->orWhereIn('id', $selectedCoordinatorIds))
-            ->orderBy('name')
-            ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email', 'is_active', 'gender', 'dan_grade', 'certification_level']);
+        $referees = ($needsReferees && ($tab === 'referees' || $isAll))
+            ? Referee::query()
+                ->where(fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orWhereIn('id', $selectedRefereeIds))
+                ->orderBy('name')
+                ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active'])
+            : collect();
 
-        $eventFieldCoordinators = $event->fieldCoordinators->map(fn (FieldCoordinator $coordinator) => [
-            'id' => $coordinator->id,
-            'name' => $coordinator->name,
-            'gender' => $coordinator->gender ?? 'male',
-            'dan_grade' => $coordinator->dan_grade,
-            'certification_level' => $coordinator->certification_level,
-            'coordinator_number' => $coordinator->coordinator_number,
-            'region' => $coordinator->region,
-            'phone' => $coordinator->phone,
-            'email' => $coordinator->email,
-            'notes' => $coordinator->notes,
-            'assignment_area' => $coordinator->pivot->assignment_area,
-        ]);
+        $eventReferees = $event->relationLoaded('referees')
+            ? $event->referees->map(fn (Referee $referee) => [
+                'id' => $referee->id,
+                'name' => $referee->name,
+                'gender' => $referee->gender ?? 'male',
+                'dan_grade' => $referee->dan_grade,
+                'license_number' => $referee->license_number,
+                'certification_level' => $referee->certification_level,
+                'region' => $referee->region,
+                'phone' => $referee->phone,
+                'email' => $referee->email,
+                'role' => $referee->pivot->role,
+            ])
+            : collect();
 
-        $selectedArbitratorIds = $event->arbitrators->modelKeys();
-        $arbitrators = Arbitrator::query()
-            ->where(fn ($query) => $query
-                ->where('is_active', true)
-                ->orWhereIn('id', $selectedArbitratorIds))
-            ->orderBy('name')
-            ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active']);
+        $selectedClerkIds = $event->relationLoaded('clerks')
+            ? $event->clerks->modelKeys()
+            : ($needsClerks ? $event->clerks()->pluck('clerks.id')->all() : []);
 
-        $eventArbitrators = $event->arbitrators->map(fn (Arbitrator $arbitrator) => [
-            'id' => $arbitrator->id,
-            'name' => $arbitrator->name,
-            'gender' => $arbitrator->gender ?? 'male',
-            'dan_grade' => $arbitrator->dan_grade,
-            'license_number' => $arbitrator->license_number,
-            'certification_level' => $arbitrator->certification_level,
-            'region' => $arbitrator->region,
-            'phone' => $arbitrator->phone,
-            'email' => $arbitrator->email,
-            'notes' => $arbitrator->notes,
-            'role' => $arbitrator->pivot->role,
-        ]);
+        $clerks = ($needsClerks && ($tab === 'clerks' || $isAll))
+            ? Clerk::query()
+                ->where(fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orWhereIn('id', $selectedClerkIds))
+                ->orderBy('name')
+                ->get(['id', 'name', 'employee_number', 'certification', 'region', 'is_active'])
+            : collect();
 
-        $users = User::query()->with('roles:id,name')->orderBy('name')->get(['id', 'name', 'email']);
-        $eventUsers = $event->users->map(fn (User $user) => [
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'access_role' => $user->pivot->access_role,
-        ]);
+        $eventClerks = $event->relationLoaded('clerks')
+            ? $event->clerks->map(fn (Clerk $clerk) => [
+                'id' => $clerk->id,
+                'name' => $clerk->name,
+                'employee_number' => $clerk->employee_number,
+                'certification' => $clerk->certification,
+                'region' => $clerk->region,
+                'role' => $clerk->pivot->role,
+            ])
+            : collect();
+
+        $selectedCoordinatorIds = $event->relationLoaded('fieldCoordinators')
+            ? $event->fieldCoordinators->modelKeys()
+            : ($needsCoordinators ? $event->fieldCoordinators()->pluck('field_coordinators.id')->all() : []);
+
+        $fieldCoordinators = ($needsCoordinators && ($tab === 'field_coordinators' || $isAll))
+            ? FieldCoordinator::query()
+                ->where(fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orWhereIn('id', $selectedCoordinatorIds))
+                ->orderBy('name')
+                ->get(['id', 'name', 'coordinator_number', 'region', 'phone', 'email', 'is_active', 'gender', 'dan_grade', 'certification_level'])
+            : collect();
+
+        $eventFieldCoordinators = $event->relationLoaded('fieldCoordinators')
+            ? $event->fieldCoordinators->map(fn (FieldCoordinator $coordinator) => [
+                'id' => $coordinator->id,
+                'name' => $coordinator->name,
+                'gender' => $coordinator->gender ?? 'male',
+                'dan_grade' => $coordinator->dan_grade,
+                'certification_level' => $coordinator->certification_level,
+                'coordinator_number' => $coordinator->coordinator_number,
+                'region' => $coordinator->region,
+                'phone' => $coordinator->phone,
+                'email' => $coordinator->email,
+                'notes' => $coordinator->notes,
+                'assignment_area' => $coordinator->pivot->assignment_area,
+            ])
+            : collect();
+
+        $selectedArbitratorIds = $event->relationLoaded('arbitrators')
+            ? $event->arbitrators->modelKeys()
+            : ($needsArbitrators ? $event->arbitrators()->pluck('arbitrators.id')->all() : []);
+
+        $arbitrators = ($needsArbitrators && ($tab === 'arbitration' || $isAll))
+            ? Arbitrator::query()
+                ->where(fn ($query) => $query
+                    ->where('is_active', true)
+                    ->orWhereIn('id', $selectedArbitratorIds))
+                ->orderBy('name')
+                ->get(['id', 'name', 'gender', 'dan_grade', 'license_number', 'certification_level', 'region', 'phone', 'email', 'is_active'])
+            : collect();
+
+        $eventArbitrators = $event->relationLoaded('arbitrators')
+            ? $event->arbitrators->map(fn (Arbitrator $arbitrator) => [
+                'id' => $arbitrator->id,
+                'name' => $arbitrator->name,
+                'gender' => $arbitrator->gender ?? 'male',
+                'dan_grade' => $arbitrator->dan_grade,
+                'license_number' => $arbitrator->license_number,
+                'certification_level' => $arbitrator->certification_level,
+                'region' => $arbitrator->region,
+                'phone' => $arbitrator->phone,
+                'email' => $arbitrator->email,
+                'notes' => $arbitrator->notes,
+                'role' => $arbitrator->pivot->role,
+            ])
+            : collect();
+
+        $users = $needsUsers
+            ? User::query()->with('roles:id,name')->orderBy('name')->get(['id', 'name', 'email'])
+            : collect();
+
+        $eventUsers = $event->relationLoaded('users')
+            ? $event->users->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'access_role' => $user->pivot->access_role,
+            ])
+            : collect();
 
         // Formatted age categories with counts
-        $ageCategories = $event->ageCategories->map(fn (EventAgeCategory $ac) => [
-            'id' => $ac->id,
-            'event_id' => $ac->event_id,
-            'name' => $ac->name,
-            'min_age' => $ac->min_age,
-            'max_age' => $ac->max_age,
-            'age_range' => ($ac->min_age && $ac->max_age) ? "{$ac->min_age} - {$ac->max_age} Tahun" : ($ac->min_age ? "≥ {$ac->min_age} Tahun" : ($ac->max_age ? "≤ {$ac->max_age} Tahun" : 'Semua Usia')),
-            'fee' => (float) $ac->fee,
-            'fee_formatted' => 'Rp '.number_format($ac->fee, 0, ',', '.'),
-            'description' => $ac->description,
-            'order' => $ac->order,
-            'is_active' => (bool) $ac->is_active,
-            'match_categories_count' => (int) ($ac->match_categories_count ?? 0),
-        ]);
+        $ageCategories = $event->relationLoaded('ageCategories')
+            ? $event->ageCategories->map(fn (EventAgeCategory $ac) => [
+                'id' => $ac->id,
+                'event_id' => $ac->event_id,
+                'name' => $ac->name,
+                'min_age' => $ac->min_age,
+                'max_age' => $ac->max_age,
+                'age_range' => ($ac->min_age && $ac->max_age) ? "{$ac->min_age} - {$ac->max_age} Tahun" : ($ac->min_age ? "≥ {$ac->min_age} Tahun" : ($ac->max_age ? "≤ {$ac->max_age} Tahun" : 'Semua Usia')),
+                'fee' => (float) $ac->fee,
+                'fee_formatted' => 'Rp '.number_format($ac->fee, 0, ',', '.'),
+                'description' => $ac->description,
+                'order' => $ac->order,
+                'is_active' => (bool) $ac->is_active,
+                'match_categories_count' => (int) ($ac->match_categories_count ?? 0),
+            ])
+            : collect();
 
         // Formatted courts
-        $courts = $event->courts->map(fn (EventCourt $c) => [
-            'id' => $c->id,
-            'event_id' => $c->event_id,
-            'name' => $c->name,
-            'location' => $c->location,
-            'description' => $c->description,
-            'order' => $c->order,
-            'is_active' => (bool) $c->is_active,
-            'access_code' => $c->access_code,
-        ]);
+        $courts = $event->relationLoaded('courts')
+            ? $event->courts->map(fn (EventCourt $c) => [
+                'id' => $c->id,
+                'event_id' => $c->event_id,
+                'name' => $c->name,
+                'location' => $c->location,
+                'description' => $c->description,
+                'order' => $c->order,
+                'is_active' => (bool) $c->is_active,
+                'access_code' => $c->access_code,
+            ])
+            : collect();
 
         // Formatted match categories
-        $matchCategories = $event->matchCategories->map(fn (EventMatchCategory $mc) => [
-            'id' => $mc->id,
-            'event_id' => $mc->event_id,
-            'age_category_id' => $mc->age_category_id,
-            'age_category_name' => $mc->ageCategory?->name ?? 'Semua Umur',
-            'weight_class_id' => $mc->weight_class_id,
-            'weight_class_name' => $mc->weightClass?->name,
-            'name' => $mc->name,
-            'type' => $mc->type, // 'embu' | 'randori'
-            'gender' => $mc->gender, // 'male' | 'female' | 'mixed'
-            'capacity' => (int) $mc->capacity,
-            'max_athletes_per_team' => (int) $mc->max_athletes_per_team,
-            'min_weight' => $mc->min_weight ? (float) $mc->min_weight : null,
-            'max_weight' => $mc->max_weight ? (float) $mc->max_weight : null,
-            'weight_range' => ($mc->min_weight && $mc->max_weight) ? "{$mc->min_weight} - {$mc->max_weight} kg" : ($mc->min_weight ? "≥ {$mc->min_weight} kg" : ($mc->max_weight ? "≤ {$mc->max_weight} kg" : '-')),
-            'min_kyu' => $mc->min_kyu,
-            'max_kyu' => $mc->max_kyu,
-            'order' => $mc->order,
-            'is_active' => (bool) $mc->is_active,
-            'is_exhibition' => (bool) $mc->is_exhibition,
-        ]);
+        $matchCategories = $event->relationLoaded('matchCategories')
+            ? $event->matchCategories->map(fn (EventMatchCategory $mc) => [
+                'id' => $mc->id,
+                'event_id' => $mc->event_id,
+                'age_category_id' => $mc->age_category_id,
+                'age_category_name' => $mc->ageCategory?->name ?? 'Semua Umur',
+                'weight_class_id' => $mc->weight_class_id,
+                'weight_class_name' => $mc->weightClass?->name,
+                'name' => $mc->name,
+                'type' => $mc->type, // 'embu' | 'randori'
+                'gender' => $mc->gender, // 'male' | 'female' | 'mixed'
+                'capacity' => (int) $mc->capacity,
+                'max_athletes_per_team' => (int) $mc->max_athletes_per_team,
+                'min_weight' => $mc->min_weight ? (float) $mc->min_weight : null,
+                'max_weight' => $mc->max_weight ? (float) $mc->max_weight : null,
+                'weight_range' => ($mc->min_weight && $mc->max_weight) ? "{$mc->min_weight} - {$mc->max_weight} kg" : ($mc->min_weight ? "≥ {$mc->min_weight} kg" : ($mc->max_weight ? "≤ {$mc->max_weight} kg" : '-')),
+                'min_kyu' => $mc->min_kyu,
+                'max_kyu' => $mc->max_kyu,
+                'order' => $mc->order,
+                'is_active' => (bool) $mc->is_active,
+                'is_exhibition' => (bool) $mc->is_exhibition,
+            ])
+            : collect();
 
         // Formatted rundowns
-        $rundowns = $event->rundowns->map(fn (Rundown $r) => [
-            'id' => $r->id,
-            'event_id' => $r->event_id,
-            'date' => $r->date?->format('Y-m-d H:i'),
-            'date_formatted' => $r->date?->translatedFormat('d M Y, H:i').' WIB',
-            'date_only' => $r->date?->format('Y-m-d'),
-            'time_only' => $r->date?->format('H:i'),
-            'end_time' => $r->end_time?->format('Y-m-d H:i'),
-            'end_time_only' => $r->end_time?->format('H:i'),
-            'name' => $r->name,
-            'type' => $r->type,
-            'is_match_session' => (bool) $r->is_match_session,
-            'description' => $r->description,
-            'order' => (int) $r->order,
-        ]);
+        $rundowns = $event->relationLoaded('rundowns')
+            ? $event->rundowns->map(fn (Rundown $r) => [
+                'id' => $r->id,
+                'event_id' => $r->event_id,
+                'date' => $r->date?->format('Y-m-d H:i'),
+                'date_formatted' => $r->date?->translatedFormat('d M Y, H:i').' WIB',
+                'date_only' => $r->date?->format('Y-m-d'),
+                'time_only' => $r->date?->format('H:i'),
+                'end_time' => $r->end_time?->format('Y-m-d H:i'),
+                'end_time_only' => $r->end_time?->format('H:i'),
+                'name' => $r->name,
+                'type' => $r->type,
+                'is_match_session' => (bool) $r->is_match_session,
+                'description' => $r->description,
+                'order' => (int) $r->order,
+            ])
+            : collect();
+
+        // Fast indexed counts for KPI cards and tab badges
+        $counts = [
+            'age_categories' => $event->relationLoaded('ageCategories') ? $event->ageCategories->count() : $event->ageCategories()->count(),
+            'courts' => $event->relationLoaded('courts') ? $event->courts->count() : $event->courts()->count(),
+            'match_categories' => $event->relationLoaded('matchCategories') ? $event->matchCategories->count() : $event->matchCategories()->count(),
+            'rundowns' => $event->relationLoaded('rundowns') ? $event->rundowns->count() : $event->rundowns()->count(),
+            'referees' => $event->relationLoaded('referees') ? $event->referees->count() : $event->referees()->count(),
+            'clerks' => $event->relationLoaded('clerks') ? $event->clerks->count() : $event->clerks()->count(),
+            'field_coordinators' => $event->relationLoaded('fieldCoordinators') ? $event->fieldCoordinators->count() : $event->fieldCoordinators()->count(),
+            'arbitrators' => $event->relationLoaded('arbitrators') ? $event->arbitrators->count() : $event->arbitrators()->count(),
+            'arbitration' => $event->relationLoaded('arbitrators') ? $event->arbitrators->count() : $event->arbitrators()->count(),
+            'techniques' => DB::table('embu_team_techniques')->where('event_id', $event->id)->distinct('technique_id')->count('technique_id'),
+            'referee_check_in_codes' => DB::table('referee_check_in_codes')->where('event_id', $event->id)->count(),
+            'users' => $event->relationLoaded('users') ? $event->users->count() : $event->users()->count(),
+        ];
+
+        // Heavy arbitration queries: ONLY run when on officials_roster tab or full load
+        $arbitrationSummary = $needsArbitrationRoster ? [
+            'referees_count' => $eventReferees->count(),
+            'total_matches' => $event->tournamentMatches()->count(),
+            'completed_matches' => $event->tournamentMatches()->where('status', 'completed')->count(),
+            'attendance_count' => RefereeAttendance::whereBelongsTo($event)->count(),
+            'embu_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count(),
+            'randori_scores_count' => RandoriScore::whereBelongsTo($event)->count(),
+            'total_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count() + RandoriScore::whereBelongsTo($event)->count(),
+            'champions_count' => TournamentResult::whereBelongsTo($event)->count(),
+        ] : [];
+
+        $arbitrationAttendances = $needsArbitrationRoster ? RefereeAttendance::query()
+            ->whereBelongsTo($event)
+            ->with(['referee:id,name,dan_grade,license_number,certification_level,region'])
+            ->orderByDesc('attendance_date')
+            ->orderByDesc('checked_in_at')
+            ->take(30)
+            ->get()
+            ->map(fn (RefereeAttendance $att) => [
+                'id' => $att->id,
+                'referee_name' => $att->referee?->name ?? 'Wasit #'.$att->referee_id,
+                'dan_grade' => $att->referee?->dan_grade ?? '-',
+                'license_number' => $att->referee?->license_number ?? '-',
+                'certification_level' => $att->referee?->certification_level ?? '-',
+                'region' => $att->referee?->region ?? '-',
+                'date' => $att->attendance_date?->format('d/m/Y') ?? $att->checked_in_at?->format('d/m/Y') ?? '-',
+                'time' => $att->checked_in_at ? $att->checked_in_at->format('H:i').' WIB' : '-',
+                'method' => $att->method ?: ($att->is_present ? 'QR Code' : '-'),
+                'is_present' => (bool) $att->is_present,
+                'notes' => $att->notes,
+            ]) : [];
+
+        $arbitrationScores = $needsArbitrationRoster ? EmbuJudgeScore::query()
+            ->whereBelongsTo($event)
+            ->with([
+                'referee:id,name',
+                'tournamentMatch:id,match_sequence,participant_label,event_match_category_id,event_court_id',
+                'tournamentMatch.matchCategory:id,name',
+                'tournamentMatch.court:id,name',
+            ])
+            ->latest()
+            ->take(20)
+            ->get()
+            ->map(fn (EmbuJudgeScore $s) => [
+                'id' => $s->id,
+                'type' => 'EMBU',
+                'match_sequence' => $s->tournamentMatch?->match_sequence ?? '-',
+                'category_name' => $s->tournamentMatch?->matchCategory?->name ?? '-',
+                'court_name' => $s->tournamentMatch?->court?->name ?? '-',
+                'participant' => $s->tournamentMatch?->participant_label ?? '-',
+                'referee_name' => $s->referee?->name ?? ('Juri Wasit #'.$s->judge_number),
+                'judge_number' => $s->judge_number,
+                'technique_subtotal' => (float) $s->technique_subtotal,
+                'expression_subtotal' => (float) $s->expression_subtotal,
+                'violation_penalty' => (float) $s->violation_penalty,
+                'total_score' => (float) $s->total_score,
+                'signed' => ! empty($s->signature),
+                'status' => $s->status ?: 'submitted',
+                'time' => $s->updated_at?->translatedFormat('d M H:i') ?? '-',
+            ]) : [];
+
+        $arbitrationPersonnel = $needsArbitrationRoster ? $this->buildArbitrationPersonnel($event) : [];
+
+        $arbitrationRoleUsers = $needsArbitrationRoster ? $event->users()
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Arbitrase'))
+            ->with('roles:id,name')
+            ->get()
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'roles' => $user->roles->pluck('name')->all(),
+                'access_role' => $user->pivot->access_role ?? 'staff',
+                'avatar_letter' => strtoupper(substr($user->name, 0, 1)),
+            ]) : [];
+
+        $tournamentSummary = $needsTournamentSummary ? [
+            'status' => match (true) {
+                $event->tournamentDrawings()->where('status', 'in_progress')->exists() => 'in_progress',
+                $event->tournamentDrawings()->where('status', 'completed')->exists() => 'completed',
+                $event->tournamentDrawings()->where('status', 'published')->exists() => 'published',
+                $event->tournamentDrawings()->where('status', 'generated')->exists() => 'generated',
+                default => 'draft',
+            },
+            'generated_categories' => $event->tournamentDrawings()->whereIn('status', ['generated', 'published', 'in_progress', 'completed'])->count(),
+            'skipped_categories' => $event->tournamentDrawings()->where('status', 'skipped')->count(),
+            'total_matches' => $event->tournamentMatches()->count(),
+            'match_sessions' => $event->rundowns()->where('is_match_session', true)->count(),
+        ] : [
+            'status' => 'draft',
+            'generated_categories' => 0,
+            'skipped_categories' => 0,
+            'total_matches' => $counts['match_categories'],
+            'match_sessions' => $counts['rundowns'],
+        ];
 
         return [
             'event' => [
@@ -350,104 +553,13 @@ class EventDetailViewService
             'users' => $users->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'roles' => $user->roles->pluck('name')->values()]),
             'eventUsers' => $eventUsers,
             'tenantBaseDomain' => config('app.tenant_base_domain'),
-            'tournamentSummary' => [
-                'status' => match (true) {
-                    $event->tournamentDrawings()->where('status', 'in_progress')->exists() => 'in_progress',
-                    $event->tournamentDrawings()->where('status', 'completed')->exists() => 'completed',
-                    $event->tournamentDrawings()->where('status', 'published')->exists() => 'published',
-                    $event->tournamentDrawings()->where('status', 'generated')->exists() => 'generated',
-                    default => 'draft',
-                },
-                'generated_categories' => $event->tournamentDrawings()->whereIn('status', ['generated', 'published', 'in_progress', 'completed'])->count(),
-                'skipped_categories' => $event->tournamentDrawings()->where('status', 'skipped')->count(),
-                'total_matches' => $event->tournamentMatches()->count(),
-                'match_sessions' => $event->rundowns()->where('is_match_session', true)->count(),
-            ],
-            'arbitrationSummary' => [
-                'referees_count' => $eventReferees->count(),
-                'total_matches' => $event->tournamentMatches()->count(),
-                'completed_matches' => $event->tournamentMatches()->where('status', 'completed')->count(),
-                'attendance_count' => RefereeAttendance::whereBelongsTo($event)->count(),
-                'embu_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count(),
-                'randori_scores_count' => RandoriScore::whereBelongsTo($event)->count(),
-                'total_scores_count' => EmbuJudgeScore::whereBelongsTo($event)->count() + RandoriScore::whereBelongsTo($event)->count(),
-                'champions_count' => TournamentResult::whereBelongsTo($event)->count(),
-            ],
-            'arbitrationAttendances' => RefereeAttendance::query()
-                ->whereBelongsTo($event)
-                ->with(['referee:id,name,dan_grade,license_number,certification_level,region'])
-                ->orderByDesc('attendance_date')
-                ->orderByDesc('checked_in_at')
-                ->take(30)
-                ->get()
-                ->map(fn (RefereeAttendance $att) => [
-                    'id' => $att->id,
-                    'referee_name' => $att->referee?->name ?? 'Wasit #'.$att->referee_id,
-                    'dan_grade' => $att->referee?->dan_grade ?? '-',
-                    'license_number' => $att->referee?->license_number ?? '-',
-                    'certification_level' => $att->referee?->certification_level ?? '-',
-                    'region' => $att->referee?->region ?? '-',
-                    'date' => $att->attendance_date?->format('d/m/Y') ?? $att->checked_in_at?->format('d/m/Y') ?? '-',
-                    'time' => $att->checked_in_at ? $att->checked_in_at->format('H:i').' WIB' : '-',
-                    'method' => $att->method ?: ($att->is_present ? 'QR Code' : '-'),
-                    'is_present' => (bool) $att->is_present,
-                    'notes' => $att->notes,
-                ]),
-            'arbitrationScores' => EmbuJudgeScore::query()
-                ->whereBelongsTo($event)
-                ->with([
-                    'referee:id,name',
-                    'tournamentMatch:id,match_sequence,participant_label,event_match_category_id,event_court_id',
-                    'tournamentMatch.matchCategory:id,name',
-                    'tournamentMatch.court:id,name',
-                ])
-                ->latest()
-                ->take(20)
-                ->get()
-                ->map(fn (EmbuJudgeScore $s) => [
-                    'id' => $s->id,
-                    'type' => 'EMBU',
-                    'match_sequence' => $s->tournamentMatch?->match_sequence ?? '-',
-                    'category_name' => $s->tournamentMatch?->matchCategory?->name ?? '-',
-                    'court_name' => $s->tournamentMatch?->court?->name ?? '-',
-                    'participant' => $s->tournamentMatch?->participant_label ?? '-',
-                    'referee_name' => $s->referee?->name ?? ('Juri Wasit #'.$s->judge_number),
-                    'judge_number' => $s->judge_number,
-                    'technique_subtotal' => (float) $s->technique_subtotal,
-                    'expression_subtotal' => (float) $s->expression_subtotal,
-                    'violation_penalty' => (float) $s->violation_penalty,
-                    'total_score' => (float) $s->total_score,
-                    'signed' => ! empty($s->signature),
-                    'status' => $s->status ?: 'submitted',
-                    'time' => $s->updated_at?->translatedFormat('d M H:i') ?? '-',
-                ]),
-            'arbitrationPersonnel' => $this->buildArbitrationPersonnel($event),
-            'arbitrationRoleUsers' => $event->users()
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Arbitrase'))
-                ->with('roles:id,name')
-                ->get()
-                ->map(fn (User $user) => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'roles' => $user->roles->pluck('name')->all(),
-                    'access_role' => $user->pivot->access_role ?? 'staff',
-                    'avatar_letter' => strtoupper(substr($user->name, 0, 1)),
-                ]),
-            'counts' => [
-                'age_categories' => $ageCategories->count(),
-                'courts' => $courts->count(),
-                'match_categories' => $matchCategories->count(),
-                'rundowns' => $rundowns->count(),
-                'referees' => $eventReferees->count(),
-                'clerks' => $eventClerks->count(),
-                'field_coordinators' => $eventFieldCoordinators->count(),
-                'arbitrators' => $eventArbitrators->count(),
-                'arbitration' => $eventArbitrators->count(),
-                'techniques' => DB::table('embu_team_techniques')->where('event_id', $event->id)->distinct('technique_id')->count('technique_id'),
-                'referee_check_in_codes' => DB::table('referee_check_in_codes')->where('event_id', $event->id)->count(),
-                'users' => $event->users()->count(),
-            ],
+            'tournamentSummary' => $tournamentSummary,
+            'arbitrationSummary' => $arbitrationSummary,
+            'arbitrationAttendances' => $arbitrationAttendances,
+            'arbitrationScores' => $arbitrationScores,
+            'arbitrationPersonnel' => $arbitrationPersonnel,
+            'arbitrationRoleUsers' => $arbitrationRoleUsers,
+            'counts' => $counts,
             'auth' => [
                 'user' => $request->user() ? [
                     'id' => $request->user()->id,

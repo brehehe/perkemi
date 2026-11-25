@@ -294,8 +294,24 @@ export default function Combobox({
                             );
                         })}
 
-                        {!filteredOptions.length && !canCreate && (
-                            <p className="px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">{emptyMessage}</p>
+                        {!filteredOptions.length && (
+                            <div className="px-3 py-4 text-center">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{emptyMessage}</p>
+                                {onCreate && !canCreate && (
+                                    <button
+                                        type="button"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => {
+                                            closeDropdown();
+                                            onCreate(newLabel);
+                                        }}
+                                        className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#f9eee9] px-3 py-1.5 text-xs font-semibold text-[#a93226] hover:bg-[#f5e0d7] dark:bg-[#c0392b]/20 dark:text-rose-300 transition-colors cursor-pointer"
+                                    >
+                                        <i className="fa-solid fa-user-plus text-[10px]" aria-hidden="true" />
+                                        <span>{createLabel} {newLabel ? `“${newLabel}”` : ''}</span>
+                                    </button>
+                                )}
+                            </div>
                         )}
 
                         {canCreate && (
@@ -307,11 +323,28 @@ export default function Combobox({
                                 onMouseEnter={() => setActiveIndex(filteredOptions.length)}
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={handleCreate}
-                                className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg border-t border-slate-100 px-3 py-2 text-left text-xs font-semibold text-[#a93226] dark:border-slate-800 dark:text-rose-300 ${activeIndex === filteredOptions.length ? 'bg-[#f9eee9] dark:bg-[#c0392b]/20' : 'hover:bg-[#f9eee9] dark:hover:bg-[#c0392b]/20'}`}
+                                className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg border-t border-slate-100 px-3 py-2 text-left text-xs font-semibold text-[#a93226] dark:border-slate-800 dark:text-rose-300 ${activeIndex === filteredOptions.length ? 'bg-[#f9eee9] dark:bg-[#c0392b]/20' : 'hover:bg-[#f9eee9] dark:hover:bg-[#c0392b]/20'} cursor-pointer`}
                             >
-                                <i className="fa-solid fa-plus" aria-hidden="true" />
-                                <span>{createLabel} “{newLabel}”</span>
+                                <i className="fa-solid fa-user-plus text-xs" aria-hidden="true" />
+                                <span>+ {createLabel} “{newLabel}”</span>
                             </button>
+                        )}
+
+                        {onCreate && !canCreate && filteredOptions.length > 0 && (
+                            <div className="border-t border-slate-100 p-1 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                        closeDropdown();
+                                        onCreate(newLabel);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-[#a93226] hover:bg-[#f9eee9] dark:text-rose-300 dark:hover:bg-[#c0392b]/20 transition-colors cursor-pointer"
+                                >
+                                    <i className="fa-solid fa-user-plus text-[11px]" aria-hidden="true" />
+                                    <span>+ {createLabel}</span>
+                                </button>
+                            </div>
                         )}
                     </div>
                 </FloatingDropdown>

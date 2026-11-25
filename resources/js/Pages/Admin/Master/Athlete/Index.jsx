@@ -3,6 +3,7 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
+import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 import { Modal, Pagination, Input, Combobox, Button } from '@/Components/UI';
 import Textarea from '@/Components/UI/Forms/Textarea';
 
@@ -101,7 +102,7 @@ export default function AthleteIndex({
         clearErrors();
         setEditingAthlete(athlete);
         setData({
-            ...schoolData(athlete),            contingent_id: athlete.contingent_id || '',
+            ...schoolData(athlete), contingent_id: athlete.contingent_id || '',
             name: athlete.name || '',
             nik: athlete.nik || '',
             kenshi_number: athlete.kenshi_number || '',
@@ -157,29 +158,30 @@ export default function AthleteIndex({
             <Head title="Data Atlet & Kenshi — Smart Perkemi" />
 
             {/* ════ HEADER SECTION ════ */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#8c827a] tracking-wider uppercase mb-1">
-                        <i className="fa-solid fa-folder-tree text-[11px]"></i>
-                        <span>Master Data</span>
-                        <i className="fa-solid fa-chevron-right text-[9px] text-[#b5afa6]"></i>
-                        <span className="text-[#c0392b]">Data Atlet & Kenshi</span>
-                    </div>
-                    <h1 className="font-cinzel text-xl md:text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    {/* <div className="flex items-center gap-2 mb-1">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <i className="fa-solid fa-user-ninja text-[9px] text-[#c0392b]" />
+                            Kenshi & Atlet
+                        </span>
+                    </div> */}
+                    <h1 className="font-sans text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                         Manajemen Atlet & Kenshi
                     </h1>
-                    <p className="text-xs md:text-sm text-[#706860] mt-0.5">
+                    <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
                         Kelola data biodata kenshi, verifikasi tingkatan Kyu/Dan, data fisik BB/TB, dan asosiasi kontingen.
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                    <MasterDataTransfer type="athlete" label="Atlet & Kenshi" />
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#d33a2a] hover:to-[#a93226] text-white font-medium text-xs md:text-sm shadow-md shadow-[#c0392b]/25 transition-all cursor-pointer hover:shadow-lg active:scale-98"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-transparent bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs md:text-sm shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                     >
-                        <i className="fa-solid fa-circle-plus text-sm"></i>
+                        <i className="fa-solid fa-circle-plus text-xs" />
                         <span>Tambah Atlet Baru</span>
                     </Button>
                 </div>
@@ -405,7 +407,7 @@ export default function AthleteIndex({
                     <div className="w-14 h-14 rounded-2xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center mx-auto mb-3 text-xl">
                         <i className="fa-solid fa-user-ninja"></i>
                     </div>
-                    <h3 className="font-cinzel text-sm font-bold text-[#0f0d0b]">
+                    <h3 className="font-sans text-sm font-bold text-slate-900 dark:text-white">
                         Tidak Ada Data Atlet Ditemukan
                     </h3>
                     <p className="text-xs text-[#706860] mt-1 max-w-sm mx-auto">

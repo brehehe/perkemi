@@ -1,6 +1,5 @@
 import Button from "@/Components/UI/Elements/Button";
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
-import Combobox from '@/Components/UI/Forms/Combobox';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router } from '@inertiajs/react';
 
@@ -40,13 +39,6 @@ export default function ReportMedals({ activeEvent, events = [], medalStats, sta
                         </div>
 
                         <div className="flex w-full flex-col gap-2 md:max-w-md">
-                            <Combobox
-                                ariaLabel="Pilih event hasil juara"
-                                options={events.map((event) => ({ value: event.id, label: event.name, sublabel: event.city }))}
-                                value={activeEvent?.id || ''}
-                                onChange={(eventId) => router.get('/admin/laporan/hasil', { event_id: eventId, system: rankingSystem })}
-                                clearable={false}
-                            />
                             <div className="flex items-center gap-1.5 p-1 bg-white/10 rounded-xl border border-white/15 text-xs">
                                 <button
                                     type="button"

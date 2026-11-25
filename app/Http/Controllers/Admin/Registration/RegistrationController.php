@@ -65,7 +65,8 @@ class RegistrationController extends Controller
             ->latest();
 
         if (! $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
-            && ! $this->canManageMatchEntries($request, $activeEvent)) {
+            && ! $this->canManageMatchEntries($request, $activeEvent)
+            && ! $this->isViewerUser($request, $activeEvent)) {
             $query->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->where('user_id', $request->user()?->id));
         }
 
@@ -95,7 +96,8 @@ class RegistrationController extends Controller
         $registrationStatsQuery = Registration::query();
 
         if (! $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
-            && ! $this->canManageMatchEntries($request, $activeEvent)) {
+            && ! $this->canManageMatchEntries($request, $activeEvent)
+            && ! $this->isViewerUser($request, $activeEvent)) {
             $registrationStatsQuery->whereHas('contingent', fn ($contingentQuery) => $contingentQuery->where('user_id', $request->user()?->id));
         }
 
@@ -156,7 +158,8 @@ class RegistrationController extends Controller
 
         abort_unless(
             $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
-            || $this->canManageMatchEntries($request, $activeEvent),
+            || $this->canManageMatchEntries($request, $activeEvent)
+            || $this->isViewerUser($request, $activeEvent),
             403
         );
 
@@ -366,6 +369,7 @@ class RegistrationController extends Controller
         $this->ensureTenantRegistration($request, $registration);
         $event = $registration->event;
         abort_unless($event instanceof Event && ($this->canManageMatchEntries($request, $event)
+            || $this->isViewerUser($request, $event)
             || $registration->contingent?->user_id === $request->user()?->id), 403);
         $registration->load(['contingent:id,event_id,user_id,name,city,manager_name,phone,email,address',
             'event:id,name,start_date,is_paid,fee_per_athlete,fee_per_contingent,max_match_categories_per_athlete,allow_cross_age_group_embu,participant_rules',
@@ -456,11 +460,12 @@ class RegistrationController extends Controller
         abort_unless($event instanceof Event, 403);
         $eventStaff = $this->canManageMatchEntries($request, $event);
         $isContingentOwner = $event->contingents()->where('user_id', $request->user()?->id)->exists();
-        abort_unless($eventStaff || $isContingentOwner, 403);
+        $isViewer = $this->isViewerUser($request, $event);
+        abort_unless($eventStaff || $isContingentOwner || $isViewer, 403);
 
         $registrations = Registration::query()
             ->whereBelongsTo($event)
-            ->when(! $eventStaff, fn ($query) => $query->whereHas('contingent',
+            ->when(! $eventStaff && ! $isViewer, fn ($query) => $query->whereHas('contingent',
                 fn ($contingentQuery) => $contingentQuery->where('user_id', $request->user()?->id)))
             ->with('contingent:id,name,city')
             ->orderBy('registration_number')
@@ -541,7 +546,7 @@ class RegistrationController extends Controller
         abort_unless($event instanceof Event, 403);
         $eventStaff = $this->canManageMatchEntries($request, $event);
         $isContingentOwner = $event->contingents()->where('user_id', $request->user()?->id)->exists();
-        abort_unless($eventStaff || $isContingentOwner, 403);
+        abort_unless($eventStaff || $isContingentOwner || $this->isViewerUser($request, $event), 403);
 
         $categories = $event->matchCategories()
             ->where('is_active', true)
@@ -728,7 +733,7 @@ class RegistrationController extends Controller
 
         $eventStaff = $this->canManageMatchEntries($request, $event);
         $isContingentOwner = $event->contingents()->where('user_id', $request->user()?->id)->exists();
-        abort_unless($eventStaff || $isContingentOwner, 403);
+        abort_unless($eventStaff || $isContingentOwner || $this->isViewerUser($request, $event), 403);
 
         $export = $workbookService->exportMatchGroups($event, $request);
 
@@ -894,7 +899,8 @@ class RegistrationController extends Controller
 
         abort_unless(
             $request->user()?->hasAnyRole(['Super Admin', 'Admin'])
-            || $this->canManageMatchEntries($request, $activeEvent),
+            || $this->canManageMatchEntries($request, $activeEvent)
+            || $this->isViewerUser($request, $activeEvent),
             403
         );
 
@@ -1554,6 +1560,16 @@ class RegistrationController extends Controller
                 ])),
             ];
         })->values();
+    }
+
+    private function isViewerUser(Request $request, ?Event $event): bool
+    {
+        $user = $request->user();
+        if (! $user || ! $event instanceof Event) {
+            return false;
+        }
+
+        return $user->hasRole('Viewer') || $event->accessRoleFor($user) === Event::AccessRoleViewer;
     }
 
     private function canManageMatchEntries(Request $request, ?Event $event): bool

@@ -94,11 +94,6 @@ export default function MatchCategoriesReport({
         setCollapsedCategories(all);
     };
 
-    const handleEventChange = (eventId) => {
-        if (!eventId || eventId === activeEvent.id) return;
-        router.get('/admin/pendaftaran/laporan-nomor-pertandingan', { event_id: eventId });
-    };
-
     const handlePrint = () => {
         window.print();
     };
@@ -144,19 +139,6 @@ export default function MatchCategoriesReport({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5">
-                        {eventOptions.length > 1 && (
-                            <div className="w-56">
-                                <Combobox
-                                    value={activeEvent.id}
-                                    onChange={handleEventChange}
-                                    options={eventOptions.map((e) => ({ value: e.id, label: e.name }))}
-                                    clearable={false}
-                                    size="sm"
-                                    ariaLabel="Pilih Event"
-                                />
-                            </div>
-                        )}
-
                         <Button
                             variant="secondary"
                             size="sm"

@@ -1,9 +1,4 @@
-import Combobox from '@/Components/UI/Forms/Combobox';
-import { router } from '@inertiajs/react';
-
-export default function PaniteraHeader({ title, description, icon = 'fa-clipboard-check', activeEvent, events = [], path }) {
-    const destination = path.includes('embu-result') ? 'embu' : path.includes('randori-result') ? 'randori' : 'dashboard';
-
+export default function PaniteraHeader({ title, description, icon = 'fa-clipboard-check', activeEvent }) {
     return (
         <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0f0d0b] via-[#211b16] to-[#0f0d0b] p-5 text-white shadow-xl md:p-6">
             <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#d4a843]/15 blur-3xl" />
@@ -22,19 +17,6 @@ export default function PaniteraHeader({ title, description, icon = 'fa-clipboar
                         </p>
                     )}
                 </div>
-                <Combobox
-                    label="Event dipilih"
-                    labelClassName="text-white/60"
-                    containerClassName="w-full xl:w-96"
-                    value={activeEvent?.id || ''}
-                    onChange={(value) => router.post('/admin/panitera/event-context', { event_id: value, destination }, { preserveState: false })}
-                    clearable={false}
-                    options={events.map((event) => ({
-                        value: event.id,
-                        label: event.name,
-                        sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · '),
-                    }))}
-                />
             </div>
         </section>
     );

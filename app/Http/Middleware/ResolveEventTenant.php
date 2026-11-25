@@ -51,7 +51,11 @@ class ResolveEventTenant
                 || $eventAccessRole !== null
                 || $hasOperationalAssignment
                 || $isContingentOwner
-                || (($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase'])) && $tenantEvent->is_active));
+                || (($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase', 'Viewer'])) && $tenantEvent->is_active));
+
+        if ($request->routeIs('admin.dashboard') && ! $hasTenantAccess) {
+            abort(404, 'Event dashboard tidak ditemukan atau tidak ditugaskan kepada akun ini.');
+        }
 
         abort_unless($hasTenantAccess, 403);
 
@@ -70,6 +74,7 @@ class ResolveEventTenant
             'admin.master.event.activate',
             'admin.master.event.update.general',
             'admin.master.event.users.update',
+            'admin.master.event.users.quick-create',
         ]);
 
         if ($isEventAdministration && ! $isFullAdmin && ! in_array($eventAccessRole, [
@@ -79,8 +84,10 @@ class ResolveEventTenant
             abort(403);
         }
 
-        if (! $request->isMethod('GET') && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === 'viewer') {
-            abort(403);
+        $isViewer = $user && (($user->hasRole('Viewer')) || $eventAccessRole === Event::AccessRoleViewer) && ! $isFullAdmin;
+
+        if ($isViewer && ! $request->isMethod('GET') && ! $request->routeIs('admin.tenant.exit')) {
+            abort(403, 'Akses ditolak. Pengguna Viewer hanya memiliki hak baca (view-only) dan tidak dapat mengubah data.');
         }
 
         if ($isResponsibleUser && $request->routeIs([
@@ -137,6 +144,30 @@ class ResolveEventTenant
             }
         }
 
+        // 2b. Explicit query event_id resolution for dashboard (?event_id=UUID or ?event_id=all)
+        if ($request->routeIs('admin.dashboard')) {
+            $queryEventId = $request->query('event_id');
+            if (is_string($queryEventId) && $queryEventId !== '') {
+                if ($queryEventId === 'all') {
+                    if ($request->hasSession()) {
+                        $request->session()->forget(['tenant_event_id', 'tenant_event_slug']);
+                    }
+
+                    return null;
+                }
+
+                $event = Event::query()->find($queryEventId);
+                if ($event) {
+                    if ($request->hasSession()) {
+                        $request->session()->put('tenant_event_id', $event->id);
+                        $request->session()->put('tenant_event_slug', $event->slug);
+                    }
+
+                    return $event;
+                }
+            }
+        }
+
         // 3. Session resolution (when user entered via /event/{slug}/admin or switched tenant)
         if ($request->hasSession() && ($eventId = $request->session()->get('tenant_event_id'))) {
             $event = Event::query()->find($eventId);
@@ -151,7 +182,7 @@ class ResolveEventTenant
         if ($user && ! $user->hasAnyRole(['Super Admin', 'Admin']) && $this->dashboardEventAccess->requiresEventScope($user)) {
             $assignedEvent = $this->dashboardEventAccess->eventsFor($user)->first();
 
-            if (! $assignedEvent && ($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase']))) {
+            if (! $assignedEvent && ($user->hasAnyRole(['Panitera', 'Koordinator Lapangan', 'Court', 'Pertandingan', 'Arbitrase', 'Viewer']))) {
                 $assignedEvent = Event::query()->where('is_active', true)->first()
                     ?? Event::query()->orderByDesc('start_date')->first();
             }

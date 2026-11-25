@@ -6,6 +6,15 @@ export const monitorModes = [
     ['officials', 'Ofisial', 'fa-user-shield'],
 ];
 
+export function monitorFocusPresentation(isFocusMode, isFullscreen) {
+    return {
+        controlsLabel: isFocusMode ? 'Tampilkan kontrol' : 'Sembunyikan kontrol',
+        controlsIcon: isFocusMode ? 'fa-eye' : 'fa-eye-slash',
+        fullscreenLabel: isFullscreen ? 'Keluar layar penuh' : 'Layar penuh',
+        fullscreenIcon: isFullscreen ? 'fa-compress' : 'fa-expand',
+    };
+}
+
 export function formatTimer(totalSeconds) {
     const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
 
@@ -69,5 +78,75 @@ export function embuParticipantLayout(athleteCount) {
     return {
         usesTwoColumns: count > 1,
         fullWidthFinalIndex: count === 3 ? 2 : null,
+    };
+}
+
+export function formatEmbuScore(value, fallback = '–') {
+    if (value === null || value === undefined || value === '') return fallback;
+
+    const score = Number(value);
+
+    if (!Number.isFinite(score)) return fallback;
+
+    return score.toFixed(2).replace(/\.?0+$/, '');
+}
+
+export function embuJudgeSlots(judges = []) {
+    const judgesByNumber = new Map(
+        judges.map((judge) => [Number(judge.judge_number), judge]),
+    );
+
+    return Array.from({ length: 5 }, (_, index) => {
+        const judgeNumber = index + 1;
+
+        return judgesByNumber.get(judgeNumber) || {
+            judge_number: judgeNumber,
+            referee_name: `Juri ${judgeNumber}`,
+            technique_subtotal: null,
+            expression_subtotal: null,
+            total_score: null,
+            completed_items: 0,
+            status: 'waiting',
+            is_signed: false,
+            is_trimmed_min: false,
+            is_trimmed_max: false,
+            is_middle: false,
+        };
+    });
+}
+
+export function embuJudgePresentation(judge = {}) {
+    const hasScore = Number(judge.total_score) > 0;
+    const isTrimmed = hasScore && Boolean(judge.is_trimmed_min || judge.is_trimmed_max);
+    const isMiddle = hasScore && Boolean(judge.is_middle);
+
+    if (isTrimmed) {
+        return {
+            hasScore,
+            tone: 'trimmed',
+            statusLabel: judge.is_trimmed_min ? 'Dicoret · terendah' : 'Dicoret · tertinggi',
+        };
+    }
+
+    if (isMiddle) {
+        return {
+            hasScore,
+            tone: 'middle',
+            statusLabel: 'Dihitung · wasit tengah',
+        };
+    }
+
+    if (hasScore) {
+        return {
+            hasScore,
+            tone: 'submitted',
+            statusLabel: judge.status === 'submitted' ? 'Nilai terkirim' : 'Nilai tersimpan',
+        };
+    }
+
+    return {
+        hasScore,
+        tone: 'waiting',
+        statusLabel: judge.completed_items > 0 ? `${judge.completed_items}/10 aspek terisi` : 'Menunggu nilai',
     };
 }

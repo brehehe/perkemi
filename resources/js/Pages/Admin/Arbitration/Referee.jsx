@@ -170,14 +170,13 @@ export default function ArbitrationReferee({ referees = [], availableReferees = 
                             <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">Data Wasit Event</h1>
                             <p className="mt-2 text-sm leading-6 text-white/70">Kelola profil, peran, dan status Wasit untuk {activeEvent?.name || 'event yang dipilih'}.</p>
                         </div>
-                        <div className="grid w-full gap-3 sm:grid-cols-[minmax(0,1fr)_auto] xl:w-auto xl:min-w-[32rem]">
-                            <Combobox label="Event dipilih" labelClassName="text-white/60" value={eventId || ''} onChange={(value) => router.get('/admin/arbitrase/wasit', { event_id: value, status: 'all' })} clearable={false} options={events.map((event) => ({ value: event.id, label: event.name, sublabel: [event.status_label, event.date_label, event.city].filter(Boolean).join(' · ') }))} />
-                            {canManageEventReferees && (
-                                <Button type="button" variant="gold" size="md" onClick={openCreate} iconLeft={<i className="fa-solid fa-user-plus" aria-hidden="true" />} className="w-full self-end sm:w-auto">
+                        {canManageEventReferees && (
+                            <div className="flex items-center justify-end self-start xl:self-auto">
+                                <Button type="button" variant="gold" size="md" onClick={openCreate} iconLeft={<i className="fa-solid fa-user-plus" aria-hidden="true" />} className="w-full sm:w-auto">
                                     Tambah Wasit
                                 </Button>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
                 </section>
 

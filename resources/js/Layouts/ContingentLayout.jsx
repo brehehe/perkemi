@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import PanelSidebar from '@/Components/UI/Navigation/PanelSidebar';
 import ThemeToggle from '@/Components/UI/Elements/ThemeToggle';
+import EventSwitcherModal from '@/Components/Admin/EventSwitcherModal';
 
 const navigation = [
     { id: 'pendaftaran', label: 'Pendaftaran', items: [
@@ -32,11 +33,15 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
     const isActive = (href) => url.split('?')[0] === href
         || (href === '/kontingen/registrasi' && (url.startsWith('/admin/pendaftaran/registrasi') || url.startsWith('/kontingen/registrasi/')));
     const eventQuery = portal.event?.id ? `?event_id=${encodeURIComponent(portal.event.id)}` : '';
-    const eventIndependentPaths = new Set(['/kontingen/atlet', '/kontingen/official']);
+    const eventIndependentPaths = new Set(['/kontingen/atlet', '/kontingen/official', '/kontingen/riwayat-pendaftaran']);
     const contextualHref = (href) => href.startsWith('/kontingen/') && !eventIndependentPaths.has(href) ? `${href}${eventQuery}` : href;
     const [openSections, setOpenSections] = useState(() => Object.fromEntries(navigation.map((section) =>
         [section.id, section.id === 'pendaftaran' || section.items.some((item) => isActive(item.href))])));
     const [profileOpen, setProfileOpen] = useState(false);
+    const [isEventSwitcherOpen, setIsEventSwitcherOpen] = useState(false);
+    const availableEvents = props.tenant?.available_events?.length
+        ? props.tenant.available_events
+        : (Array.isArray(portal?.event_options) ? portal.event_options : []);
     const profileRef = useRef(null);
 
     useEffect(() => {
@@ -66,14 +71,40 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
             <Head title={`${title} | Portal Kontingen`} />
 
             <PanelSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} subtitle="Portal Kontingen · 2026">
-                <div className="mx-3 mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 p-2.5">
+                {/* Event Active Header Card - exactly like Image 5 */}
+                <div className="mx-3 mt-3 rounded-2xl border border-[#d4a843]/30 bg-[#1e1b18]/80 p-3 shadow-md backdrop-blur-xs">
                     <div className="flex items-center gap-3">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#f0c060]">
-                            <i className="fa-solid fa-trophy text-xs" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                            <p className="truncate text-[11px] font-semibold text-white">{portal.event?.name || 'Event belum dipilih'}</p>
-                            <p className="mt-0.5 truncate text-[9.5px] uppercase tracking-wide text-[#d4a843]">{portal.contingent?.name || 'Kontingen'}</p>
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 border border-[#d4a843]/20 text-[#d4a843] shadow-xs">
+                            <i className="fa-solid fa-trophy text-sm" />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                                <h4
+                                    className="truncate text-[13px] font-bold text-white tracking-tight leading-snug"
+                                    title={portal.event?.name}
+                                >
+                                    {portal.event?.name || 'Event belum dipilih'}
+                                </h4>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEventSwitcherOpen(true)}
+                                    className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#d4a843]/15 hover:bg-[#d4a843]/25 border border-[#d4a843]/30 text-[#f0c060] hover:text-white text-[11px] font-medium transition-all cursor-pointer shadow-2xs"
+                                    title="Beralih event"
+                                >
+                                    <i className="fa-solid fa-arrows-rotate text-[10px]" />
+                                    <span>Ganti</span>
+                                </button>
+                            </div>
+
+                            <div className="mt-1 flex items-center justify-between text-[11px]">
+                                <span className="truncate font-semibold tracking-wide uppercase text-[#d4a843]">
+                                    {portal.contingent?.name ? portal.contingent.name.toUpperCase() : (portal.event?.city || 'KONTINGEN')}
+                                </span>
+                                <span className="shrink-0 text-white/40 text-[11px] ml-2">
+                                    {availableEvents.length > 0 ? `${availableEvents.length} Event` : '1 Event'}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -114,9 +145,27 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
                         <i className="fa-solid fa-bars" />
                     </button>
 
-                    <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-[#1b1714] md:text-base">{title}</p>
-                        <p className="hidden truncate text-xs text-[#888078] sm:block">{portal.event?.name}</p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h2 className="flex min-w-0 items-center gap-1.5 font-sans text-sm font-semibold tracking-tight text-[#0f0d0b] dark:text-white md:text-base">
+                            <span className="truncate">{title}</span>
+                            <span className="hidden shrink-0 text-xs font-medium text-[#c0392b] sm:inline md:text-sm">/ Overview</span>
+                        </h2>
+
+                        {portal.event?.name && (
+                            <button
+                                type="button"
+                                onClick={() => setIsEventSwitcherOpen(true)}
+                                className="group inline-flex items-center gap-1.5 max-w-[170px] sm:max-w-[240px] md:max-w-[320px] px-2.5 py-1 rounded-lg border border-[#ede9e1] bg-white hover:bg-[#ede9e1]/70 dark:border-slate-800 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-[#0f0d0b] dark:text-slate-200 text-xs shadow-2xs transition-all cursor-pointer"
+                                title="Klik untuk beralih event kejuaraan"
+                            >
+                                <span className="flex h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                                <i className="fa-solid fa-trophy text-[10px] text-[#d4a843] shrink-0" />
+                                <span className="truncate font-semibold text-[11px] sm:text-xs">
+                                    {portal.event.name}
+                                </span>
+                                <i className="fa-solid fa-chevron-down text-[8.5px] text-[#8c827a] group-hover:text-[#0f0d0b] dark:group-hover:text-white shrink-0 transition-transform" />
+                            </button>
+                        )}
                     </div>
 
                     <div className="ml-auto flex items-center gap-2.5">
@@ -162,6 +211,14 @@ export default function ContingentLayout({ children, title = 'Portal Kontingen',
                     © 2026 SMART-PERKEMI · Portal Kontingen Shorinji Kempo Indonesia
                 </footer>
             </div>
+
+            <EventSwitcherModal
+                isOpen={isEventSwitcherOpen}
+                onClose={() => setIsEventSwitcherOpen(false)}
+                events={availableEvents}
+                currentEventId={portal.event?.id}
+                isFullAdmin={false}
+            />
         </div>
     );
 }

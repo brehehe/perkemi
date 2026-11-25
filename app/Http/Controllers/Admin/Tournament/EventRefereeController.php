@@ -742,6 +742,12 @@ class EventRefereeController extends Controller
     {
         $user = $request->user();
         $eventAccessRole = $user ? $event->accessRoleFor($user) : null;
+        $isViewer = $user && ($user->hasRole('Viewer') || $eventAccessRole === Event::AccessRoleViewer);
+
+        if ($request->isMethod('GET') && $isViewer) {
+            return;
+        }
+
         $canManage = $user && (
             $user->hasAnyRole(['Super Admin', 'Admin', 'Arbitrase', 'Koordinator Lapangan', 'Pertandingan'])
             || in_array($eventAccessRole, [

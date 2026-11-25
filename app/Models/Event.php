@@ -301,6 +301,11 @@ class Event extends Model
         return $this->accessRoleFor($user) === self::AccessRoleResponsible;
     }
 
+    public function isViewerUser(User $user): bool
+    {
+        return $this->accessRoleFor($user) === self::AccessRoleViewer;
+    }
+
     public function coverImageUrl(): ?string
     {
         return $this->cover_image_path

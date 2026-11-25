@@ -2,18 +2,21 @@ import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import AdminLayout from '@/Layouts/AdminLayout';
+import MasterDataTransfer from '@/Components/Admin/MasterDataTransfer';
 import { Modal, Pagination, Input, Textarea, Combobox, Button } from '@/Components/UI';
 
 export default function ContingentIndex({
     contingents = { data: [], links: [], from: 1, to: 1, total: 0, current_page: 1, last_page: 1 },
     stats = { total_contingents: 0, verified_contingents: 0, pending_contingents: 0, total_athletes: 0, total_officials: 0 },
     activeEvent = null,
+    events = [],
     users = [],
-    filters = { search: '', status: 'all' },
+    filters = { search: '', status: 'all', event_id: 'all' },
     auth = {},
 }) {
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || 'all');
+    const [selectedEventId, setSelectedEventId] = useState(filters.event_id || 'all');
 
     // Modals state
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -40,14 +43,16 @@ export default function ContingentIndex({
         address: '',
         status: 'pending',
         user_id: '',
+        event_id: activeEvent?.id || '',
     });
 
-    const handleFilter = (newStatus = selectedStatus, newSearch = searchTerm) => {
+    const handleFilter = (newStatus = selectedStatus, newSearch = searchTerm, newEventId = selectedEventId) => {
         router.get(
             '/admin/master/contingent',
             {
                 search: newSearch,
                 status: newStatus,
+                event_id: newEventId,
             },
             { preserveState: true, replace: true }
         );
@@ -55,12 +60,17 @@ export default function ContingentIndex({
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        handleFilter(selectedStatus, searchTerm);
+        handleFilter(selectedStatus, searchTerm, selectedEventId);
     };
 
     const handleStatusTabClick = (statusKey) => {
         setSelectedStatus(statusKey);
-        handleFilter(statusKey, searchTerm);
+        handleFilter(statusKey, searchTerm, selectedEventId);
+    };
+
+    const handleEventChange = (eventId) => {
+        setSelectedEventId(eventId);
+        handleFilter(selectedStatus, searchTerm, eventId);
     };
 
     const handlePageChange = (page) => {
@@ -69,6 +79,7 @@ export default function ContingentIndex({
             {
                 search: searchTerm,
                 status: selectedStatus,
+                event_id: selectedEventId,
                 page,
             },
             { preserveState: true, replace: true }
@@ -79,6 +90,16 @@ export default function ContingentIndex({
         reset();
         clearErrors();
         setEditingContingent(null);
+        setData({
+            name: '',
+            city: '',
+            manager_name: '',
+            phone: '',
+            address: '',
+            status: 'pending',
+            user_id: '',
+            event_id: selectedEventId !== 'all' ? selectedEventId : (activeEvent?.id || ''),
+        });
         setIsCreateModalOpen(true);
     };
 
@@ -93,6 +114,7 @@ export default function ContingentIndex({
             address: contingent.address || '',
             status: contingent.status || 'pending',
             user_id: contingent.user_id || '',
+            event_id: contingent.event_id || '',
         });
         setIsCreateModalOpen(true);
     };
@@ -164,29 +186,30 @@ export default function ContingentIndex({
             <Head title="Data Kontingen & Dojo — Smart Perkemi" />
 
             {/* ════ HEADER SECTION ════ */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#8c827a] tracking-wider uppercase mb-1">
-                        <i className="fa-solid fa-folder-tree text-[11px]"></i>
-                        <span>Master Data</span>
-                        <i className="fa-solid fa-chevron-right text-[9px] text-[#b5afa6]"></i>
-                        <span className="text-[#c0392b]">Data Kontingen</span>
-                    </div>
-                    <h1 className="font-cinzel text-xl md:text-2xl font-bold text-[#0f0d0b] tracking-tight">
+                    {/* <div className="flex items-center gap-2 mb-1">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <i className="fa-solid fa-flag text-[9px] text-[#c0392b]" />
+                            Kontingen & Pengcab
+                        </span>
+                    </div> */}
+                    <h1 className="font-sans text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                         Manajemen Data Kontingen
                     </h1>
-                    <p className="text-xs md:text-sm text-[#706860] mt-0.5">
+                    <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
                         Kelola seluruh data kontingen cabang/dojo, verifikasi keabsahan, dan pantau jumlah atlet terdaftar.
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                    <MasterDataTransfer type="contingent" label="Kontingen" supportsLogin requiresLogin />
                     <Button variant="unstyled" size="none"
                         type="button"
                         onClick={openCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#d33a2a] hover:to-[#a93226] text-white font-medium text-xs md:text-sm shadow-md shadow-[#c0392b]/25 transition-all cursor-pointer hover:shadow-lg active:scale-98"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-transparent bg-[#c0392b] hover:bg-[#a93226] text-white font-semibold text-xs md:text-sm shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                     >
-                        <i className="fa-solid fa-circle-plus text-sm"></i>
+                        <i className="fa-solid fa-circle-plus text-xs" />
                         <span>Tambah Kontingen Baru</span>
                     </Button>
                 </div>
@@ -290,34 +313,53 @@ export default function ContingentIndex({
             </div>
 
             {/* ════ FILTER & SEARCH BAR ════ */}
-            <div className="p-3.5 mb-6 rounded-2xl bg-white border border-[#ede9e1] shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-                    {statusTabs.map((tab) => {
-                        const isSelected = selectedStatus === tab.key;
-                        return (
-                            <Button variant="unstyled" size="none"
-                                key={tab.key}
-                                type="button"
-                                onClick={() => handleStatusTabClick(tab.key)}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                                    isSelected
-                                        ? 'bg-[#0f0d0b] text-white shadow-xs font-semibold'
-                                        : 'text-[#706860] hover:text-[#0f0d0b] hover:bg-[#f7f4ef]'
-                                }`}
-                            >
-                                <span>{tab.label}</span>
-                                <span
-                                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
-                                        isSelected
-                                            ? 'bg-white/20 text-white'
-                                            : 'bg-[#ede9e1] text-[#706860]'
-                                    }`}
+            <div className="p-3.5 mb-6 rounded-2xl bg-white border border-[#ede9e1] shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1 overflow-x-auto pb-1 xl:pb-0 scrollbar-none">
+                        {statusTabs.map((tab) => {
+                            const isSelected = selectedStatus === tab.key;
+                            return (
+                                <Button variant="unstyled" size="none"
+                                    key={tab.key}
+                                    type="button"
+                                    onClick={() => handleStatusTabClick(tab.key)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${isSelected
+                                            ? 'bg-[#0f0d0b] text-white shadow-xs font-semibold'
+                                            : 'text-[#706860] hover:text-[#0f0d0b] hover:bg-[#f7f4ef]'
+                                        }`}
                                 >
-                                    {tab.count}
-                                </span>
-                            </Button>
-                        );
-                    })}
+                                    <span>{tab.label}</span>
+                                    <span
+                                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${isSelected
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-[#ede9e1] text-[#706860]'
+                                            }`}
+                                    >
+                                        {tab.count}
+                                    </span>
+                                </Button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Filter Event Dropdown */}
+                    {events.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-[#8c827a] uppercase tracking-wider hidden sm:inline">Event:</span>
+                            <select
+                                value={selectedEventId}
+                                onChange={(e) => handleEventChange(e.target.value)}
+                                className="text-xs py-1.5 px-2.5 rounded-xl border border-[#ede9e1] bg-white text-[#0f0d0b] font-medium focus:outline-none focus:ring-1 focus:ring-[#c0392b] cursor-pointer"
+                            >
+                                <option value="all">🌐 Semua Event (Global)</option>
+                                {events.map((ev) => (
+                                    <option key={ev.id} value={ev.id}>
+                                        🏆 {ev.name} {ev.city ? `(${ev.city})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 <form onSubmit={handleSearchSubmit} className="w-full sm:w-72">
@@ -329,7 +371,7 @@ export default function ContingentIndex({
                         clearable
                         onClear={() => {
                             setSearchTerm('');
-                            handleFilter(selectedStatus, '');
+                            handleFilter(selectedStatus, '', selectedEventId);
                         }}
                         size="sm"
                     />
@@ -342,7 +384,7 @@ export default function ContingentIndex({
                     <div className="w-14 h-14 rounded-2xl bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center mx-auto mb-3 text-xl">
                         <i className="fa-solid fa-flag"></i>
                     </div>
-                    <h3 className="font-cinzel text-sm font-bold text-[#0f0d0b]">
+                    <h3 className="font-sans text-sm font-bold text-slate-900 dark:text-white">
                         Tidak Ada Data Kontingen Ditemukan
                     </h3>
                     <p className="text-xs text-[#706860] mt-1 max-w-sm mx-auto">
@@ -358,6 +400,7 @@ export default function ContingentIndex({
                                     <th className="py-3 px-4">Kontingen & Dojo</th>
                                     <th className="py-3 px-3">Kota / Wilayah</th>
                                     <th className="py-3 px-3">Manajer & Kontak</th>
+                                    <th className="py-3 px-3">Keikutsertaan Event</th>
                                     <th className="py-3 px-3 text-center">Partisipasi (Atlet & Official)</th>
                                     <th className="py-3 px-3 text-center">Status</th>
                                     <th className="py-3 px-4 text-right">Aksi</th>
@@ -416,6 +459,28 @@ export default function ContingentIndex({
                                             <div className="mt-0.5 text-[11px] text-[#8c827a]">
                                                 Akun: {contingent.user?.name || 'Belum ditentukan'}
                                             </div>
+                                        </td>
+
+                                        {/* Column: Keikutsertaan Event */}
+                                        <td className="py-3.5 px-3 whitespace-nowrap">
+                                            {contingent.event ? (
+                                                <div className="flex flex-col">
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-[11px] font-medium max-w-[200px] truncate" title={contingent.event.name}>
+                                                        <i className="fa-solid fa-trophy text-[9px] text-[#d4a843]" />
+                                                        <span className="truncate">{contingent.event.name}</span>
+                                                    </span>
+                                                    {contingent.event.city && (
+                                                        <span className="text-[10px] text-[#8c827a] mt-0.5 ml-1">
+                                                            {contingent.event.city}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10.5px] font-medium border border-slate-200">
+                                                    <i className="fa-solid fa-globe text-[9px]" />
+                                                    Global
+                                                </span>
+                                            )}
                                         </td>
 
                                         {/* Column 4: Jumlah Atlet & Official */}
@@ -595,6 +660,23 @@ export default function ContingentIndex({
                         error={errors.user_id}
                     />
 
+                    {events.length > 0 && (
+                        <Combobox
+                            label="Keikutsertaan Event / Kejuaraan"
+                            value={data.event_id}
+                            onChange={(value) => setData('event_id', value)}
+                            options={events.map((ev) => ({
+                                value: ev.id,
+                                label: ev.name,
+                                sublabel: ev.city ? `Kota/Kab: ${ev.city}` : undefined,
+                            }))}
+                            placeholder="Pilih kejuaraan yang diikuti..."
+                            searchPlaceholder="Cari kejuaraan..."
+                            hint="Pilih event yang diikuti kontingen ini (atau gunakan event aktif default)."
+                            error={errors.event_id}
+                        />
+                    )}
+
                     <Textarea
                         label="Alamat Sekretariat / Dojo"
                         rows={3}
@@ -668,11 +750,10 @@ export default function ContingentIndex({
                             <Button variant="unstyled" size="none"
                                 type="button"
                                 onClick={() => setModalActiveTab('athletes')}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                                    modalActiveTab === 'athletes'
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${modalActiveTab === 'athletes'
                                         ? 'bg-[#c0392b] text-white shadow-xs'
                                         : 'bg-[#f7f4ef] text-[#706860] hover:bg-[#ede9e1]'
-                                }`}
+                                    }`}
                             >
                                 <i className="fa-solid fa-user-ninja text-xs"></i>
                                 <span>Daftar Atlet & Kenshi ({detailContingent.athletes?.length || 0})</span>
@@ -680,11 +761,10 @@ export default function ContingentIndex({
                             <Button variant="unstyled" size="none"
                                 type="button"
                                 onClick={() => setModalActiveTab('officials')}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                                    modalActiveTab === 'officials'
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${modalActiveTab === 'officials'
                                         ? 'bg-[#c0392b] text-white shadow-xs'
                                         : 'bg-[#f7f4ef] text-[#706860] hover:bg-[#ede9e1]'
-                                }`}
+                                    }`}
                             >
                                 <i className="fa-solid fa-id-badge text-xs"></i>
                                 <span>Daftar Official ({detailContingent.officials?.length || 0})</span>
@@ -720,11 +800,10 @@ export default function ContingentIndex({
                                                             {athlete.name}
                                                         </td>
                                                         <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                                                athlete.gender === 'male' || athlete.gender === 'putra'
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${athlete.gender === 'male' || athlete.gender === 'putra'
                                                                     ? 'bg-blue-50 text-blue-700'
                                                                     : 'bg-rose-50 text-rose-700'
-                                                            }`}>
+                                                                }`}>
                                                                 {athlete.gender === 'male' || athlete.gender === 'putra' ? 'Putra' : 'Putri'}
                                                             </span>
                                                         </td>
@@ -784,11 +863,10 @@ export default function ContingentIndex({
                                                             </span>
                                                         </td>
                                                         <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                                                official.gender === 'male' || official.gender === 'putra' || official.gender === 'L'
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${official.gender === 'male' || official.gender === 'putra' || official.gender === 'L'
                                                                     ? 'bg-blue-50 text-blue-700'
                                                                     : 'bg-rose-50 text-rose-700'
-                                                            }`}>
+                                                                }`}>
                                                                 {official.gender === 'male' || official.gender === 'putra' || official.gender === 'L' ? 'Putra' : 'Putri'}
                                                             </span>
                                                         </td>

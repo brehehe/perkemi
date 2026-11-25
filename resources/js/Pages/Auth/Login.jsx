@@ -2,7 +2,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button, Checkbox, Input, ThemeToggle } from '@/Components/UI';
 
-export default function Login({ totalAthletes = 520, totalProvinces = 38, year = new Date().getFullYear(), status }) {
+export default function Login({ totalAthletes = 520, totalProvinces = 38, year = new Date().getFullYear(), status, targetEvent = null }) {
     const [showPassword, setShowPassword] = useState(false);
     const [loginMode, setLoginMode] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -17,18 +17,23 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
         return 'account';
     });
 
+    const activeTargetEventId = targetEvent?.id || (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('event_id') || '') : '');
+
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
         password: '',
         remember: false,
+        event_id: activeTargetEventId,
     });
 
     const nikForm = useForm({
         nik: '',
+        event_id: activeTargetEventId,
     });
 
     const tokenForm = useForm({
         token: '',
+        event_id: activeTargetEventId,
     });
 
     const submit = (e) => {
@@ -205,6 +210,23 @@ export default function Login({ totalAthletes = 520, totalProvinces = 38, year =
                                         ? 'Masukkan NIK PERKEMI resmi untuk akses cepat perangkat pertandingan.'
                                         : 'Gunakan 6 digit token tatami untuk mengontrol antrean dan timer meja.'}
                                 </p>
+
+                                {targetEvent && (
+                                    <div className="mt-4 rounded-xl border border-[#d4a843]/40 bg-[#d4a843]/10 p-2.5 text-xs flex items-center justify-between gap-2.5">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#d4a843]/20 text-[#b38622] dark:text-[#f0c060]">
+                                                <i className="fa-solid fa-trophy text-[11px]" />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-[#0f0d0b] dark:text-white truncate text-xs">{targetEvent.name}</p>
+                                                <p className="text-[10px] text-[#706860] dark:text-stone-400 truncate">{targetEvent.city || 'Event Terpilih'} · {targetEvent.status_label}</p>
+                                            </div>
+                                        </div>
+                                        <span className="shrink-0 text-[10px] font-bold text-[#b38622] dark:text-[#f0c060] bg-[#d4a843]/15 px-2 py-0.5 rounded">
+                                            Target Event
+                                        </span>
+                                    </div>
+                                )}
                             </div>
 
                             {loginMode === 'nik' ? (

@@ -1,6 +1,5 @@
 import Button from "@/Components/UI/Elements/Button";
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
-import Combobox from '@/Components/UI/Forms/Combobox';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
@@ -69,14 +68,7 @@ export default function ReportRecap({ activeEvent, events = [], recaps, filters 
                             </p>
                         </div>
 
-                        <div className="flex w-full flex-col gap-2 md:max-w-md">
-                            <Combobox
-                                ariaLabel="Pilih event rekap pertandingan"
-                                options={events.map((event) => ({ value: event.id, label: event.name, sublabel: event.city }))}
-                                value={activeEvent?.id || ''}
-                                onChange={(eventId) => router.get('/admin/laporan/rekap-embu', { event_id: eventId, type: typeFilter })}
-                                clearable={false}
-                            />
+                        <div className="flex flex-wrap items-center justify-end gap-2 self-start md:self-auto">
                             <Button variant="unstyled" size="none"
                                 type="button"
                                 onClick={handlePrint}

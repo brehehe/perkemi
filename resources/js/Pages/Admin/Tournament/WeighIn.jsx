@@ -184,31 +184,17 @@ export default function WeighIn({
                             )}
                         </div>
 
-                        <div className="w-full space-y-2.5 md:w-96">
-                            <Combobox
-                                label="Event dipilih"
-                                labelClassName="text-white/60"
-                                containerClassName="w-full"
-                                value={currentEvent?.id || ''}
-                                clearable={false}
-                                onChange={(value) => router.get('/admin/pertandingan/timbang-badan', { event_id: value })}
-                                options={events.map((evt) => ({
-                                    value: evt.id,
-                                    label: evt.name,
-                                    sublabel: [evt.status_label, evt.date_label, evt.city].filter(Boolean).join(' · '),
-                                }))}
-                            />
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                                {currentEvent && (
-                                    <Link
-                                        href={`/admin/pertandingan/drawing?event_id=${currentEvent.id}`}
-                                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-[#d4a843] px-3 text-xs font-bold text-[#17120f] transition hover:bg-[#e3ba52]"
-                                    >
-                                        <span>Bagan Drawing</span>
-                                        <i className="fa-solid fa-arrow-right text-[10px]" aria-hidden="true" />
-                                    </Link>
-                                )}
-                                <ActionMenuDropdown
+                        <div className="flex flex-wrap items-center justify-end gap-2 self-start md:self-auto">
+                            {currentEvent && (
+                                <Link
+                                    href={`/admin/pertandingan/drawing?event_id=${currentEvent.id}`}
+                                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-[#d4a843] px-3 text-xs font-bold text-[#17120f] transition hover:bg-[#e3ba52]"
+                                >
+                                    <span>Bagan Drawing</span>
+                                    <i className="fa-solid fa-arrow-right text-[10px]" aria-hidden="true" />
+                                </Link>
+                            )}
+                            <ActionMenuDropdown
                                     label="Menu Aksi"
                                     theme="gold"
                                     menuHeader="Aksi Penimbangan"
@@ -277,7 +263,6 @@ export default function WeighIn({
                                 />
                             </div>
                         </div>
-                    </div>
                 </section>
 
                 {/* Flash Messages */}

@@ -103,14 +103,9 @@ export default function TournamentMerge({ activeEvent, events = [], categories, 
                                 Gabungkan nomor yang kekurangan peserta. Randori dihitung per atlet, sedangkan Embu dihitung per tim.
                             </p>
                         </div>
-                        <div className="w-full space-y-2 md:w-96">
-                            <Combobox label="Event dipilih" labelClassName="text-white/50" value={activeEvent?.id || ''}
-                                onChange={(value) => router.get('/admin/pertandingan/merge', { event_id: value })}
-                                clearable={false} options={events.map((item) => ({ value: item.id, label: item.name, sublabel: item.option_description }))} />
-                            <div className="flex justify-end gap-2">
-                                {activeEvent && <Link href={`/admin/master/event/${activeEvent.id}/detail`} className="rounded-lg border border-white/15 px-3 py-1.5 text-[11px] font-semibold text-white/80 hover:bg-white/10">Pengaturan Event</Link>}
-                                {activeEvent && <Link href={`/admin/pertandingan/drawing?event_id=${activeEvent.id}`} className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-[11px] font-bold text-[#17120f] hover:bg-[#e3ba52]">Lanjut Drawing <i className="fa-solid fa-arrow-right ml-1" /></Link>}
-                            </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2 self-start md:self-auto">
+                            {activeEvent && <Link href={`/admin/master/event/${activeEvent.id}/detail`} className="rounded-lg border border-white/15 px-3 py-1.5 text-[11px] font-semibold text-white/80 hover:bg-white/10">Pengaturan Event</Link>}
+                            {activeEvent && <Link href={`/admin/pertandingan/drawing?event_id=${activeEvent.id}`} className="rounded-lg bg-[#d4a843] px-3 py-1.5 text-[11px] font-bold text-[#17120f] hover:bg-[#e3ba52]">Lanjut Drawing <i className="fa-solid fa-arrow-right ml-1" /></Link>}
                         </div>
                     </div>
                 </div>

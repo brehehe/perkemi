@@ -46,8 +46,80 @@ test('admin master contingent index can be rendered', function () {
         ->has('stats')
         ->where('stats.total_contingents', 1)
         ->where('stats.pending_contingents', 1)
+        ->has('events')
         ->has('filters')
     );
+});
+
+test('admin master contingent displays global contingents across multiple events even when tenant session is active', function () {
+    Role::findOrCreate('Super Admin');
+    Role::findOrCreate('Admin');
+
+    $admin = User::factory()->create();
+    $admin->assignRole('Super Admin');
+
+    $eventA = Event::create([
+        'name' => 'Event A 2026',
+        'slug' => 'event-a-2026',
+        'city' => 'Surabaya',
+        'venue' => 'GOR A',
+        'start_date' => '2026-10-24',
+        'end_date' => '2026-10-26',
+        'is_active' => true,
+    ]);
+
+    $eventB = Event::create([
+        'name' => 'Event B 2026',
+        'slug' => 'event-b-2026',
+        'city' => 'Malang',
+        'venue' => 'GOR B',
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-11-03',
+        'is_active' => true,
+    ]);
+
+    Contingent::create([
+        'event_id' => $eventA->id,
+        'user_id' => $admin->id,
+        'name' => 'Dojo Garuda Sakti Surabaya',
+        'city' => 'Kota Surabaya',
+        'manager_name' => 'Sensei Budi',
+        'phone' => '08123456789',
+        'status' => ContingentStatus::Verified,
+    ]);
+
+    Contingent::create([
+        'event_id' => $eventB->id,
+        'user_id' => $admin->id,
+        'name' => 'Dojo Macan Putih Malang',
+        'city' => 'Kota Malang',
+        'manager_name' => 'Sensei Agus',
+        'phone' => '08198765432',
+        'status' => ContingentStatus::Pending,
+    ]);
+
+    // When viewing with session tenant_event_id pointing to Event A, it still displays ALL contingents globally
+    $this->actingAs($admin)
+        ->withSession(['tenant_event_id' => $eventA->id])
+        ->get('/admin/master/contingent')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Master/Contingent/Index')
+            ->has('contingents.data', 2)
+            ->where('stats.total_contingents', 2)
+            ->has('events', 2)
+        );
+
+    // But if admin explicitly filters by event B via ?event_id=..., it filters to Event B
+    $this->actingAs($admin)
+        ->get('/admin/master/contingent?event_id='.$eventB->id)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Master/Contingent/Index')
+            ->has('contingents.data', 1)
+            ->where('contingents.data.0.name', 'Dojo Macan Putih Malang')
+            ->where('stats.total_contingents', 1)
+        );
 });
 
 test('admin can assign a responsible user to a contingent', function () {

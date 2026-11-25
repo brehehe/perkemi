@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -44,6 +45,14 @@ class User extends Authenticatable
         return $this->hasOne(Contingent::class);
     }
 
+    /**
+     * Get all contingents associated with the user across events.
+     */
+    public function contingents(): HasMany
+    {
+        return $this->hasMany(Contingent::class);
+    }
+
     public function referee(): HasOne
     {
         return $this->hasOne(Referee::class);
@@ -57,5 +66,10 @@ class User extends Authenticatable
     public function responsibleEvents(): BelongsToMany
     {
         return $this->accessibleEvents()->wherePivot('access_role', Event::AccessRoleResponsible);
+    }
+
+    public function viewerEvents(): BelongsToMany
+    {
+        return $this->accessibleEvents()->wherePivot('access_role', Event::AccessRoleViewer);
     }
 }

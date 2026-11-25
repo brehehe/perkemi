@@ -14,6 +14,8 @@ export default function ActionMenuDropdown({
     menuHeader = 'Pilihan Aksi',
     badge = null,
     className = '',
+    triggerClassName = '',
+    size = 'md', // 'sm' | 'md'
     children = null,
 }) {
     const [open, setOpen] = useState(false);
@@ -93,10 +95,15 @@ export default function ActionMenuDropdown({
     }, [open]);
 
     const themeTriggerStyles = {
-        dark: 'bg-[#1e1b18] hover:bg-[#2a2622] text-[#f7f4ef] border border-white/15 shadow-sm focus-visible:ring-amber-500/50',
+        dark: 'bg-[#1e1b18] hover:bg-[#2a2622] text-[#f7f4ef] border border-white/15 shadow-2xs hover:shadow-xs focus-visible:ring-amber-500/50',
         gold: 'bg-gradient-to-r from-[#d4a843] to-[#c39735] hover:from-[#c39735] hover:to-[#b08627] text-[#0f0d0b] font-bold border border-[#d4a843]/60 shadow-md focus-visible:ring-amber-600/50',
-        glass: 'bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md shadow-sm focus-visible:ring-white/50',
-        light: 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 shadow-xs focus-visible:ring-slate-400',
+        glass: 'bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md shadow-2xs focus-visible:ring-white/50',
+        light: 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs hover:shadow-xs focus-visible:ring-slate-400',
+    };
+
+    const sizeClasses = {
+        sm: 'px-3 py-1.5 rounded-lg text-xs font-semibold',
+        md: 'px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold',
     };
 
     const dropdownContent = open && coords && typeof document !== 'undefined' ? (
@@ -156,7 +163,7 @@ export default function ActionMenuDropdown({
     ) : null;
 
     return (
-        <div className={`relative inline-block text-left ${className}`} ref={triggerRef}>
+        <div className={`relative inline-block text-left shrink-0 ${className}`} ref={triggerRef}>
             {trigger ? (
                 <div onClick={() => setOpen((prev) => !prev)} role="button" tabIndex={0}>
                     {trigger}
@@ -167,9 +174,11 @@ export default function ActionMenuDropdown({
                     onClick={() => setOpen((prev) => !prev)}
                     aria-expanded={open}
                     aria-haspopup="true"
-                    className={`group inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all duration-150 cursor-pointer select-none focus:outline-none focus-visible:ring-2 active:scale-95 ${themeTriggerStyles[theme] || themeTriggerStyles.dark}`}
+                    className={`group inline-flex items-center gap-2 transition-all duration-150 cursor-pointer select-none focus:outline-none focus-visible:ring-2 active:scale-95 shrink-0 ${
+                        triggerClassName ? triggerClassName : sizeClasses[size] || sizeClasses.md
+                    } ${themeTriggerStyles[theme] || themeTriggerStyles.dark}`}
                 >
-                    <span className="flex items-center justify-center text-sm">{icon}</span>
+                    <span className="flex items-center justify-center text-xs shrink-0">{icon}</span>
                     <span className="tracking-tight">{label}</span>
                     {badge && (
                         <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-white/20 text-white">

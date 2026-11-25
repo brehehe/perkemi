@@ -6,7 +6,7 @@ import useLiveTimer from './Partials/useLiveTimer';
 import useSynchronizedTimer from './Partials/useSynchronizedTimer';
 import useTimerBell from './Partials/useTimerBell';
 import { acceptTimerState, displayedTimerSeconds, timerVersion } from './Partials/timerSynchronization';
-import { formatTimer, monitorModes } from './CourtMonitor/courtMonitorPresentation';
+import { formatTimer, monitorFocusPresentation, monitorModes } from './CourtMonitor/courtMonitorPresentation';
 
 const ArenaMode = lazy(() => import('./CourtMonitor/Arena'));
 const MatchMode = lazy(() => import('./CourtMonitor/Match'));
@@ -58,15 +58,16 @@ function MonitorHeader({
     bell,
     isVarActive,
     onToggleVar,
+    isFullscreen,
+    onHideControls,
+    onToggleFullscreen,
 }) {
     const categoryTitle = activeMatch?.category_name || 'Menunggu kategori';
     const matchDetail = activeMatch ? `Partai #${activeMatch.sequence}` : 'Belum ada partai';
     const roundTitle = activeMatch?.round_label || 'Menunggu babak';
     const roundDetail = activeMatch?.pool ? `Pool ${activeMatch.pool}` : activeMatch?.category_type || 'Court monitor';
 
-    const requestFullscreen = () => {
-        document.documentElement.requestFullscreen?.();
-    };
+    const focusPresentation = monitorFocusPresentation(false, isFullscreen);
 
     return (
         <header className="shrink-0 border-b border-stone-200 bg-white/95 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur dark:border-white/10 dark:bg-[#100e0d]/95">
@@ -112,8 +113,11 @@ function MonitorHeader({
                                 <i className="fa-solid fa-video" aria-hidden="true" /> VAR
                             </button>
                         )}
-                        <button type="button" onClick={requestFullscreen} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs xl:min-h-9">
-                            <i className="fa-solid fa-expand" aria-hidden="true" /> Layar penuh
+                        <button type="button" onClick={onHideControls} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs xl:min-h-9">
+                            <i className={`fa-solid ${focusPresentation.controlsIcon}`} aria-hidden="true" /> {focusPresentation.controlsLabel}
+                        </button>
+                        <button type="button" onClick={onToggleFullscreen} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs xl:min-h-9">
+                            <i className={`fa-solid ${focusPresentation.fullscreenIcon}`} aria-hidden="true" /> {focusPresentation.fullscreenLabel}
                         </button>
                         <ThemeToggle className="active:translate-y-px xl:min-h-9 xl:min-w-9 xl:rounded-lg" />
                         {backUrl && (
@@ -125,6 +129,28 @@ function MonitorHeader({
                 </div>
             </div>
         </header>
+    );
+}
+
+function FocusModeBar({ court, activeMatch, isFullscreen, onShowControls, onToggleFullscreen }) {
+    const presentation = monitorFocusPresentation(true, isFullscreen);
+
+    return (
+        <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stone-200 bg-white/95 px-3 py-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-[#100e0d]/95 sm:px-4" aria-label="Kontrol mode fokus">
+            <p className="min-w-0 truncate text-xs font-black text-slate-700 dark:text-white/65">
+                {court.name} <span className="text-slate-400" aria-hidden="true">·</span> {activeMatch?.category_name || 'Court monitor'}
+            </p>
+            <div className="flex items-center gap-2">
+                <button type="button" onClick={onShowControls} className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs">
+                    <i className={`fa-solid ${presentation.controlsIcon}`} aria-hidden="true" /> {presentation.controlsLabel}
+                </button>
+                {isFullscreen && (
+                    <button type="button" onClick={onToggleFullscreen} className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 text-[10px] font-black text-slate-700 hover:bg-stone-100 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:border-white/15 dark:bg-white/5 dark:text-white sm:text-xs">
+                        <i className={`fa-solid ${presentation.fullscreenIcon}`} aria-hidden="true" /> {presentation.fullscreenLabel}
+                    </button>
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -148,9 +174,51 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     const [showLockedArchive, setShowLockedArchive] = useState(false);
     const [savingVarUrl, setSavingVarUrl] = useState(false);
     const [varSaveMessage, setVarSaveMessage] = useState('');
+    const [isFocusMode, setIsFocusMode] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const monitorRootRef = useRef(null);
+    const monitorWasFullscreenRef = useRef(false);
     const varIframeRef = useRef(null);
     const refreshController = useRef(null);
     const bellRef = useRef(null);
+
+    useEffect(() => {
+        const synchronizeFullscreenState = () => {
+            const monitorIsFullscreen = document.fullscreenElement === monitorRootRef.current;
+
+            setIsFullscreen(monitorIsFullscreen);
+
+            if (monitorWasFullscreenRef.current && !monitorIsFullscreen) {
+                setIsFocusMode(false);
+            }
+
+            monitorWasFullscreenRef.current = monitorIsFullscreen;
+        };
+
+        document.addEventListener('fullscreenchange', synchronizeFullscreenState);
+
+        return () => document.removeEventListener('fullscreenchange', synchronizeFullscreenState);
+    }, []);
+
+    const toggleMonitorFullscreen = async () => {
+        if (document.fullscreenElement === monitorRootRef.current) {
+            try {
+                await document.exitFullscreen?.();
+            } catch {
+                setIsFullscreen(false);
+            }
+
+            return;
+        }
+
+        setIsFocusMode(true);
+
+        try {
+            await monitorRootRef.current.requestFullscreen();
+        } catch {
+            setIsFocusMode(false);
+        }
+    };
 
     useEffect(() => {
         if (snapshot?.is_var_enabled !== undefined) setIsVarActive(Boolean(snapshot.is_var_enabled));
@@ -400,23 +468,36 @@ export default function CourtMonitor({ activeEvent, court, mode = 'arena', monit
     return (
         <>
             <Head title={`${court.name} · Court Monitor`} />
-            <div className="flex min-h-dvh flex-col bg-[#f3f0e9] text-[#071126] dark:bg-[#090807] dark:text-white lg:h-dvh lg:overflow-hidden">
-                <MonitorHeader
-                    activeEvent={activeEvent}
-                    court={court}
-                    activeMatch={activeMatch}
-                    mode={mode}
-                    monitorUrl={monitorUrl}
-                    synchronizationLabel={synchronizationLabel}
-                    synchronizationClass={synchronizationClass}
-                    backUrl={backUrl}
-                    backLabel={backLabel}
-                    bell={bell}
-                    isVarActive={isVarActive}
-                    onToggleVar={toggleVarStatus}
-                />
+            <div ref={monitorRootRef} className="flex min-h-dvh flex-col bg-[#f3f0e9] text-[#071126] dark:bg-[#090807] dark:text-white lg:h-dvh lg:overflow-hidden">
+                {isFocusMode ? (
+                    <FocusModeBar
+                        court={court}
+                        activeMatch={activeMatch}
+                        isFullscreen={isFullscreen}
+                        onShowControls={() => setIsFocusMode(false)}
+                        onToggleFullscreen={toggleMonitorFullscreen}
+                    />
+                ) : (
+                    <MonitorHeader
+                        activeEvent={activeEvent}
+                        court={court}
+                        activeMatch={activeMatch}
+                        mode={mode}
+                        monitorUrl={monitorUrl}
+                        synchronizationLabel={synchronizationLabel}
+                        synchronizationClass={synchronizationClass}
+                        backUrl={backUrl}
+                        backLabel={backLabel}
+                        bell={bell}
+                        isVarActive={isVarActive}
+                        onToggleVar={toggleVarStatus}
+                        isFullscreen={isFullscreen}
+                        onHideControls={() => setIsFocusMode(true)}
+                        onToggleFullscreen={toggleMonitorFullscreen}
+                    />
+                )}
                 <VarReviewBanner match={activeMatch} />
-                <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-4 lg:px-5 lg:py-4 2xl:px-6">
+                <main className={`flex min-h-0 w-full flex-1 flex-col overflow-y-auto ${isFocusMode ? 'px-2 py-2 sm:px-3 lg:px-4 lg:py-3' : 'px-3 py-3 sm:px-4 lg:px-5 lg:py-4 2xl:px-6'}`}>
                     {snapshotError && (
                         <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 sm:flex-row sm:items-center sm:justify-between" role="alert">
                             <span>{snapshotError}</span>

@@ -20,8 +20,8 @@ class EnsureContingentUser
 
         abort_unless(
             $user
-            && $user->hasAnyRole(['kontingen', 'Contingent'])
-            && Contingent::query()->where('user_id', $user->id)->exists(),
+            && ($user->hasAnyRole(['Super Admin', 'Admin'])
+                || ($user->hasAnyRole(['kontingen', 'Contingent']) && Contingent::query()->where('user_id', $user->id)->exists())),
             403,
             'Portal ini hanya dapat diakses oleh akun kontingen.'
         );

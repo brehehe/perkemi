@@ -1,26 +1,45 @@
-import ParticipantRulesForm from './ParticipantRulesForm';
-import EventDataSyncForm from './EventDataSyncForm';
-import ArbitrationTab from './ArbitrationTab';
-import EventRefereeImport from '@/Components/Admin/EventRefereeImport';
-import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
-import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import {
-    Card,
-    Button,
-    Checkbox,
-    Input,
-    RadioGroup,
-    Textarea,
-    Combobox,
-    Modal,
-    Badge,
-    Pagination,
-} from '@/Components/UI';
+import { Button, Input, Combobox, Modal } from '@/Components/UI';
+import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
+
+// Extracted Tab Components
+import AgeCategoriesTab from './Tabs/AgeCategoriesTab';
+import ParticipantRulesForm from './ParticipantRulesForm';
+import CourtsTab from './Tabs/CourtsTab';
+import MatchesTab from './Tabs/MatchesTab';
+import TournamentTab from './Tabs/TournamentTab';
+import RundownTab from './Tabs/RundownTab';
+import RefereesTab from './Tabs/RefereesTab';
+import ArbitrationTab from './ArbitrationTab';
+import ClerksTab from './Tabs/ClerksTab';
+import FieldCoordinatorsTab from './Tabs/FieldCoordinatorsTab';
+import InfoTab from './Tabs/InfoTab';
+import DatesTab from './Tabs/DatesTab';
+import FeesTab from './Tabs/FeesTab';
+import EventDataSyncForm from './EventDataSyncForm';
+import TransferAssignmentModal from './Tabs/TransferAssignmentModal';
+import OfficialsRosterTab from './Tabs/OfficialsRosterTab';
 
 export default function EventDetail({
     event = {},
+    counts = {
+        age_categories: 0,
+        courts: 0,
+        match_categories: 0,
+        rundowns: 0,
+        referees: 0,
+        clerks: 0,
+        field_coordinators: 0,
+    },
+    tournamentSummary = {
+        status: 'draft',
+        generated_categories: 0,
+        skipped_categories: 0,
+        total_matches: 0,
+        match_sessions: 0,
+    },
     ageCategories = [],
     courts = [],
     matchCategories = [],
@@ -39,26 +58,11 @@ export default function EventDetail({
     eventArbitrators = [],
     users = [],
     eventUsers = [],
-    tournamentSummary = {
-        status: 'draft',
-        generated_categories: 0,
-        skipped_categories: 0,
-        total_matches: 0,
-        match_sessions: 0,
-    },
     arbitrationSummary = {},
     arbitrationPersonnel = [],
     arbitrationRoleUsers = [],
     arbitrationAttendances = [],
     arbitrationScores = [],
-    tenantBaseDomain = 'localhost',
-    counts = {
-        age_categories: 0,
-        courts: 0,
-        match_categories: 0,
-        rundowns: 0,
-    },
-    auth = {},
 }) {
     const getInitialTab = () => {
         if (typeof window !== 'undefined') {
@@ -67,10 +71,9 @@ export default function EventDetail({
             const hashTab = window.location.hash.replace('#', '');
             if (hashTab) return hashTab;
         }
-        return 'age_categories';
+        return 'info';
     };
 
-    // Current active tab
     const [activeTab, setActiveTab] = useState(getInitialTab);
 
     const handleTabChange = (tabId) => {
@@ -80,6 +83,15 @@ export default function EventDetail({
             url.searchParams.set('tab', tabId);
             window.history.replaceState({}, '', url.toString());
         }
+        router.get(
+            '/admin/master/event/detail',
+            { event_id: event.id, tab: tabId },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            }
+        );
     };
 
     // Tab horizontal scroll control
@@ -100,6 +112,16 @@ export default function EventDetail({
         window.addEventListener('resize', checkTabScroll);
         return () => window.removeEventListener('resize', checkTabScroll);
     }, []);
+
+    const { url } = usePage();
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const paramTab = new URLSearchParams(window.location.search).get('tab');
+            if (paramTab && paramTab !== activeTab) {
+                setActiveTab(paramTab);
+            }
+        }
+    }, [url]);
 
     const scrollTabs = (direction) => {
         if (tabScrollRef.current) {
@@ -124,278 +146,48 @@ export default function EventDetail({
         }
     };
 
-    // Pagination & Search states (Standard 5 items per page like Dashboard)
-    const itemsPerPage = 5;
-
-    const [ageSearch, setAgeSearch] = useState('');
-    const [agePage, setAgePage] = useState(1);
-
-    const [courtSearch, setCourtSearch] = useState('');
-    const [courtPage, setCourtPage] = useState(1);
-
-    const [matchSearch, setMatchSearch] = useState('');
-    const [matchTypeFilter, setMatchTypeFilter] = useState('all');
-    const [matchGenderFilter, setMatchGenderFilter] = useState('all');
-    const [matchAgeFilter, setMatchAgeFilter] = useState('all');
-    const [matchExhibitionFilter, setMatchExhibitionFilter] = useState('all');
-    const [matchPage, setMatchPage] = useState(1);
-
-    const [rundownSearch, setRundownSearch] = useState('');
-    const [rundownPage, setRundownPage] = useState(1);
-
-    const [copiedUrlType, setCopiedUrlType] = useState(null);
-    const [copiedCourtTokenId, setCopiedCourtTokenId] = useState(null);
-
-    const handleCopyUrl = (url, type) => {
-        if (typeof navigator !== 'undefined' && navigator.clipboard) {
-            navigator.clipboard.writeText(url);
-            setCopiedUrlType(type);
-            setTimeout(() => setCopiedUrlType(null), 2000);
-        }
-    };
-
-    const handleCopyCourtToken = (court) => {
-        if (typeof navigator !== 'undefined' && navigator.clipboard && court.access_code) {
-            navigator.clipboard.writeText(court.access_code);
-            setCopiedCourtTokenId(court.id);
-            setTimeout(() => setCopiedCourtTokenId(null), 2000);
-        }
-    };
-
-    const handleRegenerateCourtToken = (court) => {
-        if (!confirm(`Buat token baru untuk ${court.name}? Token lama (jika ada) tidak akan dapat digunakan lagi.`)) {
-            return;
-        }
-        router.post(`/admin/master/event/${event.id}/court/${court.id}/regenerate-token`, {}, {
-            preserveScroll: true,
-            onSuccess: (page) => {
-                const updatedCourt = page.props.courts?.find((c) => c.id === court.id);
-                if (updatedCourt && editingCourt?.id === court.id) {
-                    setEditingCourt(updatedCourt);
-                }
-            },
-        });
-    };
-
     // ══════════════════════════════════════════════════════════════
-    // MODAL STATES
+    // ARBITRATOR STATE & HANDLERS (for ArbitrationTab)
     // ══════════════════════════════════════════════════════════════
-    // 1. Age Category Modal
-    const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
-    const [editingAgeCategory, setEditingAgeCategory] = useState(null);
-    const [deletingAgeCategory, setDeletingAgeCategory] = useState(null);
-
-    // 2. Court Modal
-    const [isCourtModalOpen, setIsCourtModalOpen] = useState(false);
-    const [editingCourt, setEditingCourt] = useState(null);
-    const [deletingCourt, setDeletingCourt] = useState(null);
-
-    // 3. Match Category Modal
-    const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
-    const [editingMatchCategory, setEditingMatchCategory] = useState(null);
-    const [deletingMatchCategory, setDeletingMatchCategory] = useState(null);
-
-    // 4. Rundown Modal
-    const [isRundownModalOpen, setIsRundownModalOpen] = useState(false);
-    const [editingRundown, setEditingRundown] = useState(null);
-    const [deletingRundown, setDeletingRundown] = useState(null);
-
-    // 5. Event Referee & Field Coordinator State & Modals
-    const [isRefereeModalOpen, setIsRefereeModalOpen] = useState(false);
-    const [editingReferee, setEditingReferee] = useState(null);
-    const [refereeSearch, setRefereeSearch] = useState('');
-    const [isNewClerkModalOpen, setIsNewClerkModalOpen] = useState(false);
-    const [isFieldCoordinatorModalOpen, setIsFieldCoordinatorModalOpen] = useState(false);
-    const [editingFieldCoordinator, setEditingFieldCoordinator] = useState(null);
-    const [fieldCoordinatorSearch, setFieldCoordinatorSearch] = useState('');
     const [isArbitratorModalOpen, setIsArbitratorModalOpen] = useState(false);
     const [editingArbitrator, setEditingArbitrator] = useState(null);
     const [arbitratorSearch, setArbitratorSearch] = useState('');
 
-    // Transfer Modal (Wasit <-> Koordinator Lapangan)
-    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-    const [transferTarget, setTransferTarget] = useState(null); // { type: 'to_coordinator' | 'to_referee', source: referee | coordinator }
-    const [selectedEventUserId, setSelectedEventUserId] = useState('');
-    const [selectedEventUserRole, setSelectedEventUserRole] = useState('responsible');
-    const [generalSaveFeedback, setGeneralSaveFeedback] = useState(null);
-    const [accessSaveFeedback, setAccessSaveFeedback] = useState(null);
+    const arbitratorRoleOptions = [
+        { value: 'Arbitrase Pertandingan', label: 'Arbitrase Pertandingan' },
+        { value: 'Ketua Dewan Wasit', label: 'Ketua Dewan Wasit' },
+        { value: 'Dewan Wasit', label: 'Dewan Wasit' },
+        { value: 'Wasit Utama', label: 'Wasit Utama' },
+        { value: 'Juri', label: 'Juri' },
+        { value: 'Panitera', label: 'Panitera' },
+        { value: 'Pengawas Pertandingan', label: 'Pengawas Pertandingan' },
+    ];
 
-    // 6. Event Package Import Modal
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    const importFileInputRef = useRef(null);
-    const importPackageForm = useForm({
-        package_file: null,
-    });
+    const refereeRoleOptions = [
+        { value: 'referee', label: 'Wasit & Juri Pertandingan' },
+        { value: 'head_referee', label: 'Ketua / Dewan Wasit' },
+        { value: 'tatami_manager', label: 'Manager Tatami' },
+        { value: 'line_judge', label: 'Juri Garis' },
+        { value: 'arbitrator', label: 'Komisi Arbitrase' },
+    ];
 
-    const handleImportPackageSubmit = (e) => {
-        e.preventDefault();
-        if (!importPackageForm.data.package_file) {
-            return;
-        }
-        importPackageForm.post('/admin/master/event/import-package', {
-            preserveScroll: true,
-            onSuccess: () => {
-                setIsImportModalOpen(false);
-                importPackageForm.reset();
-                if (importFileInputRef.current) {
-                    importFileInputRef.current.value = '';
-                }
-            },
-        });
-    };
+    const fieldCoordinatorAreaOptions = [
+        { value: 'koordinator_pertandingan', label: 'Koordinator Pertandingan' },
+        { value: 'wakil_koordinator_pertandingan', label: 'Wakil Koordinator Pertandingan' },
+        { value: 'koordinator_court', label: 'Koordinator Court' },
+        { value: 'court', label: 'Koordinator Lapangan / Court' },
+        { value: 'chief', label: 'Koordinator Utama' },
+        { value: 'logistics', label: 'Koordinator Logistik' },
+        { value: 'liaison', label: 'Liaison / Penghubung' },
+        { value: 'general', label: 'Koordinator Umum' },
+    ];
 
-    // ══════════════════════════════════════════════════════════════
-    // INERTIA FORMS
-    // ══════════════════════════════════════════════════════════════
-    // Form: General Info
-    const generalForm = useForm({
-        name: event.name || '',
-        edition: event.edition || '',
-        organizer: event.organizer || '',
-        venue: event.venue || '',
-        city: event.city || '',
-        province: event.province || '',
-        description: event.description || '',
-        contact_person: event.contact_person || '',
-        contact_phone: event.contact_phone || '',
-        slug: event.slug || '',
-        tenant_subdomain: event.tenant_subdomain || '',
-        max_match_categories_per_athlete: event.max_match_categories_per_athlete || 1,
-        allow_cross_age_group_embu: Boolean(event.allow_cross_age_group_embu),
-        status: event.status || 'open_registration',
-        is_active: event.is_active || false,
-    });
+    const arbitratorOptions = arbitrators.map((arb) => ({
+        value: arb.id,
+        label: arb.name,
+        sublabel: [arb.certification_level, arb.dan_grade, arb.region].filter(Boolean).join(' · '),
+    }));
 
-    // Form: Dates
-    const datesForm = useForm({
-        start_date: event.start_date || '',
-        end_date: event.end_date || '',
-        registration_start: event.registration_start || '',
-        registration_end: event.registration_end || '',
-    });
-    const accessForm = useForm({ users: eventUsers });
-
-    // Form: Fees
-    const feesForm = useForm({
-        is_paid: event.is_paid ?? true,
-        fee_per_contingent: event.fee_per_contingent || 0,
-        fee_per_athlete: event.fee_per_athlete || 0,
-        payment_method_ids: event.payment_method_ids || [],
-    });
-
-    const tournamentForm = useForm({
-        match_duration_minutes: event.match_duration_minutes || 10,
-        minimum_rest_minutes: event.minimum_rest_minutes || 15,
-        minimum_entries_per_category: event.minimum_entries_per_category || 3,
-        minimum_contingents_per_category: event.minimum_contingents_per_category || 3,
-        tts_announcer_enabled: event.tts_announcer_enabled ?? true,
-        champion_ranking_system: event.champion_ranking_system || 'medals',
-        champion_gold_points: event.champion_gold_points || 5,
-        champion_silver_points: event.champion_silver_points || 3,
-        champion_bronze_points: event.champion_bronze_points || 1,
-    });
-
-    useEffect(() => {
-        if (event.tts_announcer_enabled !== undefined) {
-            tournamentForm.setData('tts_announcer_enabled', Boolean(event.tts_announcer_enabled));
-        }
-        if (event.champion_ranking_system) {
-            tournamentForm.setData('champion_ranking_system', event.champion_ranking_system);
-        }
-        if (event.champion_gold_points) {
-            tournamentForm.setData('champion_gold_points', event.champion_gold_points);
-        }
-        if (event.champion_silver_points) {
-            tournamentForm.setData('champion_silver_points', event.champion_silver_points);
-        }
-        if (event.champion_bronze_points) {
-            tournamentForm.setData('champion_bronze_points', event.champion_bronze_points);
-        }
-    }, [event.tts_announcer_enabled, event.champion_ranking_system, event.champion_gold_points, event.champion_silver_points, event.champion_bronze_points]);
-
-    const coverForm = useForm({ cover_image: null });
-
-    // Form: Age Category (CRUD)
-    const ageForm = useForm({
-        name: '',
-        min_age: '',
-        max_age: '',
-        fee: 400000,
-        description: '',
-        order: 0,
-        is_active: true,
-    });
-
-    // Form: Court (CRUD)
-    const courtForm = useForm({
-        name: '',
-        location: '',
-        description: '',
-        order: 0,
-        is_active: true,
-        regenerate_token: false,
-    });
-
-    // Form: Match Category (CRUD)
-    const matchForm = useForm({
-        name: '',
-        age_category_id: '',
-        weight_class_id: '',
-        type: 'embu',
-        gender: 'male',
-        capacity: 16,
-        max_athletes_per_team: 1,
-        min_weight: '',
-        max_weight: '',
-        min_kyu: '',
-        max_kyu: '',
-        order: 0,
-        is_active: true,
-        is_exhibition: false,
-    });
-
-    // Form: Rundown (CRUD)
-    const rundownForm = useForm({
-        date: event.start_date || '',
-        time: '08:00',
-        end_time: '12:00',
-        name: '',
-        type: 'Pertandingan',
-        description: '',
-        order: 0,
-        is_match_session: true,
-    });
-
-    const refereeAssignmentForm = useForm({ referee_id: '', role: 'referee' });
-    const refereeForm = useForm({
-        name: '',
-        gender: 'male',
-        dan_grade: '',
-        certification_level: '',
-        license_number: '',
-        region: '',
-        phone: '',
-        email: '',
-        password: '',
-        password_confirmation: '',
-        role: 'referee',
-    });
-    const clerkAssignmentForm = useForm({ clerk_id: '', role: 'operator' });
-    const newClerkForm = useForm({ create_new: true, name: '', employee_number: '', certification: '', region: '', phone: '', email: '', password: '', password_confirmation: '', role: 'operator' });
-    const fieldCoordinatorAssignmentForm = useForm({ field_coordinator_id: '', assignment_area: 'koordinator_pertandingan' });
-    const fieldCoordinatorForm = useForm({
-        name: '',
-        gender: 'male',
-        dan_grade: '',
-        certification_level: '',
-        coordinator_number: '',
-        region: '',
-        phone: '',
-        email: '',
-        password: '',
-        password_confirmation: '',
-        assignment_area: 'koordinator_pertandingan',
-    });
     const arbitratorAssignmentForm = useForm({ arbitrator_id: '', role: 'Arbitrase Pertandingan' });
     const arbitratorForm = useForm({
         name: '',
@@ -410,256 +202,7 @@ export default function EventDetail({
         password_confirmation: '',
         role: 'Arbitrase Pertandingan',
     });
-    const transferForm = useForm({
-        source_category: 'referee',
-        source_id: '',
-        target_category: 'arbitrator',
-        target_role: 'Arbitrase Pertandingan',
-        gender: 'male',
-        dan_grade: '',
-        certification_level: '',
-        license_number: '',
-        detach_source: true,
-    });
 
-    // Helper: format currency IDR
-    const formatIDR = (val) => {
-        const num = Number(val) || 0;
-        return 'Rp ' + num.toLocaleString('id-ID');
-    };
-
-    // Helper: quick event switch
-    const handleSwitchEvent = (targetEventId) => {
-        if (!targetEventId || targetEventId === event.id) return;
-        router.visit(`/admin/master/event/${targetEventId}/detail`);
-    };
-
-    // ══════════════════════════════════════════════════════════════
-    // SUBMIT HANDLERS
-    // ══════════════════════════════════════════════════════════════
-    const submitGeneral = (e) => {
-        e.preventDefault();
-        setGeneralSaveFeedback(null);
-        generalForm.put(`/admin/master/event/${event.id}/general`, {
-            preserveScroll: true,
-            onSuccess: () => setGeneralSaveFeedback({ type: 'success', message: 'Informasi event berhasil disimpan.' }),
-            onError: () => setGeneralSaveFeedback({ type: 'error', message: 'Informasi event belum tersimpan. Periksa kolom yang ditandai di bawah.' }),
-        });
-    };
-
-    const submitDates = (e) => {
-        e.preventDefault();
-        datesForm.put(`/admin/master/event/${event.id}/dates`, {
-            preserveScroll: true,
-        });
-    };
-
-    const submitFees = (e) => {
-        e.preventDefault();
-        feesForm.put(`/admin/master/event/${event.id}/fees`, {
-            preserveScroll: true,
-        });
-    };
-
-    const submitTournamentSettings = (e) => {
-        e.preventDefault();
-        tournamentForm.put(`/admin/master/event/${event.id}/tournament-settings`, {
-            preserveScroll: true,
-        });
-    };
-
-    const submitCoverImage = (e) => {
-        e.preventDefault();
-        coverForm.post(`/admin/master/event/${event.id}/cover`, {
-            forceFormData: true,
-            preserveScroll: true,
-            onSuccess: () => coverForm.reset(),
-        });
-    };
-
-    const removeCoverImage = () => {
-        router.delete(`/admin/master/event/${event.id}/cover`, { preserveScroll: true });
-    };
-    const submitEventUsers = (e) => {
-        e.preventDefault();
-        setAccessSaveFeedback(null);
-        accessForm.put(`/admin/master/event/${event.id}/users`, {
-            preserveScroll: true,
-            onSuccess: () => setAccessSaveFeedback({ type: 'success', message: 'Penanggung jawab dan akses event berhasil disimpan.' }),
-            onError: () => setAccessSaveFeedback({ type: 'error', message: 'Akses pengguna belum tersimpan. Periksa pilihan pengguna dan hak akses.' }),
-        });
-    };
-    const addEventUser = () => {
-        if (!selectedEventUserId || accessForm.data.users.some((user) => user.id === selectedEventUserId)) return;
-        const user = users.find((item) => item.id === selectedEventUserId);
-        if (!user) return;
-        accessForm.setData('users', [...accessForm.data.users, { id: user.id, name: user.name, email: user.email, access_role: selectedEventUserRole }]);
-        setSelectedEventUserId('');
-        setSelectedEventUserRole('responsible');
-    };
-
-    const submitRefereeAssignment = (e) => {
-        e.preventDefault();
-        refereeAssignmentForm.post(`/admin/master/event/${event.id}/referee`, {
-            preserveScroll: true,
-            onSuccess: () => refereeAssignmentForm.setData({ referee_id: '', role: 'referee' }),
-        });
-    };
-
-    const openCreateRefereeModal = () => {
-        setEditingReferee(null);
-        refereeForm.reset();
-        refereeForm.clearErrors();
-        refereeForm.setData({
-            name: '',
-            gender: 'male',
-            dan_grade: '',
-            certification_level: '',
-            license_number: '',
-            region: '',
-            phone: '',
-            email: '',
-            password: '',
-            password_confirmation: '',
-            role: 'referee',
-        });
-        setIsRefereeModalOpen(true);
-    };
-
-    const openEditRefereeModal = (referee) => {
-        setEditingReferee(referee);
-        refereeForm.clearErrors();
-        refereeForm.setData({
-            name: referee.name || '',
-            gender: referee.gender || 'male',
-            dan_grade: referee.dan_grade || '',
-            certification_level: referee.certification_level || '',
-            license_number: referee.license_number || '',
-            region: referee.region || '',
-            phone: referee.phone || '',
-            email: referee.email || '',
-            password: '',
-            password_confirmation: '',
-            role: referee.role || 'referee',
-        });
-        setIsRefereeModalOpen(true);
-    };
-
-    const submitReferee = (e) => {
-        e.preventDefault();
-        if (editingReferee) {
-            refereeForm.put(`/admin/master/event/${event.id}/referee/${editingReferee.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsRefereeModalOpen(false);
-                    setEditingReferee(null);
-                    refereeForm.reset();
-                },
-            });
-        } else {
-            refereeForm.transform((data) => ({ ...data, create_new: true }));
-            refereeForm.post(`/admin/master/event/${event.id}/referee`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsRefereeModalOpen(false);
-                    refereeForm.reset();
-                },
-            });
-        }
-    };
-
-    const removeEventReferee = (referee) => {
-        router.delete(`/admin/master/event/${event.id}/referee/${referee.id}`, { preserveScroll: true });
-    };
-
-    const submitClerkAssignment = (e) => {
-        e.preventDefault();
-        clerkAssignmentForm.post(`/admin/master/event/${event.id}/clerk`, { preserveScroll: true, onSuccess: () => clerkAssignmentForm.setData({ clerk_id: '', role: 'operator' }) });
-    };
-
-    const submitNewClerk = (e) => {
-        e.preventDefault();
-        newClerkForm.post(`/admin/master/event/${event.id}/clerk`, { preserveScroll: true, onSuccess: () => { setIsNewClerkModalOpen(false); newClerkForm.reset(); } });
-    };
-
-    const removeEventClerk = (clerk) => router.delete(`/admin/master/event/${event.id}/clerk/${clerk.id}`, { preserveScroll: true });
-
-    // Field Coordinator Handlers
-    const submitFieldCoordinatorAssignment = (e) => {
-        e.preventDefault();
-        fieldCoordinatorAssignmentForm.post(`/admin/master/event/${event.id}/field-coordinator`, {
-            preserveScroll: true,
-            onSuccess: () => fieldCoordinatorAssignmentForm.setData({ field_coordinator_id: '', assignment_area: 'court' }),
-        });
-    };
-
-    const openCreateFieldCoordinatorModal = () => {
-        setEditingFieldCoordinator(null);
-        fieldCoordinatorForm.reset();
-        fieldCoordinatorForm.clearErrors();
-        fieldCoordinatorForm.setData({
-            name: '',
-            gender: 'male',
-            dan_grade: '',
-            certification_level: '',
-            coordinator_number: '',
-            region: '',
-            phone: '',
-            email: '',
-            password: '',
-            password_confirmation: '',
-            assignment_area: 'koordinator_pertandingan',
-        });
-        setIsFieldCoordinatorModalOpen(true);
-    };
-
-    const openEditFieldCoordinatorModal = (coordinator) => {
-        setEditingFieldCoordinator(coordinator);
-        fieldCoordinatorForm.clearErrors();
-        fieldCoordinatorForm.setData({
-            name: coordinator.name || '',
-            gender: coordinator.gender || 'male',
-            dan_grade: coordinator.dan_grade || '',
-            certification_level: coordinator.certification_level || '',
-            coordinator_number: coordinator.coordinator_number || '',
-            region: coordinator.region || '',
-            phone: coordinator.phone || '',
-            email: coordinator.email || '',
-            password: '',
-            password_confirmation: '',
-            assignment_area: coordinator.assignment_area || 'koordinator_pertandingan',
-        });
-        setIsFieldCoordinatorModalOpen(true);
-    };
-
-    const submitFieldCoordinator = (e) => {
-        e.preventDefault();
-        if (editingFieldCoordinator) {
-            fieldCoordinatorForm.put(`/admin/master/event/${event.id}/field-coordinator/${editingFieldCoordinator.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsFieldCoordinatorModalOpen(false);
-                    setEditingFieldCoordinator(null);
-                    fieldCoordinatorForm.reset();
-                },
-            });
-        } else {
-            fieldCoordinatorForm.transform((data) => ({ ...data, create_new: true }));
-            fieldCoordinatorForm.post(`/admin/master/event/${event.id}/field-coordinator`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsFieldCoordinatorModalOpen(false);
-                    fieldCoordinatorForm.reset();
-                },
-            });
-        }
-    };
-
-    const removeEventFieldCoordinator = (coordinator) => {
-        router.delete(`/admin/master/event/${event.id}/field-coordinator/${coordinator.id}`, { preserveScroll: true });
-    };
-
-    // Arbitrator Handlers
     const submitArbitratorAssignment = (e) => {
         e.preventDefault();
         arbitratorAssignmentForm.post(`/admin/master/event/${event.id}/arbitrator`, {
@@ -688,21 +231,21 @@ export default function EventDetail({
         setIsArbitratorModalOpen(true);
     };
 
-    const openEditArbitratorModal = (arbitrator) => {
-        setEditingArbitrator(arbitrator);
+    const openEditArbitratorModal = (arb) => {
+        setEditingArbitrator(arb);
         arbitratorForm.clearErrors();
         arbitratorForm.setData({
-            name: arbitrator.name || '',
-            gender: arbitrator.gender || 'male',
-            dan_grade: arbitrator.dan_grade || '',
-            certification_level: arbitrator.certification_level || '',
-            license_number: arbitrator.license_number || '',
-            region: arbitrator.region || '',
-            phone: arbitrator.phone || '',
-            email: arbitrator.email || '',
+            name: arb.name || '',
+            gender: arb.gender || 'male',
+            dan_grade: arb.dan_grade || '',
+            certification_level: arb.certification_level || '',
+            license_number: arb.license_number || '',
+            region: arb.region || '',
+            phone: arb.phone || '',
+            email: arb.email || '',
             password: '',
             password_confirmation: '',
-            role: arbitrator.role || 'Arbitrase Pertandingan',
+            role: arb.role || 'Arbitrase Pertandingan',
         });
         setIsArbitratorModalOpen(true);
     };
@@ -734,14 +277,31 @@ export default function EventDetail({
         router.delete(`/admin/master/event/${event.id}/arbitrator/${arbitrator.id}`, { preserveScroll: true });
     };
 
-    // Universal Transfer Modal (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan)
+    // ══════════════════════════════════════════════════════════════
+    // UNIVERSAL TRANSFER STATE & HANDLERS (Arbitrase ⇄ Wasit ⇄ Koordinator)
+    // ══════════════════════════════════════════════════════════════
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    const [transferTarget, setTransferTarget] = useState(null);
+
+    const transferForm = useForm({
+        source_category: 'referee',
+        source_id: '',
+        target_category: 'arbitrator',
+        target_role: 'Arbitrase Pertandingan',
+        gender: 'male',
+        dan_grade: '',
+        certification_level: '',
+        license_number: '',
+        detach_source: true,
+    });
+
     const openTransferModal = (sourceCategory, sourcePerson) => {
         let defaultTargetCat = 'arbitrator';
         let defaultTargetRole = 'Arbitrase Pertandingan';
 
         if (sourceCategory === 'arbitrator') {
             defaultTargetCat = 'referee';
-            defaultTargetRole = 'wasit_utama';
+            defaultTargetRole = 'referee';
         } else if (sourceCategory === 'referee') {
             defaultTargetCat = 'arbitrator';
             defaultTargetRole = 'Arbitrase Pertandingan';
@@ -780,634 +340,277 @@ export default function EventDetail({
         });
     };
 
-    // Age Category Handlers
-    const openCreateAgeModal = () => {
-        setEditingAgeCategory(null);
-        ageForm.reset();
-        ageForm.clearErrors();
-        ageForm.setData({
-            name: '',
-            min_age: '',
-            max_age: '',
-            fee: 400000,
-            description: '',
-            order: (ageCategories.length || 0) + 1,
-            is_active: true,
-        });
-        setIsAgeModalOpen(true);
-    };
-
-    const openEditAgeModal = (cat) => {
-        setEditingAgeCategory(cat);
-        ageForm.clearErrors();
-        ageForm.setData({
-            name: cat.name || '',
-            min_age: cat.min_age ?? '',
-            max_age: cat.max_age ?? '',
-            fee: cat.fee ?? 0,
-            description: cat.description || '',
-            order: cat.order ?? 0,
-            is_active: cat.is_active ?? true,
-        });
-        setIsAgeModalOpen(true);
-    };
-
-    const submitAgeCategory = (e) => {
-        e.preventDefault();
-        if (editingAgeCategory) {
-            ageForm.put(`/admin/master/event/${event.id}/age-category/${editingAgeCategory.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsAgeModalOpen(false);
-                    setEditingAgeCategory(null);
-                },
-            });
-        } else {
-            ageForm.post(`/admin/master/event/${event.id}/age-category`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsAgeModalOpen(false);
-                    ageForm.reset();
-                },
-            });
-        }
-    };
-
-    const confirmDeleteAgeCategory = () => {
-        if (!deletingAgeCategory) return;
-        router.delete(`/admin/master/event/${event.id}/age-category/${deletingAgeCategory.id}`, {
-            preserveScroll: true,
-            onSuccess: () => setDeletingAgeCategory(null),
-        });
-    };
-
-    // Court Handlers
-    const openCreateCourtModal = () => {
-        setEditingCourt(null);
-        courtForm.reset();
-        courtForm.clearErrors();
-        courtForm.setData({
-            name: `Court ${(courts.length || 0) + 1}`,
-            location: '',
-            description: '',
-            order: (courts.length || 0) + 1,
-            is_active: true,
-            regenerate_token: false,
-        });
-        setIsCourtModalOpen(true);
-    };
-
-    const openEditCourtModal = (court) => {
-        setEditingCourt(court);
-        courtForm.clearErrors();
-        courtForm.setData({
-            name: court.name || '',
-            location: court.location || '',
-            description: court.description || '',
-            order: court.order ?? 0,
-            is_active: court.is_active ?? true,
-            regenerate_token: false,
-        });
-        setIsCourtModalOpen(true);
-    };
-
-    const submitCourt = (e) => {
-        e.preventDefault();
-        if (editingCourt) {
-            courtForm.put(`/admin/master/event/${event.id}/court/${editingCourt.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsCourtModalOpen(false);
-                    setEditingCourt(null);
-                },
-            });
-        } else {
-            courtForm.post(`/admin/master/event/${event.id}/court`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsCourtModalOpen(false);
-                    courtForm.reset();
-                },
-            });
-        }
-    };
-
-    const confirmDeleteCourt = () => {
-        if (!deletingCourt) return;
-        router.delete(`/admin/master/event/${event.id}/court/${deletingCourt.id}`, {
-            preserveScroll: true,
-            onSuccess: () => setDeletingCourt(null),
-        });
-    };
-
-    // Match Category Handlers
-    const openCreateMatchModal = () => {
-        setEditingMatchCategory(null);
-        matchForm.reset();
-        matchForm.clearErrors();
-        matchForm.setData({
-            name: '',
-            age_category_id: ageCategories.length > 0 ? ageCategories[0].id : '',
-            weight_class_id: '',
-            type: 'embu',
-            gender: 'male',
-            capacity: 16,
-            max_athletes_per_team: 1,
-            min_weight: '',
-            max_weight: '',
-            min_kyu: '',
-            max_kyu: '',
-            order: (matchCategories.length || 0) + 1,
-            is_active: true,
-            is_exhibition: false,
-        });
-        setIsMatchModalOpen(true);
-    };
-
-    const openEditMatchModal = (mc) => {
-        setEditingMatchCategory(mc);
-        matchForm.clearErrors();
-        matchForm.setData({
-            name: mc.name || '',
-            age_category_id: mc.age_category_id || '',
-            weight_class_id: mc.weight_class_id || '',
-            type: mc.type || 'embu',
-            gender: mc.gender || 'male',
-            capacity: mc.capacity || 16,
-            max_athletes_per_team: mc.max_athletes_per_team || 1,
-            min_weight: mc.min_weight ?? '',
-            max_weight: mc.max_weight ?? '',
-            min_kyu: mc.min_kyu || '',
-            max_kyu: mc.max_kyu || '',
-            order: mc.order ?? 0,
-            is_active: mc.is_active ?? true,
-            is_exhibition: mc.is_exhibition ?? false,
-        });
-        setIsMatchModalOpen(true);
-    };
-
-    const toggleMatchExhibition = (mc) => {
-        router.patch(`/admin/master/event/${event.id}/match-category/${mc.id}/toggle-exhibition`, {}, {
-            preserveScroll: true,
-        });
-    };
-
-    const submitMatchCategory = (e) => {
-        e.preventDefault();
-        if (editingMatchCategory) {
-            matchForm.put(`/admin/master/event/${event.id}/match-category/${editingMatchCategory.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsMatchModalOpen(false);
-                    setEditingMatchCategory(null);
-                },
-            });
-        } else {
-            matchForm.post(`/admin/master/event/${event.id}/match-category`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsMatchModalOpen(false);
-                    matchForm.reset();
-                },
-            });
-        }
-    };
-
-    const confirmDeleteMatchCategory = () => {
-        if (!deletingMatchCategory) return;
-        router.delete(`/admin/master/event/${event.id}/match-category/${deletingMatchCategory.id}`, {
-            preserveScroll: true,
-            onSuccess: () => setDeletingMatchCategory(null),
-        });
-    };
-
-    // Rundown Handlers
-    const openCreateRundownModal = () => {
-        setEditingRundown(null);
-        rundownForm.reset();
-        rundownForm.clearErrors();
-        rundownForm.setData({
-            date: event.start_date || '',
-            time: '08:00',
-            end_time: '12:00',
-            name: '',
-            type: 'Pertandingan',
-            description: '',
-            order: (rundowns.length || 0) + 1,
-            is_match_session: true,
-        });
-        setIsRundownModalOpen(true);
-    };
-
-    const openEditRundownModal = (rd) => {
-        setEditingRundown(rd);
-        rundownForm.clearErrors();
-        rundownForm.setData({
-            date: rd.date_only || event.start_date || '',
-            time: rd.time_only || '08:00',
-            end_time: rd.end_time_only || '',
-            name: rd.name || '',
-            type: rd.type || 'Pertandingan',
-            description: rd.description || '',
-            order: rd.order ?? 0,
-            is_match_session: Boolean(rd.is_match_session),
-        });
-        setIsRundownModalOpen(true);
-    };
-
-    const submitRundown = (e) => {
-        e.preventDefault();
-        if (editingRundown) {
-            rundownForm.put(`/admin/master/event/${event.id}/rundown/${editingRundown.id}`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsRundownModalOpen(false);
-                    setEditingRundown(null);
-                },
-            });
-        } else {
-            rundownForm.post(`/admin/master/event/${event.id}/rundown`, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setIsRundownModalOpen(false);
-                    rundownForm.reset();
-                },
-            });
-        }
-    };
-
-    const confirmDeleteRundown = () => {
-        if (!deletingRundown) return;
-        router.delete(`/admin/master/event/${event.id}/rundown/${deletingRundown.id}`, {
-            preserveScroll: true,
-            onSuccess: () => setDeletingRundown(null),
-        });
-    };
-
     // ══════════════════════════════════════════════════════════════
-    // FILTERED & PAGINATED DATA (Standardized to Dashboard Pattern)
+    // EVENT PACKAGE IMPORT MODAL (from Header Sync Dropdown)
     // ══════════════════════════════════════════════════════════════
-    // 1. Kelompok Umur
-    const filteredAgeCategories = ageCategories.filter((cat) => {
-        if (!ageSearch) return true;
-        const q = ageSearch.toLowerCase();
-        return (
-            cat.name?.toLowerCase().includes(q) ||
-            cat.description?.toLowerCase().includes(q) ||
-            cat.age_range?.toLowerCase().includes(q)
-        );
-    });
-    const paginatedAgeCategories = filteredAgeCategories.slice(
-        (agePage - 1) * itemsPerPage,
-        agePage * itemsPerPage
-    );
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const importFileInputRef = useRef(null);
+    const importPackageForm = useForm({ package_file: null });
 
-    // 2. Lapangan (Court / Tatami)
-    const filteredCourts = courts.filter((court) => {
-        if (!courtSearch) return true;
-        const q = courtSearch.toLowerCase();
-        return (
-            court.name?.toLowerCase().includes(q) ||
-            court.location?.toLowerCase().includes(q) ||
-            court.description?.toLowerCase().includes(q)
-        );
-    });
-    const paginatedCourts = filteredCourts.slice(
-        (courtPage - 1) * itemsPerPage,
-        courtPage * itemsPerPage
-    );
+    const handleImportPackageSubmit = (e) => {
+        e.preventDefault();
+        if (!importPackageForm.data.package_file) return;
 
-    // 3. Nomer Pertandingan
-    const filteredMatches = matchCategories.filter((mc) => {
-        const matchesQuery =
-            !matchSearch ||
-            mc.name?.toLowerCase().includes(matchSearch.toLowerCase()) ||
-            mc.age_category_name?.toLowerCase().includes(matchSearch.toLowerCase());
-
-        const matchesType = matchTypeFilter === 'all' || mc.type === matchTypeFilter;
-        const matchesGender = matchGenderFilter === 'all' || mc.gender === matchGenderFilter;
-        const matchesAge = matchAgeFilter === 'all' || String(mc.age_category_id) === String(matchAgeFilter);
-        const matchesExhibition =
-            matchExhibitionFilter === 'all' ||
-            (matchExhibitionFilter === 'exhibition' ? !!mc.is_exhibition : !mc.is_exhibition);
-
-        return matchesQuery && matchesType && matchesGender && matchesAge && matchesExhibition;
-    });
-    const paginatedMatches = filteredMatches.slice(
-        (matchPage - 1) * itemsPerPage,
-        matchPage * itemsPerPage
-    );
-
-    // 4. Sesi Acara & Rundown
-    const filteredRundowns = rundowns.filter((rd) => {
-        if (!rundownSearch) return true;
-        const q = rundownSearch.toLowerCase();
-        return (
-            rd.name?.toLowerCase().includes(q) ||
-            rd.type?.toLowerCase().includes(q) ||
-            rd.description?.toLowerCase().includes(q)
-        );
-    });
-    const paginatedRundowns = filteredRundowns.slice(
-        (rundownPage - 1) * itemsPerPage,
-        rundownPage * itemsPerPage
-    );
-
-    // Combobox Options
-    const eventSwitchOptions = allEvents.map((e) => ({
-        value: e.id,
-        label: `${e.name} ${e.edition ? `(${e.edition})` : ''}`,
-        sublabel: [e.status_label, e.dates, e.city, e.is_active ? 'Operasional' : 'Nonaktif operasional'].filter(Boolean).join(' · '),
-    }));
-
-    const statusOptions = [
-        { value: 'draft', label: 'Draft (Konsep)' },
-        { value: 'open_registration', label: 'Pendaftaran Dibuka' },
-        { value: 'ongoing', label: 'Sedang Berlangsung' },
-        { value: 'completed', label: 'Selesai' },
-        { value: 'closed', label: 'Ditutup' },
-    ];
-
-    const ageCategoryOptions = ageCategories.map((ac) => ({
-        value: ac.id,
-        label: ac.name,
-        sublabel: `${ac.age_range} · ${ac.fee_formatted}`,
-    }));
-
-    const matchTypeOptions = [
-        { value: 'embu', label: 'Embu (Kerapian Teknik)' },
-        { value: 'randori', label: 'Randori (Tarung Bebas)' },
-    ];
-
-    const matchGenderOptions = [
-        { value: 'male', label: 'Putra' },
-        { value: 'female', label: 'Putri' },
-        { value: 'mixed', label: 'Campuran' },
-    ];
-
-    const teamSizeOptions = [
-        { value: 1, label: '1 Atlet per Tim' },
-        { value: 2, label: '2 Atlet per Tim' },
-        { value: 4, label: '4 Atlet per Tim' },
-    ];
-
-    const kyuOptions = kyus.map((kyu) => ({
-        value: kyu.name,
-        label: kyu.name,
-        sublabel: kyu.belt_color ? `Sabuk ${kyu.belt_color}` : null,
-    }));
-
-    const weightClassOptions = weightClasses.map((weightClass) => ({
-        value: weightClass.id,
-        label: weightClass.name,
-        sublabel: `${weightClass.gender === 'male' ? 'Putra' : weightClass.gender === 'female' ? 'Putri' : 'Campuran'} · ${weightClass.min_weight ?? '—'}–${weightClass.max_weight ?? '∞'} kg`,
-    }));
-
-    const refereeOptions = referees.map((referee) => ({
-        value: referee.id,
-        label: referee.name,
-        sublabel: [referee.dan_grade, referee.certification_level, referee.region].filter(Boolean).join(' · '),
-    }));
-
-    const arbitratorOptions = arbitrators.map((arb) => ({
-        value: arb.id,
-        label: arb.name,
-        sublabel: [arb.gender === 'female' ? 'Perempuan' : 'Laki-laki', arb.dan_grade, arb.certification_level, arb.region].filter(Boolean).join(' · '),
-    }));
-
-    const arbitratorRoleOptions = [
-        { value: 'Arbitrase Pertandingan', label: 'Arbitrase Pertandingan' },
-        { value: 'Ketua Dewan Arbitrase', label: 'Ketua Dewan Arbitrase' },
-        { value: 'Anggota Arbitrase', label: 'Anggota Arbitrase' },
-        { value: 'Dewan Hakim Arbitrase', label: 'Dewan Hakim Arbitrase' },
-    ];
-
-    const refereeRoleOptions = [
-        { value: 'wasit_utama', label: 'Wasit Utama' },
-        { value: 'wasit', label: 'Wasit' },
-        { value: 'chief', label: 'Ketua / Wasit Utama' },
-        { value: 'referee', label: 'Wasit Juri' },
-        { value: 'judge', label: 'Juri Nilai' },
-        { value: 'reserve', label: 'Wasit Cadangan' },
-    ];
-
-    const clerkOptions = clerks.map((clerk) => ({ value: clerk.id, label: clerk.name, sublabel: [clerk.certification, clerk.region].filter(Boolean).join(' · ') }));
-    const clerkRoleOptions = [
-        { value: 'chief_secretary', label: 'Ketua Panitera' },
-        { value: 'scorer', label: 'Pencatat Nilai' },
-        { value: 'timekeeper', label: 'Pencatat Waktu' },
-        { value: 'announcer', label: 'Pengumum' },
-        { value: 'operator', label: 'Operator' },
-    ];
-    const fieldCoordinatorOptions = fieldCoordinators.map((coordinator) => ({
-        value: coordinator.id,
-        label: coordinator.name,
-        sublabel: [coordinator.gender === 'female' ? 'Perempuan' : 'Laki-laki', coordinator.dan_grade, coordinator.coordinator_number, coordinator.region].filter(Boolean).join(' · '),
-    }));
-    const fieldCoordinatorAreaOptions = [
-        { value: 'koordinator_pertandingan', label: 'Koordinator Pertandingan' },
-        { value: 'wakil_koordinator_pertandingan', label: 'Wakil Koordinator Pertandingan' },
-        { value: 'koordinator_court', label: 'Koordinator Court' },
-        { value: 'court', label: 'Koordinator Lapangan / Court' },
-        { value: 'chief', label: 'Koordinator Utama' },
-        { value: 'logistics', label: 'Koordinator Logistik' },
-        { value: 'liaison', label: 'Liaison / Penghubung' },
-        { value: 'general', label: 'Koordinator Umum' },
-    ];
-    const userOptions = users.map((user) => ({ value: user.id, label: user.name, sublabel: `${user.email}${user.roles?.length ? ` · ${user.roles.join(', ')}` : ''}` }));
-    const eventAccessRoleOptions = [
-        { value: 'responsible', label: 'Penanggung Jawab Event' },
-        { value: 'admin', label: 'Admin Event' },
-        { value: 'staff', label: 'Staf Event' },
-        { value: 'viewer', label: 'Hanya Melihat' },
-    ];
-
-    const applyWeightClass = (weightClassId) => {
-        const weightClass = weightClasses.find((item) => String(item.id) === String(weightClassId));
-
-        matchForm.setData({
-            ...matchForm.data,
-            weight_class_id: weightClassId,
-            min_weight: weightClass?.min_weight ?? '',
-            max_weight: weightClass?.max_weight ?? '',
+        importPackageForm.post('/admin/master/event/import-package', {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => {
+                setIsImportModalOpen(false);
+                importPackageForm.reset();
+                if (importFileInputRef.current) {
+                    importFileInputRef.current.value = '';
+                }
+            },
         });
     };
 
-    const rundownTypeOptions = [
-        { value: 'Upacara / Pembukaan', label: 'Upacara / Pembukaan' },
-        { value: 'Technical Meeting', label: 'Technical Meeting' },
-        { value: 'Penimbangan Badan', label: 'Penimbangan Badan' },
-        { value: 'Pertandingan', label: 'Pertandingan' },
-        { value: 'Istirahat / Ishoma', label: 'Istirahat / Ishoma' },
-        { value: 'Upacara Penghormatan Pemenang (UPP)', label: 'Upacara Penghormatan Pemenang (UPP)' },
-        { value: 'Penutupan', label: 'Penutupan' },
+    const syncMenuItems = [
+        {
+            label: 'Buka di Mode Event',
+            description: `Beralih ke panel kerja fokus untuk ${event.name || 'event ini'}`,
+            icon: <i className="fa-solid fa-right-to-bracket text-[#d4a843]" />,
+            href: `/admin/event/${event.id}/enter`,
+        },
+        { divider: true },
+        {
+            label: 'Ekspor Paket Data (.json)',
+            description: 'Unduh seluruh data pertandingan, nilai wasit, dan hasil juara event (.json)',
+            icon: <i className="fa-solid fa-file-arrow-down text-amber-500" />,
+            href: `/admin/master/event/${event.id}/export-package`,
+            download: true,
+            badge: 'JSON',
+        },
+        {
+            label: 'Impor Data Offline (.json)',
+            description: 'Unggah file paket JSON data event dari laptop lokal / offline',
+            icon: <i className="fa-solid fa-cloud-arrow-up text-emerald-500" />,
+            onClick: () => setIsImportModalOpen(true),
+        },
+        { divider: true },
+        {
+            label: 'Panel Sinkronisasi (Sync)',
+            description: 'Buka pengaturan dan status sinkronisasi offline-online',
+            icon: <i className="fa-solid fa-network-wired text-blue-500" />,
+            onClick: () => handleTabChange('sync'),
+        },
     ];
 
     return (
-        <AdminLayout auth={auth} title="Pengaturan Event">
-            <Head title={`Pengaturan & Detail - ${event.name || 'Event'}`} />
+        <AdminLayout
+            title={`Detail Event: ${event.name}`}
+            breadcrumb={[
+                { label: 'Master Data' },
+                { label: 'Event & Kejuaraan', href: '/admin/master/event' },
+                { label: event.name || 'Detail' },
+            ]}
+        >
+            <Head title={`Detail Event: ${event.name}`} />
 
-            <div className="space-y-6 pb-4">
-                {/* ════ EVENT HEADER BANNER ════ */}
-                <div className="rounded-2xl bg-gradient-to-r from-[#141210] via-[#1c1917] to-[#292524] text-white p-6 shadow-xl border border-white/10 relative overflow-visible">
-                    {/* Background martial emblem accent */}
-                    <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
-                        <div className="absolute -right-10 -bottom-10 opacity-10 text-amber-400">
-                            <i className="fa-solid fa-yin-yang text-[180px]"></i>
-                        </div>
-                    </div>
-
-                    <div className="relative z-30 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                        <div className="space-y-2 max-w-3xl">
-                            <div className="flex flex-wrap items-center gap-3">
-                                <h1 className="text-2xl lg:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-                                    {event.name}
-                                </h1>
+            <div className="space-y-6">
+                {/* ════ EXECUTIVE OPERATIONAL HERO HEADER ════ */}
+                <div className="rounded-2xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs p-5 md:p-6 transition-all">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2.5 max-w-3xl min-w-0 flex-1">
+                            {/* Pre-title bar: Badges & status row */}
+                            <div className="flex flex-wrap items-center gap-2">
                                 {event.edition && (
-                                    <span className="px-2.5 py-0.5 text-xs font-semibold rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60">
                                         {event.edition}
                                     </span>
                                 )}
-                                {event.is_active ? (
-                                    <span className="px-2.5 py-0.5 text-xs font-semibold rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        Aktif untuk Operasional
-                                    </span>
-                                ) : (
-                                    <span className="px-2.5 py-0.5 text-xs font-semibold rounded-md bg-white/10 text-white/70 border border-white/10">
-                                        Non-Aktif
-                                    </span>
-                                )}
-                            </div>
-
-                            <p className="text-sm text-white/70 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
-                                <span className="flex items-center gap-1.5">
-                                    <i className="fa-solid fa-location-dot text-amber-400 text-xs"></i>
-                                    {event.venue}, {event.city}
+                                <span
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${event.is_active
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
+                                            : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                        }`}
+                                >
+                                    <span
+                                        className={`size-1.5 rounded-full ${event.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                                            }`}
+                                    />
+                                    {event.is_active ? 'Aktif untuk Operasional' : 'Nonaktif'}
                                 </span>
-                                <span className="flex items-center gap-1.5">
-                                    <i className="fa-regular fa-calendar text-amber-400 text-xs"></i>
-                                    {event.start_date_formatted} - {event.end_date_formatted}
-                                </span>
-                                {event.organizer && (
-                                    <span className="flex items-center gap-1.5">
-                                        <i className="fa-solid fa-shield-halved text-amber-400 text-xs"></i>
-                                        {event.organizer}
-                                    </span>
-                                )}
-                            </p>
-                        </div>
-
-                        {/* Event Switcher Dropdown & Action Buttons */}
-                        <div className="flex flex-col items-stretch lg:items-end gap-3 shrink-0 max-w-full">
-                            <div className="w-full sm:w-80">
-                                <label className="text-[11px] font-semibold text-white/60 mb-1 block uppercase tracking-wider">
-                                    Pindah Event:
-                                </label>
-                                <Combobox
-                                    value={event.id}
-                                    onChange={handleSwitchEvent}
-                                    options={eventSwitchOptions}
-                                    size="sm"
-                                    clearable={false}
-                                    searchPlaceholder="Pilih atau cari event..."
-                                    className="w-full text-gray-900"
-                                />
-                            </div>
-
-                            {/* Tombol Aksi: Export Excel, Ekspor JSON, Impor JSON, Menu Sync, Daftar Event */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <a
-                                    href={`/admin/master/event/${event.id}/arbitration/export`}
-                                    download
-                                    title="Export Excel lengkap seluruh tab menu event & arbitrase (11 Sheet Otomatis .xlsx)"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black px-3.5 py-2 text-xs transition-all whitespace-nowrap shadow-md shadow-emerald-950/20 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                                >
-                                    <i className="fa-solid fa-file-excel text-xs" />
-                                    <span>Export Excel (.xlsx)</span>
-                                </a>
-
-                                <a
-                                    href={`/admin/master/event/${event.id}/export-package`}
-                                    download
-                                    title="Unduh seluruh data pertandingan, nilai wasit, dan hasil juara event ini (.json)"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3.5 py-2 text-xs transition-colors whitespace-nowrap shadow-sm"
-                                >
-                                    <i className="fa-solid fa-download text-xs" />
-                                    <span>Ekspor (.json)</span>
-                                </a>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setIsImportModalOpen(true)}
-                                    title="Impor paket data event dari laptop offline (.json)"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3.5 py-2 text-xs transition-colors whitespace-nowrap shadow-sm"
-                                >
-                                    <i className="fa-solid fa-cloud-arrow-up text-xs" />
-                                    <span>Impor (.json)</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab('sync')}
-                                    title="Buka panel lengkap sinkronisasi offline-online"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-2 text-xs border border-white/20 transition-colors whitespace-nowrap"
-                                >
-                                    <i className="fa-solid fa-arrows-rotate text-xs" />
-                                    <span>Menu Sync</span>
-                                </button>
-
-                                <Link href="/admin/master/event">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30 whitespace-nowrap"
+                                {event.status && (
+                                    <span
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold ${
+                                            event.status === 'completed'
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
+                                                : event.status === 'open_registration'
+                                                ? 'bg-blue-50 text-blue-700 border border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60'
+                                                : event.status === 'ongoing'
+                                                ? 'bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60'
+                                                : event.status === 'closed'
+                                                ? 'bg-rose-50 text-rose-700 border border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60'
+                                                : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                        }`}
                                     >
-                                        <i className="fa-solid fa-list mr-1.5 text-xs"></i>
-                                        Daftar Event
-                                    </Button>
-                                </Link>
+                                        {event.status === 'completed' && <i className="fa-solid fa-circle-check text-[9px]" />}
+                                        {event.status === 'open_registration' && <span className="size-1.5 rounded-full bg-blue-500" />}
+                                        {event.status === 'ongoing' && <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />}
+                                        {event.status === 'closed' && <i className="fa-solid fa-lock text-[8.5px]" />}
+                                        {event.status === 'draft' && <i className="fa-solid fa-clock text-[8.5px]" />}
+                                        <span>{event.status_label || event.status}</span>
+                                    </span>
+                                )}
+                            </div>
+
+                            <h1 className="font-sans text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
+                                {event.name}
+                            </h1>
+
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                                {event.venue && (
+                                    <span className="flex items-center gap-2">
+                                        <i className="fa-solid fa-location-dot text-[#d4a843] text-xs" aria-hidden="true" />
+                                        <span className="font-medium text-slate-700 dark:text-slate-300">
+                                            {event.venue}
+                                            {event.city ? `, ${event.city}` : ''}
+                                        </span>
+                                    </span>
+                                )}
+                                {(event.start_date || event.end_date) && (
+                                    <span className="flex items-center gap-2">
+                                        <i className="fa-regular fa-calendar text-[#d4a843] text-xs" aria-hidden="true" />
+                                        <span className="font-medium text-slate-700 dark:text-slate-300">
+                                            {event.start_date_formatted || event.start_date}
+                                            {event.end_date ? ` – ${event.end_date_formatted || event.end_date}` : ''}
+                                        </span>
+                                    </span>
+                                )}
+                                {event.organizer && (
+                                    <span className="flex items-center gap-2">
+                                        <i className="fa-solid fa-shield-halved text-[#d4a843] text-xs" aria-hidden="true" />
+                                        <span className="font-medium text-slate-700 dark:text-slate-300">{event.organizer}</span>
+                                    </span>
+                                )}
                             </div>
                         </div>
-                    </div>
 
-                    {/* Stats pills */}
-                    <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[11px] font-medium text-white/60">Kelompok Umur</p>
-                            <p className="text-xl font-bold text-amber-400 mt-0.5">
-                                {counts.age_categories} <span className="text-xs font-normal text-white/50">Kategori</span>
-                            </p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[11px] font-medium text-white/60">Lapangan / Tatami</p>
-                            <p className="text-xl font-bold text-amber-400 mt-0.5">
-                                {counts.courts} <span className="text-xs font-normal text-white/50">Court</span>
-                            </p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[11px] font-medium text-white/60">Nomer Pertandingan</p>
-                            <p className="text-xl font-bold text-amber-400 mt-0.5">
-                                {counts.match_categories} <span className="text-xs font-normal text-white/50">Nomor</span>
-                            </p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[11px] font-medium text-white/60">Sesi Acara Rundown</p>
-                            <p className="text-xl font-bold text-amber-400 mt-0.5">
-                                {counts.rundowns} <span className="text-xs font-normal text-white/50">Sesi</span>
-                            </p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[11px] font-medium text-white/60">Korps Arbitrase</p>
-                            <p className="text-xl font-bold text-amber-400 mt-0.5">
-                                {counts.referees} <span className="text-xs font-normal text-white/50">Wasit</span>
-                            </p>
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto shrink-0">
+                            <Link href="/admin/master/event">
+                                <button
+                                    type="button"
+                                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 transition-all shadow-2xs cursor-pointer active:scale-95"
+                                    title="Kembali ke Manajemen Event & Kejuaraan"
+                                >
+                                    <i className="fa-solid fa-arrow-left text-xs text-slate-500 dark:text-slate-400" aria-hidden="true" />
+                                    <span>Daftar Event</span>
+                                </button>
+                            </Link>
+
+                            <a
+                                href={`/admin/master/event/${event.id}/arbitration/export`}
+                                download
+                                title="Export Excel lengkap seluruh tab menu event & arbitrase (11 Sheet Otomatis .xlsx)"
+                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-3.5 py-2 text-xs font-bold text-white transition-all shadow-2xs cursor-pointer active:scale-95"
+                            >
+                                <i className="fa-solid fa-file-excel text-xs" aria-hidden="true" />
+                                <span>Export Excel (.xlsx)</span>
+                            </a>
+
+                            <ActionMenuDropdown
+                                label="Sinkron & Data"
+                                theme="light"
+                                menuHeader="Transfer Data & Sinkronisasi"
+                                icon={<i className="fa-solid fa-arrows-rotate text-xs text-[#d4a843]" aria-hidden="true" />}
+                                items={syncMenuItems}
+                                className="shrink-0"
+                            />
                         </div>
                     </div>
                 </div>
 
-                {/* ════ TAB NAVIGATION ════ */}
-                <div className="relative bg-white border border-[#e5e0d8] rounded-xl shadow-sm p-1.5 sticky top-2 z-20">
+                {/* ════ KPI STATS ROW (5 COLUMNS) ════ */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                    <div className="p-4 rounded-xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between transition-all hover:border-[#d4a843]/40">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Kelompok Umur
+                            </p>
+                            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <i className="fa-solid fa-users-line text-xs" aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-2.5">
+                            <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
+                                {counts.age_categories || 0}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Kategori Usia</p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between transition-all hover:border-[#d4a843]/40">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Lapangan / Tatami
+                            </p>
+                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                <i className="fa-solid fa-vector-square text-xs" aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-2.5">
+                            <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
+                                {counts.courts || 0}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Tatami Pertandingan</p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between transition-all hover:border-[#d4a843]/40">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Nomor Tanding
+                            </p>
+                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                <i className="fa-solid fa-award text-xs" aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-2.5">
+                            <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
+                                {counts.match_categories || 0}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Nomor Kelas Dibuka</p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between transition-all hover:border-[#d4a843]/40">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Sesi Rundown
+                            </p>
+                            <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                <i className="fa-solid fa-clock-rotate-left text-xs" aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-2.5">
+                            <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
+                                {counts.rundowns || 0}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Sesi Terjadwal</p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-[#ede9e1] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs flex flex-col justify-between transition-all hover:border-[#d4a843]/40">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Korps Arbitrase
+                            </p>
+                            <div className="w-8 h-8 rounded-lg bg-[#c0392b]/10 text-[#c0392b] flex items-center justify-center shrink-0">
+                                <i className="fa-solid fa-scale-balanced text-xs" aria-hidden="true" />
+                            </div>
+                        </div>
+                        <div className="mt-2.5">
+                            <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight tabular-nums">
+                                {counts.referees || eventReferees.length || 0}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Wasit & Juri Ditugaskan</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ════ TAB NAVIGATION BAR ════ */}
+                {/* <div className="relative bg-white dark:bg-slate-900 border border-[#ede9e1] dark:border-slate-800 rounded-xl shadow-2xs p-1.5 sticky top-2 z-20">
                     <div
                         ref={tabScrollRef}
                         onScroll={checkTabScroll}
@@ -1415,64 +618,6 @@ export default function EventDetail({
                         className="flex gap-1.5 overflow-x-auto scroll-smooth no-scrollbar"
                     >
                         {[
-                            {
-                                id: 'age_categories',
-                                label: 'Kelompok Umur',
-                                icon: 'fa-users-line',
-                                count: counts.age_categories,
-                                badgeColor: 'bg-amber-100 text-amber-800',
-                            },
-                            { id: 'participant_rules', label: 'Persyaratan Peserta', icon: 'fa-user-shield' },
-                            {
-                                id: 'courts',
-                                label: 'Lapangan (Court)',
-                                icon: 'fa-square-vector',
-                                count: counts.courts,
-                                badgeColor: 'bg-blue-100 text-blue-800',
-                            },
-                            {
-                                id: 'matches',
-                                label: 'Nomer Pertandingan',
-                                icon: 'fa-award',
-                                count: counts.match_categories,
-                                badgeColor: 'bg-emerald-100 text-emerald-800',
-                            },
-                            {
-                                id: 'rundown',
-                                label: 'Sesi Acara & Rundown',
-                                icon: 'fa-clock-rotate-left',
-                                count: counts.rundowns,
-                                badgeColor: 'bg-purple-100 text-purple-800',
-                            },
-                            {
-                                id: 'tournament',
-                                label: 'Pertandingan & Drawing',
-                                icon: 'fa-diagram-project',
-                                count: tournamentSummary.total_matches,
-                                badgeColor: 'bg-orange-100 text-orange-800',
-                            },
-                            {
-                                id: 'referees',
-                                label: 'Wasit & Juri',
-                                icon: 'fa-scale-balanced',
-                                count: counts.referees,
-                                badgeColor: 'bg-rose-100 text-rose-800',
-                            },
-                            {
-                                id: 'arbitration',
-                                label: 'Arbitrase',
-                                icon: 'fa-gavel',
-                                count: eventArbitrators.length || counts.arbitrators || counts.arbitration || 0,
-                                badgeColor: 'bg-amber-100 text-amber-800',
-                            },
-                            {
-                                id: 'clerks',
-                                label: 'Panitera',
-                                icon: 'fa-clipboard-list',
-                                count: counts.clerks,
-                                badgeColor: 'bg-cyan-100 text-cyan-800',
-                            },
-                            { id: 'field_coordinators', label: 'Koordinator Lapangan', icon: 'fa-people-group', count: counts.field_coordinators, badgeColor: 'bg-lime-100 text-lime-800' },
                             {
                                 id: 'info',
                                 label: 'Informasi Event',
@@ -1488,1977 +633,166 @@ export default function EventDetail({
                                 label: 'Biaya Kontingen',
                                 icon: 'fa-money-bill-wave',
                             },
+                            { id: 'participant_rules', label: 'Persyaratan Peserta', icon: 'fa-user-shield' },
+                            {
+                                id: 'age_categories',
+                                label: 'Kelompok Umur',
+                                icon: 'fa-users-line',
+                                count: counts.age_categories,
+                            },
+                            {
+                                id: 'matches',
+                                label: 'Nomer Pertandingan',
+                                icon: 'fa-award',
+                                count: counts.match_categories,
+                            },
+                            {
+                                id: 'courts',
+                                label: 'Lapangan (Court)',
+                                icon: 'fa-vector-square',
+                                count: counts.courts,
+                            },
+                            {
+                                id: 'rundown',
+                                label: 'Sesi Acara & Rundown',
+                                icon: 'fa-clock-rotate-left',
+                                count: counts.rundowns,
+                            },
+                            {
+                                id: 'tournament',
+                                label: 'Pertandingan & Drawing',
+                                icon: 'fa-diagram-project',
+                                count: tournamentSummary.total_matches,
+                            },
+                            {
+                                id: 'referees',
+                                label: 'Wasit & Juri',
+                                icon: 'fa-scale-balanced',
+                                count: counts.referees || eventReferees.length,
+                            },
+                            {
+                                id: 'arbitration',
+                                label: 'Dewan Arbitrase',
+                                icon: 'fa-gavel',
+                                count: eventArbitrators.length || counts.arbitrators || counts.arbitration || 0,
+                            },
+                            {
+                                id: 'officials_roster',
+                                label: 'Roster & Presensi Petugas',
+                                icon: 'fa-clipboard-user',
+                                count: (counts.referees || 0) + (counts.arbitrators || 0) + (counts.clerks || 0) + (counts.field_coordinators || 0),
+                            },
+                            {
+                                id: 'clerks',
+                                label: 'Panitera',
+                                icon: 'fa-clipboard-list',
+                                count: counts.clerks || eventClerks.length,
+                            },
+                            {
+                                id: 'field_coordinators',
+                                label: 'Koordinator Lapangan',
+                                icon: 'fa-people-group',
+                                count: counts.field_coordinators || eventFieldCoordinators.length,
+                            },
                             {
                                 id: 'sync',
                                 label: 'Ekspor & Impor (Sync Offline)',
                                 icon: 'fa-cloud-arrow-up',
-                                badgeColor: 'bg-emerald-100 text-emerald-800',
                             },
                         ].map((tab) => {
                             const isActive = activeTab === tab.id;
                             return (
-                                <Button variant="unstyled" size="none"
+                                <button
                                     key={tab.id}
                                     type="button"
                                     onClick={() => handleTabChange(tab.id)}
-                                    className={`flex shrink-0 items-center gap-2 px-3.5 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                                    className={`flex shrink-0 items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                                         isActive
-                                            ? 'bg-[#141210] text-amber-400 shadow-sm'
-                                            : 'text-[#504840] hover:bg-[#f6f4ef] hover:text-[#141210]'
+                                            ? 'bg-[#c0392b] text-white shadow-2xs'
+                                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-semibold'
                                     }`}
                                 >
-                                    <i className={`fa-solid ${tab.icon} text-xs ${isActive ? 'text-amber-400' : 'text-[#8a7f72]'}`}></i>
+                                    <i className={`fa-solid ${tab.icon} text-xs ${isActive ? 'text-white' : 'text-slate-400 dark:text-slate-500'}`} />
                                     <span>{tab.label}</span>
                                     {tab.count !== undefined && (
                                         <span
-                                            className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
                                                 isActive
-                                                    ? 'bg-amber-400/20 text-amber-300'
-                                                    : tab.badgeColor || 'bg-gray-100 text-gray-700'
+                                                    ? 'bg-white/20 text-white'
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                             }`}
                                         >
                                             {tab.count}
                                         </span>
                                     )}
-                                </Button>
+                                </button>
                             );
                         })}
                     </div>
 
                     {canScrollLeft && (
-                        <Button variant="unstyled" size="none"
+                        <button
                             type="button"
                             onClick={() => scrollTabs('left')}
-                            className="absolute left-2 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full border border-[#e5e0d8] bg-white text-[#504840] shadow-md transition-colors hover:bg-[#f6f4ef] focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            className="absolute left-2 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-full border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                             aria-label="Geser tab ke kiri"
                         >
-                            <i className="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
-                        </Button>
+                            <i className="fa-solid fa-chevron-left text-xs" aria-hidden="true" />
+                        </button>
                     )}
 
                     {canScrollRight && (
-                        <Button variant="unstyled" size="none"
+                        <button
                             type="button"
                             onClick={() => scrollTabs('right')}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full border border-[#e5e0d8] bg-white text-[#504840] shadow-md transition-colors hover:bg-[#f6f4ef] focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-full border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                             aria-label="Geser tab ke kanan"
                         >
-                            <i className="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
-                        </Button>
+                            <i className="fa-solid fa-chevron-right text-xs" aria-hidden="true" />
+                        </button>
                     )}
-                </div>
+                </div> */}
 
-                {/* ════ TAB 1: KELOMPOK UMUR & HARGA (DASHBOARD STYLE) ════ */}
-                {activeTab === 'participant_rules' && <ParticipantRulesForm key={event.id} event={event} />}
+                {/* ════ TAB CONTENT ROUTER ════ */}
                 {activeTab === 'age_categories' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        {/* Table Header / Toolbar */}
-                        <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                        Kelompok Umur & Tarif
-                                    </h3>
-                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c0392b]/10 text-[#c0392b] dark:bg-[#c0392b]/20 dark:text-[#f0c060] border border-[#c0392b]/20">
-                                        {ageCategories.length} Total
-                                    </span>
-                                </div>
-                                <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                    Daftar kelompok usia kenshi beserta tarif pendaftaran masing-masing kategori
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                {/* Search Input Bar */}
-                                <Input type="search" size="sm" value={ageSearch} onChange={(event) => {
-                                    setAgeSearch(event.target.value);
-                                    setAgePage(1);
-                                }} placeholder="Cari kelompok umur..." iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
-                                    clearable onClear={() => { setAgeSearch(''); setAgePage(1); }} containerClassName="w-56 sm:w-64" />
-
-                                <Button variant="unstyled" size="none"
-                                    type="button"
-                                    onClick={openCreateAgeModal}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                    title="Tambah Kelompok Umur Baru"
-                                >
-                                    <i className="fa-solid fa-plus text-xs"></i>
-                                    <span>Tambah Kelompok Umur</span>
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Table Content */}
-                        <TableContainer ariaLabel="Tabel data">
-                            <table className="responsive-data-table whitespace-nowrap w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#f7f4ef] dark:bg-slate-800/70 border-y border-[#ede9e1] dark:border-slate-800 text-[10px] uppercase font-semibold text-[#8c827a] dark:text-slate-400 tracking-wider whitespace-nowrap">
-                                        <th scope="col" className="py-3 px-4 text-center w-14">#</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[220px]">Kelompok Umur</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[140px]">Rentang Usia</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[150px]">Tarif Pendaftaran</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[220px]">Keterangan / Kelahiran</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-32">Nomer Tanding</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-28">Status</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-24">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#ede9e1]/80 dark:divide-slate-800/80 text-xs">
-                                    {paginatedAgeCategories.length > 0 ? (
-                                        paginatedAgeCategories.map((cat, idx) => (
-                                            <tr
-                                                key={cat.id}
-                                                className="hover:bg-[#fcfbf9] dark:hover:bg-slate-800/40 transition-colors group"
-                                            >
-                                                {/* Row Index */}
-                                                <td className="py-3.5 px-4 text-center text-[#888] dark:text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                                                    {(agePage - 1) * itemsPerPage + idx + 1}
-                                                </td>
-
-                                                {/* Kelompok Umur with Initials Avatar Badge */}
-                                                <td className="py-3.5 px-4 font-medium text-[#0f0d0b] dark:text-white">
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="w-8 h-8 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform"
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, #c0392b, #d4a843)',
-                                                            }}
-                                                        >
-                                                            {(cat.name || 'KU').substring(0, 2).toUpperCase()}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p
-                                                                onClick={() => openEditAgeModal(cat)}
-                                                                className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#c0392b] dark:group-hover:text-[#f0c060] transition-colors cursor-pointer truncate"
-                                                            >
-                                                                {cat.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-[#8c827a] dark:text-slate-400 font-mono mt-0.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-hashtag text-[8px] opacity-70"></i>
-                                                                <span>Urutan #{cat.order}</span>
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Rentang Usia */}
-                                                <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <i className="fa-regular fa-calendar-check text-[11px] text-[#c0392b]/70 shrink-0"></i>
-                                                        <span>{cat.age_range}</span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Tarif Pendaftaran (Bold Mono like Dashboard Total Tagihan) */}
-                                                <td className="py-3.5 px-4 font-mono font-bold text-[#0f0d0b] dark:text-white whitespace-nowrap text-sm">
-                                                    {cat.fee_formatted}
-                                                </td>
-
-                                                {/* Keterangan */}
-                                                <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 text-xs">
-                                                    <span className="truncate block max-w-xs">{cat.description || '-'}</span>
-                                                </td>
-
-                                                {/* Nomer Tanding Count */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800">
-                                                        <i className="fa-solid fa-award text-[10px] text-amber-600"></i>
-                                                        {cat.match_categories_count} Nomor
-                                                    </span>
-                                                </td>
-
-                                                {/* Status */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    {cat.is_active ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                            Aktif
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                                            Nonaktif
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Action Buttons */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => openEditAgeModal(cat)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#c0392b] hover:text-white hover:border-[#c0392b] dark:hover:bg-[#c0392b] transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Edit Kelompok Umur"
-                                                        >
-                                                            <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                        </Button>
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => setDeletingAgeCategory(cat)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Hapus Kelompok Umur"
-                                                        >
-                                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={8} className="py-12 text-center text-[#b5afa6] italic text-xs">
-                                                <i className="fa-solid fa-users-line text-3xl mb-2 block opacity-40"></i>
-                                                Belum ada data kelompok umur yang sesuai.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table></TableContainer>
-
-                        {/* Table Footer with Pagination Controls */}
-                        {filteredAgeCategories.length > 0 && (
-                            <Pagination
-                                currentPage={agePage}
-                                totalPages={Math.ceil(filteredAgeCategories.length / itemsPerPage) || 1}
-                                total={filteredAgeCategories.length}
-                                from={(agePage - 1) * itemsPerPage + 1}
-                                to={Math.min(agePage * itemsPerPage, filteredAgeCategories.length)}
-                                onPageChange={(p) => setAgePage(p)}
-                                label="kelompok umur"
-                                variant="footer"
-                            />
-                        )}
-                    </div>
+                    <AgeCategoriesTab event={event} ageCategories={ageCategories} />
                 )}
 
-                {/* ════ TAB 2: LAPANGAN (COURT / TATAMI) (DASHBOARD STYLE) ════ */}
+                {activeTab === 'participant_rules' && (
+                    <ParticipantRulesForm key={event.id} event={event} />
+                )}
+
                 {activeTab === 'courts' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        {/* Table Header / Toolbar */}
-                        <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                        Lapangan & Tatami
-                                    </h3>
-                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c0392b]/10 text-[#c0392b] dark:bg-[#c0392b]/20 dark:text-[#f0c060] border border-[#c0392b]/20">
-                                        {courts.length} Total
-                                    </span>
-                                </div>
-                                <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                    Daftar gelanggang pertandingan yang digunakan untuk jadwal partai dan penugasan wasit
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                {/* Search Input Bar */}
-                                <Input type="search" size="sm" value={courtSearch} onChange={(event) => {
-                                    setCourtSearch(event.target.value);
-                                    setCourtPage(1);
-                                }} placeholder="Cari lapangan, tatami..." iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
-                                    clearable onClear={() => { setCourtSearch(''); setCourtPage(1); }} containerClassName="w-56 sm:w-64" />
-
-                                <Button variant="unstyled" size="none"
-                                    type="button"
-                                    onClick={openCreateCourtModal}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                    title="Tambah Lapangan Baru"
-                                >
-                                    <i className="fa-solid fa-plus text-xs"></i>
-                                    <span>Tambah Lapangan (Court)</span>
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Table Content */}
-                        <TableContainer ariaLabel="Tabel data">
-                            <table className="responsive-data-table whitespace-nowrap w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#f7f4ef] dark:bg-slate-800/70 border-y border-[#ede9e1] dark:border-slate-800 text-[10px] uppercase font-semibold text-[#8c827a] dark:text-slate-400 tracking-wider whitespace-nowrap">
-                                        <th scope="col" className="py-3 px-4 text-center w-14">#</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[220px]">Nama Lapangan</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[200px]">Lokasi / Gelanggang</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[220px]">Keterangan</th>
-                                        <th scope="col" className="py-3 px-4 text-center min-w-[150px]">Token Panitera</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-24">Urutan</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-28">Status</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-24">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#ede9e1]/80 dark:divide-slate-800/80 text-xs">
-                                    {paginatedCourts.length > 0 ? (
-                                        paginatedCourts.map((court, idx) => (
-                                            <tr
-                                                key={court.id}
-                                                className="hover:bg-[#fcfbf9] dark:hover:bg-slate-800/40 transition-colors group"
-                                            >
-                                                {/* Index */}
-                                                <td className="py-3.5 px-4 text-center text-[#888] dark:text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                                                    {(courtPage - 1) * itemsPerPage + idx + 1}
-                                                </td>
-
-                                                {/* Court Name with Avatar Badge */}
-                                                <td className="py-3.5 px-4 font-medium text-[#0f0d0b] dark:text-white">
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="w-8 h-8 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform"
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, #c0392b, #d4a843)',
-                                                            }}
-                                                        >
-                                                            {court.name.replace(/[^0-9A-Za-z]/g, '').substring(0, 2).toUpperCase() || 'CT'}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p
-                                                                onClick={() => openEditCourtModal(court)}
-                                                                className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#c0392b] dark:group-hover:text-[#f0c060] transition-colors cursor-pointer truncate"
-                                                            >
-                                                                {court.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-[#8c827a] dark:text-slate-400 font-mono mt-0.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-hashtag text-[8px] opacity-70"></i>
-                                                                <span>Urutan #{court.order}</span>
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Location with Pin */}
-                                                <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <i className="fa-solid fa-location-dot text-[11px] text-[#c0392b]/70 shrink-0"></i>
-                                                        <span className="truncate">{court.location || '-'}</span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Description */}
-                                                <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 text-xs">
-                                                    <span className="truncate block max-w-xs">{court.description || '-'}</span>
-                                                </td>
-
-                                                {/* Token Panitera */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    {court.access_code ? (
-                                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 font-mono text-xs">
-                                                            <span className="font-bold tracking-wider text-amber-900 dark:text-amber-200">{court.access_code}</span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleCopyCourtToken(court)}
-                                                                className="text-amber-700 hover:text-amber-950 dark:text-amber-400 dark:hover:text-amber-100 p-0.5 rounded cursor-pointer transition-colors"
-                                                                title="Salin Token Panitera (6 Digit)"
-                                                            >
-                                                                <i className={`fa-solid ${copiedCourtTokenId === court.id ? 'fa-check text-emerald-600' : 'fa-copy'} text-[11px]`} />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRegenerateCourtToken(court)}
-                                                                className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 p-0.5 rounded cursor-pointer transition-colors"
-                                                                title="Buat Ulang Token Baru"
-                                                            >
-                                                                <i className="fa-solid fa-arrows-rotate text-[10px]" />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <Button
-                                                            type="button"
-                                                            size="xs"
-                                                            variant="outline"
-                                                            onClick={() => handleRegenerateCourtToken(court)}
-                                                            className="text-[11px] border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200"
-                                                        >
-                                                            <i className="fa-solid fa-key mr-1 text-[10px]" />
-                                                            Buat Token
-                                                        </Button>
-                                                    )}
-                                                </td>
-
-                                                {/* Order */}
-                                                <td className="py-3.5 px-4 text-center font-mono text-[#8c827a] text-xs whitespace-nowrap">
-                                                    #{court.order}
-                                                </td>
-
-                                                {/* Status */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    {court.is_active ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                            Aktif
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                                            Nonaktif
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Action Buttons */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => openEditCourtModal(court)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#c0392b] hover:text-white hover:border-[#c0392b] dark:hover:bg-[#c0392b] transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Edit Lapangan"
-                                                        >
-                                                            <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                        </Button>
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => setDeletingCourt(court)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Hapus Lapangan"
-                                                        >
-                                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={7} className="py-12 text-center text-[#b5afa6] italic text-xs">
-                                                <i className="fa-solid fa-square-vector text-3xl mb-2 block opacity-40"></i>
-                                                Belum ada data lapangan / tatami yang sesuai.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table></TableContainer>
-
-                        {/* Table Footer with Pagination Controls */}
-                        {filteredCourts.length > 0 && (
-                            <Pagination
-                                currentPage={courtPage}
-                                totalPages={Math.ceil(filteredCourts.length / itemsPerPage) || 1}
-                                total={filteredCourts.length}
-                                from={(courtPage - 1) * itemsPerPage + 1}
-                                to={Math.min(courtPage * itemsPerPage, filteredCourts.length)}
-                                onPageChange={(p) => setCourtPage(p)}
-                                label="lapangan"
-                                variant="footer"
-                            />
-                        )}
-                    </div>
+                    <CourtsTab event={event} courts={courts} />
                 )}
 
-                {/* ════ TAB 3: NOMER PERTANDINGAN (DASHBOARD STYLE) ════ */}
                 {activeTab === 'matches' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        {/* Table Header / Toolbar */}
-                        <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                        Nomer Pertandingan
-                                    </h3>
-                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c0392b]/10 text-[#c0392b] dark:bg-[#c0392b]/20 dark:text-[#f0c060] border border-[#c0392b]/20">
-                                        {matchCategories.length} Total
-                                    </span>
-                                </div>
-                                <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                    Konfigurasi nomor tanding dengan relasi kelompok umur, kuota peserta, gender, dan tipe pertandingan
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                <Button variant="unstyled" size="none"
-                                    type="button"
-                                    onClick={openCreateMatchModal}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                    title="Tambah Nomer Pertandingan"
-                                >
-                                    <i className="fa-solid fa-plus text-xs"></i>
-                                    <span>Tambah Nomer Pertandingan</span>
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Search & Filters Bar (Dashboard Input Style) */}
-                        <div className="p-4 px-5 md:px-6 bg-[#fcfbf9] border-y border-[#ede9e1] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                            <Input type="search" size="sm" value={matchSearch} onChange={(event) => {
-                                setMatchSearch(event.target.value);
-                                setMatchPage(1);
-                            }} placeholder="Cari nomor pertandingan..." iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />} />
-                            <div>
-                                <Combobox
-                                    size="sm"
-                                    value={matchAgeFilter}
-                                    onChange={(val) => {
-                                        setMatchAgeFilter(val || 'all');
-                                        setMatchPage(1);
-                                    }}
-                                    options={[
-                                        { value: 'all', label: 'Semua Kelompok Umur' },
-                                        ...ageCategoryOptions,
-                                    ]}
-                                    clearable={false}
-                                    searchPlaceholder="Filter kelompok umur..."
-                                />
-                            </div>
-                            <div>
-                                <Combobox
-                                    size="sm"
-                                    value={matchTypeFilter}
-                                    onChange={(val) => {
-                                        setMatchTypeFilter(val || 'all');
-                                        setMatchPage(1);
-                                    }}
-                                    options={[
-                                        { value: 'all', label: 'Semua Tipe (Embu & Randori)' },
-                                        { value: 'embu', label: 'Hanya Embu' },
-                                        { value: 'randori', label: 'Hanya Randori' },
-                                    ]}
-                                    clearable={false}
-                                    searchPlaceholder="Filter tipe..."
-                                />
-                            </div>
-                            <div>
-                                <Combobox
-                                    size="sm"
-                                    value={matchGenderFilter}
-                                    onChange={(val) => {
-                                        setMatchGenderFilter(val || 'all');
-                                        setMatchPage(1);
-                                    }}
-                                    options={[
-                                        { value: 'all', label: 'Semua Gender' },
-                                        { value: 'male', label: 'Putra' },
-                                        { value: 'female', label: 'Putri' },
-                                        { value: 'mixed', label: 'Campuran' },
-                                    ]}
-                                    clearable={false}
-                                    searchPlaceholder="Filter gender..."
-                                />
-                            </div>
-                            <div>
-                                <Combobox
-                                    size="sm"
-                                    value={matchExhibitionFilter}
-                                    onChange={(val) => {
-                                        setMatchExhibitionFilter(val || 'all');
-                                        setMatchPage(1);
-                                    }}
-                                    options={[
-                                        { value: 'all', label: 'Semua Klasifikasi' },
-                                        { value: 'official', label: 'Dipertandingkan (Resmi)' },
-                                        { value: 'exhibition', label: 'Ekshibisi' },
-                                    ]}
-                                    clearable={false}
-                                    searchPlaceholder="Filter status klasifikasi..."
-                                />
-                            </div>
-                        </div>
-
-                        {/* Table Content */}
-                        <TableContainer ariaLabel="Tabel data">
-                            <table className="responsive-data-table whitespace-nowrap w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#f7f4ef] dark:bg-slate-800/70 border-b border-[#ede9e1] dark:border-slate-800 text-[10px] uppercase font-semibold text-[#8c827a] dark:text-slate-400 tracking-wider whitespace-nowrap">
-                                        <th scope="col" className="py-3 px-4 text-center w-14">#</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[240px]">Nomer Pertandingan</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[140px]">Kelompok Umur</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[110px]">Tipe</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[110px]">Gender</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-28">Kuota Bagan</th>
-                                        <th scope="col" className="py-3 px-4 text-center min-w-[120px]">Maks. Atlet / Tim</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[180px]">Ket. Khusus / Berat</th>
-                                        <th scope="col" className="py-3 px-4 text-center min-w-[150px]">Klasifikasi / Ekshibisi</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-28">Status</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-24">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#ede9e1]/80 dark:divide-slate-800/80 text-xs">
-                                    {paginatedMatches.length > 0 ? (
-                                        paginatedMatches.map((mc, idx) => (
-                                            <tr
-                                                key={mc.id}
-                                                className="hover:bg-[#fcfbf9] dark:hover:bg-slate-800/40 transition-colors group"
-                                            >
-                                                {/* Index */}
-                                                <td className="py-3.5 px-4 text-center text-[#888] dark:text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                                                    {(matchPage - 1) * itemsPerPage + idx + 1}
-                                                </td>
-
-                                                {/* Match Name with Avatar */}
-                                                <td className="py-3.5 px-4 font-medium text-[#0f0d0b] dark:text-white">
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="w-8 h-8 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform"
-                                                            style={{
-                                                                background: mc.type === 'embu'
-                                                                    ? 'linear-gradient(135deg, #4f46e5, #d4a843)'
-                                                                    : 'linear-gradient(135deg, #c0392b, #b91c1c)',
-                                                            }}
-                                                        >
-                                                            {mc.type === 'embu' ? 'EM' : 'RD'}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p
-                                                                onClick={() => openEditMatchModal(mc)}
-                                                                className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#c0392b] dark:group-hover:text-[#f0c060] transition-colors cursor-pointer truncate"
-                                                            >
-                                                                {mc.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-[#8c827a] dark:text-slate-400 font-mono mt-0.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-hashtag text-[8px] opacity-70"></i>
-                                                                <span>Urutan #{mc.order}</span>
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Kelompok Umur */}
-                                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#f7f4ef] text-[#0f0d0b] text-xs font-semibold border border-[#ede9e1]">
-                                                        {mc.age_category_name}
-                                                    </span>
-                                                </td>
-
-                                                {/* Tipe */}
-                                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                                    {mc.type === 'embu' ? (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                                                            <i className="fa-solid fa-yin-yang text-[9px]"></i>
-                                                            Embu
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200">
-                                                            <i className="fa-solid fa-hand-fist text-[9px]"></i>
-                                                            Randori
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Gender */}
-                                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                                    {mc.gender === 'male' && (
-                                                        <span className="text-xs font-semibold text-blue-700 flex items-center gap-1">
-                                                            <i className="fa-solid fa-mars"></i> Putra
-                                                        </span>
-                                                    )}
-                                                    {mc.gender === 'female' && (
-                                                        <span className="text-xs font-semibold text-rose-700 flex items-center gap-1">
-                                                            <i className="fa-solid fa-venus"></i> Putri
-                                                        </span>
-                                                    )}
-                                                    {mc.gender === 'mixed' && (
-                                                        <span className="text-xs font-semibold text-purple-700 flex items-center gap-1">
-                                                            <i className="fa-solid fa-venus-mars"></i> Campuran
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Kuota Bagan */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap font-mono font-bold text-[#0f0d0b]">
-                                                    <span className="px-2 py-0.5 rounded-lg bg-[#f7f4ef] border border-[#ede9e1] text-xs">
-                                                        {mc.capacity} Peserta
-                                                    </span>
-                                                </td>
-
-                                                {/* Maksimum Atlet per Tim */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap font-mono font-bold text-[#0f0d0b]">
-                                                    <span className="px-2 py-0.5 rounded-lg bg-[#f7f4ef] border border-[#ede9e1] text-xs">
-                                                        {mc.max_athletes_per_team} Atlet
-                                                    </span>
-                                                </td>
-
-                                                {/* Keterangan Khusus / Berat / Kyu */}
-                                                <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                                                    {mc.type === 'randori' ? (
-                                                        <span className="font-mono font-medium text-slate-800">
-                                                            Berat: {mc.weight_range}
-                                                        </span>
-                                                    ) : (
-                                                        <span>
-                                                            {mc.min_kyu || mc.max_kyu ? `${mc.min_kyu || ''} - ${mc.max_kyu || ''}` : '-'}
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Klasifikasi / Ekshibisi */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleMatchExhibition(mc)}
-                                                        title={mc.is_exhibition ? 'Nomor Ekshibisi (Klik untuk ubah jadi Dipertandingkan Resmi)' : 'Nomor Dipertandingkan Resmi (Klik untuk ubah jadi Ekshibisi)'}
-                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer hover:scale-105 shadow-xs ${
-                                                            mc.is_exhibition
-                                                                ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700'
-                                                                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-700'
-                                                        }`}
-                                                    >
-                                                        <span
-                                                            className={`w-2 h-2 rounded-full ${
-                                                                mc.is_exhibition ? 'bg-amber-500' : 'bg-emerald-500'
-                                                            }`}
-                                                        />
-                                                        <span>{mc.is_exhibition ? 'Ekshibisi' : 'Dipertandingkan'}</span>
-                                                        <i className="fa-solid fa-repeat text-[9px] opacity-70 ml-0.5" aria-hidden="true"></i>
-                                                    </button>
-                                                </td>
-
-                                                {/* Status */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    {mc.is_active ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                            Aktif
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                                            Nonaktif
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Actions */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => openEditMatchModal(mc)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#c0392b] hover:text-white hover:border-[#c0392b] dark:hover:bg-[#c0392b] transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Edit Nomer Pertandingan"
-                                                        >
-                                                            <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                        </Button>
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => setDeletingMatchCategory(mc)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Hapus Nomer Pertandingan"
-                                                        >
-                                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={11} className="py-12 text-center text-[#b5afa6] italic text-xs">
-                                                <i className="fa-solid fa-award text-3xl mb-2 block opacity-40"></i>
-                                                Tidak ada nomer pertandingan yang sesuai dengan filter pencarian.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table></TableContainer>
-
-                        {/* Table Footer with Pagination */}
-                        {filteredMatches.length > 0 && (
-                            <Pagination
-                                currentPage={matchPage}
-                                totalPages={Math.ceil(filteredMatches.length / itemsPerPage) || 1}
-                                total={filteredMatches.length}
-                                from={(matchPage - 1) * itemsPerPage + 1}
-                                to={Math.min(matchPage * itemsPerPage, filteredMatches.length)}
-                                onPageChange={(p) => setMatchPage(p)}
-                                label="nomer pertandingan"
-                                variant="footer"
-                            />
-                        )}
-                    </div>
+                    <MatchesTab
+                        event={event}
+                        matchCategories={matchCategories}
+                        ageCategories={ageCategories}
+                        kyus={kyus}
+                        weightClasses={weightClasses}
+                    />
                 )}
 
                 {activeTab === 'tournament' && (
-                    <div className="space-y-5">
-                        <section className="rounded-2xl border border-[#ede9e1] bg-white p-5 shadow-xs md:p-6">
-                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-[.14em] text-[#a47420]">Alur pertandingan event</p>
-                                    <h3 className="mt-1 font-cinzel text-lg font-bold text-[#17120f]">Pengaturan Drawing & Penjadwalan</h3>
-                                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[#8c827a]">Nilai ini dipakai saat precheck, pembentukan pool/bracket, dan penempatan partai pada sesi pertandingan event ini.</p>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Link href={`/admin/pertandingan/merge?event_id=${event.id}`} className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"><i className="fa-solid fa-object-group mr-1.5" />Merge Nomor</Link>
-                                    <Link href={`/admin/pertandingan/drawing?event_id=${event.id}`} className="rounded-xl bg-[#17120f] px-3.5 py-2 text-xs font-bold text-[#f0c060] hover:bg-black"><i className="fa-solid fa-wand-magic-sparkles mr-1.5" />Buka Drawing</Link>
-                                </div>
-                            </div>
-
-                            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                {[
-                                    ['Status alur', tournamentSummary.status === 'completed' ? 'Selesai' : tournamentSummary.status === 'in_progress' ? 'Berlangsung' : tournamentSummary.status === 'published' ? 'Dipublikasikan' : tournamentSummary.status === 'generated' ? 'Sudah dibuat' : 'Draft', 'fa-flag'],
-                                    ['Kategori dibuat', tournamentSummary.generated_categories, 'fa-diagram-project'],
-                                    ['Perlu merge', tournamentSummary.skipped_categories, 'fa-object-group'],
-                                    ['Node / sesi tanding', `${tournamentSummary.total_matches} / ${tournamentSummary.match_sessions}`, 'fa-calendar-check'],
-                                ].map(([label, value, icon]) => <div key={label} className="rounded-xl border border-[#eee8e0] bg-[#faf8f4] p-4"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#746b63]">{label}</p><i className={`fa-solid ${icon} text-[#c0392b]`} /></div><p className="mt-2 text-xl font-bold text-[#17120f]">{value}</p></div>)}
-                            </div>
-                        </section>
-
-                        <form onSubmit={submitTournamentSettings} className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs">
-                            <div className="flex flex-col gap-3 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between md:px-6">
-                                <div><h3 className="font-cinzel text-base font-bold uppercase text-[#17120f]">Aturan Generate Pertandingan</h3><p className="mt-1 text-xs text-[#8c827a]">Berlaku hanya untuk event ini dan dapat diubah sebelum drawing dipublikasikan.</p></div>
-                                <Button variant="unstyled" size="none" type="submit" disabled={tournamentForm.processing} className="rounded-xl bg-gradient-to-r from-[#c0392b] to-[#96281b] px-4 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-50"><i className={`fa-solid ${tournamentForm.processing ? 'fa-spinner animate-spin' : 'fa-check'} mr-1.5`} />{tournamentForm.processing ? 'Menyimpan...' : 'Simpan Pengaturan'}</Button>
-                            </div>
-                            <div className="grid gap-4 p-5 md:grid-cols-2 md:p-6 xl:grid-cols-4">
-                                <Input label="Durasi Satu Partai (menit)" type="number" min="1" required value={tournamentForm.data.match_duration_minutes} onChange={(e) => tournamentForm.setData('match_duration_minutes', e.target.value)} error={tournamentForm.errors.match_duration_minutes} />
-                                <Input label="Jeda Minimal Atlet (menit)" type="number" min="0" required value={tournamentForm.data.minimum_rest_minutes} onChange={(e) => tournamentForm.setData('minimum_rest_minutes', e.target.value)} error={tournamentForm.errors.minimum_rest_minutes} />
-                                <Input label="Minimal Peserta / Tim" type="number" min="1" required value={tournamentForm.data.minimum_entries_per_category} onChange={(e) => tournamentForm.setData('minimum_entries_per_category', e.target.value)} error={tournamentForm.errors.minimum_entries_per_category} />
-                                <Input label="Minimal Kontingen" type="number" min="1" required value={tournamentForm.data.minimum_contingents_per_category} onChange={(e) => tournamentForm.setData('minimum_contingents_per_category', e.target.value)} error={tournamentForm.errors.minimum_contingents_per_category} />
-                            </div>
-                            <div className="border-t border-[#ede9e1] p-5 md:p-6 bg-white">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[#ede9e1] bg-[#faf8f4] p-4">
-                                    <div className="flex items-start gap-3">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700">
-                                            <i className="fa-solid fa-bullhorn text-lg" aria-hidden="true" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-[#17120f]">Suara Pemanggilan Panitera (Google TTS / PA System)</p>
-                                            <p className="mt-0.5 text-xs text-[#7a746e]">
-                                                Aktifkan atau nonaktifkan pengumuman audio otomatis (nada bel dan suara Google Bahasa Indonesia) saat Panitera memanggil ofisial dan peserta.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 shrink-0">
-                                        <span className={`text-xs font-bold ${tournamentForm.data.tts_announcer_enabled ? 'text-emerald-700' : 'text-[#7a746e]'}`}>
-                                            {tournamentForm.data.tts_announcer_enabled ? 'Suara Aktif' : 'Suara Nonaktif'}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => tournamentForm.setData('tts_announcer_enabled', !tournamentForm.data.tts_announcer_enabled)}
-                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${tournamentForm.data.tts_announcer_enabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
-                                            role="switch"
-                                            aria-checked={Boolean(tournamentForm.data.tts_announcer_enabled)}
-                                        >
-                                            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tournamentForm.data.tts_announcer_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Konfigurasi Penentuan Juara Umum */}
-                            <div className="border-t border-[#ede9e1] p-5 md:p-6 bg-white space-y-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                    <div className="flex items-start gap-3">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700">
-                                            <i className="fa-solid fa-trophy text-lg" aria-hidden="true" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-[#17120f]">Konfigurasi Penentuan Juara Umum</p>
-                                            <p className="mt-0.5 text-xs text-[#7a746e]">
-                                                Dapat diubah kapan saja. Rekap Medali dan Klasemen Juara Umum langsung menyesuaikan secara realtime.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className="inline-flex self-start sm:self-auto items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-800">
-                                        <i className="fa-solid fa-bolt text-blue-600" />
-                                        Realtime Update
-                                    </span>
-                                </div>
-
-                                <div className="grid gap-4 md:grid-cols-2 pt-2">
-                                    <label
-                                        onClick={() => tournamentForm.setData('champion_ranking_system', 'medals')}
-                                        className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-all ${
-                                            tournamentForm.data.champion_ranking_system === 'medals'
-                                                ? 'border-[#d4a843] bg-amber-50/40 ring-1 ring-[#d4a843]'
-                                                : 'border-[#ede9e1] hover:bg-[#faf8f4]'
-                                        }`}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="champion_ranking_system"
-                                            value="medals"
-                                            checked={tournamentForm.data.champion_ranking_system === 'medals'}
-                                            onChange={() => tournamentForm.setData('champion_ranking_system', 'medals')}
-                                            className="mt-1 text-[#d4a843] focus:ring-[#d4a843]"
-                                        />
-                                        <div>
-                                            <p className="text-xs font-bold text-[#17120f]">Standar Medali Perkemi / Olimpiade</p>
-                                            <p className="mt-1 text-[11px] leading-relaxed text-[#7a746e]">
-                                                Prioritas utama Emas terbanyak. Jika jumlah sama, dihitung Perak terbanyak, lalu Perunggu terbanyak.
-                                            </p>
-                                        </div>
-                                    </label>
-
-                                    <label
-                                        onClick={() => tournamentForm.setData('champion_ranking_system', 'points')}
-                                        className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-all ${
-                                            tournamentForm.data.champion_ranking_system === 'points'
-                                                ? 'border-[#d4a843] bg-amber-50/40 ring-1 ring-[#d4a843]'
-                                                : 'border-[#ede9e1] hover:bg-[#faf8f4]'
-                                        }`}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="champion_ranking_system"
-                                            value="points"
-                                            checked={tournamentForm.data.champion_ranking_system === 'points'}
-                                            onChange={() => tournamentForm.setData('champion_ranking_system', 'points')}
-                                            className="mt-1 text-[#d4a843] focus:ring-[#d4a843]"
-                                        />
-                                        <div>
-                                            <p className="text-xs font-bold text-[#17120f]">Sistem Poin Berbobot (Weighted Medal Points)</p>
-                                            <p className="mt-1 text-[11px] leading-relaxed text-[#7a746e]">
-                                                Setiap medali memiliki bobot poin kustom. Kontingen dengan total poin akumulasi tertinggi menjadi Juara Umum.
-                                            </p>
-                                        </div>
-                                    </label>
-                                </div>
-
-                                {tournamentForm.data.champion_ranking_system === 'points' && (
-                                    <div className="rounded-xl border border-amber-200 bg-[#fffdf9] p-4">
-                                        <p className="text-xs font-bold text-[#17120f] mb-3">Bobot Poin Per Medali:</p>
-                                        <div className="grid gap-3 sm:grid-cols-3">
-                                            <Input
-                                                label="Poin Medali Emas (Juara 1)"
-                                                type="number"
-                                                min="1"
-                                                max="100"
-                                                required
-                                                value={tournamentForm.data.champion_gold_points}
-                                                onChange={(e) => tournamentForm.setData('champion_gold_points', e.target.value)}
-                                                error={tournamentForm.errors.champion_gold_points}
-                                            />
-                                            <Input
-                                                label="Poin Medali Perak (Juara 2)"
-                                                type="number"
-                                                min="1"
-                                                max="100"
-                                                required
-                                                value={tournamentForm.data.champion_silver_points}
-                                                onChange={(e) => tournamentForm.setData('champion_silver_points', e.target.value)}
-                                                error={tournamentForm.errors.champion_silver_points}
-                                            />
-                                            <Input
-                                                label="Poin Medali Perunggu (Juara 3)"
-                                                type="number"
-                                                min="1"
-                                                max="100"
-                                                required
-                                                value={tournamentForm.data.champion_bronze_points}
-                                                onChange={(e) => tournamentForm.setData('champion_bronze_points', e.target.value)}
-                                                error={tournamentForm.errors.champion_bronze_points}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="grid gap-3 border-t border-[#ede9e1] bg-[#faf8f4] p-5 text-xs text-[#5f574f] md:grid-cols-4 md:px-6">
-                                {[
-                                    ['1', 'Precheck', 'Registrasi dan pembayaran terverifikasi.'],
-                                    ['2', 'Drawing', 'Antar-kontingen diselingi, Embu dibuat pool, Randori dibuat bracket.'],
-                                    ['3', 'Jadwal', 'Penyisihan lebih dulu, final setelah jeda minimal.'],
-                                    ['4', 'Publikasi', 'Bagan dikunci setelah diperiksa admin event.'],
-                                ].map(([number, title, description]) => <div key={number} className="flex gap-2.5"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#17120f] font-bold text-[#f0c060]">{number}</span><div><p className="font-bold text-[#17120f]">{title}</p><p className="mt-0.5 leading-relaxed text-[#8c827a]">{description}</p></div></div>)}
-                            </div>
-                        </form>
-                    </div>
+                    <TournamentTab event={event} tournamentSummary={tournamentSummary} />
                 )}
 
-                {/* ════ TAB 4: SESI ACARA & RUNDOWN (DASHBOARD STYLE) ════ */}
                 {activeTab === 'rundown' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        {/* Table Header / Toolbar */}
-                        <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                        Sesi Acara & Rundown
-                                    </h3>
-                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c0392b]/10 text-[#c0392b] dark:bg-[#c0392b]/20 dark:text-[#f0c060] border border-[#c0392b]/20">
-                                        {rundowns.length} Total
-                                    </span>
-                                </div>
-                                <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                    Jadwal kronologis pelaksanaan kegiatan kejuaraan dari upacara pembukaan hingga babak final
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                {/* Search Input Bar */}
-                                <Input type="search" size="sm" value={rundownSearch} onChange={(event) => {
-                                    setRundownSearch(event.target.value);
-                                    setRundownPage(1);
-                                }} placeholder="Cari sesi rundown..." iconLeft={<i className="fa-solid fa-magnifying-glass" aria-hidden="true" />}
-                                    clearable onClear={() => { setRundownSearch(''); setRundownPage(1); }} containerClassName="w-56 sm:w-64" />
-
-                                <Button variant="unstyled" size="none"
-                                    type="button"
-                                    onClick={openCreateRundownModal}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                    title="Tambah Sesi Rundown"
-                                >
-                                    <i className="fa-solid fa-plus text-xs"></i>
-                                    <span>Tambah Sesi Rundown</span>
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Table Content */}
-                        <TableContainer ariaLabel="Tabel data">
-                            <table className="responsive-data-table whitespace-nowrap w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#f7f4ef] dark:bg-slate-800/70 border-y border-[#ede9e1] dark:border-slate-800 text-[10px] uppercase font-semibold text-[#8c827a] dark:text-slate-400 tracking-wider whitespace-nowrap">
-                                        <th scope="col" className="py-3 px-4 text-center w-14">#</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[200px]">Waktu Pelaksanaan</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[240px]">Nama Sesi Acara</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[160px]">Kategori / Tipe</th>
-                                        <th scope="col" className="py-3 px-4 min-w-[240px]">Deskripsi / Lokasi</th>
-                                        <th scope="col" className="py-3 px-4 text-center w-24">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#ede9e1]/80 dark:divide-slate-800/80 text-xs">
-                                    {paginatedRundowns.length > 0 ? (
-                                        paginatedRundowns.map((rd, idx) => (
-                                            <tr
-                                                key={rd.id}
-                                                className="hover:bg-[#fcfbf9] dark:hover:bg-slate-800/40 transition-colors group"
-                                            >
-                                                {/* Index */}
-                                                <td className="py-3.5 px-4 text-center text-[#888] dark:text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                                                    {(rundownPage - 1) * itemsPerPage + idx + 1}
-                                                </td>
-
-                                                {/* Waktu */}
-                                                <td className="py-3.5 px-4 font-medium text-slate-800 whitespace-nowrap">
-                                                    <div className="flex items-center gap-2">
-                                                        <i className="fa-regular fa-clock text-[#c0392b] text-xs"></i>
-                                                        <span className="font-mono text-xs">{rd.date_formatted}{rd.end_time_only ? `–${rd.end_time_only}` : ''}</span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Nama Sesi with Avatar */}
-                                                <td className="py-3.5 px-4 font-medium text-[#0f0d0b] dark:text-white">
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="w-8 h-8 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform"
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, #c0392b, #d4a843)',
-                                                            }}
-                                                        >
-                                                            <i className="fa-solid fa-calendar-check text-xs"></i>
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p
-                                                                onClick={() => openEditRundownModal(rd)}
-                                                                className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm group-hover:text-[#c0392b] transition-colors cursor-pointer truncate"
-                                                            >
-                                                                {rd.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-[#8c827a] font-mono mt-0.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-hashtag text-[8px] opacity-70"></i>
-                                                                <span>Sesi #{rd.order}</span>
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Tipe / Kategori */}
-                                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#f7f4ef] text-[#0f0d0b] text-xs font-semibold border border-[#ede9e1]">
-                                                        {rd.type}
-                                                    </span>
-                                                    {rd.is_match_session && <span className="ml-1.5 inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">Sesi Pertandingan</span>}
-                                                </td>
-
-                                                {/* Deskripsi */}
-                                                <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 text-xs">
-                                                    <span className="truncate block max-w-xs">{rd.description || '-'}</span>
-                                                </td>
-
-                                                {/* Aksi */}
-                                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => openEditRundownModal(rd)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] bg-white text-slate-600 hover:bg-[#c0392b] hover:text-white hover:border-[#c0392b] transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Edit Sesi Rundown"
-                                                        >
-                                                            <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                        </Button>
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => setDeletingRundown(rd)}
-                                                            className="w-8 h-8 rounded-xl border border-[#ede9e1] bg-white text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-all inline-flex items-center justify-center cursor-pointer shadow-xs hover:scale-105"
-                                                            title="Hapus Sesi Rundown"
-                                                        >
-                                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={6} className="py-12 text-center text-[#b5afa6] italic text-xs">
-                                                <i className="fa-solid fa-clock-rotate-left text-3xl mb-2 block opacity-40"></i>
-                                                Belum ada data sesi rundown yang sesuai.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table></TableContainer>
-
-                        {/* Table Footer with Pagination Controls */}
-                        {filteredRundowns.length > 0 && (
-                            <Pagination
-                                currentPage={rundownPage}
-                                totalPages={Math.ceil(filteredRundowns.length / itemsPerPage) || 1}
-                                total={filteredRundowns.length}
-                                from={(rundownPage - 1) * itemsPerPage + 1}
-                                to={Math.min(rundownPage * itemsPerPage, filteredRundowns.length)}
-                                onPageChange={(p) => setRundownPage(p)}
-                                label="sesi acara"
-                                variant="footer"
-                            />
-                        )}
-                    </div>
+                    <RundownTab event={event} rundowns={rundowns} courts={courts} />
                 )}
 
-                {/* ════ TAB 5: INFORMASI EVENT (DASHBOARD STYLE) ════ */}
-                {activeTab === 'info' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        <div className="grid gap-5 border-b border-[#ede9e1] p-5 md:grid-cols-[240px_1fr] md:p-6">
-                            <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#ded8ce] bg-[#17120f]">
-                                {event.cover_image_url ? (
-                                    <img src={event.cover_image_url} alt={`Gambar utama ${event.name}`} className="h-full w-full object-cover" />
-                                ) : (
-                                    <div className="flex h-full flex-col items-center justify-center bg-[radial-gradient(circle_at_top,#4a231a_0%,#17120f_65%)] px-5 text-center text-white">
-                                        <span className="font-cinzel text-4xl font-black text-[#d4a843]/30" aria-hidden="true">拳</span>
-                                        <span className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-[#f0c060]">No Image</span>
-                                        <span className="mt-1 text-[10px] text-white/55">Gunakan JPG, PNG, atau WebP</span>
-                                    </div>
-                                )}
-                            </div>
-                            <form onSubmit={submitCoverImage} className="flex flex-col justify-center">
-                                <h3 className="font-cinzel text-base font-bold text-[#17120f] dark:text-white">Gambar Utama Event</h3>
-                                <p className="mt-1 text-xs leading-relaxed text-[#706860] dark:text-slate-400">
-                                    Opsional. Gambar digunakan pada landing event dan beranda bila event dipilih sebagai landing utama. Maksimal 5 MB.
-                                </p>
-                                <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    onChange={(e) => coverForm.setData('cover_image', e.target.files?.[0] || null)}
-                                    className="mt-4 block w-full rounded-xl border border-[#ded8ce] bg-[#faf8f5] px-3 py-2 text-xs text-[#504840] file:mr-3 file:rounded-lg file:border-0 file:bg-[#17120f] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#f0c060]"
-                                />
-                                {coverForm.errors.cover_image && <p className="mt-1.5 text-xs font-medium text-rose-600">{coverForm.errors.cover_image}</p>}
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button variant="unstyled" size="none" type="submit" disabled={!coverForm.data.cover_image || coverForm.processing}
-                                        className="inline-flex items-center gap-2 rounded-xl bg-[#c0392b] px-4 py-2 text-xs font-semibold text-white hover:bg-[#a93226] disabled:cursor-not-allowed disabled:opacity-50">
-                                        <i className="fa-solid fa-cloud-arrow-up"></i>
-                                        {coverForm.processing ? 'Mengunggah...' : 'Unggah Gambar'}
-                                    </Button>
-                                    {event.cover_image_url && (
-                                        <Button variant="unstyled" size="none" type="button" onClick={removeCoverImage}
-                                            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">
-                                            <i className="fa-solid fa-trash-can"></i>
-                                            Hapus Gambar
-                                        </Button>
-                                    )}
-                                </div>
-                            </form>
-                        </div>
-                        <form onSubmit={submitGeneral}>
-                            <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#ede9e1]">
-                                <div>
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                            Informasi Umum Kejuaraan
-                                        </h3>
-                                    </div>
-                                    <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                        Perbarui nama acara, edisi, lokasi venue, penyelenggara, dan kontak narahubung
-                                    </p>
-                                    {event.updated_at_formatted && (
-                                        <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">
-                                            Terakhir tersimpan: {event.updated_at_formatted} WIB
-                                        </p>
-                                    )}
-                                </div>
-                                <Button variant="unstyled" size="none"
-                                    type="submit"
-                                    disabled={generalForm.processing}
-                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                >
-                                    <i className="fa-solid fa-check text-xs"></i>
-                                    <span>{generalForm.processing ? 'Menyimpan...' : 'Simpan Informasi Event'}</span>
-                                </Button>
-                            </div>
-
-                            {generalSaveFeedback && (
-                                <div
-                                    role={generalSaveFeedback.type === 'error' ? 'alert' : 'status'}
-                                    className={`mx-5 mt-5 rounded-xl border px-4 py-3 text-sm font-medium md:mx-6 ${generalSaveFeedback.type === 'success'
-                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
-                                        : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200'}`}
-                                >
-                                    {generalSaveFeedback.message}
-                                </div>
-                            )}
-
-                            <div className="p-6 md:p-8 space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    <Input
-                                        label="Nama Event / Kejuaraan"
-                                        required
-                                        value={generalForm.data.name}
-                                        onChange={(e) => generalForm.setData('name', e.target.value)}
-                                        error={generalForm.errors.name}
-                                        placeholder="e.g. Kejurda Shorinji Kempo Jawa Timur"
-                                    />
-
-                                    <Input
-                                        label="Edisi Kejuaraan"
-                                        value={generalForm.data.edition}
-                                        onChange={(e) => generalForm.setData('edition', e.target.value)}
-                                        error={generalForm.errors.edition}
-                                        placeholder="e.g. Edisi Ke-XVIII 2026"
-                                    />
-
-                                    <Input
-                                        label="Maks. Nomor Pertandingan per Atlet"
-                                        type="number"
-                                        min="1"
-                                        max="20"
-                                        required
-                                        value={generalForm.data.max_match_categories_per_athlete}
-                                        onChange={(e) => generalForm.setData('max_match_categories_per_athlete', e.target.value)}
-                                        error={generalForm.errors.max_match_categories_per_athlete}
-                                        hint="Minimal 1. Contoh: 3 berarti setiap atlet dapat mengikuti maksimal 3 nomor pertandingan pada event ini."
-                                    />
-
-                                    <Checkbox id="allow-cross-age-group-embu" checked={generalForm.data.allow_cross_age_group_embu}
-                                        onChange={(event) => generalForm.setData('allow_cross_age_group_embu', event.target.checked)}
-                                        label="Izinkan Gabung Kelompok Usia Lain"
-                                        description="Atlet dapat memilih satu kelompok usia tujuan yang lebih tua untuk nomor Embu. Kelompok usia asal tetap tersimpan."
-                                        className="rounded-xl border border-[#ede9e1] bg-[#fbf9f5] p-4" />
-
-                                    <Input
-                                        label="Penyelenggara / Panitia Pelaksana"
-                                        value={generalForm.data.organizer}
-                                        onChange={(e) => generalForm.setData('organizer', e.target.value)}
-                                        error={generalForm.errors.organizer}
-                                        placeholder="e.g. Pengprov Perkemi Jawa Timur"
-                                    />
-
-                                    <div className="md:col-span-2 space-y-4">
-                                        <Input
-                                            label="Slug Akses Event (URL)"
-                                            required
-                                            value={generalForm.data.slug}
-                                            onChange={(e) => generalForm.setData('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                                            error={generalForm.errors.slug}
-                                            placeholder="e.g. kejurda-jatim-2026"
-                                            hint="Digunakan sebagai URL resmi halaman publik dan akses panel panitia event."
-                                        />
-
-                                        {/* Widget Akses Link Event */}
-                                        <div className="rounded-xl border border-[#d4a843]/30 bg-gradient-to-br from-[#faf8f5] to-[#f4eee3] dark:from-[#181614] dark:to-[#11100e] p-4">
-                                            <div className="flex items-center gap-2 mb-3 text-xs font-bold uppercase tracking-wider text-[#d4a843]">
-                                                <i className="fa-solid fa-link"></i>
-                                                <span>Tautan Akses Event Berbasis Slug</span>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {/* Public URL */}
-                                                <div className="p-3 rounded-lg bg-white dark:bg-black/20 border border-black/5 dark:border-white/5 flex flex-col justify-between gap-2">
-                                                    <div>
-                                                        <span className="text-[11px] font-bold text-[#706860] dark:text-slate-400 block">
-                                                            Halaman Publik & Pendaftaran
-                                                        </span>
-                                                        <span className="text-xs font-mono font-semibold text-[#c0392b] break-all block mt-0.5">
-                                                            {typeof window !== 'undefined' ? `${window.location.origin}/event/${generalForm.data.slug || event.slug}` : `/event/${generalForm.data.slug || event.slug}`}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pt-1 border-t border-black/5 dark:border-white/5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => handleCopyUrl(`${window.location.origin}/event/${generalForm.data.slug || event.slug}`, 'public')}
-                                                            className="text-xs font-semibold text-[#706860] hover:text-[#141210] dark:text-slate-300 dark:hover:text-white flex items-center gap-1 cursor-pointer"
-                                                        >
-                                                            <i className="fa-regular fa-copy text-[11px]"></i>
-                                                            <span>{copiedUrlType === 'public' ? 'Tersalin!' : 'Salin'}</span>
-                                                        </Button>
-                                                        <span className="text-gray-300">&middot;</span>
-                                                        <a
-                                                            href={`/event/${generalForm.data.slug || event.slug}`}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="text-xs font-semibold text-[#c0392b] hover:underline flex items-center gap-1"
-                                                        >
-                                                            <span>Buka Publik</span>
-                                                            <i className="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
-                                                        </a>
-                                                    </div>
-                                                </div>
-
-                                                {/* Admin Tenant URL */}
-                                                <div className="p-3 rounded-lg bg-white dark:bg-black/20 border border-black/5 dark:border-white/5 flex flex-col justify-between gap-2">
-                                                    <div>
-                                                        <span className="text-[11px] font-bold text-[#706860] dark:text-slate-400 block">
-                                                            Panel Panitia / Admin Event
-                                                        </span>
-                                                        <span className="text-xs font-mono font-semibold text-[#d4a843] break-all block mt-0.5">
-                                                            {typeof window !== 'undefined' ? `${window.location.origin}/event/${generalForm.data.slug || event.slug}/admin` : `/event/${generalForm.data.slug || event.slug}/admin`}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pt-1 border-t border-black/5 dark:border-white/5">
-                                                        <Button variant="unstyled" size="none"
-                                                            type="button"
-                                                            onClick={() => handleCopyUrl(`${window.location.origin}/event/${generalForm.data.slug || event.slug}/admin`, 'admin')}
-                                                            className="text-xs font-semibold text-[#706860] hover:text-[#141210] dark:text-slate-300 dark:hover:text-white flex items-center gap-1 cursor-pointer"
-                                                        >
-                                                            <i className="fa-regular fa-copy text-[11px]"></i>
-                                                            <span>{copiedUrlType === 'admin' ? 'Tersalin!' : 'Salin'}</span>
-                                                        </Button>
-                                                        <span className="text-gray-300">&middot;</span>
-                                                        <a
-                                                            href={`/event/${generalForm.data.slug || event.slug}/admin`}
-                                                            className="text-xs font-semibold text-[#d4a843] hover:underline flex items-center gap-1"
-                                                        >
-                                                            <span>Masuk Panel</span>
-                                                            <i className="fa-solid fa-arrow-right text-[9px]"></i>
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Combobox
-                                        label="Status Publikasi Event"
-                                        required
-                                        value={generalForm.data.status}
-                                        onChange={(val) => generalForm.setData('status', val)}
-                                        options={statusOptions}
-                                        clearable={false}
-                                        error={generalForm.errors.status}
-                                    />
-
-                                    <Input
-                                        label="Nama Gedung / Gelanggang (Venue)"
-                                        required
-                                        value={generalForm.data.venue}
-                                        onChange={(e) => generalForm.setData('venue', e.target.value)}
-                                        error={generalForm.errors.venue}
-                                        placeholder="e.g. GOR Kertajaya Surabaya"
-                                    />
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <Input
-                                            label="Kota Pelaksanaan"
-                                            required
-                                            value={generalForm.data.city}
-                                            onChange={(e) => generalForm.setData('city', e.target.value)}
-                                            error={generalForm.errors.city}
-                                            placeholder="e.g. Surabaya"
-                                        />
-                                        <Input
-                                            label="Provinsi"
-                                            value={generalForm.data.province}
-                                            onChange={(e) => generalForm.setData('province', e.target.value)}
-                                            error={generalForm.errors.province}
-                                            placeholder="e.g. Jawa Timur"
-                                        />
-                                    </div>
-
-                                    <Input
-                                        label="Narahubung (Contact Person)"
-                                        value={generalForm.data.contact_person}
-                                        onChange={(e) => generalForm.setData('contact_person', e.target.value)}
-                                        error={generalForm.errors.contact_person}
-                                        placeholder="e.g. Sensei Bambang Supriyadi"
-                                    />
-
-                                    <Input
-                                        label="Nomor WhatsApp Narahubung"
-                                        value={generalForm.data.contact_phone}
-                                        onChange={(e) => generalForm.setData('contact_phone', e.target.value)}
-                                        error={generalForm.errors.contact_phone}
-                                        placeholder="e.g. 0812-3456-7890"
-                                    />
-                                </div>
-
-                                <Textarea
-                                    label="Deskripsi & Petunjuk Teknis Acara"
-                                    rows={4}
-                                    value={generalForm.data.description}
-                                    onChange={(e) => generalForm.setData('description', e.target.value)}
-                                    error={generalForm.errors.description}
-                                    placeholder="Tuliskan gambaran umum kejuaraan, tata tertib, atau informasi penting lainnya..."
-                                />
-
-                                <Checkbox id="is_active_toggle" checked={generalForm.data.is_active}
-                                    onChange={(event) => generalForm.setData('is_active', event.target.checked)}
-                                    label="Aktifkan Event untuk Operasional"
-                                    description="Event aktif tersedia di menu registrasi dan pertandingan. Event aktif lain tetap berjalan secara terpisah."
-                                    className="rounded-xl border border-[#ede9e1] bg-[#fbf9f5] p-4" />
-
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ede9e1] pt-5">
-                                    <p className="text-xs text-[#706860] dark:text-slate-400">
-                                        Tombol ini menyimpan seluruh kolom Informasi Umum Kejuaraan di atas.
-                                    </p>
-                                    <Button variant="unstyled" size="none" type="submit" disabled={generalForm.processing} className="rounded-xl bg-[#a93226] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8f281e] disabled:cursor-not-allowed disabled:opacity-60">
-                                        {generalForm.processing ? 'Menyimpan...' : 'Simpan Informasi Event'}
-                                    </Button>
-                                </div>
-
-                                <div className="rounded-2xl border border-[#ede9e1] bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-                                    <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><i className="fa-solid fa-user-shield" /></span><div><h4 className="text-sm font-bold text-[#141210] dark:text-white">Penanggung Jawab & Akses Event</h4><p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">Satu event dapat memiliki beberapa penanggung jawab. Akun dengan akses Penanggung Jawab Event hanya mengelola event yang ditugaskan melalui URL panel event (/event/{'{slug}'}/admin), bukan sebagai Admin global.</p></div></div>
-                                    <p className="mt-3 text-xs text-[#706860] dark:text-slate-400">Tambahkan seluruh penanggung jawab dan petugas event, kemudian simpan daftar akses di bawah ini.</p>
-                                    <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_230px_auto] md:items-end"><Combobox label="Pengguna" value={selectedEventUserId} onChange={setSelectedEventUserId} options={userOptions.filter((user) => !accessForm.data.users.some((eventUser) => eventUser.id === user.value))} placeholder="Pilih pengguna..." /><Combobox label="Hak Akses" value={selectedEventUserRole} onChange={setSelectedEventUserRole} options={eventAccessRoleOptions} clearable={false} /><Button type="button" onClick={addEventUser} disabled={!selectedEventUserId}><i className="fa-solid fa-plus mr-2" />Tambahkan</Button></div>
-                                    <div className="mt-4 divide-y divide-[#ede9e1] rounded-xl border border-[#ede9e1] dark:divide-slate-800 dark:border-slate-800">{accessForm.data.users.length ? accessForm.data.users.map((user) => <div key={user.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-[#141210] dark:text-white">{user.name}</p><p className="text-xs text-[#706860] dark:text-slate-400">{user.email}</p></div><div className="flex items-center gap-2"><div className="w-56"><Combobox value={user.access_role} onChange={(value) => accessForm.setData('users', accessForm.data.users.map((item) => item.id === user.id ? { ...item, access_role: value } : item))} options={eventAccessRoleOptions} clearable={false} size="sm" /></div><Button variant="unstyled" size="none" type="button" onClick={() => accessForm.setData('users', accessForm.data.users.filter((item) => item.id !== user.id))} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Hapus akses ${user.name}`}><i className="fa-solid fa-trash" /></Button></div></div>) : <p className="p-4 text-sm text-[#706860]">Belum ada penanggung jawab atau pengguna khusus untuk event ini.</p>}</div>
-                                    {accessForm.errors.users && <p className="mt-2 text-xs font-medium text-rose-500">{accessForm.errors.users}</p>}
-                                    {accessSaveFeedback && <p role={accessSaveFeedback.type === 'error' ? 'alert' : 'status'} className={`mt-3 rounded-lg px-3 py-2 text-xs font-semibold ${accessSaveFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>{accessSaveFeedback.message}</p>}
-                                    <div className="mt-4 flex justify-end"><Button type="button" onClick={submitEventUsers} loading={accessForm.processing}><i className="fa-solid fa-user-check mr-2" />Simpan Penanggung Jawab & Akses</Button></div>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                )}
-
-                {/* ════ TAB 6: TANGGAL ACARA (DASHBOARD STYLE) ════ */}
-                {activeTab === 'dates' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        <form onSubmit={submitDates}>
-                            <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#ede9e1]">
-                                <div>
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                            Jadwal Tanggal Acara & Pendaftaran
-                                        </h3>
-                                    </div>
-                                    <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                        Atur periode pelaksanaan kejuaraan dan tenggat waktu pendaftaran atlet oleh kontingen
-                                    </p>
-                                </div>
-                                <Button variant="unstyled" size="none"
-                                    type="submit"
-                                    disabled={datesForm.processing}
-                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#c0392b] to-[#96281b] hover:from-[#a93226] hover:to-[#7b1f14] shadow-xs hover:shadow-md transition-all cursor-pointer shrink-0"
-                                >
-                                    <i className="fa-solid fa-check text-xs"></i>
-                                    <span>Simpan Jadwal Acara</span>
-                                </Button>
-                            </div>
-
-                            <div className="p-6 md:p-8 space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Jadwal Pertandingan */}
-                                    <div className="bg-[#fbf9f5] p-5 rounded-2xl border border-[#ede9e1] space-y-4">
-                                        <h4 className="text-sm font-bold text-[#141210] flex items-center gap-2">
-                                            <i className="fa-solid fa-trophy text-[#c0392b]"></i>
-                                            Jadwal Hari Pertandingan
-                                        </h4>
-                                        <Input
-                                            label="Tanggal Mulai Pertandingan"
-                                            type="date"
-                                            required
-                                            value={datesForm.data.start_date}
-                                            onChange={(e) => datesForm.setData('start_date', e.target.value)}
-                                            error={datesForm.errors.start_date}
-                                        />
-                                        <Input
-                                            label="Tanggal Selesai Pertandingan"
-                                            type="date"
-                                            required
-                                            value={datesForm.data.end_date}
-                                            onChange={(e) => datesForm.setData('end_date', e.target.value)}
-                                            error={datesForm.errors.end_date}
-                                        />
-                                    </div>
-
-                                    {/* Jadwal Registrasi */}
-                                    <div className="bg-[#fbf9f5] p-5 rounded-2xl border border-[#ede9e1] space-y-4">
-                                        <h4 className="text-sm font-bold text-[#141210] flex items-center gap-2">
-                                            <i className="fa-solid fa-user-plus text-emerald-600"></i>
-                                            Jadwal Pembukaan Pendaftaran
-                                        </h4>
-                                        <Input
-                                            label="Tanggal Buka Pendaftaran"
-                                            type="date"
-                                            value={datesForm.data.registration_start}
-                                            onChange={(e) => datesForm.setData('registration_start', e.target.value)}
-                                            error={datesForm.errors.registration_start}
-                                        />
-                                        <Input
-                                            label="Batas Akhir Pendaftaran (Deadline)"
-                                            type="date"
-                                            value={datesForm.data.registration_end}
-                                            onChange={(e) => datesForm.setData('registration_end', e.target.value)}
-                                            error={datesForm.errors.registration_end}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                )}
-
-                {/* ════ TAB 7: KOORDINATOR LAPANGAN ════ */}
-                {activeTab === 'field_coordinators' && (
-                    <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                        <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800">
-                            <div>
-                                <h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Koordinator Lapangan</h3>
-                                <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Pilih koordinator lapangan dari master data untuk event ini atau edit langsung data koordinator.</p>
-                            </div>
-                            <Button type="button" onClick={openCreateFieldCoordinatorModal} className="bg-[#141210] text-amber-400 hover:bg-black">
-                                <i className="fa-solid fa-user-plus mr-2" />
-                                Tambah Koordinator Baru
-                            </Button>
-                        </div>
-
-                        <div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40">
-                            <form onSubmit={submitFieldCoordinatorAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end">
-                                <Combobox
-                                    label="Pilih dari Master Data Koordinator"
-                                    value={fieldCoordinatorAssignmentForm.data.field_coordinator_id}
-                                    onChange={(value) => fieldCoordinatorAssignmentForm.setData('field_coordinator_id', value)}
-                                    options={fieldCoordinatorOptions}
-                                    placeholder="Cari koordinator..."
-                                    searchPlaceholder="Cari koordinator..."
-                                    error={fieldCoordinatorAssignmentForm.errors.field_coordinator_id}
-                                />
-                                <Combobox
-                                    label="Area Penugasan di Event"
-                                    value={fieldCoordinatorAssignmentForm.data.assignment_area}
-                                    onChange={(value) => fieldCoordinatorAssignmentForm.setData('assignment_area', value)}
-                                    options={fieldCoordinatorAreaOptions}
-                                    clearable={false}
-                                    error={fieldCoordinatorAssignmentForm.errors.assignment_area}
-                                />
-                                <Button type="submit" loading={fieldCoordinatorAssignmentForm.processing} disabled={!fieldCoordinatorAssignmentForm.data.field_coordinator_id}>
-                                    <i className="fa-solid fa-plus mr-2" />
-                                    Tugaskan
-                                </Button>
-                            </form>
-                        </div>
-
-                        {eventFieldCoordinators.length > 0 && (
-                            <div className="flex items-center justify-between border-b border-[#ede9e1] bg-[#fbfaf8] px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30">
-                                <p className="text-xs font-semibold text-[#706860] dark:text-slate-400">
-                                    Total Ditugaskan: <span className="font-bold text-[#0f0d0b] dark:text-white">{eventFieldCoordinators.length} Koordinator</span>
-                                </p>
-                                <div className="w-full max-w-xs">
-                                    <Input
-                                        placeholder="Cari koordinator event..."
-                                        value={fieldCoordinatorSearch}
-                                        onChange={(e) => setFieldCoordinatorSearch(e.target.value)}
-                                        iconLeft={<i className="fa-solid fa-magnifying-glass text-[#a89f91]" />}
-                                        containerClassName="text-xs"
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {(() => {
-                            const filteredCoordinators = eventFieldCoordinators.filter((coordinator) => {
-                                if (!fieldCoordinatorSearch) return true;
-                                const q = fieldCoordinatorSearch.toLowerCase();
-                                return (
-                                    coordinator.name?.toLowerCase().includes(q) ||
-                                    coordinator.coordinator_number?.toLowerCase().includes(q) ||
-                                    coordinator.region?.toLowerCase().includes(q) ||
-                                    coordinator.email?.toLowerCase().includes(q) ||
-                                    coordinator.phone?.toLowerCase().includes(q) ||
-                                    coordinator.notes?.toLowerCase().includes(q)
-                                );
-                            });
-
-                            if (!eventFieldCoordinators.length) {
-                                return (
-                                    <div className="p-8 text-center">
-                                        <i className="fa-solid fa-people-group text-3xl text-[#d8d0c7]" />
-                                        <p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada koordinator yang ditugaskan</p>
-                                        <p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambahkan koordinator baru langsung dari event ini.</p>
-                                    </div>
-                                );
-                            }
-
-                            if (!filteredCoordinators.length) {
-                                return (
-                                    <div className="p-8 text-center">
-                                        <i className="fa-solid fa-magnifying-glass text-2xl text-[#d8d0c7]" />
-                                        <p className="mt-2 text-sm font-semibold text-[#141210] dark:text-white">Tidak ada koordinator yang cocok dengan pencarian "{fieldCoordinatorSearch}"</p>
-                                    </div>
-                                );
-                            }
-
-                            return (
-                                <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">
-                                    {filteredCoordinators.map((coordinator) => (
-                                        <div key={coordinator.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="flex min-w-0 items-center gap-3">
-                                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime-50 font-bold text-lime-700 dark:bg-lime-950/40 dark:text-lime-400">
-                                                    <i className="fa-solid fa-people-group" />
-                                                </span>
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="truncate font-semibold text-[#141210] dark:text-white">{coordinator.name}</p>
-                                                        {coordinator.gender && (
-                                                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                                                coordinator.gender === 'female'
-                                                                    ? 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'
-                                                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                                                            }`}>
-                                                                {coordinator.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
-                                                            </span>
-                                                        )}
-                                                        {coordinator.dan_grade && (
-                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
-                                                                {coordinator.dan_grade}
-                                                            </span>
-                                                        )}
-                                                        {coordinator.coordinator_number && (
-                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
-                                                                ID: {coordinator.coordinator_number}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
-                                                        {[coordinator.certification_level, coordinator.region, coordinator.phone].filter(Boolean).join(' · ') || 'Profil koordinator'}
-                                                    </p>
-                                                    {(coordinator.email || coordinator.notes) && (
-                                                        <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
-                                                            {[
-                                                                coordinator.email ? `Email: ${coordinator.email}` : null,
-                                                                coordinator.notes ? `Catatan: ${coordinator.notes}` : null,
-                                                            ].filter(Boolean).join(' · ')}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="rounded-full bg-lime-50 px-2.5 py-1 text-xs font-semibold text-lime-700 dark:bg-lime-950/40 dark:text-lime-400">
-                                                    {fieldCoordinatorAreaOptions.find((option) => option.value === coordinator.assignment_area)?.label || coordinator.assignment_area}
-                                                </span>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => openTransferModal('coordinator', coordinator)}
-                                                    className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                                    aria-label={`Alihkan penugasan ${coordinator.name}`}
-                                                    title="Alihkan Penugasan (Arbitrase / Wasit & Juri)"
-                                                >
-                                                    <i className="fa-solid fa-right-left" />
-                                                </Button>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => openEditFieldCoordinatorModal(coordinator)}
-                                                    className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                                    aria-label={`Edit ${coordinator.name}`}
-                                                    title="Edit data koordinator langsung"
-                                                >
-                                                    <i className="fa-solid fa-pen-to-square" />
-                                                </Button>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => removeEventFieldCoordinator(coordinator)}
-                                                    className="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                                    aria-label={`Hapus ${coordinator.name} dari event`}
-                                                    title="Hapus koordinator dari event"
-                                                >
-                                                    <i className="fa-solid fa-trash" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                )}
-
-                {/* ════ TAB 8: PANITERA ════ */}
-                {activeTab === 'clerks' && (
-                    <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                        <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800"><div><h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Panitera</h3><p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Atur perangkat meja, pencatat nilai, waktu, dan operator event.</p></div><Button type="button" onClick={() => setIsNewClerkModalOpen(true)} className="bg-[#141210] text-amber-400 hover:bg-black"><i className="fa-solid fa-user-plus mr-2" />Tambah Panitera Baru</Button></div>
-                        <div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40"><form onSubmit={submitClerkAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end"><Combobox label="Pilih dari Master Data Panitera" value={clerkAssignmentForm.data.clerk_id} onChange={(value) => clerkAssignmentForm.setData('clerk_id', value)} options={clerkOptions} placeholder="Cari panitera..." searchPlaceholder="Cari panitera..." error={clerkAssignmentForm.errors.clerk_id} /><Combobox label="Peran di Event" value={clerkAssignmentForm.data.role} onChange={(value) => clerkAssignmentForm.setData('role', value)} options={clerkRoleOptions} clearable={false} error={clerkAssignmentForm.errors.role} /><Button type="submit" loading={clerkAssignmentForm.processing} disabled={!clerkAssignmentForm.data.clerk_id}><i className="fa-solid fa-plus mr-2" />Tugaskan</Button></form></div>
-                        {eventClerks.length ? <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">{eventClerks.map((clerk) => <div key={clerk.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-50 font-bold text-cyan-700"><i className="fa-solid fa-clipboard-list" /></span><div className="min-w-0"><p className="truncate font-semibold text-[#141210] dark:text-white">{clerk.name}</p><p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">{[clerk.certification, clerk.region].filter(Boolean).join(' · ') || 'Profil panitera'}</p>{clerk.employee_number && <p className="mt-0.5 text-xs text-[#8c827a]">ID: {clerk.employee_number}</p>}</div></div><div className="flex items-center gap-2"><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">{clerkRoleOptions.find((option) => option.value === clerk.role)?.label || clerk.role}</span><Button variant="unstyled" size="none" type="button" onClick={() => removeEventClerk(clerk)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Hapus ${clerk.name} dari event`}><i className="fa-solid fa-trash" /></Button></div></div>)}</div> : <div className="p-8 text-center"><i className="fa-solid fa-clipboard-list text-3xl text-[#d8d0c7]" /><p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada panitera yang ditugaskan</p><p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambah panitera baru langsung dari event ini.</p></div>}
-                    </div>
-                )}
-
-                {/* ════ TAB 8: WASIT & JURI ════ */}
                 {activeTab === 'referees' && (
-                    <div className="overflow-hidden rounded-2xl border border-[#ede9e1] bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                        <div className="flex flex-col gap-4 border-b border-[#ede9e1] p-5 md:flex-row md:items-center md:justify-between dark:border-slate-800">
-                            <div>
-                                <h3 className="text-base font-bold text-[#0f0d0b] dark:text-white">Penugasan Wasit & Juri</h3>
-                                <p className="mt-1 text-xs text-[#706860] dark:text-slate-400">Pilih perangkat perwasitan dari master data untuk event ini atau edit langsung data wasit.</p>
-                            </div>
-                            <div className="flex flex-col gap-2 sm:flex-row">
-                                <EventRefereeImport eventId={event.id} />
-                                <Button type="button" onClick={openCreateRefereeModal} className="bg-[#141210] text-amber-400 hover:bg-black"><i className="fa-solid fa-user-plus mr-2" />Tambah Wasit Baru</Button>
-                            </div>
-                        </div>
-
-                        <div className="border-b border-[#ede9e1] bg-[#fcfbf9] p-5 dark:border-slate-800 dark:bg-slate-950/40">
-                            <form onSubmit={submitRefereeAssignment} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end">
-                                <Combobox label="Pilih dari Master Data Wasit" value={refereeAssignmentForm.data.referee_id} onChange={(value) => refereeAssignmentForm.setData('referee_id', value)} options={refereeOptions} placeholder="Cari nama wasit..." searchPlaceholder="Cari wasit..." error={refereeAssignmentForm.errors.referee_id} />
-                                <Combobox label="Peran di Event" value={refereeAssignmentForm.data.role} onChange={(value) => refereeAssignmentForm.setData('role', value)} options={refereeRoleOptions} clearable={false} error={refereeAssignmentForm.errors.role} />
-                                <Button type="submit" loading={refereeAssignmentForm.processing} disabled={!refereeAssignmentForm.data.referee_id}><i className="fa-solid fa-plus mr-2" />Tugaskan</Button>
-                            </form>
-                        </div>
-
-                        {eventReferees.length > 0 && (
-                            <div className="flex items-center justify-between border-b border-[#ede9e1] bg-[#fbfaf8] px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30">
-                                <p className="text-xs font-semibold text-[#706860] dark:text-slate-400">
-                                    Total Ditugaskan: <span className="font-bold text-[#0f0d0b] dark:text-white">{eventReferees.length} Wasit</span>
-                                </p>
-                                <div className="w-full max-w-xs">
-                                    <Input
-                                        placeholder="Cari wasit event..."
-                                        value={refereeSearch}
-                                        onChange={(e) => setRefereeSearch(e.target.value)}
-                                        iconLeft={<i className="fa-solid fa-magnifying-glass text-[#a89f91]" />}
-                                        containerClassName="text-xs"
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {(() => {
-                            const filteredReferees = eventReferees.filter((referee) => {
-                                if (!refereeSearch) return true;
-                                const q = refereeSearch.toLowerCase();
-                                return (
-                                    referee.name?.toLowerCase().includes(q) ||
-                                    referee.dan_grade?.toLowerCase().includes(q) ||
-                                    referee.certification_level?.toLowerCase().includes(q) ||
-                                    referee.region?.toLowerCase().includes(q) ||
-                                    referee.license_number?.toLowerCase().includes(q) ||
-                                    referee.email?.toLowerCase().includes(q) ||
-                                    referee.phone?.toLowerCase().includes(q)
-                                );
-                            });
-
-                            if (!eventReferees.length) {
-                                return (
-                                    <div className="p-8 text-center">
-                                        <i className="fa-solid fa-scale-balanced text-3xl text-[#d8d0c7]" />
-                                        <p className="mt-3 font-semibold text-[#141210] dark:text-white">Belum ada wasit yang ditugaskan</p>
-                                        <p className="mt-1 text-sm text-[#706860] dark:text-slate-400">Pilih dari master atau tambahkan wasit baru langsung dari event ini.</p>
-                                    </div>
-                                );
-                            }
-
-                            if (!filteredReferees.length) {
-                                return (
-                                    <div className="p-8 text-center">
-                                        <i className="fa-solid fa-magnifying-glass text-2xl text-[#d8d0c7]" />
-                                        <p className="mt-2 text-sm font-semibold text-[#141210] dark:text-white">Tidak ada wasit yang cocok dengan pencarian "{refereeSearch}"</p>
-                                    </div>
-                                );
-                            }
-
-                            return (
-                                <div className="divide-y divide-[#ede9e1] dark:divide-slate-800">
-                                    {filteredReferees.map((referee) => (
-                                        <div key={referee.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="flex min-w-0 items-center gap-3">
-                                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
-                                                    <i className="fa-solid fa-scale-balanced" />
-                                                </span>
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="truncate font-semibold text-[#141210] dark:text-white">{referee.name}</p>
-                                                        {referee.gender && (
-                                                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                                                referee.gender === 'female'
-                                                                    ? 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'
-                                                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                                                            }`}>
-                                                                {referee.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
-                                                            </span>
-                                                        )}
-                                                        {referee.dan_grade && (
-                                                            <span className="rounded bg-[#f4ece1] px-1.5 py-0.5 text-[10px] font-bold text-[#5c5248] dark:bg-slate-800 dark:text-slate-300">
-                                                                {referee.dan_grade}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
-                                                        {[referee.certification_level, referee.region, referee.phone].filter(Boolean).join(' · ') || 'Profil wasit'}
-                                                    </p>
-                                                    {(referee.license_number || referee.email) && (
-                                                        <p className="mt-0.5 text-xs text-[#8c827a] dark:text-slate-500">
-                                                            {[
-                                                                referee.license_number ? `Lisensi: ${referee.license_number}` : null,
-                                                                referee.email ? `Email: ${referee.email}` : null,
-                                                            ].filter(Boolean).join(' · ')}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
-                                                    {refereeRoleOptions.find((option) => option.value === referee.role)?.label || referee.role}
-                                                </span>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => openTransferModal('referee', referee)}
-                                                    className="rounded-lg p-2 text-lime-600 hover:bg-lime-50 dark:hover:bg-lime-950/30"
-                                                    aria-label={`Alihkan penugasan ${referee.name}`}
-                                                    title="Alihkan Penugasan (Arbitrase / Koordinator Lapangan)"
-                                                >
-                                                    <i className="fa-solid fa-right-left" />
-                                                </Button>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => openEditRefereeModal(referee)}
-                                                    className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                                    aria-label={`Edit ${referee.name}`}
-                                                    title="Edit data wasit langsung"
-                                                >
-                                                    <i className="fa-solid fa-pen-to-square" />
-                                                </Button>
-                                                <Button
-                                                    variant="unstyled"
-                                                    size="none"
-                                                    type="button"
-                                                    onClick={() => removeEventReferee(referee)}
-                                                    className="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                                    aria-label={`Hapus ${referee.name} dari event`}
-                                                    title="Hapus wasit dari event"
-                                                >
-                                                    <i className="fa-solid fa-trash" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
-                    </div>
+                    <RefereesTab
+                        event={event}
+                        referees={referees}
+                        eventReferees={eventReferees}
+                        openTransferModal={openTransferModal}
+                    />
                 )}
 
-                {/* ════ TAB 8: BIAYA KONTINGEN (DASHBOARD STYLE) ════ */}
-                {activeTab === 'fees' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-[#ede9e1] dark:border-slate-800 shadow-xs overflow-hidden">
-                        <form onSubmit={submitFees}>
-                            <div className="p-5 md:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#ede9e1]">
-                                <div>
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="font-cinzel text-base md:text-lg font-bold text-[#0f0d0b] dark:text-white tracking-wide uppercase">
-                                            Pengaturan Biaya Registrasi
-                                        </h3>
-                                    </div>
-                                    <p className="text-xs text-[#b5afa6] dark:text-slate-400 mt-1">
-                                        Tentukan apakah event gratis atau menggunakan biaya registrasi
-                                    </p>
-                                </div>
-                                <Button size="sm"
-                                    type="submit"
-                                    loading={feesForm.processing}
-                                    className="shrink-0"
-                                    iconLeft={<i className="fa-solid fa-check" />}
-                                >
-                                    Simpan Pengaturan
-                                </Button>
-                            </div>
-
-                            <div className="p-6 md:p-8 space-y-6">
-                                <RadioGroup
-                                    label="Skema Biaya Event"
-                                    name="detail-event-pricing-mode"
-                                    variant="cards"
-                                    value={feesForm.data.is_paid ? 'paid' : 'free'}
-                                    onChange={(value) => feesForm.setData('is_paid', value === 'paid')}
-                                    error={feesForm.errors.is_paid}
-                                    options={[
-                                        { value: 'paid', label: 'Event Berbayar', description: 'Aktifkan biaya registrasi, kode unik, dan metode pembayaran.', icon: <i className="fa-solid fa-wallet" /> },
-                                        { value: 'free', label: 'Event Gratis', description: 'Peserta mendaftar tanpa tagihan dan tanpa tahap pembayaran.', icon: <i className="fa-solid fa-gift" /> },
-                                    ]}
-                                />
-
-                                {feesForm.data.is_paid ? <>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Input
-                                            label="Biaya Pendaftaran Kontingen (Per Dojo/Kontingen)"
-                                            type="number"
-                                            min="0"
-                                            step="1000"
-                                            required
-                                            value={feesForm.data.fee_per_contingent}
-                                            onChange={(e) => feesForm.setData('fee_per_contingent', e.target.value)}
-                                            error={feesForm.errors.fee_per_contingent}
-                                            iconLeft={<span className="text-xs font-bold text-gray-400">Rp</span>}
-                                        />
-                                        <p className="text-xs text-slate-800 font-bold font-mono">
-                                            Pratinjau: {formatIDR(feesForm.data.fee_per_contingent)} / Kontingen
-                                        </p>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Input
-                                            label="Biaya Dasar Pendaftaran Per Atlet (Default)"
-                                            type="number"
-                                            min="0"
-                                            step="1000"
-                                            required
-                                            value={feesForm.data.fee_per_athlete}
-                                            onChange={(e) => feesForm.setData('fee_per_athlete', e.target.value)}
-                                            error={feesForm.errors.fee_per_athlete}
-                                            iconLeft={<span className="text-xs font-bold text-gray-400">Rp</span>}
-                                        />
-                                        <p className="text-xs text-slate-800 font-bold font-mono">
-                                            Pratinjau: {formatIDR(feesForm.data.fee_per_athlete)} / Atlet
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="bg-[#fcfbf9] p-4 rounded-xl border border-[#ede9e1]">
-                                    <h4 className="text-xs font-bold text-[#0f0d0b] flex items-center gap-1.5">
-                                        <i className="fa-solid fa-circle-info text-[#c0392b]"></i>
-                                        Catatan Penentuan Biaya:
-                                    </h4>
-                                    <p className="text-xs text-[#706860] mt-1">
-                                        Jika Anda telah menetapkan harga khusus pada tab <strong>Kelompok Umur</strong>, sistem akan secara otomatis membebankan tarif sesuai kelompok umur yang didaftarkan atlet. Nilai biaya dasar di atas berfungsi sebagai tarif default apabila tidak ada kelompok umur khusus yang ditetapkan.
-                                    </p>
-                                </div>
-
-                                <div className="rounded-xl border border-[#ede9e1] bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                                    <div className="flex items-start gap-3">
-                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700"><i className="fa-solid fa-money-check-dollar" /></span>
-                                        <div>
-                                            <h4 className="text-sm font-bold text-[#0f0d0b] dark:text-white">Metode Pembayaran yang Diterima</h4>
-                                            <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">Pilih kanal pembayaran yang dapat digunakan kontingen untuk biaya pendaftaran event ini.</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                        {paymentMethods.length ? paymentMethods.map((paymentMethod) => {
-                                            const isSelected = feesForm.data.payment_method_ids.includes(paymentMethod.id);
-                                            return <Checkbox key={paymentMethod.id} id={`event-payment-method-${paymentMethod.id}`} checked={isSelected}
-                                                onChange={(event) => feesForm.setData('payment_method_ids', event.target.checked ? [...feesForm.data.payment_method_ids, paymentMethod.id] : feesForm.data.payment_method_ids.filter((id) => id !== paymentMethod.id))}
-                                                className={`rounded-xl border p-3 transition-colors ${isSelected ? 'border-[#c0392b]/40 bg-[#c0392b]/5' : 'border-[#ede9e1] hover:border-[#d8d0c7]'}`}
-                                                label={<span className="min-w-0"><span className="block text-sm font-semibold text-[#141210] dark:text-white">{paymentMethod.name}</span><span className="mt-0.5 block text-xs font-normal text-[#706860] dark:text-slate-400">{paymentMethod.provider || paymentMethod.type}{paymentMethod.account_number ? ` · ${paymentMethod.account_number}` : ''}</span>{!paymentMethod.is_active && <span className="mt-1 inline-block text-[10px] font-semibold text-amber-700">Master nonaktif — tetap dipilih di event ini</span>}</span>} />;
-                                        }) : <p className="text-sm text-[#706860]">Belum ada metode pembayaran aktif. Tambahkan melalui menu Master Metode Pembayaran.</p>}
-                                    </div>
-                                    {feesForm.errors.payment_method_ids && <p className="mt-2 text-xs font-medium text-rose-500">{feesForm.errors.payment_method_ids}</p>}
-                                </div>
-                                </> : <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
-                                    <div className="flex items-start gap-3">
-                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700"><i className="fa-solid fa-circle-check" /></span>
-                                        <div>
-                                            <h4 className="text-sm font-bold">Registrasi gratis tanpa pembayaran</h4>
-                                            <p className="mt-1 text-xs leading-relaxed text-emerald-700">Biaya kontingen dan atlet akan disimpan Rp0. Registrasi yang sudah ada ikut disesuaikan dan peserta langsung dapat melanjutkan ke tahap review.</p>
-                                        </div>
-                                    </div>
-                                </div>}
-                            </div>
-                        </form>
-                    </div>
-                )}
-
-                {/* ════ TAB: ARBITRASE ════ */}
                 {activeTab === 'arbitration' && (
                     <ArbitrationTab
                         event={event}
@@ -3474,16 +808,58 @@ export default function EventDetail({
                         openTransferModal={openTransferModal}
                         arbitratorSearch={arbitratorSearch}
                         setArbitratorSearch={setArbitratorSearch}
-                        arbitrationSummary={arbitrationSummary}
-                        arbitrationPersonnel={arbitrationPersonnel}
-                        arbitrationRoleUsers={arbitrationRoleUsers}
-                        arbitrationAttendances={arbitrationAttendances}
-                        arbitrationScores={arbitrationScores}
-                        eventReferees={eventReferees}
                     />
                 )}
 
-                {/* ════ TAB: SINKRONISASI & BACKUP EVENT (OFFLINE / ONLINE) ════ */}
+                {activeTab === 'officials_roster' && (
+                    <OfficialsRosterTab
+                        event={event}
+                        arbitrationSummary={arbitrationSummary}
+                        arbitrationPersonnel={arbitrationPersonnel}
+                        arbitrationRoleUsers={arbitrationRoleUsers}
+                        eventReferees={eventReferees}
+                        eventArbitrators={eventArbitrators}
+                    />
+                )}
+
+                {activeTab === 'clerks' && (
+                    <ClerksTab
+                        event={event}
+                        clerks={clerks}
+                        eventClerks={eventClerks}
+                    />
+                )}
+
+                {activeTab === 'field_coordinators' && (
+                    <FieldCoordinatorsTab
+                        event={event}
+                        fieldCoordinators={fieldCoordinators}
+                        eventFieldCoordinators={eventFieldCoordinators}
+                        courts={courts}
+                        openTransferModal={openTransferModal}
+                    />
+                )}
+
+                {activeTab === 'info' && (
+                    <InfoTab
+                        event={event}
+                        allEvents={allEvents}
+                        users={users}
+                        eventUsers={eventUsers}
+                    />
+                )}
+
+                {activeTab === 'dates' && (
+                    <DatesTab event={event} />
+                )}
+
+                {activeTab === 'fees' && (
+                    <FeesTab
+                        event={event}
+                        paymentMethods={paymentMethods}
+                    />
+                )}
+
                 {activeTab === 'sync' && (
                     <EventDataSyncForm
                         event={event}
@@ -3493,7 +869,8 @@ export default function EventDetail({
                 )}
             </div>
 
-            {/* ════ MODAL: IMPOR PAKET DATA EVENT (.JSON) ════ */}
+            {/* ════ MODALS ════ */}
+            {/* Modal Impor Paket JSON Event (Header Dropdown Action) */}
             <Modal
                 isOpen={isImportModalOpen}
                 onClose={() => {
@@ -3566,946 +943,7 @@ export default function EventDetail({
                 </form>
             </Modal>
 
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL 1: KELOMPOK UMUR (CREATE / EDIT)                        */}
-            {/* ══════════════════════════════════════════════════════════════ */}
-            <Modal
-                isOpen={isAgeModalOpen}
-                onClose={() => setIsAgeModalOpen(false)}
-                title={editingAgeCategory ? 'Edit Kelompok Umur' : 'Tambah Kelompok Umur Baru'}
-                description="Tentukan nama kelompok umur, rentang usia, dan tarif biaya pendaftarannya."
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsAgeModalOpen(false)}
-                            disabled={ageForm.processing}
-                        >
-                            Batal
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="primary"
-                            onClick={submitAgeCategory}
-                            loading={ageForm.processing}
-                            className="bg-[#141210] hover:bg-black text-amber-400 font-semibold"
-                        >
-                            {editingAgeCategory ? 'Simpan Perubahan' : 'Tambahkan Kategori'}
-                        </Button>
-                    </div>
-                }
-            >
-                <form onSubmit={submitAgeCategory} className="space-y-4">
-                    <Input
-                        label="Nama Kelompok Umur"
-                        required
-                        value={ageForm.data.name}
-                        onChange={(e) => ageForm.setData('name', e.target.value)}
-                        error={ageForm.errors.name}
-                        placeholder="e.g. Pemula, Remaja A, Dewasa"
-                    />
-
-                    <div className="space-y-1">
-                        <Input
-                            label="Tarif Biaya Pendaftaran (Rp)"
-                            type="number"
-                            min="0"
-                            step="1000"
-                            required
-                            value={ageForm.data.fee}
-                            onChange={(e) => ageForm.setData('fee', e.target.value)}
-                            error={ageForm.errors.fee}
-                            iconLeft={<span className="text-xs font-bold text-gray-400">Rp</span>}
-                            placeholder="400000"
-                        />
-                        <p className="text-xs text-emerald-700 font-bold">
-                            Pratinjau Biaya: {formatIDR(ageForm.data.fee)}
-                        </p>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        <Input
-                            label="Usia Minimal (Tahun)"
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={ageForm.data.min_age}
-                            onChange={(e) => ageForm.setData('min_age', e.target.value)}
-                            error={ageForm.errors.min_age}
-                            placeholder="e.g. 7"
-                        />
-                        <Input
-                            label="Usia Maksimal (Tahun)"
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={ageForm.data.max_age}
-                            onChange={(e) => ageForm.setData('max_age', e.target.value)}
-                            error={ageForm.errors.max_age}
-                            placeholder="e.g. 10"
-                        />
-                    </div>
-
-                    <Input
-                        label="Keterangan / Batasan Kelahiran"
-                        value={ageForm.data.description}
-                        onChange={(e) => ageForm.setData('description', e.target.value)}
-                        error={ageForm.errors.description}
-                        placeholder="e.g. Kenshi kelahiran 2016 - 2019"
-                    />
-
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                        <Input
-                            label="Urutan Tampilan"
-                            type="number"
-                            min="0"
-                            value={ageForm.data.order}
-                            onChange={(e) => ageForm.setData('order', e.target.value)}
-                            error={ageForm.errors.order}
-                        />
-                        <div className="flex items-center pt-6">
-                            <Checkbox id="age-category-is-active" label="Status Aktif" checked={ageForm.data.is_active}
-                                onChange={(event) => ageForm.setData('is_active', event.target.checked)} />
-                        </div>
-                    </div>
-                </form>
-            </Modal>
-
-            {/* DELETE AGE CATEGORY CONFIRMATION */}
-            <Modal
-                isOpen={!!deletingAgeCategory}
-                onClose={() => setDeletingAgeCategory(null)}
-                title="Konfirmasi Hapus Kelompok Umur"
-                description={`Apakah Anda yakin ingin menghapus kelompok umur '${deletingAgeCategory?.name}'? Seluruh nomer pertandingan yang terhubung akan disesuaikan.`}
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button variant="outline" onClick={() => setDeletingAgeCategory(null)}>
-                            Batal
-                        </Button>
-                        <Button variant="danger" onClick={confirmDeleteAgeCategory}>
-                            Hapus Kategori
-                        </Button>
-                    </div>
-                }
-            />
-
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL 2: LAPANGAN / COURT (CREATE / EDIT)                     */}
-            {/* ══════════════════════════════════════════════════════════════ */}
-            <Modal
-                isOpen={isCourtModalOpen}
-                onClose={() => setIsCourtModalOpen(false)}
-                title={editingCourt ? 'Edit Lapangan (Court)' : 'Tambah Lapangan Pertandingan Baru'}
-                description="Tentukan nama lapangan (misal Court 1, Court 2), lokasi gelanggang, dan statusnya."
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsCourtModalOpen(false)}
-                            disabled={courtForm.processing}
-                        >
-                            Batal
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="primary"
-                            onClick={submitCourt}
-                            loading={courtForm.processing}
-                            className="bg-[#141210] hover:bg-black text-amber-400 font-semibold"
-                        >
-                            {editingCourt ? 'Simpan Perubahan' : 'Tambahkan Lapangan'}
-                        </Button>
-                    </div>
-                }
-            >
-                <form onSubmit={submitCourt} className="space-y-4">
-                    <Input
-                        label="Nama Lapangan (Court / Tatami)"
-                        required
-                        value={courtForm.data.name}
-                        onChange={(e) => courtForm.setData('name', e.target.value)}
-                        error={courtForm.errors.name}
-                        placeholder="e.g. Court 1, Tatami Utama"
-                    />
-
-                    <Input
-                        label="Lokasi Gelanggang / Area"
-                        value={courtForm.data.location}
-                        onChange={(e) => courtForm.setData('location', e.target.value)}
-                        error={courtForm.errors.location}
-                        placeholder="e.g. Hall Utama Sisi Barat, Center Arena"
-                    />
-
-                    <Textarea
-                        label="Keterangan Tambahan"
-                        rows={3}
-                        value={courtForm.data.description}
-                        onChange={(e) => courtForm.setData('description', e.target.value)}
-                        error={courtForm.errors.description}
-                        placeholder="e.g. Khusus partai semifinal & final"
-                    />
-
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                        <Input
-                            label="Urutan Lapangan"
-                            type="number"
-                            min="0"
-                            value={courtForm.data.order}
-                            onChange={(e) => courtForm.setData('order', e.target.value)}
-                            error={courtForm.errors.order}
-                        />
-                        <div className="flex items-center pt-6">
-                            <Checkbox id="court-is-active" label="Lapangan Siap Pakai (Aktif)" checked={courtForm.data.is_active}
-                                onChange={(event) => courtForm.setData('is_active', event.target.checked)} />
-                        </div>
-                    </div>
-
-                    {editingCourt ? (
-                        editingCourt.access_code ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-900/50 p-3.5 space-y-3">
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                    <div>
-                                        <p className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                            <i className="fa-solid fa-key text-amber-600 dark:text-amber-400" />
-                                            Token Login Panitera (6 Digit)
-                                        </p>
-                                        <p className="text-[11px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
-                                            Gunakan token ini untuk login cepat meja skoring melalui tab 'Token Panitera' di halaman Login.
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <span className="font-mono text-base font-extrabold tracking-widest text-amber-950 dark:text-amber-100 bg-white dark:bg-slate-900 px-3 py-1 rounded-lg border border-amber-300 dark:border-amber-700 shadow-2xs">
-                                            {editingCourt.access_code}
-                                        </span>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleCopyCourtToken(editingCourt)}
-                                            className="bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 border-amber-300"
-                                        >
-                                            <i className={`fa-solid ${copiedCourtTokenId === editingCourt.id ? 'fa-check text-emerald-600' : 'fa-copy'} mr-1.5`} />
-                                            {copiedCourtTokenId === editingCourt.id ? 'Tersalin' : 'Salin'}
-                                        </Button>
-                                    </div>
-                                </div>
-                                <div className="border-t border-amber-200/60 dark:border-amber-900/40 pt-2 flex items-center justify-between">
-                                    <Checkbox
-                                        id="court-regenerate-token"
-                                        label="Acak ulang token 6-digit baru saat disimpan"
-                                        checked={courtForm.data.regenerate_token}
-                                        onChange={(event) => courtForm.setData('regenerate_token', event.target.checked)}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRegenerateCourtToken(editingCourt)}
-                                        className="text-xs font-bold text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 underline decoration-dotted"
-                                    >
-                                        Buat Sekarang
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="rounded-xl border border-amber-300 bg-amber-50/90 dark:bg-amber-950/40 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
-                                <div>
-                                    <p className="font-bold flex items-center gap-1.5">
-                                        <i className="fa-solid fa-circle-exclamation text-amber-600" />
-                                        Token Belum Dibuat
-                                    </p>
-                                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                                        Token 6 digit akan otomatis digenerate saat Anda menekan tombol Simpan di bawah, atau buat sekarang langsung.
-                                    </p>
-                                </div>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={() => handleRegenerateCourtToken(editingCourt)}
-                                    className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
-                                >
-                                    <i className="fa-solid fa-key mr-1.5" />
-                                    Generate Sekarang
-                                </Button>
-                            </div>
-                        )
-                    ) : (
-                        <div className="rounded-xl border border-dashed border-[#d9d3c9] bg-[#faf8f5] dark:bg-slate-900/50 p-3 text-xs text-[#7a746e]">
-                            <i className="fa-solid fa-circle-info mr-1.5 text-amber-600" />
-                            Token 6 digit untuk login cepat Meja Panitera akan otomatis digenerate saat lapangan disimpan.
-                        </div>
-                    )}
-                </form>
-            </Modal>
-
-            {/* DELETE COURT CONFIRMATION */}
-            <Modal
-                isOpen={!!deletingCourt}
-                onClose={() => setDeletingCourt(null)}
-                title="Konfirmasi Hapus Lapangan"
-                description={`Apakah Anda yakin ingin menghapus '${deletingCourt?.name}'?`}
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button variant="outline" onClick={() => setDeletingCourt(null)}>
-                            Batal
-                        </Button>
-                        <Button variant="danger" onClick={confirmDeleteCourt}>
-                            Hapus Lapangan
-                        </Button>
-                    </div>
-                }
-            />
-
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL 3: NOMER PERTANDINGAN (CREATE / EDIT)                   */}
-            {/* ══════════════════════════════════════════════════════════════ */}
-            <Modal
-                isOpen={isMatchModalOpen}
-                onClose={() => setIsMatchModalOpen(false)}
-                size="xl"
-                title={editingMatchCategory ? 'Edit Nomer Pertandingan' : 'Tambah Nomer Pertandingan Baru'}
-                description="Tautkan nomor tanding dengan kelompok umur, jenis (Embu/Randori), gender, dan kuota."
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsMatchModalOpen(false)}
-                            disabled={matchForm.processing}
-                        >
-                            Batal
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="primary"
-                            onClick={submitMatchCategory}
-                            loading={matchForm.processing}
-                            className="bg-[#141210] hover:bg-black text-amber-400 font-semibold"
-                        >
-                            {editingMatchCategory ? 'Simpan Perubahan' : 'Tambahkan Nomer Tanding'}
-                        </Button>
-                    </div>
-                }
-            >
-                <form onSubmit={submitMatchCategory} className="space-y-4">
-                    <Input
-                        label="Nama Nomer Pertandingan"
-                        required
-                        value={matchForm.data.name}
-                        onChange={(e) => matchForm.setData('name', e.target.value)}
-                        error={matchForm.errors.name}
-                        placeholder="e.g. Embu Berpasangan Kyu 7-5 Putra, Randori Kelas 50kg"
-                    />
-
-                    <Combobox
-                        label="Kelompok Umur (Relasi)"
-                        value={matchForm.data.age_category_id}
-                        onChange={(val) => matchForm.setData('age_category_id', val)}
-                        options={ageCategoryOptions}
-                        searchPlaceholder="Pilih kelompok umur..."
-                        error={matchForm.errors.age_category_id}
-                    />
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <Combobox
-                            label="Tipe Pertandingan"
-                            required
-                            value={matchForm.data.type}
-                            onChange={(val) => matchForm.setData('type', val)}
-                            options={matchTypeOptions}
-                            clearable={false}
-                            error={matchForm.errors.type}
-                        />
-
-                        <Combobox
-                            label="Kategori Gender"
-                            required
-                            value={matchForm.data.gender}
-                            onChange={(val) => matchForm.setData('gender', val)}
-                            options={matchGenderOptions}
-                            clearable={false}
-                            error={matchForm.errors.gender}
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <Input
-                            label="Kapasitas / Kuota Peserta (Bagan)"
-                            type="number"
-                            min="2"
-                            max="256"
-                            required
-                            value={matchForm.data.capacity}
-                            onChange={(e) => matchForm.setData('capacity', e.target.value)}
-                            error={matchForm.errors.capacity}
-                            placeholder="16 atau 32"
-                        />
-                        <Combobox
-                            label="Maks. Atlet per Tim"
-                            required
-                            value={matchForm.data.max_athletes_per_team}
-                            onChange={(val) => matchForm.setData('max_athletes_per_team', val)}
-                            options={teamSizeOptions}
-                            clearable={false}
-                            error={matchForm.errors.max_athletes_per_team}
-                            hint="Pilih 1 untuk individu, 2 atau 4 untuk nomor beregu."
-                        />
-                        <Input
-                            label="Urutan"
-                            type="number"
-                            min="0"
-                            value={matchForm.data.order}
-                            onChange={(e) => matchForm.setData('order', e.target.value)}
-                            error={matchForm.errors.order}
-                        />
-                    </div>
-
-                    {/* Conditional Fields depending on Type (Embu vs Randori) */}
-                    {matchForm.data.type === 'randori' ? (
-                        <div className="p-3 bg-red-50 rounded-xl border border-red-200 space-y-3">
-                            <p className="text-xs font-bold text-red-900 flex items-center gap-1.5">
-                                <i className="fa-solid fa-weight-scale text-red-600"></i>
-                                Batas Berat Badan Randori (kg)
-                            </p>
-                            <Combobox
-                                label="Ambil dari Master Berat Badan"
-                                value={matchForm.data.weight_class_id}
-                                onChange={applyWeightClass}
-                                options={weightClassOptions}
-                                placeholder="Pilih kelas berat (opsional)"
-                                searchPlaceholder="Cari kelas berat..."
-                                hint="Memilih kelas akan mengisi batas berat otomatis; masih dapat disesuaikan untuk event ini."
-                                error={matchForm.errors.weight_class_id}
-                            />
-                            <div className="grid grid-cols-2 gap-3">
-                                <Input
-                                    label="Berat Minimal (kg)"
-                                    type="number"
-                                    step="0.1"
-                                    value={matchForm.data.min_weight}
-                                    onChange={(e) => matchForm.setData('min_weight', e.target.value)}
-                                    error={matchForm.errors.min_weight}
-                                    placeholder="e.g. 45"
-                                />
-                                <Input
-                                    label="Berat Maksimal (kg)"
-                                    type="number"
-                                    step="0.1"
-                                    value={matchForm.data.max_weight}
-                                    onChange={(e) => matchForm.setData('max_weight', e.target.value)}
-                                    error={matchForm.errors.max_weight}
-                                    placeholder="e.g. 50"
-                                />
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-200 space-y-3">
-                            <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-                                <i className="fa-solid fa-medal text-indigo-600"></i>
-                                Tingkatan Sabuk / Kyu Kenshi
-                            </p>
-                            <div className="grid grid-cols-2 gap-3">
-                                <Combobox
-                                    label="Kyu / Dan Minimal"
-                                    options={kyuOptions}
-                                    value={matchForm.data.min_kyu}
-                                    onChange={(value) => matchForm.setData('min_kyu', value)}
-                                    error={matchForm.errors.min_kyu}
-                                    placeholder="Pilih Kyu minimum"
-                                    searchPlaceholder="Cari tingkatan..."
-                                />
-                                <Combobox
-                                    label="Kyu / Dan Maksimal"
-                                    options={kyuOptions}
-                                    value={matchForm.data.max_kyu}
-                                    onChange={(value) => matchForm.setData('max_kyu', value)}
-                                    error={matchForm.errors.max_kyu}
-                                    placeholder="Pilih Kyu maksimum"
-                                    searchPlaceholder="Cari tingkatan..."
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Status Klasifikasi Nomor (Dipertandingkan Resmi vs Ekshibisi) */}
-                    <div className="p-4 rounded-xl border border-[#ede9e1] bg-[#fbfaf8] space-y-3 dark:border-slate-800 dark:bg-slate-950/60">
-                        <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold text-[#0f0d0b] dark:text-white flex items-center gap-1.5">
-                                <i className="fa-solid fa-trophy text-amber-500"></i>
-                                Status Klasifikasi Pertandingan
-                            </label>
-                            <span className="text-[10px] font-semibold text-[#8c827a]">
-                                {matchForm.data.is_exhibition ? '🟡 Terpisah dari Juara Umum' : '🟢 Dihitung ke Juara Umum'}
-                            </span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <button
-                                type="button"
-                                onClick={() => matchForm.setData('is_exhibition', false)}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                                    !matchForm.data.is_exhibition
-                                        ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs'
-                                        : 'border-[#ede9e1] bg-white dark:bg-slate-900 text-slate-600 hover:border-slate-300'
-                                }`}
-                            >
-                                <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                                    !matchForm.data.is_exhibition ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'
-                                }`}>
-                                    {!matchForm.data.is_exhibition && <i className="fa-solid fa-check text-[9px]"></i>}
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold">Dipertandingkan (Resmi)</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-4">
-                                        Nomor resmi. Perolehan medali dihitung ke klasemen kontingen & Juara Umum.
-                                    </p>
-                                </div>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => matchForm.setData('is_exhibition', true)}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                                    matchForm.data.is_exhibition
-                                        ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 ring-2 ring-amber-500/20 shadow-xs'
-                                        : 'border-[#ede9e1] bg-white dark:bg-slate-900 text-slate-600 hover:border-slate-300'
-                                }`}
-                            >
-                                <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                                    matchForm.data.is_exhibition ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300'
-                                }`}>
-                                    {matchForm.data.is_exhibition && <i className="fa-solid fa-check text-[9px]"></i>}
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold">Ekshibisi</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-4">
-                                        Nomor ekshibisi. Medali hanya untuk kenshi, dipisahkan dari klasemen Juara Umum.
-                                    </p>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center pt-2">
-                        <Checkbox id="match-category-is-active" label="Nomor Pertandingan Dibuka untuk Pendaftaran (Aktif)" checked={matchForm.data.is_active}
-                            onChange={(event) => matchForm.setData('is_active', event.target.checked)} />
-                    </div>
-                </form>
-            </Modal>
-
-            {/* DELETE MATCH CATEGORY CONFIRMATION */}
-            <Modal
-                isOpen={!!deletingMatchCategory}
-                onClose={() => setDeletingMatchCategory(null)}
-                title="Konfirmasi Hapus Nomer Pertandingan"
-                description={`Apakah Anda yakin ingin menghapus '${deletingMatchCategory?.name}'?`}
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button variant="outline" onClick={() => setDeletingMatchCategory(null)}>
-                            Batal
-                        </Button>
-                        <Button variant="danger" onClick={confirmDeleteMatchCategory}>
-                            Hapus Nomer Tanding
-                        </Button>
-                    </div>
-                }
-            />
-
-            {/* ══════════════════════════════════════════════════════════════ */}
-            {/* MODAL 4: RUNDOWN ACARA (CREATE / EDIT)                        */}
-            {/* ══════════════════════════════════════════════════════════════ */}
-            <Modal
-                isOpen={isRundownModalOpen}
-                onClose={() => setIsRundownModalOpen(false)}
-                title={editingRundown ? 'Edit Sesi Rundown' : 'Tambah Sesi Rundown Baru'}
-                description="Tentukan waktu pelaksanaan, nama kegiatan, dan jenis sesi acara."
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsRundownModalOpen(false)}
-                            disabled={rundownForm.processing}
-                        >
-                            Batal
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="primary"
-                            onClick={submitRundown}
-                            loading={rundownForm.processing}
-                            className="bg-[#141210] hover:bg-black text-amber-400 font-semibold"
-                        >
-                            {editingRundown ? 'Simpan Perubahan' : 'Tambahkan Sesi'}
-                        </Button>
-                    </div>
-                }
-            >
-                <form onSubmit={submitRundown} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                        <Input
-                            label="Tanggal Sesi"
-                            type="date"
-                            required
-                            value={rundownForm.data.date}
-                            onChange={(e) => rundownForm.setData('date', e.target.value)}
-                            error={rundownForm.errors.date}
-                        />
-                        <Input
-                            label="Jam Mulai"
-                            type="time"
-                            required
-                            value={rundownForm.data.time}
-                            onChange={(e) => rundownForm.setData('time', e.target.value)}
-                            error={rundownForm.errors.time}
-                        />
-                        <Input
-                            label="Jam Selesai"
-                            type="time"
-                            value={rundownForm.data.end_time}
-                            onChange={(e) => rundownForm.setData('end_time', e.target.value)}
-                            error={rundownForm.errors.end_time}
-                        />
-                    </div>
-
-                    <Checkbox id="rundown-is-match-session" checked={rundownForm.data.is_match_session}
-                        onChange={(event) => rundownForm.setData('is_match_session', event.target.checked)}
-                        label="Gunakan sebagai sesi pertandingan"
-                        description="Generator hanya menempatkan partai pada rundown yang dicentang dan berada dalam rentang jam mulai–selesai."
-                        className="rounded-xl border border-[#e5ddd3] bg-[#faf8f4] p-3.5" />
-
-                    <Input
-                        label="Nama Kegiatan / Sesi"
-                        required
-                        value={rundownForm.data.name}
-                        onChange={(e) => rundownForm.setData('name', e.target.value)}
-                        error={rundownForm.errors.name}
-                        placeholder="e.g. Babak Penyisihan Randori Remaja A"
-                    />
-
-                    <Combobox
-                        label="Kategori / Tipe Sesi"
-                        required
-                        value={rundownForm.data.type}
-                        onChange={(val) => rundownForm.setData('type', val)}
-                        options={rundownTypeOptions}
-                        clearable={false}
-                        error={rundownForm.errors.type}
-                    />
-
-                    <Textarea
-                        label="Deskripsi / Catatan Petunjuk"
-                        rows={3}
-                        value={rundownForm.data.description}
-                        onChange={(e) => rundownForm.setData('description', e.target.value)}
-                        error={rundownForm.errors.description}
-                        placeholder="e.g. Bertempat di Tatami 1 & Tatami 2"
-                    />
-
-                    <Input
-                        label="Nomor Urut Sesi"
-                        type="number"
-                        min="0"
-                        value={rundownForm.data.order}
-                        onChange={(e) => rundownForm.setData('order', e.target.value)}
-                        error={rundownForm.errors.order}
-                    />
-                </form>
-            </Modal>
-
-            {/* DELETE RUNDOWN CONFIRMATION */}
-            <Modal
-                isOpen={!!deletingRundown}
-                onClose={() => setDeletingRundown(null)}
-                title="Konfirmasi Hapus Sesi Rundown"
-                description={`Apakah Anda yakin ingin menghapus '${deletingRundown?.name}' dari susunan acara?`}
-                footer={
-                    <div className="flex items-center justify-end gap-2 w-full">
-                        <Button variant="outline" onClick={() => setDeletingRundown(null)}>
-                            Batal
-                        </Button>
-                        <Button variant="danger" onClick={confirmDeleteRundown}>
-                            Hapus Sesi
-                        </Button>
-                    </div>
-                }
-            />
-
-            <Modal
-                isOpen={isRefereeModalOpen}
-                onClose={() => {
-                    setIsRefereeModalOpen(false);
-                    setEditingReferee(null);
-                }}
-                title={editingReferee ? 'Edit Data Wasit & Penugasan' : 'Tambah Wasit Baru ke Event'}
-                footer={
-                    <>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setIsRefereeModalOpen(false);
-                                setEditingReferee(null);
-                            }}
-                        >
-                            Batal
-                        </Button>
-                        <Button onClick={submitReferee} loading={refereeForm.processing}>
-                            {editingReferee ? 'Simpan Perubahan' : 'Simpan & Tugaskan'}
-                        </Button>
-                    </>
-                }
-            >
-                <form onSubmit={submitReferee} className="space-y-4">
-                    <Input
-                        label="Nama Wasit / Juri"
-                        required
-                        value={refereeForm.data.name}
-                        onChange={(e) => refereeForm.setData('name', e.target.value)}
-                        error={refereeForm.errors.name}
-                        placeholder="Contoh: Sensei Budi Santoso"
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Combobox
-                            label="Jenis Kelamin"
-                            value={refereeForm.data.gender}
-                            onChange={(val) => refereeForm.setData('gender', val)}
-                            options={[
-                                { value: 'male', label: 'Laki-laki' },
-                                { value: 'female', label: 'Perempuan' },
-                            ]}
-                            clearable={false}
-                            error={refereeForm.errors.gender}
-                        />
-                        <Combobox
-                            label="Peran di Event"
-                            value={refereeForm.data.role}
-                            onChange={(value) => refereeForm.setData('role', value)}
-                            options={refereeRoleOptions}
-                            clearable={false}
-                            error={refereeForm.errors.role}
-                        />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label="Tingkatan Dan"
-                            value={refereeForm.data.dan_grade}
-                            onChange={(e) => refereeForm.setData('dan_grade', e.target.value)}
-                            error={refereeForm.errors.dan_grade}
-                            placeholder="Contoh: IV DAN"
-                        />
-                        <Input
-                            label="Tingkat Sertifikasi"
-                            value={refereeForm.data.certification_level}
-                            onChange={(e) => refereeForm.setData('certification_level', e.target.value)}
-                            error={refereeForm.errors.certification_level}
-                            placeholder="Contoh: Wasit Nasional / Wasit Daerah"
-                        />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label="Nomor Lisensi"
-                            value={refereeForm.data.license_number}
-                            onChange={(e) => refereeForm.setData('license_number', e.target.value)}
-                            error={refereeForm.errors.license_number}
-                            placeholder="Contoh: 69.1.13.03.99.001"
-                        />
-                        <Input
-                            label="Wilayah / Pengda"
-                            value={refereeForm.data.region}
-                            onChange={(e) => refereeForm.setData('region', e.target.value)}
-                            error={refereeForm.errors.region}
-                            placeholder="Contoh: Jawa Timur"
-                        />
-                    </div>
-
-                    <Input
-                        label="Nomor Telepon"
-                        value={refereeForm.data.phone}
-                        onChange={(e) => refereeForm.setData('phone', e.target.value)}
-                        error={refereeForm.errors.phone}
-                        placeholder="08xxxxxxxxxx"
-                    />
-
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                        <strong>Akun login {editingReferee ? '(Opsional)' : 'opsional'}.</strong>{' '}
-                        {editingReferee
-                            ? 'Isi email untuk sinkronisasi akun login. Kosongkan kolom password jika tidak ingin mengubah password saat ini.'
-                            : 'Isi email dan password agar Wasit dapat login dan mengakses event ini.'}
-                    </div>
-
-                    <Input
-                        label="Email Login"
-                        type="email"
-                        value={refereeForm.data.email}
-                        onChange={(e) => refereeForm.setData('email', e.target.value)}
-                        error={refereeForm.errors.email}
-                        autoComplete="username"
-                        placeholder="wasit@perkemi.id"
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label={editingReferee ? 'Password Baru (Kosongkan jika tetap)' : 'Password'}
-                            type="password"
-                            value={refereeForm.data.password}
-                            onChange={(e) => refereeForm.setData('password', e.target.value)}
-                            error={refereeForm.errors.password}
-                            autoComplete="new-password"
-                        />
-                        <Input
-                            label="Konfirmasi Password"
-                            type="password"
-                            value={refereeForm.data.password_confirmation}
-                            onChange={(e) => refereeForm.setData('password_confirmation', e.target.value)}
-                            autoComplete="new-password"
-                        />
-                    </div>
-                </form>
-            </Modal>
-
-            <Modal isOpen={isNewClerkModalOpen} onClose={() => setIsNewClerkModalOpen(false)} title="Tambah Panitera Baru ke Event" footer={<><Button variant="outline" onClick={() => setIsNewClerkModalOpen(false)}>Batal</Button><Button onClick={submitNewClerk} loading={newClerkForm.processing}>Simpan & Tugaskan</Button></>}>
-                <form onSubmit={submitNewClerk} className="space-y-4"><Input label="Nama Panitera" required value={newClerkForm.data.name} onChange={(e) => newClerkForm.setData('name', e.target.value)} error={newClerkForm.errors.name} placeholder="Contoh: Dewi Lestari" /><div className="grid gap-4 sm:grid-cols-2"><Input label="ID Panitia / Nomor Pegawai" value={newClerkForm.data.employee_number} onChange={(e) => newClerkForm.setData('employee_number', e.target.value)} error={newClerkForm.errors.employee_number} /><Combobox label="Peran di Event" value={newClerkForm.data.role} onChange={(value) => newClerkForm.setData('role', value)} options={clerkRoleOptions} clearable={false} error={newClerkForm.errors.role} /></div><div className="grid gap-4 sm:grid-cols-2"><Input label="Sertifikasi" value={newClerkForm.data.certification} onChange={(e) => newClerkForm.setData('certification', e.target.value)} error={newClerkForm.errors.certification} /><Input label="Wilayah / Pengda" value={newClerkForm.data.region} onChange={(e) => newClerkForm.setData('region', e.target.value)} error={newClerkForm.errors.region} /></div><Input label="Nomor Telepon" value={newClerkForm.data.phone} onChange={(e) => newClerkForm.setData('phone', e.target.value)} error={newClerkForm.errors.phone} /><div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Akun login opsional.</strong> Isi email dan password agar Panitera dapat login ke event ini.</div><Input label="Email Login" type="email" value={newClerkForm.data.email} onChange={(e) => newClerkForm.setData('email', e.target.value)} error={newClerkForm.errors.email} autoComplete="username" /><div className="grid gap-4 sm:grid-cols-2"><Input label="Password" type="password" value={newClerkForm.data.password} onChange={(e) => newClerkForm.setData('password', e.target.value)} error={newClerkForm.errors.password} autoComplete="new-password" /><Input label="Konfirmasi Password" type="password" value={newClerkForm.data.password_confirmation} onChange={(e) => newClerkForm.setData('password_confirmation', e.target.value)} autoComplete="new-password" /></div></form>
-            </Modal>
-
-            {/* Modal Tambah / Edit Koordinator Lapangan */}
-            <Modal
-                isOpen={isFieldCoordinatorModalOpen}
-                onClose={() => {
-                    setIsFieldCoordinatorModalOpen(false);
-                    setEditingFieldCoordinator(null);
-                }}
-                title={editingFieldCoordinator ? 'Edit Data Koordinator & Penugasan' : 'Tambah Koordinator Baru ke Event'}
-                footer={
-                    <>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setIsFieldCoordinatorModalOpen(false);
-                                setEditingFieldCoordinator(null);
-                            }}
-                        >
-                            Batal
-                        </Button>
-                        <Button onClick={submitFieldCoordinator} loading={fieldCoordinatorForm.processing}>
-                            {editingFieldCoordinator ? 'Simpan Perubahan' : 'Simpan & Tugaskan'}
-                        </Button>
-                    </>
-                }
-            >
-                <form onSubmit={submitFieldCoordinator} className="space-y-4">
-                    <Input
-                        label="Nama Koordinator"
-                        required
-                        value={fieldCoordinatorForm.data.name}
-                        onChange={(e) => fieldCoordinatorForm.setData('name', e.target.value)}
-                        error={fieldCoordinatorForm.errors.name}
-                        placeholder="Contoh: Sensei Bambang Sugiono"
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Combobox
-                            label="Jenis Kelamin"
-                            value={fieldCoordinatorForm.data.gender}
-                            onChange={(val) => fieldCoordinatorForm.setData('gender', val)}
-                            options={[
-                                { value: 'male', label: 'Laki-laki' },
-                                { value: 'female', label: 'Perempuan' },
-                            ]}
-                            clearable={false}
-                            error={fieldCoordinatorForm.errors.gender}
-                        />
-                        <Combobox
-                            label="Area Penugasan di Event"
-                            value={fieldCoordinatorForm.data.assignment_area}
-                            onChange={(value) => fieldCoordinatorForm.setData('assignment_area', value)}
-                            options={fieldCoordinatorAreaOptions}
-                            clearable={false}
-                            error={fieldCoordinatorForm.errors.assignment_area}
-                        />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label="Tingkatan Dan"
-                            value={fieldCoordinatorForm.data.dan_grade}
-                            onChange={(e) => fieldCoordinatorForm.setData('dan_grade', e.target.value)}
-                            error={fieldCoordinatorForm.errors.dan_grade}
-                            placeholder="Contoh: V DAN"
-                        />
-                        <Input
-                            label="Tingkat Sertifikasi"
-                            value={fieldCoordinatorForm.data.certification_level}
-                            onChange={(e) => fieldCoordinatorForm.setData('certification_level', e.target.value)}
-                            error={fieldCoordinatorForm.errors.certification_level}
-                            placeholder="Contoh: Wasit Nasional / Pengawas"
-                        />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label="ID / Lisensi Koordinator"
-                            value={fieldCoordinatorForm.data.coordinator_number}
-                            onChange={(e) => fieldCoordinatorForm.setData('coordinator_number', e.target.value)}
-                            error={fieldCoordinatorForm.errors.coordinator_number}
-                            placeholder="Contoh: KORD-001"
-                        />
-                        <Input
-                            label="Wilayah / Pengda"
-                            value={fieldCoordinatorForm.data.region}
-                            onChange={(e) => fieldCoordinatorForm.setData('region', e.target.value)}
-                            error={fieldCoordinatorForm.errors.region}
-                            placeholder="Contoh: Jawa Timur"
-                        />
-                    </div>
-
-                    <Input
-                        label="Nomor Telepon"
-                        value={fieldCoordinatorForm.data.phone}
-                        onChange={(e) => fieldCoordinatorForm.setData('phone', e.target.value)}
-                        error={fieldCoordinatorForm.errors.phone}
-                        placeholder="08xxxxxxxxxx"
-                    />
-
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-                        <strong>Akun login {editingFieldCoordinator ? '(Opsional)' : 'opsional'}.</strong>{' '}
-                        {editingFieldCoordinator
-                            ? 'Isi email untuk sinkronisasi akun login. Kosongkan kolom password jika tidak ingin mengubah password saat ini.'
-                            : 'Isi email dan password agar Koordinator dapat login ke event ini.'}
-                    </div>
-
-                    <Input
-                        label="Email Login"
-                        type="email"
-                        value={fieldCoordinatorForm.data.email}
-                        onChange={(e) => fieldCoordinatorForm.setData('email', e.target.value)}
-                        error={fieldCoordinatorForm.errors.email}
-                        autoComplete="username"
-                        placeholder="koordinator@perkemi.id"
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <Input
-                            label={editingFieldCoordinator ? 'Password Baru (Kosongkan jika tetap)' : 'Password'}
-                            type="password"
-                            value={fieldCoordinatorForm.data.password}
-                            onChange={(e) => fieldCoordinatorForm.setData('password', e.target.value)}
-                            error={fieldCoordinatorForm.errors.password}
-                            autoComplete="new-password"
-                        />
-                        <Input
-                            label="Konfirmasi Password"
-                            type="password"
-                            value={fieldCoordinatorForm.data.password_confirmation}
-                            onChange={(e) => fieldCoordinatorForm.setData('password_confirmation', e.target.value)}
-                            autoComplete="new-password"
-                        />
-                    </div>
-                </form>
-            </Modal>
-
-            {/* Modal Tambah / Edit Arbitrase */}
+            {/* Modal Tambah / Edit Arbitrase (for ArbitrationTab) */}
             <Modal
                 isOpen={isArbitratorModalOpen}
                 onClose={() => {
@@ -4641,199 +1079,20 @@ export default function EventDetail({
                 </form>
             </Modal>
 
-            {/* Modal Transfer Penugasan Universal (Arbitrase ⇄ Wasit & Juri ⇄ Koordinator Lapangan) */}
-            <Modal
+            {/* Modal Transfer Penugasan Universal (Arbitrase ⇄ Wasit ⇄ Koordinator) */}
+            <TransferAssignmentModal
                 isOpen={isTransferModalOpen}
                 onClose={() => {
                     setIsTransferModalOpen(false);
                     setTransferTarget(null);
                 }}
-                title="Alihkan Penugasan Personil Event"
-                footer={
-                    <>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setIsTransferModalOpen(false);
-                                setTransferTarget(null);
-                            }}
-                        >
-                            Batal
-                        </Button>
-                        <Button onClick={submitTransfer} loading={transferForm.processing} className="bg-amber-600 hover:bg-amber-700 text-white">
-                            <i className="fa-solid fa-right-left mr-2" />
-                            Lanjutkan Pengalihan
-                        </Button>
-                    </>
-                }
-            >
-                {transferTarget && (
-                    <form onSubmit={submitTransfer} className="space-y-4">
-                        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300">
-                            <div className="flex items-center gap-2 font-semibold">
-                                <i className="fa-solid fa-circle-info text-blue-600 dark:text-blue-400" />
-                                <span>Personil yang dialihkan:</span>
-                            </div>
-                            <div className="mt-1 flex items-center gap-2">
-                                <p className="font-bold text-sm text-[#0f0d0b] dark:text-white">
-                                    {transferTarget.source.name}
-                                </p>
-                                {transferTarget.source.gender && (
-                                    <span className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
-                                        transferTarget.source.gender === 'female'
-                                            ? 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200'
-                                            : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                    }`}>
-                                        {transferTarget.source.gender === 'female' ? '♀ Perempuan' : '♂ Laki-laki'}
-                                    </span>
-                                )}
-                            </div>
-                            <p className="mt-0.5 text-xs text-[#706860] dark:text-slate-400">
-                                Saat ini bertugas di:{' '}
-                                <strong className="text-zinc-800 dark:text-zinc-200">
-                                    {transferTarget.sourceCategory === 'arbitrator'
-                                        ? `Arbitrase (${arbitratorRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role || 'Arbitrase'})`
-                                        : transferTarget.sourceCategory === 'referee'
-                                        ? `Wasit & Juri (${refereeRoleOptions.find(o => o.value === transferTarget.source.role)?.label || transferTarget.source.role || 'Wasit'})`
-                                        : `Koordinator Lapangan (${fieldCoordinatorAreaOptions.find(o => o.value === transferTarget.source.assignment_area)?.label || transferTarget.source.assignment_area || 'Koordinator'})`}
-                                </strong>
-                            </p>
-                        </div>
-
-                        <div>
-                            <label className="mb-1.5 block text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                Pilih Kategori Penugasan Baru:
-                            </label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {[
-                                    { id: 'arbitrator', label: 'Arbitrase', icon: 'fa-gavel' },
-                                    { id: 'referee', label: 'Wasit & Juri', icon: 'fa-scale-balanced' },
-                                    { id: 'coordinator', label: 'Koordinator', icon: 'fa-people-group' },
-                                ].map((cat) => {
-                                    const isCurrent = transferTarget.sourceCategory === cat.id;
-                                    const isSelected = transferForm.data.target_category === cat.id;
-                                    return (
-                                        <button
-                                            key={cat.id}
-                                            type="button"
-                                            disabled={isCurrent}
-                                            onClick={() => {
-                                                let newRole = 'wasit_utama';
-                                                if (cat.id === 'arbitrator') newRole = 'Arbitrase Pertandingan';
-                                                else if (cat.id === 'coordinator') newRole = 'koordinator_pertandingan';
-                                                transferForm.setData({
-                                                    ...transferForm.data,
-                                                    target_category: cat.id,
-                                                    target_role: newRole,
-                                                });
-                                            }}
-                                            className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                                                isCurrent
-                                                    ? 'opacity-40 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700'
-                                                    : isSelected
-                                                    ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-sm ring-2 ring-amber-400/40 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-200'
-                                                    : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'
-                                            }`}
-                                        >
-                                            <i className={`fa-solid ${cat.icon} text-lg mb-1`} />
-                                            <span>{cat.label}</span>
-                                            {isCurrent && <span className="text-[9px] font-normal mt-0.5">(Saat ini)</span>}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {transferForm.data.target_category === 'arbitrator' && (
-                            <Combobox
-                                label="Peran / Jabatan di Arbitrase"
-                                value={transferForm.data.target_role}
-                                onChange={(val) => transferForm.setData('target_role', val)}
-                                options={arbitratorRoleOptions}
-                                clearable={false}
-                                error={transferForm.errors.target_role}
-                            />
-                        )}
-                        {transferForm.data.target_category === 'referee' && (
-                            <Combobox
-                                label="Peran / Jabatan di Wasit & Juri"
-                                value={transferForm.data.target_role}
-                                onChange={(val) => transferForm.setData('target_role', val)}
-                                options={refereeRoleOptions}
-                                clearable={false}
-                                error={transferForm.errors.target_role}
-                            />
-                        )}
-                        {transferForm.data.target_category === 'coordinator' && (
-                            <Combobox
-                                label="Area Penugasan Koordinator"
-                                value={transferForm.data.target_role}
-                                onChange={(val) => transferForm.setData('target_role', val)}
-                                options={fieldCoordinatorAreaOptions}
-                                clearable={false}
-                                error={transferForm.errors.target_role}
-                            />
-                        )}
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <Combobox
-                                label="Jenis Kelamin"
-                                value={transferForm.data.gender}
-                                onChange={(val) => transferForm.setData('gender', val)}
-                                options={[
-                                    { value: 'male', label: 'Laki-laki' },
-                                    { value: 'female', label: 'Perempuan' },
-                                ]}
-                                clearable={false}
-                                error={transferForm.errors.gender}
-                            />
-                            <Input
-                                label="Tingkatan Dan"
-                                value={transferForm.data.dan_grade}
-                                onChange={(e) => transferForm.setData('dan_grade', e.target.value)}
-                                error={transferForm.errors.dan_grade}
-                                placeholder="Contoh: V DAN"
-                            />
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <Input
-                                label="Tingkat Sertifikasi"
-                                value={transferForm.data.certification_level}
-                                onChange={(e) => transferForm.setData('certification_level', e.target.value)}
-                                error={transferForm.errors.certification_level}
-                                placeholder="Contoh: Wasit Nasional"
-                            />
-                            <Input
-                                label="Nomor Lisensi / ID / NIK"
-                                value={transferForm.data.license_number}
-                                onChange={(e) => transferForm.setData('license_number', e.target.value)}
-                                error={transferForm.errors.license_number}
-                                placeholder="Contoh: 69.1.13.03.99.001"
-                            />
-                        </div>
-
-                        <div className="rounded-xl border border-[#ede9e1] bg-[#fbfaf8] p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                            <label className="flex items-start gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={transferForm.data.detach_source}
-                                    onChange={(e) => transferForm.setData('detach_source', e.target.checked)}
-                                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                />
-                                <div className="text-xs">
-                                    <span className="font-semibold text-[#0f0d0b] dark:text-white">
-                                        Lepaskan dari penugasan sebelumnya di event ini
-                                    </span>
-                                    <p className="mt-0.5 text-[#706860] dark:text-slate-400">
-                                        Jika dicentang, personil akan dipindahkan secara penuh (dihapus dari penugasan sebelumnya dan penugasan court sebelumnya akan dibersihkan). Role akun login juga otomatis disesuaikan.
-                                    </p>
-                                </div>
-                            </label>
-                        </div>
-                    </form>
-                )}
-            </Modal>
+                transferTarget={transferTarget}
+                transferForm={transferForm}
+                submitTransfer={submitTransfer}
+                arbitratorRoleOptions={arbitratorRoleOptions}
+                refereeRoleOptions={refereeRoleOptions}
+                fieldCoordinatorAreaOptions={fieldCoordinatorAreaOptions}
+            />
         </AdminLayout>
     );
 }

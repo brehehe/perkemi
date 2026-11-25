@@ -19,6 +19,28 @@ class TenantAccessController extends Controller
     ): RedirectResponse {
         $event = Event::query()->where('slug', $slug)->firstOrFail();
 
+        return $this->enterEvent($request, $event, $eventAccess);
+    }
+
+    /**
+     * Enter event tenant context by event model/ID.
+     */
+    public function enterById(
+        Request $request,
+        Event $event,
+        DashboardEventAccessService $eventAccess,
+    ): RedirectResponse {
+        return $this->enterEvent($request, $event, $eventAccess);
+    }
+
+    /**
+     * Shared logic to enter event tenant context.
+     */
+    protected function enterEvent(
+        Request $request,
+        Event $event,
+        DashboardEventAccessService $eventAccess,
+    ): RedirectResponse {
         $user = $request->user();
 
         if (! $user) {
@@ -30,21 +52,49 @@ class TenantAccessController extends Controller
         $eventAccessRole = $event->accessRoleFor($user);
         $isResponsibleUser = $eventAccessRole === Event::AccessRoleResponsible;
         $isContingentOwner = $event->contingents()->where('user_id', $user->id)->exists();
-        $hasTenantAccess = $eventAccess->canAccess($user, $event) || $isContingentOwner;
+        $isContingentUser = $user->hasAnyRole(['kontingen', 'Contingent']) || $user->contingents()->exists();
+        $hasTenantAccess = $isFullAdmin
+            || $eventAccessRole !== null
+            || $eventAccess->canAccess($user, $event)
+            || $isContingentOwner
+            || $isContingentUser;
 
         abort_unless($hasTenantAccess, 403, 'Anda tidak memiliki hak akses untuk mengelola event ini.');
 
         $request->session()->put('tenant_event_id', $event->id);
         $request->session()->put('tenant_event_slug', $event->slug);
 
+        $target = $request->query('target');
+        if ($target && is_string($target) && str_starts_with($target, '/')) {
+            if (str_starts_with($target, '/kontingen') && ! $isContingentOwner && ! $isFullAdmin) {
+                return redirect()->route('kontingen.registrasi.join', $event)
+                    ->with('info', "Silakan mulai pendaftaran kontingen untuk event: {$event->name}");
+            }
+
+            if (str_contains($target, 'event_id=')) {
+                $target = (string) preg_replace('/([?&])event_id=[^&]+/', '$1event_id='.$event->id, $target);
+            }
+
+            return redirect($target)
+                ->with('success', "Berhasil beralih ke panel event: {$event->name}");
+        }
+
         $routeName = match (true) {
             $isContingentOwner && ! $isFullAdmin && ! $isResponsibleUser && $eventAccessRole === null => 'kontingen.registrasi',
+            ! $isContingentOwner && ! $isFullAdmin && ($user->hasAnyRole(['kontingen', 'Contingent']) || $user->contingents()->exists()) => 'kontingen.registrasi.join',
+            ($user->hasRole('Koordinator Lapangan') || $user->hasRole('Court')) && ! $isFullAdmin => 'admin.koordinator-court.index',
             $user->hasRole('Panitera') && ! $isFullAdmin => 'admin.panitera.scoring.index',
             $user->hasRole('Wasit') && ! $isFullAdmin => 'wasit.portal',
             default => 'admin.dashboard',
         };
 
-        return redirect()->route($routeName)
+        if ($routeName === 'kontingen.registrasi.join') {
+            return redirect()->route('kontingen.registrasi.join', $event);
+        }
+
+        $params = ($routeName === 'admin.dashboard' && ! $isFullAdmin) ? ['event_id' => $event->id] : [];
+
+        return redirect()->route($routeName, $params)
             ->with('success', "Berhasil beralih ke panel event: {$event->name}");
     }
 

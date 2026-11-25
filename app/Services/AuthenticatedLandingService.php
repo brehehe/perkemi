@@ -27,6 +27,7 @@ class AuthenticatedLandingService
         $hostEvent = $this->eventFromHost($request);
         $event = collect([
             $hostEvent,
+            $this->eventFromRequest($request),
             $this->eventFromIntendedUrl($request),
             $this->eventFromSession($request),
         ])->first(fn (?Event $candidate): bool => $candidate instanceof Event && $this->canAccessEvent($candidate, $user));
@@ -35,7 +36,14 @@ class AuthenticatedLandingService
             $event = $this->dashboardEventAccess->assignedEventsFor($user)
                 ->first();
 
-            $event ??= $user->contingent()->with('event')->first()?->event;
+            if (! $event && ($user->hasAnyRole(['kontingen', 'Contingent']) || $user->contingents()->exists())) {
+                $event = $user->contingents()
+                    ->whereHas('event', fn ($q) => $q->where('is_active', true))
+                    ->with('event')
+                    ->latest()
+                    ->first()?->event
+                    ?? $user->contingents()->with('event')->latest()->first()?->event;
+            }
 
             if (! $event && $user->hasRole('Panitera')) {
                 $event = Event::query()->where('is_active', true)->first()
@@ -128,6 +136,21 @@ class AuthenticatedLandingService
             ->where('tenant_subdomain', $subdomain)
             ->orWhere('slug', $subdomain)
             ->first();
+    }
+
+    private function eventFromRequest(Request $request): ?Event
+    {
+        $eventId = $request->input('event_id') ?? $request->query('event_id');
+        if (is_string($eventId) && $eventId !== '') {
+            return Event::query()->find($eventId);
+        }
+
+        $eventSlug = $request->input('event') ?? $request->query('event');
+        if (is_string($eventSlug) && $eventSlug !== '') {
+            return Event::query()->where('slug', $eventSlug)->first();
+        }
+
+        return null;
     }
 
     private function eventFromIntendedUrl(Request $request): ?Event

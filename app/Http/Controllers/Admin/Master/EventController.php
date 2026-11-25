@@ -32,9 +32,12 @@ class EventController extends Controller
         $isPgsql = $driver === 'pgsql';
         $likeOp = $isPgsql ? 'ilike' : 'like';
 
+        $user = $request->user();
+        $isFullAdmin = $user?->hasAnyRole(['Super Admin', 'Admin']) ?? false;
+
         $query = Event::withCount(['contingents', 'registrations', 'rundowns', 'tournamentResults']);
 
-        if ($tenantEvent instanceof Event) {
+        if ($tenantEvent instanceof Event && ! $isFullAdmin) {
             $query->whereKey($tenantEvent);
         }
 

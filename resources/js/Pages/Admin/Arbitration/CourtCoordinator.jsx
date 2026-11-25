@@ -1,7 +1,6 @@
 import TableContainer from '@/Components/UI/DataDisplay/TableContainer';
 import ActionMenuDropdown from '@/Components/UI/Elements/ActionMenuDropdown';
 import Button from '@/Components/UI/Elements/Button';
-import Combobox from '@/Components/UI/Forms/Combobox';
 import Modal from '@/Components/UI/Overlays/Modal';
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
@@ -508,22 +507,6 @@ export default function CourtCoordinator({
                                 )}
                             </div>
                         </div>
-
-                        {(isSupervisor || canSwitchCourt) && (
-                            <Combobox
-                                label="Pilih Event"
-                                labelClassName="text-white/60"
-                                containerClassName="w-full xl:w-80"
-                                value={activeEvent.id}
-                                clearable={false}
-                                onChange={(value) => router.get(baseUrl, { event_id: value })}
-                                options={events.map((e) => ({
-                                    value: e.id,
-                                    label: e.name,
-                                    sublabel: [e.status_label, e.date_label, e.city].filter(Boolean).join(' · '),
-                                }))}
-                            />
-                        )}
                     </div>
                 </section>
 

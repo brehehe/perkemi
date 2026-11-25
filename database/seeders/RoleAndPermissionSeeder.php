@@ -109,6 +109,7 @@ class RoleAndPermissionSeeder extends Seeder
             'Contingent' => [
                 'contingent portal',
             ],
+            'Viewer' => [],
         ];
 
         foreach ($roles as $roleName => $rolePermissions) {

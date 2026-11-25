@@ -103,14 +103,15 @@ test('an assigned clerk sees only the selected event dashboard', function () {
     $otherEvent = createPaniteraEvent('Event Panitera Lain');
     $user = createPaniteraUser($event);
 
-    $this->actingAs($user)
-        ->get("/admin/panitera/scoring?event_id={$event->id}")
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('Admin/Panitera/Dashboard')
-            ->where('activeEvent.id', $event->id)
-            ->has('events', 1)
-            ->where('events.0.id', $event->id)
-        );
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}");
+    dump($response->status(), substr($response->getContent(), 0, 500));
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Panitera/Dashboard')
+        ->where('activeEvent.id', $event->id)
+        ->has('events', 1)
+        ->where('events.0.id', $event->id)
+    );
 
     $this->actingAs($user)
         ->get("/admin/panitera/scoring?event_id={$otherEvent->id}")
@@ -169,14 +170,15 @@ test('the Panitera dashboard combines Embu and Randori into one scheduled list',
         'metadata' => ['placeholder' => false],
     ]);
 
-    $this->actingAs($user)
-        ->get("/admin/panitera/scoring?event_id={$event->id}")
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('Admin/Panitera/Dashboard')
-            ->has('matches.data', 2)
-            ->where('matches.total', 2)
-            ->where('matches.data', fn ($matches): bool => collect($matches)->pluck('id')->sort()->values()->all() === collect([$embuMatch->id, $randoriMatch->id])->sort()->values()->all())
-        );
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}");
+    dump($response->status(), substr($response->getContent(), 0, 500));
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Admin/Panitera/Dashboard')
+        ->has('matches.data', 2)
+        ->where('matches.total', 2)
+        ->where('matches.data', fn ($matches): bool => collect($matches)->pluck('id')->sort()->values()->all() === collect([$embuMatch->id, $randoriMatch->id])->sort()->values()->all())
+    );
 });
 
 test('an assigned Panitera sees and opens only matches from the assigned court', function () {
@@ -219,15 +221,16 @@ test('an assigned Panitera sees and opens only matches from the assigned court',
         'scheduled_start_at' => '2026-11-07 08:40:00',
     ]);
 
-    $this->actingAs($user)
-        ->get("/admin/panitera/scoring?event_id={$event->id}")
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('isCourtRestricted', true)
-            ->has('courts', 1)
-            ->where('courts.0.id', $firstCourt->id)
-            ->where('matches.total', 1)
-            ->where('matches.data.0.id', $firstCourtMatch->id)
-        );
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}");
+    dump($response->status(), substr($response->getContent(), 0, 500));
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('isCourtRestricted', true)
+        ->has('courts', 1)
+        ->where('courts.0.id', $firstCourt->id)
+        ->where('matches.total', 1)
+        ->where('matches.data.0.id', $firstCourtMatch->id)
+    );
 
     $this->actingAs($user)
         ->get("/admin/panitera/scoring/matches/{$secondCourtMatch->id}?event_id={$event->id}")
@@ -265,14 +268,15 @@ test('the Panitera dashboard paginates the combined schedule and filters complet
         ]);
     }
 
-    $this->actingAs($user)
-        ->get("/admin/panitera/scoring?event_id={$event->id}")
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('matches.total', 16)
-            ->where('matches.per_page', 15)
-            ->where('matches.last_page', 2)
-            ->has('matches.data', 15)
-        );
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}");
+    dump($response->status(), substr($response->getContent(), 0, 500));
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('matches.total', 16)
+        ->where('matches.per_page', 15)
+        ->where('matches.last_page', 2)
+        ->has('matches.data', 15)
+    );
 
     $this->actingAs($user)
         ->get("/admin/panitera/scoring?event_id={$event->id}&status=completed")
@@ -1779,15 +1783,16 @@ test('the Panitera dashboard reports match progress for each court', function ()
         'call_status' => 'officials_called',
     ]);
 
-    $this->actingAs($user)
-        ->get("/admin/panitera/scoring?event_id={$event->id}")
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('courts.0.id', $court->id)
-            ->where('courts.0.total_matches', 2)
-            ->where('courts.0.completed_matches', 1)
-            ->where('courts.0.active_match.id', $activeMatch->id)
-            ->where('matches.data.0.court_id', $court->id)
-        );
+    $response = $this->actingAs($user)
+        ->get("/admin/panitera/scoring?event_id={$event->id}");
+    dump($response->status(), substr($response->getContent(), 0, 500));
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('courts.0.id', $court->id)
+        ->where('courts.0.total_matches', 2)
+        ->where('courts.0.completed_matches', 1)
+        ->where('courts.0.active_match.id', $activeMatch->id)
+        ->where('matches.data.0.court_id', $court->id)
+    );
 });
 
 test('a clerk assigned to multiple events can switch the Panitera event context', function () {
