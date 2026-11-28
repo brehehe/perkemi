@@ -20,10 +20,10 @@ export function PublicSiteHeader({ user = null, active = '' }) {
     return (
         <header id="home-top" className="event-header">
             <div className="event-container flex min-h-22 items-center justify-between gap-4 py-4">
-                <Link href="/" className="home-brand flex items-center gap-3" aria-label="PB PERKEMI, beranda">
+                <Link href="/" className="home-brand flex items-center gap-3" aria-label="PERKEMI Surabaya, beranda">
                     <img src="/android-chrome-192x192.png" width="48" height="48" alt="" className="h-12 w-12 shrink-0 object-contain" />
                     <span>
-                        <strong className="home-brand-name block">PB PERKEMI</strong>
+                        <strong className="home-brand-name block">PERKEMI Surabaya</strong>
                         <span className="home-brand-caption block">Persaudaraan Shorinji Kempo Indonesia</span>
                     </span>
                 </Link>
@@ -89,8 +89,12 @@ export function PublicSiteFooter() {
         <footer className="home-footer">
             <div className="event-container flex flex-col justify-between gap-7 py-10 md:flex-row md:items-center">
                 <div>
-                    <p className="home-brand-name">PB PERKEMI</p>
-                    <p className="mt-2 text-xs leading-6">Persaudaraan Shorinji Kempo Indonesia<br />&copy; {new Date().getFullYear()} SMART PERKEMI</p>
+                    <p className="home-brand-name">PERKEMI Surabaya</p>
+                    <p className="mt-2 text-xs leading-6">
+                        Persaudaraan Shorinji Kempo Indonesia<br />
+                        Jl. Jambangan Baru Tol No. 3, Surabaya, Jawa Timur · Kontak: kemposurabaya@gmail.com<br />
+                        &copy; {new Date().getFullYear()} SMART PERKEMI
+                    </p>
                 </div>
                 <nav aria-label="Navigasi footer" className="flex flex-wrap items-center gap-7 text-sm">
                     <Link href="/#events">Event kejuaraan</Link>

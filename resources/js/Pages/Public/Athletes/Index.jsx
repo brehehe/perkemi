@@ -68,7 +68,7 @@ export default function AthleteDirectory({ athletes = { data: [], links: [] }, t
     return (
         <div className="event-page federation-home athlete-public min-h-screen antialiased">
             <Head title="Peserta & Prestasi Atlet">
-                <meta name="description" content="Direktori peserta Shorinji Kempo, riwayat pertandingan, dan prestasi resmi atlet pada event PB PERKEMI." />
+                <meta name="description" content="Direktori peserta Shorinji Kempo, riwayat pertandingan, dan prestasi resmi atlet pada event PERKEMI Surabaya." />
             </Head>
             <a href="#athlete-list" className="event-skip-link">Langsung ke daftar peserta</a>
             <PublicSiteHeader user={user} active="athletes" />
@@ -79,7 +79,7 @@ export default function AthleteDirectory({ athletes = { data: [], links: [] }, t
                         <div className="min-w-0">
                             <p className="home-intro-label">Direktori Kenshi Indonesia</p>
                             <h1 id="athlete-directory-title">Peserta, perjalanan, dan prestasi.</h1>
-                            <p className="home-intro">Temukan profil atlet, pertandingan yang pernah dijalani, statistik kemenangan, serta gelar yang tercatat pada kejuaraan PB PERKEMI.</p>
+                            <p className="home-intro">Temukan profil atlet, pertandingan yang pernah dijalani, statistik kemenangan, serta gelar yang tercatat pada kejuaraan PERKEMI Surabaya.</p>
                             <form onSubmit={submitSearch} role="search" className="athlete-search mt-8">
                                 <label className="sr-only" htmlFor="athlete-search">Cari peserta</label>
                                 <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />

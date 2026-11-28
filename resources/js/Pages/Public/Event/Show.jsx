@@ -1275,10 +1275,10 @@ export default function EventShow({
                                 SMART PERKEMI
                             </p>
                             <p className="event-muted mt-2 text-xs leading-6">
-                                Pengurus Besar Persaudaraan Shorinji Kempo Indonesia
+                                Persaudaraan Shorinji Kempo Indonesia
                                 <br />
-                                Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak:
-                                sekretariat@perkemi.org
+                                Jl. Jambangan Baru Tol No. 3, Surabaya, Jawa Timur · Kontak:
+                                kemposurabaya@gmail.com
                                 <br />
                                 &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta
                                 dilindungi.

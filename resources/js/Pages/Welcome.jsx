@@ -145,15 +145,15 @@ export default function Welcome({
 
     return (
         <div className="event-page federation-home min-h-screen antialiased">
-            <Head title="PB PERKEMI — Portal Kejuaraan Shorinji Kempo">
-                <meta name="description" content="Temukan event Shorinji Kempo, jadwal pertandingan, ketentuan peserta, dan pendaftaran kontingen melalui portal kejuaraan PB PERKEMI." />
+            <Head title="PERKEMI Surabaya — Portal Kejuaraan Shorinji Kempo">
+                <meta name="description" content="Temukan event Shorinji Kempo, jadwal pertandingan, ketentuan peserta, dan pendaftaran kontingen melalui portal kejuaraan PERKEMI Surabaya." />
             </Head>
             <a href="#events" className="event-skip-link">Langsung ke daftar event</a>
             <header id="home-top" className="event-header">
                 <div className="event-container flex min-h-22 items-center justify-between gap-4 py-4">
-                    <Link href={directoryUrl} className="home-brand flex items-center gap-3" aria-label="PB PERKEMI, beranda">
+                    <Link href={directoryUrl} className="home-brand flex items-center gap-3" aria-label="PERKEMI Surabaya, beranda">
                         <img src="/android-chrome-192x192.png" width="48" height="48" alt="" className="h-12 w-12 shrink-0 object-contain" />
-                        <span><strong className="home-brand-name block">PB PERKEMI</strong><span className="home-brand-caption block">Persaudaraan Shorinji Kempo Indonesia</span></span>
+                        <span><strong className="home-brand-name block">PERKEMI Surabaya</strong><span className="home-brand-caption block">Persaudaraan Shorinji Kempo Indonesia</span></span>
                     </Link>
                     <nav aria-label="Navigasi utama" className="hidden items-center gap-8 lg:flex">
                         <a href="#events" className="event-text-link">Event kejuaraan</a>
@@ -178,7 +178,7 @@ export default function Welcome({
                 <section className="home-hero" aria-labelledby="home-title">
                     <div className={`event-container grid items-center gap-10 py-12 lg:gap-20 lg:py-16 ${featuredEvent ? 'lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]' : ''}`}>
                         <div>
-                            <p className="home-intro-label">Portal kejuaraan PB PERKEMI</p>
+                            <p className="home-intro-label">Portal kejuaraan PERKEMI Surabaya</p>
                             <h1 id="home-title">Kejuaraan Shorinji Kempo Indonesia.</h1>
                             <p className="home-intro">Temukan agenda kejuaraan, persiapkan atlet, dan daftarkan kontingen Anda. Seluruh informasi pertandingan dalam satu tempat.</p>
                             <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -261,7 +261,7 @@ export default function Welcome({
                     <div className="home-section-heading">
                         <p className="home-about-label">Tentang portal</p>
                         <h2>Terhubung melalui Shorinji Kempo.</h2>
-                        <p>Portal PB PERKEMI menyediakan informasi kejuaraan dan layanan pendaftaran bagi kontingen. Jadwal, kategori pertandingan, serta ketentuan peserta tersedia pada masing-masing halaman event.</p>
+                        <p>Portal PERKEMI Surabaya menyediakan informasi kejuaraan dan layanan pendaftaran bagi kontingen. Jadwal, kategori pertandingan, serta ketentuan peserta tersedia pada masing-masing halaman event.</p>
                         <p className="home-about-signature">Didukung oleh SMART PERKEMI</p>
                     </div>
                     <div className="home-faq">
@@ -275,10 +275,10 @@ export default function Welcome({
             <footer className="home-footer">
                 <div className="event-container flex flex-col justify-between gap-7 py-10 md:flex-row md:items-center">
                     <div>
-                        <p className="home-brand-name">PB PERKEMI</p>
+                        <p className="home-brand-name">PERKEMI Surabaya</p>
                         <p className="mt-2 text-xs leading-6">
                             Persaudaraan Shorinji Kempo Indonesia<br />
-                            Jl. Percetakan Negara No. 10 Jakarta Pusat · Kontak: sekretariat@perkemi.org<br />
+                            Jl. Jambangan Baru Tol No. 3, Surabaya, Jawa Timur · Kontak: kemposurabaya@gmail.com<br />
                             &copy; {new Date().getFullYear()} SMART PERKEMI. Hak cipta dilindungi.
                         </p>
                     </div>
